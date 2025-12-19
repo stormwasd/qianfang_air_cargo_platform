@@ -1,0 +1,104 @@
+"""
+用户相关的Pydantic schemas
+"""
+from pydantic import BaseModel, Field, validator
+from typing import List, Optional
+from datetime import datetime
+
+
+class UserBase(BaseModel):
+    """用户基础schema"""
+    phone: str = Field(..., description="手机号", min_length=11, max_length=11)
+    name: str = Field(..., description="用户姓名", min_length=1, max_length=50)
+    department_id: Optional[int] = Field(None, description="所属部门ID")
+    permissions: List[str] = Field(..., description="权限列表")
+    
+    @validator("phone")
+    def validate_phone(cls, v):
+        """验证手机号格式"""
+        if not v.isdigit():
+            raise ValueError("手机号必须为数字")
+        if len(v) != 11:
+            raise ValueError("手机号必须为11位")
+        if not v.startswith("1"):
+            raise ValueError("手机号格式不正确")
+        return v
+
+
+class UserCreate(UserBase):
+    """创建用户schema"""
+    password: str = Field(..., description="密码", min_length=6, max_length=50)
+
+
+class UserUpdate(BaseModel):
+    """更新用户schema"""
+    name: Optional[str] = Field(None, description="用户姓名", min_length=1, max_length=50)
+    department_id: Optional[int] = Field(None, description="所属部门ID")
+    permissions: Optional[List[str]] = Field(None, description="权限列表")
+
+
+class UserPasswordUpdate(BaseModel):
+    """更新密码schema"""
+    password: str = Field(..., description="新密码", min_length=6, max_length=50)
+    user_id: Optional[int] = Field(None, description="用户ID（管理员更新其他用户密码时使用）")
+
+
+class UserResponse(UserBase):
+    """用户响应schema"""
+    id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class UserListResponse(BaseModel):
+    """用户列表响应schema"""
+    total: int
+    items: List[UserResponse]
+
+
+class LoginRequest(BaseModel):
+    """登录请求schema"""
+    phone: str = Field(..., description="手机号", min_length=11, max_length=11)
+    password: str = Field(..., description="密码", min_length=6)
+    
+    @validator("phone")
+    def validate_phone(cls, v):
+        """验证手机号格式"""
+        if not v.isdigit():
+            raise ValueError("手机号必须为数字")
+        if len(v) != 11:
+            raise ValueError("手机号必须为11位")
+        if not v.startswith("1"):
+            raise ValueError("手机号格式不正确")
+        return v
+
+
+class LoginResponse(BaseModel):
+    """登录响应schema"""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    has_initialized: bool = Field(..., description="是否已初始化配置")
+    permissions: List[str] = Field(..., description="用户权限列表")
+
+
+class TokenData(BaseModel):
+    """Token数据schema"""
+    user_id: int
+    phone: str
+
+
+class BatchUserStatusUpdate(BaseModel):
+    """批量更新用户状态schema"""
+    user_ids: List[int] = Field(..., description="用户ID列表")
+    is_active: bool = Field(..., description="是否启用")
+
+
+class BatchUserDelete(BaseModel):
+    """批量删除用户schema"""
+    user_ids: List[int] = Field(..., description="用户ID列表")
+
