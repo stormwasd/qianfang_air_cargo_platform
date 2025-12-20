@@ -141,17 +141,33 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
     Returns:
         Optional[TokenData]: 如果验证成功返回TokenData，否则返回None
     """
+    if not token or not isinstance(token, str):
+        return None
+    
     try:
         # jwt.decode默认会验证签名和过期时间
         # 如果token过期或签名无效，会抛出JWTError异常
+        # 注意：options参数可以控制验证行为
+        # verify_exp=True: 验证过期时间
+        # verify_signature=True: 验证签名（默认开启）
+        # leeway: 允许的时间误差（秒），用于处理时钟偏差
         payload = jwt.decode(
             token, 
             settings.SECRET_KEY, 
-            algorithms=[settings.ALGORITHM]
+            algorithms=[settings.ALGORITHM],
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_iat": False,  # 不验证iat，因为可能存在时钟偏差
+                "require_exp": True,
+                "require_iat": False
+            }
         )
         
         # 检查token类型
-        if payload.get("type") != token_type:
+        token_type_in_payload = payload.get("type")
+        if token_type_in_payload != token_type:
+            # token类型不匹配（例如：用access_token调用refresh接口）
             return None
         
         # 提取用户信息
@@ -159,13 +175,29 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
         phone = payload.get("phone")
         
         if user_id is None or phone is None:
+            # 缺少必要的用户信息
             return None
         
-        return TokenData(user_id=int(user_id), phone=str(phone))
-    except JWTError:
+        # 确保类型正确
+        try:
+            user_id_int = int(user_id)
+            phone_str = str(phone)
+        except (ValueError, TypeError):
+            # 类型转换失败
+            return None
+        
+        return TokenData(user_id=user_id_int, phone=phone_str)
+    except JWTError as e:
         # JWT验证失败（过期、签名错误、格式错误等）
+        # 在调试模式下可以记录错误信息
+        if settings.DEBUG:
+            import logging
+            logging.debug(f"JWT验证失败: {type(e).__name__}: {str(e)}")
         return None
-    except Exception:
+    except Exception as e:
         # 其他异常（如类型转换错误等）
+        if settings.DEBUG:
+            import logging
+            logging.debug(f"Token验证异常: {type(e).__name__}: {str(e)}")
         return None
 
