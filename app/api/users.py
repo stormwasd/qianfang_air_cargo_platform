@@ -18,7 +18,7 @@ from app.schemas.user import (
 from app.api.deps import require_admin, get_current_active_user
 from app.core.security import get_password_hash
 from app.core.permissions import validate_permissions
-from app.utils.helpers import format_permissions_to_json, parse_json_permissions, convert_id_to_str, convert_ids_to_str
+from app.utils.helpers import format_permissions_to_json, parse_json_permissions
 
 router = APIRouter()
 
@@ -200,14 +200,17 @@ async def update_user_password(
     is_user_admin = is_admin(user_permissions)
     
     # 确定要更新密码的用户
-    target_user_id = password_data.user_id if password_data.user_id else current_user.id
+    if password_data.user_id:
+        target_user_id_int = int(password_data.user_id)
+    else:
+        target_user_id_int = current_user.id
     
     # 权限检查：非管理员只能更新自己的密码
-    if not is_user_admin and target_user_id != current_user.id:
+    if not is_user_admin and target_user_id_int != current_user.id:
         raise ForbiddenException("无权限更新其他用户的密码")
     
     # 查找目标用户
-    target_user = db.query(User).filter(User.id == target_user_id).first()
+    target_user = db.query(User).filter(User.id == target_user_id_int).first()
     if not target_user:
         raise NotFoundException("用户不存在")
     
