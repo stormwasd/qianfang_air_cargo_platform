@@ -145,12 +145,32 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
         return None
     
     try:
-        # jwt.decode默认会验证签名和过期时间
-        # 如果token过期或签名无效，会抛出JWTError异常
-        # 注意：options参数可以控制验证行为
-        # verify_exp=True: 验证过期时间
-        # verify_signature=True: 验证签名（默认开启）
-        # leeway: 允许的时间误差（秒），用于处理时钟偏差
+        # 首先尝试不验证签名来解码token，检查payload内容
+        # 这样可以区分是签名问题还是其他问题
+        try:
+            # 注意：即使不验证签名，jwt.decode也需要一个key参数（可以是任意值）
+            unverified_payload = jwt.decode(
+                token,
+                key="",  # 使用空字符串作为key，因为我们不验证签名
+                options={"verify_signature": False, "verify_exp": False}
+            )
+        except Exception as e:
+            # 如果连解码都失败，说明token格式有问题
+            if settings.DEBUG:
+                import logging
+                logging.error(f"Token格式错误，无法解码: {str(e)}")
+            return None
+        
+        # 检查token类型（在验证签名之前）
+        token_type_in_payload = unverified_payload.get("type")
+        if token_type_in_payload != token_type:
+            # token类型不匹配（例如：用access_token调用refresh接口）
+            if settings.DEBUG:
+                import logging
+                logging.warning(f"Token类型不匹配: 期望 {token_type}, 实际 {token_type_in_payload}")
+            return None
+        
+        # 现在验证签名和过期时间
         payload = jwt.decode(
             token, 
             settings.SECRET_KEY, 
@@ -164,40 +184,39 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
             }
         )
         
-        # 检查token类型
-        token_type_in_payload = payload.get("type")
-        if token_type_in_payload != token_type:
-            # token类型不匹配（例如：用access_token调用refresh接口）
-            return None
-        
         # 提取用户信息
         user_id = payload.get("sub")
         phone = payload.get("phone")
         
         if user_id is None or phone is None:
             # 缺少必要的用户信息
+            if settings.DEBUG:
+                import logging
+                logging.warning(f"Token缺少必要字段: user_id={user_id}, phone={phone}")
             return None
         
         # 确保类型正确
         try:
             user_id_int = int(user_id)
             phone_str = str(phone)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
             # 类型转换失败
+            if settings.DEBUG:
+                import logging
+                logging.error(f"Token字段类型转换失败: {str(e)}")
             return None
         
         return TokenData(user_id=user_id_int, phone=phone_str)
     except JWTError as e:
-        # JWT验证失败（过期、签名错误、格式错误等）
-        # 在调试模式下可以记录错误信息
+        # 其他JWT验证失败（格式错误等）
         if settings.DEBUG:
             import logging
-            logging.debug(f"JWT验证失败: {type(e).__name__}: {str(e)}")
+            logging.error(f"JWT验证失败: {type(e).__name__}: {str(e)}")
         return None
     except Exception as e:
         # 其他异常（如类型转换错误等）
         if settings.DEBUG:
             import logging
-            logging.debug(f"Token验证异常: {type(e).__name__}: {str(e)}")
+            logging.error(f"Token验证异常: {type(e).__name__}: {str(e)}")
         return None
 

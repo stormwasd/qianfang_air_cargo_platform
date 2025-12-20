@@ -107,7 +107,26 @@ async def refresh_token(
     # 验证refresh_token
     token_data = verify_token(refresh_data.refresh_token, token_type="refresh")
     if token_data is None:
-        raise UnauthorizedException("无效的refresh_token或token已过期")
+        # 尝试解码token以获取更详细的错误信息
+        try:
+            from jose import jwt
+            # 不验证签名，只检查payload
+            # 注意：即使不验证签名，jwt.decode也需要一个key参数（可以是任意值）
+            unverified = jwt.decode(
+                refresh_data.refresh_token,
+                key="",  # 使用空字符串作为key，因为我们不验证签名
+                options={"verify_signature": False, "verify_exp": False}
+            )
+            # 如果能解码，说明token格式正确，可能是签名或过期问题
+            token_type_in_token = unverified.get("type")
+            if token_type_in_token != "refresh":
+                raise UnauthorizedException(f"token类型错误：期望refresh，实际{token_type_in_token}")
+            else:
+                # 类型正确，可能是签名或过期问题
+                raise UnauthorizedException("无效的refresh_token或token已过期（可能是签名验证失败或token已过期）")
+        except Exception:
+            # 如果连解码都失败，说明token格式有问题
+            raise UnauthorizedException("无效的refresh_token格式")
     
     # 查找用户
     user = db.query(User).filter(User.id == token_data.user_id).first()
