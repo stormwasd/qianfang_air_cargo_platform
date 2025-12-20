@@ -13,7 +13,7 @@ class DepartmentCreate(BaseModel):
 
 class DepartmentResponse(BaseModel):
     """部门响应schema"""
-    id: int
+    id: str  # ID以字符串形式返回
     name: str
     created_at: datetime
     updated_at: datetime

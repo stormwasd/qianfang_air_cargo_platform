@@ -1,23 +1,29 @@
 """
 部门模型
 """
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, BigInteger, String, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
+from app.models.user_department import user_department
+from app.utils.snowflake import generate_id
 
 
 class Department(Base):
     """部门表"""
     __tablename__ = "departments"
     
-    id = Column(Integer, primary_key=True, index=True, comment="部门ID")
+    id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="部门ID")
     name = Column(String(100), unique=True, nullable=False, comment="部门名称")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
     
-    # 关系
-    users = relationship("User", back_populates="department")
+    # 多对多关系：部门可以有多个用户
+    users = relationship(
+        "User",
+        secondary=user_department,
+        back_populates="departments"
+    )
     
     def __repr__(self):
         return f"<Department(id={self.id}, name={self.name})>"

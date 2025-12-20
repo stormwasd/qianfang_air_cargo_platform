@@ -39,7 +39,7 @@ async def create_department(
     db.refresh(new_department)
     
     department_data = {
-        "id": new_department.id,
+        "id": str(new_department.id),
         "name": new_department.name,
         "created_at": new_department.created_at.isoformat(),
         "updated_at": new_department.updated_at.isoformat()
@@ -62,7 +62,7 @@ async def get_departments(
     
     department_list = [
         {
-            "id": dept.id,
+            "id": str(dept.id),
             "name": dept.name,
             "created_at": dept.created_at.isoformat(),
             "updated_at": dept.updated_at.isoformat()

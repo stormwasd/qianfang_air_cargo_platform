@@ -27,7 +27,7 @@ class CustomerUpdate(BaseModel):
 
 class CustomerResponse(BaseModel):
     """客户响应schema"""
-    id: int
+    id: str  # ID以字符串形式返回
     company_name: str
     settlement_method: str
     rate: Decimal

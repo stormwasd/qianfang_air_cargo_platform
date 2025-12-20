@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, status
 from app.core.exceptions import BadRequestException, NotFoundException, ForbiddenException, ConflictException
 from app.core.response import success_response
 from app.utils.response_helpers import model_to_dict, convert_model_list
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from app.database import get_db
 from app.models.user import User
@@ -18,7 +18,7 @@ from app.schemas.user import (
 from app.api.deps import require_admin, get_current_active_user
 from app.core.security import get_password_hash
 from app.core.permissions import validate_permissions
-from app.utils.helpers import format_permissions_to_json, parse_json_permissions
+from app.utils.helpers import format_permissions_to_json, parse_json_permissions, convert_id_to_str, convert_ids_to_str
 
 router = APIRouter()
 
@@ -35,7 +35,7 @@ async def create_user(
     - **phone**: 手机号（账号）
     - **password**: 密码
     - **name**: 用户姓名
-    - **department_id**: 所属部门ID
+    - **department_ids**: 所属部门ID列表（支持多个部门）
     - **permissions**: 权限列表（运单管理、订舱管理、结算单管理、管理员）
     
     新增账号默认启用
@@ -50,31 +50,38 @@ async def create_user(
         raise ConflictException("该手机号已被注册")
     
     # 验证部门是否存在
-    if user.department_id:
-        department = db.query(Department).filter(Department.id == user.department_id).first()
-        if not department:
-            raise NotFoundException("部门不存在")
+    if user.department_ids:
+        # 将字符串ID转换为整数用于查询
+        department_ids_int = [int(dept_id) for dept_id in user.department_ids]
+        departments = db.query(Department).filter(Department.id.in_(department_ids_int)).all()
+        if len(departments) != len(user.department_ids):
+            raise NotFoundException("部分部门不存在")
     
     # 创建用户
     new_user = User(
         phone=user.phone,
         password_hash=get_password_hash(user.password),
         name=user.name,
-        department_id=user.department_id,
         permissions=format_permissions_to_json(user.permissions),
         is_active=True  # 默认启用
     )
+    
+    # 关联部门
+    if user.department_ids:
+        new_user.departments = departments
+    
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     
-    # 返回响应
+    # 返回响应（ID转换为字符串）
     user_permissions = parse_json_permissions(new_user.permissions)
     user_data = {
-        "id": new_user.id,
+        "id": str(new_user.id),
         "phone": new_user.phone,
         "name": new_user.name,
-        "department_id": new_user.department_id,
+        "department_ids": [str(dept.id) for dept in new_user.departments],
+        "departments": [{"id": str(dept.id), "name": dept.name} for dept in new_user.departments],
         "permissions": user_permissions,
         "is_active": new_user.is_active,
         "created_at": new_user.created_at.isoformat(),
@@ -93,16 +100,17 @@ async def get_users(
     
     返回所有账号的列表
     """
-    users = db.query(User).order_by(User.created_at.desc()).all()
+    users = db.query(User).options(joinedload(User.departments)).order_by(User.created_at.desc()).all()
     
     user_list = []
     for user in users:
         user_permissions = parse_json_permissions(user.permissions)
         user_dict = {
-            "id": user.id,
+            "id": str(user.id),
             "phone": user.phone,
             "name": user.name,
-            "department_id": user.department_id,
+            "department_ids": [str(dept.id) for dept in user.departments],
+            "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
             "permissions": user_permissions,
             "is_active": user.is_active,
             "created_at": user.created_at.isoformat(),
@@ -118,7 +126,7 @@ async def get_users(
 
 @router.put("/{user_id}/status", summary="启用或停用账号")
 async def update_user_status(
-    user_id: int,
+    user_id: str,
     is_active: bool,
     current_user = Depends(require_admin),
     db: Session = Depends(get_db)
@@ -126,10 +134,10 @@ async def update_user_status(
     """
     启用或停用账号接口（需要管理员权限，支持批量）
     
-    - **user_id**: 用户ID
+    - **user_id**: 用户ID（字符串格式）
     - **is_active**: 是否启用（true=启用，false=停用）
     """
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == int(user_id)).first()
     if not user:
         raise NotFoundException("用户不存在")
     
@@ -137,7 +145,7 @@ async def update_user_status(
     db.commit()
     
     return success_response(
-        data={"user_id": user_id, "is_active": is_active},
+        data={"user_id": str(user_id), "is_active": is_active},
         msg="操作成功"
     )
 
@@ -151,10 +159,12 @@ async def batch_update_user_status(
     """
     批量启用或停用账号接口（需要管理员权限）
     
-    - **user_ids**: 用户ID列表
+    - **user_ids**: 用户ID列表（字符串格式）
     - **is_active**: 是否启用（true=启用，false=停用）
     """
-    users = db.query(User).filter(User.id.in_(batch_data.user_ids)).all()
+    # 将字符串ID转换为整数用于查询
+    user_ids_int = [int(uid) for uid in batch_data.user_ids]
+    users = db.query(User).filter(User.id.in_(user_ids_int)).all()
     if len(users) != len(batch_data.user_ids):
         raise BadRequestException("部分用户ID不存在")
     
@@ -206,23 +216,24 @@ async def update_user_password(
     db.commit()
     
     return success_response(
-        data={"user_id": target_user_id},
+        data={"user_id": str(target_user_id_int)},
         msg="密码更新成功"
     )
 
 
 @router.delete("/{user_id}", summary="删除账号")
 async def delete_user(
-    user_id: int,
+    user_id: str,
     current_user = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     删除账号接口（需要管理员权限）
     
-    - **user_id**: 用户ID
+    - **user_id**: 用户ID（字符串格式）
     """
-    user = db.query(User).filter(User.id == user_id).first()
+    user_id_int = int(user_id)
+    user = db.query(User).filter(User.id == user_id_int).first()
     if not user:
         raise NotFoundException("用户不存在")
     
@@ -234,7 +245,7 @@ async def delete_user(
     db.commit()
     
     return success_response(
-        data={"user_id": user_id},
+        data={"user_id": str(user_id)},
         msg="账号删除成功"
     )
 
@@ -248,13 +259,16 @@ async def batch_delete_users(
     """
     批量删除账号接口（需要管理员权限）
     
-    - **user_ids**: 用户ID列表
+    - **user_ids**: 用户ID列表（字符串格式）
     """
+    # 将字符串ID转换为整数用于查询
+    user_ids_int = [int(uid) for uid in batch_data.user_ids]
+    
     # 不能删除自己
-    if current_user.id in batch_data.user_ids:
+    if current_user.id in user_ids_int:
         raise BadRequestException("不能删除自己的账号")
     
-    users = db.query(User).filter(User.id.in_(batch_data.user_ids)).all()
+    users = db.query(User).filter(User.id.in_(user_ids_int)).all()
     if len(users) != len(batch_data.user_ids):
         raise BadRequestException("部分用户ID不存在")
     

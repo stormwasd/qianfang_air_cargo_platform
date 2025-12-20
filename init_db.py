@@ -3,6 +3,7 @@
 """
 from app.database import engine, Base
 from app.models import User, Department, Customer, BusinessConfig
+from app.models.user_department import user_department
 from app.core.security import get_password_hash
 from app.utils.helpers import format_permissions_to_json
 
@@ -32,10 +33,11 @@ def init_database():
                 phone="13800000000",
                 password_hash=get_password_hash("admin123456"),
                 name="系统管理员",
-                department_id=admin_dept.id,
                 permissions=format_permissions_to_json(["管理员"]),
                 is_active=True
             )
+            # 关联部门
+            admin_user.departments = [admin_dept]
             db.add(admin_user)
             db.commit()
             print("默认管理员账号创建成功！")

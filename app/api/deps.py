@@ -4,7 +4,7 @@ API依赖项：认证、权限检查等
 """
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.user import User
 from app.core.security import verify_token
@@ -25,7 +25,7 @@ async def get_current_user(
     if token_data is None:
         raise UnauthorizedException("无效的token或token已过期")
     
-    user = db.query(User).filter(User.id == token_data.user_id).first()
+    user = db.query(User).options(joinedload(User.departments)).filter(User.id == token_data.user_id).first()
     if user is None:
         raise UnauthorizedException("用户不存在")
     if not user.is_active:

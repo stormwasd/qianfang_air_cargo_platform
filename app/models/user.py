@@ -1,28 +1,34 @@
 """
 用户模型
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
+from app.models.user_department import user_department
+from app.utils.snowflake import generate_id
 
 
 class User(Base):
     """用户表"""
     __tablename__ = "users"
     
-    id = Column(Integer, primary_key=True, index=True, comment="用户ID")
+    id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="用户ID")
     phone = Column(String(11), unique=True, index=True, nullable=False, comment="手机号（账号）")
     password_hash = Column(String(255), nullable=False, comment="密码哈希")
     name = Column(String(50), nullable=False, comment="用户姓名")
-    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True, comment="所属部门ID")
     permissions = Column(Text, nullable=False, comment="权限列表，JSON格式存储")
     is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
     
-    # 关系
-    department = relationship("Department", back_populates="users")
+    # 多对多关系：用户可以有多个部门
+    departments = relationship(
+        "Department",
+        secondary=user_department,
+        back_populates="users",
+        lazy="selectin"  # 使用selectin加载策略，提高查询效率
+    )
     
     def __repr__(self):
         return f"<User(id={self.id}, phone={self.phone}, name={self.name})>"

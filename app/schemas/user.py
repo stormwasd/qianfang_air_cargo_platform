@@ -10,7 +10,7 @@ class UserBase(BaseModel):
     """用户基础schema"""
     phone: str = Field(..., description="手机号", min_length=11, max_length=11)
     name: str = Field(..., description="用户姓名", min_length=1, max_length=50)
-    department_id: Optional[int] = Field(None, description="所属部门ID")
+    department_ids: List[str] = Field(default_factory=list, description="所属部门ID列表（字符串格式）")
     permissions: List[str] = Field(..., description="权限列表")
     
     @validator("phone")
@@ -33,19 +33,19 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """更新用户schema"""
     name: Optional[str] = Field(None, description="用户姓名", min_length=1, max_length=50)
-    department_id: Optional[int] = Field(None, description="所属部门ID")
+    department_ids: Optional[List[str]] = Field(None, description="所属部门ID列表（字符串格式）")
     permissions: Optional[List[str]] = Field(None, description="权限列表")
 
 
 class UserPasswordUpdate(BaseModel):
     """更新密码schema"""
     password: str = Field(..., description="新密码", min_length=6, max_length=50)
-    user_id: Optional[int] = Field(None, description="用户ID（管理员更新其他用户密码时使用）")
+    user_id: Optional[str] = Field(None, description="用户ID（管理员更新其他用户密码时使用，字符串格式）")
 
 
 class UserResponse(UserBase):
     """用户响应schema"""
-    id: int
+    id: str  # ID以字符串形式返回
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -88,17 +88,17 @@ class LoginResponse(BaseModel):
 
 class TokenData(BaseModel):
     """Token数据schema"""
-    user_id: int
+    user_id: int  # 内部使用，保持int类型
     phone: str
 
 
 class BatchUserStatusUpdate(BaseModel):
     """批量更新用户状态schema"""
-    user_ids: List[int] = Field(..., description="用户ID列表")
+    user_ids: List[str] = Field(..., description="用户ID列表（字符串格式）")
     is_active: bool = Field(..., description="是否启用")
 
 
 class BatchUserDelete(BaseModel):
     """批量删除用户schema"""
-    user_ids: List[int] = Field(..., description="用户ID列表")
+    user_ids: List[str] = Field(..., description="用户ID列表（字符串格式）")
 

@@ -24,13 +24,17 @@ async def get_current_user_info(
     
     返回当前登录用户的详细信息
     """
+    # 确保加载部门关系
+    db.refresh(current_user, ["departments"])
+    
     user_permissions = parse_json_permissions(current_user.permissions)
     
     user_data = {
-        "id": current_user.id,
+        "id": str(current_user.id),
         "phone": current_user.phone,
         "name": current_user.name,
-        "department_id": current_user.department_id,
+        "department_ids": [str(dept.id) for dept in current_user.departments],
+        "departments": [{"id": str(dept.id), "name": dept.name} for dept in current_user.departments],
         "permissions": user_permissions,
         "is_active": current_user.is_active,
         "created_at": current_user.created_at.isoformat(),

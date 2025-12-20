@@ -1,16 +1,17 @@
 """
 客户模型
 """
-from sqlalchemy import Column, Integer, String, Numeric, DateTime
+from sqlalchemy import Column, BigInteger, String, Numeric, DateTime
 from sqlalchemy.sql import func
 from app.database import Base
+from app.utils.snowflake import generate_id
 
 
 class Customer(Base):
     """客户表"""
     __tablename__ = "customers"
     
-    id = Column(Integer, primary_key=True, index=True, comment="客户ID")
+    id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="客户ID")
     company_name = Column(String(200), nullable=False, index=True, comment="承运单位/公司名称")
     settlement_method = Column(String(50), nullable=False, comment="结算方式")
     rate = Column(Numeric(10, 2), nullable=False, comment="费率(元/公斤)")

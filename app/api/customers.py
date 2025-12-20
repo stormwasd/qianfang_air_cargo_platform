@@ -42,7 +42,7 @@ async def create_customer(
     db.refresh(new_customer)
     
     customer_data = {
-        "id": new_customer.id,
+        "id": str(new_customer.id),
         "company_name": new_customer.company_name,
         "settlement_method": new_customer.settlement_method,
         "rate": float(new_customer.rate),
@@ -97,7 +97,7 @@ async def get_customers(
     
     customer_list = [
         {
-            "id": customer.id,
+            "id": str(customer.id),
             "company_name": customer.company_name,
             "settlement_method": customer.settlement_method,
             "rate": float(customer.rate),
@@ -117,21 +117,21 @@ async def get_customers(
 
 @router.get("/{customer_id}", summary="获取客户详情")
 async def get_customer(
-    customer_id: int,
+    customer_id: str,
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
     获取客户详情接口
     
-    - **customer_id**: 客户ID
+    - **customer_id**: 客户ID（字符串格式）
     """
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    customer = db.query(Customer).filter(Customer.id == int(customer_id)).first()
     if not customer:
         raise NotFoundException("客户不存在")
     
     customer_data = {
-        "id": customer.id,
+        "id": str(customer.id),
         "company_name": customer.company_name,
         "settlement_method": customer.settlement_method,
         "rate": float(customer.rate),

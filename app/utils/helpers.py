@@ -2,7 +2,7 @@
 工具函数
 """
 import json
-from typing import List, Any
+from typing import List, Any, Union, Dict
 
 
 def parse_json_permissions(permissions_str: str) -> List[str]:

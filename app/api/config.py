@@ -46,11 +46,11 @@ async def initialize_config(
     db.commit()
     db.refresh(business_config)
     
-    # 返回响应
+    # 返回响应（ID转换为字符串）
     response_data = json.loads(business_config.config_data)
     config_data = {
-        "id": business_config.id,
-        "user_id": business_config.user_id,
+        "id": str(business_config.id),
+        "user_id": str(business_config.user_id),
         "config_data": response_data,
         "created_at": business_config.created_at.isoformat(),
         "updated_at": business_config.updated_at.isoformat()
@@ -73,8 +73,8 @@ async def get_current_config(
     
     response_data = json.loads(config.config_data)
     config_data = {
-        "id": config.id,
-        "user_id": config.user_id,
+        "id": str(config.id),
+        "user_id": str(config.user_id),
         "config_data": response_data,
         "created_at": config.created_at.isoformat(),
         "updated_at": config.updated_at.isoformat()
@@ -103,11 +103,11 @@ async def update_current_config(
     
     response_data = json.loads(config.config_data)
     config_data = {
-        "id": config.id,
-        "user_id": config.user_id,
+        "id": str(config.id),
+        "user_id": str(config.user_id),
         "config_data": response_data,
         "created_at": config.created_at.isoformat(),
         "updated_at": config.updated_at.isoformat()
     }
-    return success_response(data=config_data, msg="查询成功")
+    return success_response(data=config_data, msg="更新成功")
 

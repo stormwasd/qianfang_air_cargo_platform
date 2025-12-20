@@ -2,7 +2,7 @@
 认证相关接口
 """
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel, Field
 from app.database import get_db
 from app.models.user import User
@@ -12,6 +12,7 @@ from app.core.security import verify_password, create_access_token, create_refre
 from app.core.exceptions import UnauthorizedException, ForbiddenException
 from app.core.response import success_response
 from app.utils.helpers import parse_json_permissions
+from app.utils.menu_mapping import generate_menus_by_permissions
 
 router = APIRouter()
 
@@ -39,13 +40,28 @@ async def login(
             "access_token": "xxx",
             "refresh_token": "xxx",
             "has_initialized": false,
-            "permissions": ["管理员"]
+            "permissions": ["管理员"],
+            "menus": [...],
+            "user": {
+                "id": "1234567890123456789",
+                "phone": "13800000000",
+                "name": "张三",
+                "department_ids": ["1234567890123456789", "1234567890123456790"],
+                "departments": [
+                    {"id": "1234567890123456789", "name": "技术部"},
+                    {"id": "1234567890123456790", "name": "运营部"}
+                ],
+                "permissions": ["管理员"],
+                "is_active": true,
+                "created_at": "2025-01-01T00:00:00",
+                "updated_at": "2025-01-01T00:00:00"
+            }
         },
-        "msg": "success"
+        "msg": "登录成功"
     }
     """
-    # 查找用户
-    user = db.query(User).filter(User.phone == login_data.phone).first()
+    # 查找用户，并加载部门关系
+    user = db.query(User).options(joinedload(User.departments)).filter(User.phone == login_data.phone).first()
     if not user:
         raise UnauthorizedException("手机号或密码错误")
     
@@ -71,13 +87,31 @@ async def login(
     # 解析权限
     permissions = parse_json_permissions(user.permissions)
     
+    # 根据权限生成菜单
+    menus = generate_menus_by_permissions(permissions)
+    
+    # 构建用户完整信息（ID转换为字符串）
+    user_info = {
+        "id": str(user.id),
+        "phone": user.phone,
+        "name": user.name,
+        "department_ids": [str(dept.id) for dept in user.departments],
+        "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
+        "permissions": permissions,
+        "is_active": user.is_active,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+    }
+    
     # 返回统一格式
     return success_response(
         data={
             "access_token": access_token,
             "refresh_token": refresh_token,
             "has_initialized": has_initialized,
-            "permissions": permissions
+            "permissions": permissions,
+            "menus": menus,
+            "user": user_info
         },
         msg="登录成功"
     )
