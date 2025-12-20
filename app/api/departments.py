@@ -9,7 +9,7 @@ from app.database import get_db
 from app.models.department import Department
 from app.schemas.department import DepartmentCreate, DepartmentUpdate
 from app.api.deps import require_admin
-from app.utils.helpers import format_datetime_utc
+from app.utils.helpers import format_datetime_china
 
 router = APIRouter()
 
@@ -42,8 +42,8 @@ async def create_department(
     department_data = {
         "id": str(new_department.id),
         "name": new_department.name,
-        "created_at": format_datetime_utc(new_department.created_at),
-        "updated_at": format_datetime_utc(new_department.updated_at)
+        "created_at": format_datetime_china(new_department.created_at),
+        "updated_at": format_datetime_china(new_department.updated_at)
     }
     
     return success_response(data=department_data, msg="部门创建成功")
@@ -65,8 +65,8 @@ async def get_departments(
         {
             "id": str(dept.id),
             "name": dept.name,
-            "created_at": format_datetime_utc(dept.created_at),
-            "updated_at": format_datetime_utc(dept.updated_at)
+            "created_at": format_datetime_china(dept.created_at),
+            "updated_at": format_datetime_china(dept.updated_at)
         }
         for dept in departments
     ]
@@ -120,8 +120,8 @@ async def update_department(
     department_data = {
         "id": str(existing_department.id),
         "name": existing_department.name,
-        "created_at": format_datetime_utc(existing_department.created_at),
-        "updated_at": format_datetime_utc(existing_department.updated_at)
+        "created_at": format_datetime_china(existing_department.created_at),
+        "updated_at": format_datetime_china(existing_department.updated_at)
     }
     
     return success_response(data=department_data, msg="部门修改成功")

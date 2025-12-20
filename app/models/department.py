@@ -6,7 +6,7 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 from app.models.user_department import user_department
 from app.utils.snowflake import generate_id
-from app.utils.helpers import get_utc_now
+from app.utils.helpers import get_china_now
 
 
 class Department(Base):
@@ -15,8 +15,8 @@ class Department(Base):
     
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="部门ID")
     name = Column(String(100), unique=True, nullable=False, comment="部门名称")
-    created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False, comment="创建时间（UTC）")
-    updated_at = Column(DateTime(timezone=True), default=get_utc_now, onupdate=get_utc_now, nullable=False, comment="更新时间（UTC）")
+    created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
+    updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
     # 多对多关系：部门可以有多个用户
     users = relationship(

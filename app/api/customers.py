@@ -11,7 +11,7 @@ from app.schemas.customer import (
     CustomerCreate, CustomerQuery
 )
 from app.api.deps import get_current_active_user
-from app.utils.helpers import format_datetime_utc
+from app.utils.helpers import format_datetime_china
 
 router = APIRouter()
 
@@ -49,8 +49,8 @@ async def create_customer(
         "rate": float(new_customer.rate),
         "contact_person": new_customer.contact_person,
         "contact_phone": new_customer.contact_phone,
-        "created_at": format_datetime_utc(new_customer.created_at),
-        "updated_at": format_datetime_utc(new_customer.updated_at)
+        "created_at": format_datetime_china(new_customer.created_at),
+        "updated_at": format_datetime_china(new_customer.updated_at)
     }
     
     return success_response(data=customer_data, msg="客户创建成功")
@@ -104,8 +104,8 @@ async def get_customers(
             "rate": float(customer.rate),
             "contact_person": customer.contact_person,
             "contact_phone": customer.contact_phone,
-            "created_at": format_datetime_utc(customer.created_at),
-            "updated_at": format_datetime_utc(customer.updated_at)
+            "created_at": format_datetime_china(customer.created_at),
+            "updated_at": format_datetime_china(customer.updated_at)
         }
         for customer in customers
     ]

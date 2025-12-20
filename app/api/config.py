@@ -11,7 +11,7 @@ from app.models.config import BusinessConfig
 from app.schemas.config import BusinessConfigCreate
 from app.api.deps import get_current_active_user
 from app.models.user import User
-from app.utils.helpers import format_datetime_utc
+from app.utils.helpers import format_datetime_china
 
 router = APIRouter()
 
@@ -64,8 +64,8 @@ async def save_config(
         "id": str(config.id),
         "user_id": str(config.user_id),
         "config_data": response_data,
-        "created_at": format_datetime_utc(config.created_at),
-        "updated_at": format_datetime_utc(config.updated_at)
+        "created_at": format_datetime_china(config.created_at),
+        "updated_at": format_datetime_china(config.updated_at)
     }
     return success_response(data=result_data, msg=msg)
 
@@ -92,8 +92,8 @@ async def get_current_config(
         "id": str(config.id),
         "user_id": str(config.user_id),
         "config_data": response_data,
-        "created_at": format_datetime_utc(config.created_at),
-        "updated_at": format_datetime_utc(config.updated_at)
+        "created_at": format_datetime_china(config.created_at),
+        "updated_at": format_datetime_china(config.updated_at)
     }
     return success_response(data=config_data, msg="查询成功")
 

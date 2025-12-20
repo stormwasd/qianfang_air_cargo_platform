@@ -36,13 +36,19 @@ class Settings(BaseSettings):
     # 密码加密配置
     PASSWORD_SALT_ROUNDS: int = Field(default=12, ge=4, le=31, description="密码加密轮数")
     
-    # 权限定义
-    PERMISSIONS: List[str] = [
-        "运单管理",
-        "订舱管理",
-        "结算单管理",
-        "管理员"
-    ]
+    # 权限定义（权限代码 -> 权限名称）
+    PERMISSIONS: Dict[str, str] = {
+        "waybill": "运单管理",
+        "booking": "订舱管理",
+        "settlement": "结算单管理",
+        "admin": "管理员"
+    }
+    
+    # 权限代码列表（用于验证）
+    PERMISSION_CODES: List[str] = list(PERMISSIONS.keys())
+    
+    # 权限名称列表（用于向后兼容）
+    PERMISSION_NAMES: List[str] = list(PERMISSIONS.values())
     
     # CORS配置
     CORS_ORIGINS: List[str] = ["*"]

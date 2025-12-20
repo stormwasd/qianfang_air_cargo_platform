@@ -18,7 +18,7 @@ from app.schemas.user import (
 from app.api.deps import require_admin, get_current_active_user
 from app.core.security import get_password_hash
 from app.core.permissions import validate_permissions
-from app.utils.helpers import format_permissions_to_json, parse_json_permissions, format_datetime_utc
+from app.utils.helpers import format_permissions_to_json, parse_json_permissions, format_datetime_china
 
 router = APIRouter()
 
@@ -36,7 +36,7 @@ async def create_user(
     - **password**: 密码
     - **name**: 用户姓名
     - **department_ids**: 所属部门ID列表（支持多个部门）
-    - **permissions**: 权限列表（运单管理、订舱管理、结算单管理、管理员）
+    - **permissions**: 权限列表（权限代码：waybill-运单管理、booking-订舱管理、settlement-结算单管理、admin-管理员）
     
     新增账号默认启用
     """
@@ -84,8 +84,8 @@ async def create_user(
         "departments": [{"id": str(dept.id), "name": dept.name} for dept in new_user.departments],
         "permissions": user_permissions,
         "is_active": new_user.is_active,
-        "created_at": format_datetime_utc(new_user.created_at),
-        "updated_at": format_datetime_utc(new_user.updated_at)
+        "created_at": format_datetime_china(new_user.created_at),
+        "updated_at": format_datetime_china(new_user.updated_at)
     }
     return success_response(data=user_data, msg="账号创建成功")
 
@@ -113,8 +113,8 @@ async def get_users(
             "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
             "permissions": user_permissions,
             "is_active": user.is_active,
-            "created_at": format_datetime_utc(user.created_at),
-            "updated_at": format_datetime_utc(user.updated_at)
+            "created_at": format_datetime_china(user.created_at),
+            "updated_at": format_datetime_china(user.updated_at)
         }
         user_list.append(user_dict)
     

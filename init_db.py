@@ -33,7 +33,7 @@ def init_database():
                 phone="13800000000",
                 password_hash=get_password_hash("admin123456"),
                 name="系统管理员",
-                permissions=format_permissions_to_json(["管理员"]),
+                permissions=format_permissions_to_json(["admin"]),
                 is_active=True
             )
             # 关联部门
