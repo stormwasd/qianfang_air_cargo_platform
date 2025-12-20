@@ -7,6 +7,7 @@ from jose import JWTError, jwt
 import bcrypt
 from app.config import settings
 from app.schemas.user import TokenData
+from app.utils.helpers import CHINA_TIMEZONE
 
 # bcrypt 密码最大长度（字节）
 BCRYPT_MAX_PASSWORD_LENGTH = 72
