@@ -3,7 +3,7 @@
 """
 import json
 from fastapi import APIRouter, Depends
-from app.core.exceptions import BadRequestException, NotFoundException
+from app.core.exceptions import NotFoundException
 from app.core.response import success_response
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -11,103 +11,89 @@ from app.models.config import BusinessConfig
 from app.schemas.config import BusinessConfigCreate
 from app.api.deps import get_current_active_user
 from app.models.user import User
+from app.utils.helpers import format_datetime_utc
 
 router = APIRouter()
 
 
-@router.post("/initialize", summary="初始化配置")
-async def initialize_config(
+@router.put("", summary="保存业务参数配置")
+async def save_config(
     config_data: BusinessConfigCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    初始化业务参数配置接口
+    保存业务参数配置接口（创建或更新）
     
     - **config_data**: 配置数据（JSON格式）
     
-    注意：每个用户只能初始化一次配置
+    说明：
+    - 如果用户尚未配置，则创建新配置
+    - 如果用户已有配置，则更新现有配置
+    - 这是一个 upsert 操作（update or insert）
     """
-    # 检查是否已经初始化
+    # 查询是否已存在配置
     existing_config = db.query(BusinessConfig).filter(
         BusinessConfig.user_id == current_user.id
     ).first()
     
-    if existing_config:
-        raise BadRequestException("该用户已经初始化过配置，如需修改请使用更新接口")
-    
-    # 创建配置
     config_json = json.dumps(config_data.config_data, ensure_ascii=False)
-    business_config = BusinessConfig(
-        user_id=current_user.id,
-        config_data=config_json
-    )
-    db.add(business_config)
-    db.commit()
-    db.refresh(business_config)
+    
+    if existing_config:
+        # 更新现有配置
+        existing_config.config_data = config_json
+        db.commit()
+        db.refresh(existing_config)
+        config = existing_config
+        msg = "配置更新成功"
+    else:
+        # 创建新配置
+        new_config = BusinessConfig(
+            user_id=current_user.id,
+            config_data=config_json
+        )
+        db.add(new_config)
+        db.commit()
+        db.refresh(new_config)
+        config = new_config
+        msg = "配置创建成功"
     
     # 返回响应（ID转换为字符串）
-    response_data = json.loads(business_config.config_data)
-    config_data = {
-        "id": str(business_config.id),
-        "user_id": str(business_config.user_id),
+    response_data = json.loads(config.config_data)
+    result_data = {
+        "id": str(config.id),
+        "user_id": str(config.user_id),
         "config_data": response_data,
-        "created_at": business_config.created_at.isoformat(),
-        "updated_at": business_config.updated_at.isoformat()
+        "created_at": format_datetime_utc(config.created_at),
+        "updated_at": format_datetime_utc(config.updated_at)
     }
-    return success_response(data=config_data, msg="配置初始化成功")
+    return success_response(data=result_data, msg=msg)
 
 
-@router.get("/current", summary="获取当前用户配置")
+@router.get("", summary="获取当前用户配置")
 async def get_current_config(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户的业务参数配置"""
+    """
+    获取当前用户的业务参数配置
+    
+    如果用户尚未配置，返回404错误
+    """
     config = db.query(BusinessConfig).filter(
         BusinessConfig.user_id == current_user.id
     ).first()
     
     if not config:
-        raise NotFoundException("未找到配置信息，请先初始化配置")
+        raise NotFoundException("未找到配置信息，请先保存配置")
     
     response_data = json.loads(config.config_data)
     config_data = {
         "id": str(config.id),
         "user_id": str(config.user_id),
         "config_data": response_data,
-        "created_at": config.created_at.isoformat(),
-        "updated_at": config.updated_at.isoformat()
+        "created_at": format_datetime_utc(config.created_at),
+        "updated_at": format_datetime_utc(config.updated_at)
     }
     return success_response(data=config_data, msg="查询成功")
-
-
-@router.put("/current", summary="更新当前用户配置")
-async def update_current_config(
-    config_data: BusinessConfigCreate,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """更新当前用户的业务参数配置"""
-    config = db.query(BusinessConfig).filter(
-        BusinessConfig.user_id == current_user.id
-    ).first()
-    
-    if not config:
-        raise NotFoundException("未找到配置信息，请先初始化配置")
-    
-    # 更新配置
-    config.config_data = json.dumps(config_data.config_data, ensure_ascii=False)
-    db.commit()
-    db.refresh(config)
-    
-    response_data = json.loads(config.config_data)
-    config_data = {
-        "id": str(config.id),
-        "user_id": str(config.user_id),
-        "config_data": response_data,
-        "created_at": config.created_at.isoformat(),
-        "updated_at": config.updated_at.isoformat()
-    }
-    return success_response(data=config_data, msg="更新成功")
 

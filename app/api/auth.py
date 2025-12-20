@@ -11,7 +11,7 @@ from app.schemas.user import LoginRequest
 from app.core.security import verify_password, create_access_token, create_refresh_token, verify_token
 from app.core.exceptions import UnauthorizedException, ForbiddenException
 from app.core.response import success_response
-from app.utils.helpers import parse_json_permissions
+from app.utils.helpers import parse_json_permissions, format_datetime_utc
 from app.utils.menu_mapping import generate_menus_by_permissions
 
 router = APIRouter()
@@ -99,8 +99,8 @@ async def login(
         "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
         "permissions": permissions,
         "is_active": user.is_active,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
-        "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+                "created_at": format_datetime_utc(user.created_at),
+                "updated_at": format_datetime_utc(user.updated_at),
     }
     
     # 返回统一格式

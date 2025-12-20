@@ -1,7 +1,7 @@
 """
 安全相关功能：密码加密、JWT token生成和验证
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
@@ -88,7 +88,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         str: 编码后的JWT token
     """
     to_encode = data.copy()
-    now = datetime.utcnow()
+    # 使用带时区的UTC时间，避免timestamp()计算错误
+    now = datetime.now(timezone.utc)
     
     if expires_delta:
         expire = now + expires_delta
@@ -117,7 +118,8 @@ def create_refresh_token(data: dict) -> str:
         str: 编码后的JWT refresh token
     """
     to_encode = data.copy()
-    now = datetime.utcnow()
+    # 使用带时区的UTC时间，避免timestamp()计算错误
+    now = datetime.now(timezone.utc)
     expire = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     
     # 将datetime转换为Unix时间戳（整数）

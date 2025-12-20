@@ -3,10 +3,10 @@
 """
 from sqlalchemy import Column, BigInteger, String, DateTime
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 from app.database import Base
 from app.models.user_department import user_department
 from app.utils.snowflake import generate_id
+from app.utils.helpers import get_utc_now
 
 
 class Department(Base):
@@ -15,8 +15,8 @@ class Department(Base):
     
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="部门ID")
     name = Column(String(100), unique=True, nullable=False, comment="部门名称")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+    created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False, comment="创建时间（UTC）")
+    updated_at = Column(DateTime(timezone=True), default=get_utc_now, onupdate=get_utc_now, nullable=False, comment="更新时间（UTC）")
     
     # 多对多关系：部门可以有多个用户
     users = relationship(

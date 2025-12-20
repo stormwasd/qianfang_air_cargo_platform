@@ -18,7 +18,7 @@ from app.schemas.user import (
 from app.api.deps import require_admin, get_current_active_user
 from app.core.security import get_password_hash
 from app.core.permissions import validate_permissions
-from app.utils.helpers import format_permissions_to_json, parse_json_permissions
+from app.utils.helpers import format_permissions_to_json, parse_json_permissions, format_datetime_utc
 
 router = APIRouter()
 
@@ -84,8 +84,8 @@ async def create_user(
         "departments": [{"id": str(dept.id), "name": dept.name} for dept in new_user.departments],
         "permissions": user_permissions,
         "is_active": new_user.is_active,
-        "created_at": new_user.created_at.isoformat(),
-        "updated_at": new_user.updated_at.isoformat()
+        "created_at": format_datetime_utc(new_user.created_at),
+        "updated_at": format_datetime_utc(new_user.updated_at)
     }
     return success_response(data=user_data, msg="账号创建成功")
 
@@ -113,8 +113,8 @@ async def get_users(
             "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
             "permissions": user_permissions,
             "is_active": user.is_active,
-            "created_at": user.created_at.isoformat(),
-            "updated_at": user.updated_at.isoformat()
+            "created_at": format_datetime_utc(user.created_at),
+            "updated_at": format_datetime_utc(user.updated_at)
         }
         user_list.append(user_dict)
     

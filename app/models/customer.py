@@ -2,9 +2,9 @@
 客户模型
 """
 from sqlalchemy import Column, BigInteger, String, Numeric, DateTime
-from sqlalchemy.sql import func
 from app.database import Base
 from app.utils.snowflake import generate_id
+from app.utils.helpers import get_utc_now
 
 
 class Customer(Base):
@@ -17,8 +17,8 @@ class Customer(Base):
     rate = Column(Numeric(10, 2), nullable=False, comment="费率(元/公斤)")
     contact_person = Column(String(50), nullable=False, index=True, comment="联系人")
     contact_phone = Column(String(20), nullable=False, comment="联系电话")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+    created_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False, comment="创建时间（UTC）")
+    updated_at = Column(DateTime(timezone=True), default=get_utc_now, onupdate=get_utc_now, nullable=False, comment="更新时间（UTC）")
     
     def __repr__(self):
         return f"<Customer(id={self.id}, company_name={self.company_name})>"

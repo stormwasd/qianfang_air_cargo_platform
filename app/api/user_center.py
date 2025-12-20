@@ -9,7 +9,7 @@ from app.schemas.user import UserPasswordUpdate
 from app.api.deps import get_current_active_user
 from app.core.security import get_password_hash
 from app.core.response import success_response
-from app.utils.helpers import parse_json_permissions
+from app.utils.helpers import parse_json_permissions, format_datetime_utc
 
 router = APIRouter()
 
@@ -37,8 +37,8 @@ async def get_current_user_info(
         "departments": [{"id": str(dept.id), "name": dept.name} for dept in current_user.departments],
         "permissions": user_permissions,
         "is_active": current_user.is_active,
-        "created_at": current_user.created_at.isoformat(),
-        "updated_at": current_user.updated_at.isoformat()
+        "created_at": format_datetime_utc(current_user.created_at),
+        "updated_at": format_datetime_utc(current_user.updated_at)
     }
     
     return success_response(data=user_data, msg="查询成功")
