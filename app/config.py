@@ -2,7 +2,7 @@
 项目配置文件
 使用Pydantic Settings进行配置管理，提供类型验证和更好的配置管理
 """
-from typing import List
+from typing import List, Dict
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
