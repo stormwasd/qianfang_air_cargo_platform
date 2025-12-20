@@ -63,7 +63,8 @@ async def login(
     ).first() is not None
     
     # 生成token
-    token_data = {"sub": user.id, "phone": user.phone}
+    # 注意：JWT标准要求sub字段必须是字符串
+    token_data = {"sub": str(user.id), "phone": user.phone}
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data=token_data)
     
@@ -138,7 +139,8 @@ async def refresh_token(
         raise ForbiddenException("用户已被禁用")
     
     # 生成新的token
-    new_token_data = {"sub": user.id, "phone": user.phone}
+    # 注意：JWT标准要求sub字段必须是字符串
+    new_token_data = {"sub": str(user.id), "phone": user.phone}
     new_access_token = create_access_token(data=new_token_data)
     new_refresh_token = create_refresh_token(data=new_token_data)
     
