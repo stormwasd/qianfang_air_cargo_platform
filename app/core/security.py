@@ -77,37 +77,95 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """创建访问token"""
+    """
+    创建访问token
+    
+    Args:
+        data: 要编码的数据
+        expires_delta: 可选的过期时间增量
+    
+    Returns:
+        str: 编码后的JWT token
+    """
     to_encode = data.copy()
+    now = datetime.utcnow()
+    
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire, "type": "access"})
+        expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    # 将datetime转换为Unix时间戳（整数）
+    # 确保exp和iat都是整数时间戳，避免python-jose的兼容性问题
+    to_encode.update({
+        "exp": int(expire.timestamp()),  # Unix时间戳（整数）
+        "iat": int(now.timestamp()),      # 签发时间（整数）
+        "type": "access"
+    })
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
 def create_refresh_token(data: dict) -> str:
-    """创建刷新token"""
+    """
+    创建刷新token
+    
+    Args:
+        data: 要编码的数据
+    
+    Returns:
+        str: 编码后的JWT refresh token
+    """
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    now = datetime.utcnow()
+    expire = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    
+    # 将datetime转换为Unix时间戳（整数）
+    to_encode.update({
+        "exp": int(expire.timestamp()),  # Unix时间戳（整数）
+        "iat": int(now.timestamp()),      # 签发时间（整数）
+        "type": "refresh"
+    })
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
 def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
-    """验证token"""
+    """
+    验证token
+    
+    Args:
+        token: JWT token字符串
+        token_type: token类型（"access" 或 "refresh"）
+    
+    Returns:
+        Optional[TokenData]: 如果验证成功返回TokenData，否则返回None
+    """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # jwt.decode默认会验证签名和过期时间
+        # 如果token过期或签名无效，会抛出JWTError异常
+        payload = jwt.decode(
+            token, 
+            settings.SECRET_KEY, 
+            algorithms=[settings.ALGORITHM]
+        )
+        
+        # 检查token类型
         if payload.get("type") != token_type:
             return None
-        user_id: int = payload.get("sub")
-        phone: str = payload.get("phone")
+        
+        # 提取用户信息
+        user_id = payload.get("sub")
+        phone = payload.get("phone")
+        
         if user_id is None or phone is None:
             return None
-        return TokenData(user_id=user_id, phone=phone)
+        
+        return TokenData(user_id=int(user_id), phone=str(phone))
     except JWTError:
+        # JWT验证失败（过期、签名错误、格式错误等）
+        return None
+    except Exception:
+        # 其他异常（如类型转换错误等）
         return None
 
