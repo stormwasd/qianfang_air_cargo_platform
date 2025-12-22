@@ -138,8 +138,8 @@ async def get_customer(
         "rate": float(customer.rate),
         "contact_person": customer.contact_person,
         "contact_phone": customer.contact_phone,
-        "created_at": format_datetime_utc(customer.created_at),
-        "updated_at": format_datetime_utc(customer.updated_at)
+        "created_at": format_datetime_china(customer.created_at),
+        "updated_at": format_datetime_china(customer.updated_at)
     }
     
     return success_response(data=customer_data, msg="查询成功")

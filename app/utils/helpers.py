@@ -3,7 +3,7 @@
 """
 import json
 from typing import List, Any, Union, Dict, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from app.config import settings
 
 
@@ -154,3 +154,12 @@ def format_datetime_china(dt: Optional[datetime]) -> Optional[str]:
     
     return dt.isoformat()
 
+
+def get_china_today() -> date:
+    """
+    获取当前中国日期（UTC+8）
+    
+    Returns:
+        date: 当前中国日期
+    """
+    return datetime.now(CHINA_TIMEZONE).date()

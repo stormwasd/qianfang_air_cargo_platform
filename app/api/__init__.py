@@ -3,7 +3,7 @@ API路由统一注册
 """
 from fastapi import APIRouter
 from app.config import settings
-from app.api import auth, users, departments, customers, config, user_center
+from app.api import auth, users, departments, customers, config, user_center, waybills
 
 # 创建API v1路由器
 api_router = APIRouter(prefix=settings.API_V1_PREFIX)
@@ -15,6 +15,7 @@ api_router.include_router(departments.router, prefix="/departments", tags=["部�
 api_router.include_router(users.router, prefix="/users", tags=["账号管理"])
 api_router.include_router(user_center.router, prefix="/user-center", tags=["用户中心"])
 api_router.include_router(customers.router, prefix="/customers", tags=["客户管理"])
+api_router.include_router(waybills.router, prefix="/waybills", tags=["运单管理"])
 
 __all__ = ["api_router"]
 
