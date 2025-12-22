@@ -124,6 +124,43 @@ async def get_users(
     )
 
 
+@router.get("/{user_id}", summary="获取账号详情")
+async def get_user(
+    user_id: str,
+    current_user = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    获取账号详情接口（需要管理员权限）
+    
+    - **user_id**: 用户ID（字符串格式）
+    """
+    # 将字符串ID转换为整数用于查询
+    user_id_int = int(user_id)
+    
+    # 查询用户是否存在，并加载关联的部门
+    user = db.query(User).options(joinedload(User.departments)).filter(User.id == user_id_int).first()
+    if not user:
+        raise NotFoundException("用户不存在")
+    
+    # 解析权限
+    user_permissions = parse_json_permissions(user.permissions)
+    
+    user_data = {
+        "id": str(user.id),
+        "phone": user.phone,
+        "name": user.name,
+        "department_ids": [str(dept.id) for dept in user.departments],
+        "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
+        "permissions": user_permissions,
+        "is_active": user.is_active,
+        "created_at": format_datetime_china(user.created_at),
+        "updated_at": format_datetime_china(user.updated_at)
+    }
+    
+    return success_response(data=user_data, msg="查询成功")
+
+
 @router.put("/{user_id}/status", summary="启用或停用账号")
 async def update_user_status(
     user_id: str,

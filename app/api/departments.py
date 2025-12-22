@@ -77,6 +77,35 @@ async def get_departments(
     )
 
 
+@router.get("/{department_id}", summary="获取部门详情")
+async def get_department(
+    department_id: str,
+    current_user = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    获取部门详情接口（需要管理员权限）
+    
+    - **department_id**: 部门ID（字符串格式）
+    """
+    # 将字符串ID转换为整数用于查询
+    department_id_int = int(department_id)
+    
+    # 查询部门是否存在
+    department = db.query(Department).filter(Department.id == department_id_int).first()
+    if not department:
+        raise NotFoundException("部门不存在")
+    
+    department_data = {
+        "id": str(department.id),
+        "name": department.name,
+        "created_at": format_datetime_china(department.created_at),
+        "updated_at": format_datetime_china(department.updated_at)
+    }
+    
+    return success_response(data=department_data, msg="查询成功")
+
+
 @router.put("/{department_id}", summary="修改部门")
 async def update_department(
     department_id: str,
