@@ -2,7 +2,7 @@
 数据库初始化脚本
 """
 from app.database import engine, Base
-from app.models import User, Department, Customer, BusinessConfig, Waybill
+from app.models import User, Department, Customer, BusinessConfig, Waybill, Booking
 from app.models.user_department import user_department
 from app.core.security import get_password_hash
 from app.utils.helpers import format_permissions_to_json
