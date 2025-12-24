@@ -4,7 +4,7 @@
 import json
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, String
 from sqlalchemy.dialects.mysql import JSON
 from app.core.exceptions import NotFoundException
 from app.core.response import success_response
@@ -78,6 +78,7 @@ async def get_settlements(
     """
     # 构建基础查询，关联运单表
     # 通过结算单的form_data JSON中的主单号，关联运单表的waybill_number字段
+    # 注意：在join条件中，需要使用String类型而不是func.CHAR
     query_obj = db.query(Settlement).outerjoin(
         Waybill,
         func.cast(
@@ -85,7 +86,7 @@ async def get_settlements(
                 func.cast(Settlement.form_data, JSON),
                 "$.master_airwaybill_number"
             ),
-            func.CHAR
+            String(100)
         ) == Waybill.waybill_number
     )
     
