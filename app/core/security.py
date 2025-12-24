@@ -190,6 +190,7 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
         # 提取用户信息
         user_id = payload.get("sub")
         phone = payload.get("phone")
+        token_version = payload.get("token_version", 0)  # 兼容旧token，默认为0
         
         if user_id is None or phone is None:
             # 缺少必要的用户信息
@@ -202,6 +203,7 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
         try:
             user_id_int = int(user_id)
             phone_str = str(phone)
+            token_version_int = int(token_version) if token_version is not None else 0
         except (ValueError, TypeError) as e:
             # 类型转换失败
             if settings.DEBUG:
@@ -209,7 +211,7 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
                 logging.error(f"Token字段类型转换失败: {str(e)}")
             return None
         
-        return TokenData(user_id=user_id_int, phone=phone_str)
+        return TokenData(user_id=user_id_int, phone=phone_str, token_version=token_version_int)
     except JWTError as e:
         # 其他JWT验证失败（格式错误等）
         if settings.DEBUG:

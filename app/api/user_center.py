@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
-from app.schemas.user import UserPasswordUpdate
+from app.schemas.user import UserPasswordReset
 from app.api.deps import get_current_active_user
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, verify_password
+from app.core.exceptions import BadRequestException
 from app.core.response import success_response
 from app.utils.helpers import parse_json_permissions, format_datetime_china
 
@@ -46,19 +47,24 @@ async def get_current_user_info(
 
 @router.put("/password", summary="重置当前用户登录密码")
 async def reset_current_user_password(
-    password_data: UserPasswordUpdate,
+    password_data: UserPasswordReset,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
     重置当前用户登录密码接口
     
-    - **password**: 新密码
+    - **old_password**: 旧密码（必填）
+    - **new_password**: 新密码（必填）
     
-    注意：此接口只能重置当前登录用户自己的密码
+    注意：此接口只能重置当前登录用户自己的密码，需要验证旧密码
     """
+    # 验证旧密码
+    if not verify_password(password_data.old_password, current_user.password_hash):
+        raise BadRequestException("旧密码错误")
+    
     # 更新密码
-    current_user.password_hash = get_password_hash(password_data.password)
+    current_user.password_hash = get_password_hash(password_data.new_password)
     db.commit()
     
     return success_response(data=None, msg="密码重置成功")

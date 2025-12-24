@@ -215,50 +215,107 @@ async def batch_update_user_status(
     )
 
 
-@router.put("/password", summary="更新账号密码")
-async def update_user_password(
-    password_data: UserPasswordUpdate,
-    current_user: User = Depends(get_current_active_user),
+@router.put("/{user_id}", summary="修改用户信息")
+async def update_user(
+    user_id: str,
+    user_update: UserUpdate,
+    current_user = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
-    更新账号密码接口
+    修改用户信息接口（需要管理员权限）
     
-    - **password**: 新密码
-    - **user_id**: 用户ID（可选，管理员更新其他用户密码时使用）
+    - **user_id**: 用户ID（字符串格式）
+    - **phone**: 手机号（可选）
+    - **password**: 密码（可选）
+    - **name**: 用户姓名（可选）
+    - **department_ids**: 所属部门ID列表（可选）
+    - **permissions**: 权限列表（可选）
     
     注意：
-    - 管理员可以更新所有账号的密码
-    - 非管理员只能更新自己账号的密码
+    - 所有字段都是可选的，传入值的就修改该用户属性，没传值的就保留原值
+    - 如果修改了权限，该用户的JWT将失效，需要重新登录
     """
-    from app.core.permissions import is_admin
-    
-    user_permissions = parse_json_permissions(current_user.permissions)
-    is_user_admin = is_admin(user_permissions)
-    
-    # 确定要更新密码的用户
-    if password_data.user_id:
-        target_user_id_int = int(password_data.user_id)
-    else:
-        target_user_id_int = current_user.id
-    
-    # 权限检查：非管理员只能更新自己的密码
-    if not is_user_admin and target_user_id_int != current_user.id:
-        raise ForbiddenException("无权限更新其他用户的密码")
+    # 将字符串ID转换为整数用于查询
+    target_user_id_int = int(user_id)
     
     # 查找目标用户
-    target_user = db.query(User).filter(User.id == target_user_id_int).first()
+    target_user = db.query(User).options(joinedload(User.departments)).filter(User.id == target_user_id_int).first()
     if not target_user:
         raise NotFoundException("用户不存在")
     
-    # 更新密码
-    target_user.password_hash = get_password_hash(password_data.password)
-    db.commit()
+    # 记录原始权限（用于判断权限是否变更）
+    original_permissions = parse_json_permissions(target_user.permissions)
     
-    return success_response(
-        data={"user_id": str(target_user_id_int)},
-        msg="密码更新成功"
-    )
+    # 更新手机号（如果提供）
+    if user_update.phone is not None:
+        # 检查新手机号是否与其他用户重复
+        existing_user = db.query(User).filter(User.phone == user_update.phone, User.id != target_user_id_int).first()
+        if existing_user:
+            raise ConflictException("该手机号已被其他用户使用")
+        target_user.phone = user_update.phone
+    
+    # 更新密码（如果提供）
+    if user_update.password is not None:
+        target_user.password_hash = get_password_hash(user_update.password)
+    
+    # 更新用户姓名（如果提供）
+    if user_update.name is not None:
+        target_user.name = user_update.name
+    
+    # 更新部门（如果提供）
+    if user_update.department_ids is not None:
+        if user_update.department_ids:
+            # 验证部门是否存在
+            department_ids_int = [int(dept_id) for dept_id in user_update.department_ids]
+            departments = db.query(Department).filter(Department.id.in_(department_ids_int)).all()
+            if len(departments) != len(user_update.department_ids):
+                raise NotFoundException("部分部门不存在")
+            target_user.departments = departments
+        else:
+            # 空列表表示清空部门关联
+            target_user.departments = []
+    
+    # 更新权限（如果提供）
+    permissions_changed = False
+    if user_update.permissions is not None:
+        # 验证权限列表
+        if not validate_permissions(user_update.permissions):
+            raise BadRequestException("权限列表包含无效的权限")
+        
+        # 检查权限是否变更
+        new_permissions = sorted(user_update.permissions)
+        if sorted(original_permissions) != new_permissions:
+            permissions_changed = True
+        
+        target_user.permissions = format_permissions_to_json(user_update.permissions)
+    
+    # 如果权限变更，递增token_version使JWT失效
+    if permissions_changed:
+        target_user.token_version = (target_user.token_version or 0) + 1
+    
+    db.commit()
+    db.refresh(target_user)
+    
+    # 返回响应（ID转换为字符串）
+    user_permissions = parse_json_permissions(target_user.permissions)
+    user_data = {
+        "id": str(target_user.id),
+        "phone": target_user.phone,
+        "name": target_user.name,
+        "department_ids": [str(dept.id) for dept in target_user.departments],
+        "departments": [{"id": str(dept.id), "name": dept.name} for dept in target_user.departments],
+        "permissions": user_permissions,
+        "is_active": target_user.is_active,
+        "created_at": format_datetime_china(target_user.created_at),
+        "updated_at": format_datetime_china(target_user.updated_at)
+    }
+    
+    msg = "用户信息修改成功"
+    if permissions_changed:
+        msg += "，由于权限已变更，该用户的JWT已失效，需要重新登录"
+    
+    return success_response(data=user_data, msg=msg)
 
 
 @router.delete("/{user_id}", summary="删除账号")

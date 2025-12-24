@@ -19,6 +19,7 @@ class User(Base):
     name = Column(String(50), nullable=False, comment="用户姓名")
     permissions = Column(Text, nullable=False, comment="权限列表，JSON格式存储（存储权限代码，如：[\"admin\", \"waybill\"]）")
     is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
+    token_version = Column(BigInteger, default=0, nullable=False, index=True, comment="Token版本号，用于JWT失效机制，权限变更时递增")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     

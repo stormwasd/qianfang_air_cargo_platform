@@ -80,7 +80,8 @@ async def login(
     
     # 生成token
     # 注意：JWT标准要求sub字段必须是字符串
-    token_data = {"sub": str(user.id), "phone": user.phone}
+    # 包含token_version用于JWT失效机制
+    token_data = {"sub": str(user.id), "phone": user.phone, "token_version": user.token_version}
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data=token_data)
     
@@ -172,9 +173,14 @@ async def refresh_token(
     if not user.is_active:
         raise ForbiddenException("用户已被禁用")
     
+    # 验证token_version是否匹配（检查JWT是否已失效）
+    if token_data.token_version != user.token_version:
+        raise UnauthorizedException("token已失效，请重新登录")
+    
     # 生成新的token
     # 注意：JWT标准要求sub字段必须是字符串
-    new_token_data = {"sub": str(user.id), "phone": user.phone}
+    # 包含token_version用于JWT失效机制
+    new_token_data = {"sub": str(user.id), "phone": user.phone, "token_version": user.token_version}
     new_access_token = create_access_token(data=new_token_data)
     new_refresh_token = create_refresh_token(data=new_token_data)
     

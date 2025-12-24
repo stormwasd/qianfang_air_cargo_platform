@@ -30,6 +30,11 @@ async def get_current_user(
         raise UnauthorizedException("用户不存在")
     if not user.is_active:
         raise ForbiddenException("用户已被禁用")
+    
+    # 验证token_version是否匹配（检查JWT是否已失效）
+    if token_data.token_version != user.token_version:
+        raise UnauthorizedException("token已失效，请重新登录")
+    
     return user
 
 
