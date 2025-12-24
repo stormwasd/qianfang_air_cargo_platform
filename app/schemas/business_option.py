@@ -31,14 +31,3 @@ class OptionListResponse(BaseModel):
     total: int
     items: List[OptionResponse]
 
-
-class FavoriteOptionQuery(BaseModel):
-    """常用选项查询schema"""
-    option_type: str = Field(..., description="选项类型（运价代码、货物代码、包装、货物名称）")
-
-
-class FavoriteOptionResponse(BaseModel):
-    """常用选项响应schema"""
-    option_type: str
-    items: List[str]  # 常用选项值列表
-

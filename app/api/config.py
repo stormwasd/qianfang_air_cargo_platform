@@ -12,7 +12,7 @@ from app.models.config import BusinessConfig
 from app.models.business_option import BusinessOption, OptionType
 from app.schemas.config import BusinessConfigCreate
 from app.schemas.business_option import (
-    OptionCreate, OptionResponse, FavoriteOptionQuery, FavoriteOptionResponse
+    OptionCreate, OptionResponse
 )
 from app.api.deps import get_current_active_user
 from app.models.user import User
@@ -219,44 +219,4 @@ async def set_favorite_option(
     }
     
     return success_response(data=response_data, msg="常用选项设置成功")
-
-
-@router.get("/options/favorites", summary="获取常用选项列表")
-async def get_favorite_options(
-    query: FavoriteOptionQuery = Depends(),
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    获取常用选项列表接口
-    
-    - **option_type**: 选项类型（运价代码、货物代码、包装、货物名称）
-    
-    说明：
-    - 返回指定类型的所有常用选项值列表
-    - 按更新时间倒序排列（最近设置的在前）
-    """
-    # 验证选项类型
-    valid_types = [opt.value for opt in OptionType]
-    if query.option_type not in valid_types:
-        raise BadRequestException(f"选项类型无效，有效类型为：{', '.join(valid_types)}")
-    
-    # 查询常用选项
-    favorite_options = db.query(BusinessOption).filter(
-        and_(
-            BusinessOption.user_id == current_user.id,
-            BusinessOption.option_type == query.option_type,
-            BusinessOption.is_favorite == True
-        )
-    ).order_by(BusinessOption.updated_at.desc()).all()
-    
-    # 构建响应数据
-    favorite_values = [opt.option_value for opt in favorite_options]
-    
-    response_data = {
-        "option_type": query.option_type,
-        "items": favorite_values
-    }
-    
-    return success_response(data=response_data, msg="查询成功")
 
