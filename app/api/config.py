@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from app.database import get_db
 from app.models.config import BusinessConfig
-from app.models.business_option import BusinessOption, OptionType
+from app.models.business_option import BusinessOption
 from app.schemas.config import BusinessConfigCreate
 from app.schemas.business_option import (
-    OptionCreate, OptionResponse
+    OptionDictSave, OptionDictQuery, OptionDictResponse
 )
 from app.api.deps import get_current_active_user
 from app.models.user import User
@@ -103,120 +103,144 @@ async def get_current_config(
     return success_response(data=config_data, msg="查询成功")
 
 
-@router.post("/options", summary="添加选项")
-async def add_option(
-    option: OptionCreate,
+@router.put("/options", summary="保存选项字典")
+async def save_options(
+    options: OptionDictSave,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    添加选项接口
+    保存选项字典接口（创建或更新）
     
-    - **option_type**: 选项类型（运价代码、货物代码、包装、货物名称）
-    - **option_value**: 选项值
+    - **options_data**: 选项字典数据，如：{"freight_code": ["M", "N"], "goods_code": ["A", "B"]}
     
     说明：
-    - 如果该用户该类型下已存在相同的选项值，则返回已存在的选项（不重复创建）
-    - 每个用户的选项是独立的
+    - 如果用户尚未有选项数据，则创建新记录
+    - 如果用户已有选项数据，则合并新数据到现有数据（相同key会覆盖，不同key会保留）
+    - 自动去重：每个key对应的数组会自动去重
+    - 支持部分保存：可以只传递部分key，其他key会保留
     """
-    # 验证选项类型
-    valid_types = [opt.value for opt in OptionType]
-    if option.option_type not in valid_types:
-        raise BadRequestException(f"选项类型无效，有效类型为：{', '.join(valid_types)}")
+    # 验证key的有效性（可选，如果需要限制key的话）
+    valid_keys = ["freight_code", "goods_code", "package", "goods_name"]
+    for key in options.options_data.keys():
+        if key not in valid_keys:
+            raise BadRequestException(f"无效的key: {key}，有效key为：{', '.join(valid_keys)}")
     
-    # 检查是否已存在相同的选项（同一用户、同一类型、同一值）
+    # 验证value必须是字符串数组
+    for key, value in options.options_data.items():
+        if not isinstance(value, list):
+            raise BadRequestException(f"key '{key}' 的值必须是数组类型")
+        if not all(isinstance(item, str) for item in value):
+            raise BadRequestException(f"key '{key}' 的数组元素必须是字符串类型")
+    
+    # 查询是否已存在选项数据
     existing_option = db.query(BusinessOption).filter(
-        and_(
-            BusinessOption.user_id == current_user.id,
-            BusinessOption.option_type == option.option_type,
-            BusinessOption.option_value == option.option_value
-        )
+        BusinessOption.user_id == current_user.id
     ).first()
     
     if existing_option:
-        # 如果已存在，直接返回
-        option_data = {
-            "id": str(existing_option.id),
-            "user_id": str(existing_option.user_id),
-            "option_type": existing_option.option_type,
-            "option_value": existing_option.option_value,
-            "is_favorite": existing_option.is_favorite,
-            "created_at": format_datetime_china(existing_option.created_at),
-            "updated_at": format_datetime_china(existing_option.updated_at)
-        }
-        return success_response(data=option_data, msg="选项已存在")
+        # 合并新数据到现有数据
+        existing_data = json.loads(existing_option.options_data)
+        # 更新现有数据（相同key覆盖，不同key保留）
+        for key, value in options.options_data.items():
+            # 去重并保持顺序
+            existing_data[key] = list(dict.fromkeys(value))
+        merged_data = existing_data
+        msg = "选项更新成功"
+    else:
+        # 创建新数据，自动去重
+        merged_data = {}
+        for key, value in options.options_data.items():
+            merged_data[key] = list(dict.fromkeys(value))
+        msg = "选项创建成功"
     
-    # 创建新选项
-    new_option = BusinessOption(
-        user_id=current_user.id,
-        option_type=option.option_type,
-        option_value=option.option_value,
-        is_favorite=False  # 默认不是常用选项
-    )
-    db.add(new_option)
-    db.commit()
-    db.refresh(new_option)
+    # 保存到数据库
+    options_json = json.dumps(merged_data, ensure_ascii=False)
     
-    option_data = {
-        "id": str(new_option.id),
-        "user_id": str(new_option.user_id),
-        "option_type": new_option.option_type,
-        "option_value": new_option.option_value,
-        "is_favorite": new_option.is_favorite,
-        "created_at": format_datetime_china(new_option.created_at),
-        "updated_at": format_datetime_china(new_option.updated_at)
+    if existing_option:
+        existing_option.options_data = options_json
+        db.commit()
+        db.refresh(existing_option)
+        option = existing_option
+    else:
+        new_option = BusinessOption(
+            user_id=current_user.id,
+            options_data=options_json
+        )
+        db.add(new_option)
+        db.commit()
+        db.refresh(new_option)
+        option = new_option
+    
+    # 返回响应
+    response_data = json.loads(option.options_data)
+    result_data = {
+        "id": str(option.id),
+        "user_id": str(option.user_id),
+        "options_data": response_data,
+        "created_at": format_datetime_china(option.created_at),
+        "updated_at": format_datetime_china(option.updated_at)
     }
     
-    return success_response(data=option_data, msg="选项添加成功")
+    return success_response(data=result_data, msg=msg)
 
 
-@router.put("/options/{option_id}/favorite", summary="设置常用选项")
-async def set_favorite_option(
-    option_id: str,
+@router.get("/options", summary="获取选项字典")
+async def get_options(
+    query: OptionDictQuery = Depends(),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    设置常用选项接口
+    获取选项字典接口
     
-    - **option_id**: 选项ID（字符串格式）
+    - **keys**: 要获取的key列表，如：["freight_code", "goods_code"]，不传则返回所有
     
     说明：
-    - 将指定选项设置为常用选项（is_favorite = True）
-    - 设置后返回该选项类型的所有常用选项列表
+    - 如果传递keys参数，只返回指定的key对应的数据
+    - 如果不传递keys参数，返回所有key的数据
+    - 如果用户尚未有选项数据，返回空字典 {}
     """
-    # 查询选项
+    # 查询选项数据
     option = db.query(BusinessOption).filter(
-        and_(
-            BusinessOption.id == int(option_id),
-            BusinessOption.user_id == current_user.id
-        )
+        BusinessOption.user_id == current_user.id
     ).first()
     
     if not option:
-        raise NotFoundException("选项不存在或无权限访问")
+        # 如果用户尚未有选项数据，返回空字典
+        result_data = {
+            "id": None,
+            "user_id": str(current_user.id),
+            "options_data": {},
+            "created_at": None,
+            "updated_at": None
+        }
+        return success_response(data=result_data, msg="查询成功（暂无数据）")
     
-    # 设置为常用选项
-    option.is_favorite = True
-    db.commit()
-    db.refresh(option)
+    # 解析JSON数据
+    all_data = json.loads(option.options_data)
     
-    # 获取该选项类型的所有常用选项
-    favorite_options = db.query(BusinessOption).filter(
-        and_(
-            BusinessOption.user_id == current_user.id,
-            BusinessOption.option_type == option.option_type,
-            BusinessOption.is_favorite == True
-        )
-    ).order_by(BusinessOption.updated_at.desc()).all()
+    # 如果指定了keys，只返回指定的key
+    if query.keys:
+        # 验证keys的有效性
+        valid_keys = ["freight_code", "goods_code", "package", "goods_name"]
+        for key in query.keys:
+            if key not in valid_keys:
+                raise BadRequestException(f"无效的key: {key}，有效key为：{', '.join(valid_keys)}")
+        
+        # 只返回指定的key
+        filtered_data = {key: all_data.get(key, []) for key in query.keys}
+    else:
+        # 返回所有数据
+        filtered_data = all_data
     
-    # 构建响应数据
-    favorite_values = [opt.option_value for opt in favorite_options]
-    
-    response_data = {
-        "option_type": option.option_type,
-        "items": favorite_values
+    result_data = {
+        "id": str(option.id),
+        "user_id": str(option.user_id),
+        "options_data": filtered_data,
+        "created_at": format_datetime_china(option.created_at),
+        "updated_at": format_datetime_china(option.updated_at)
     }
     
-    return success_response(data=response_data, msg="常用选项设置成功")
+    return success_response(data=result_data, msg="查询成功")
 

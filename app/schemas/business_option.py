@@ -2,32 +2,28 @@
 业务参数选项相关的Pydantic schemas
 """
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 
-class OptionCreate(BaseModel):
-    """创建选项schema"""
-    option_type: str = Field(..., description="选项类型（运价代码、货物代码、包装、货物名称）")
-    option_value: str = Field(..., description="选项值", min_length=1, max_length=200)
+class OptionDictSave(BaseModel):
+    """保存选项字典schema"""
+    options_data: Dict[str, List[str]] = Field(..., description="选项字典数据，如：{\"freight_code\": [\"M\", \"N\"], \"goods_code\": [\"A\", \"B\"]}")
 
 
-class OptionResponse(BaseModel):
-    """选项响应schema"""
+class OptionDictQuery(BaseModel):
+    """获取选项字典查询schema"""
+    keys: Optional[List[str]] = Field(None, description="要获取的key列表，如：[\"freight_code\", \"goods_code\"]，不传则返回所有")
+
+
+class OptionDictResponse(BaseModel):
+    """选项字典响应schema"""
     id: str  # ID以字符串形式返回
     user_id: str  # 用户ID以字符串形式返回
-    option_type: str
-    option_value: str
-    is_favorite: bool
+    options_data: Dict[str, List[str]]  # 选项字典数据
     created_at: datetime
     updated_at: datetime
     
     class Config:
         from_attributes = True
-
-
-class OptionListResponse(BaseModel):
-    """选项列表响应schema"""
-    total: int
-    items: List[OptionResponse]
 
