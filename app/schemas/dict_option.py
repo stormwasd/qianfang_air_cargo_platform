@@ -22,12 +22,12 @@ class DictOptionUpdate(BaseModel):
     status: Optional[bool] = Field(None, description="状态（True=开启，False=禁用）")
 
 
-class DictOptionUpdateByIdentifier(BaseModel):
-    """通过dictType和value更新字典选项schema"""
+class DictOptionUpsert(BaseModel):
+    """创建或更新字典选项schema（upsert模式：按dict_type和label查找，存在则更新，不存在则创建）"""
     dict_type: str = Field(..., description="父级type（字典类型的唯一标识）", min_length=1, max_length=50)
-    value: str = Field(..., description="存储的值（用于定位要更新的选项）", min_length=1, max_length=200)
-    label: Optional[str] = Field(None, description="显示字段", min_length=1, max_length=100)
-    status: Optional[bool] = Field(None, description="状态（True=开启，False=禁用）")
+    label: str = Field(..., description="显示字段", min_length=1, max_length=100)
+    value: List[str] = Field(..., description="存储的值列表（字符串数组，如：[\"M\", \"L\"]）", min_items=1)
+    status: bool = Field(True, description="状态（True=开启，False=禁用）")
 
 
 class DictOptionResponse(BaseModel):
