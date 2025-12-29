@@ -18,7 +18,7 @@ class DictOptionUpdate(BaseModel):
     """更新字典选项schema"""
     dict_type: Optional[str] = Field(None, description="父级type（字典类型的唯一标识）", min_length=1, max_length=50)
     label: Optional[str] = Field(None, description="显示字段", min_length=1, max_length=100)
-    value: Optional[str] = Field(None, description="存储的值", min_length=1, max_length=200)
+    value: Optional[List[str]] = Field(None, description="存储的值列表（批量更新该分组下的所有选项）", min_items=1)
     status: Optional[bool] = Field(None, description="状态（True=开启，False=禁用）")
 
 
@@ -45,11 +45,17 @@ class DictOptionResponse(BaseModel):
         from_attributes = True
 
 
+class DictOptionValueItem(BaseModel):
+    """字典选项值项（包含id和value）"""
+    id: str  # 选项ID
+    value: str  # 存储的值
+
+
 class DictOptionGroupedResponse(BaseModel):
     """字典选项分组响应schema（按dict_type和label分组）"""
     dict_type: str  # 字典类型的唯一标识
     label: str  # 显示字段
-    value: List[str]  # 存储的值列表
+    value: List[DictOptionValueItem]  # 存储的值列表（包含id和value）
     status: bool  # 状态（所有选项的状态应该相同）
     
     class Config:
