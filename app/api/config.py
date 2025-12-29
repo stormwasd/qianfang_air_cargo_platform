@@ -2,6 +2,7 @@
 业务参数配置接口
 """
 import json
+from typing import List
 from fastapi import APIRouter, Depends
 from app.core.exceptions import NotFoundException, BadRequestException
 from app.core.response import success_response
@@ -310,25 +311,15 @@ async def create_dict_option(
     # 检查是否有重复的value（去重）
     unique_values = list(dict.fromkeys(dict_option.value))  # 保持顺序并去重
     
-    # 检查同一类型和label组合下是否已存在相同的value
-    existing_values = db.query(DictOption.value).filter(
-        and_(
-            DictOption.dict_type_id == dict_type.id,
-            DictOption.label == dict_option.label,
-            DictOption.value.in_(unique_values)
-        )
-    ).all()
-    existing_value_set = {v[0] for v in existing_values}
+    # 生成option_group_id（用于标识这个option）
+    option_group_id = generate_id()
     
-    # 找出已存在的value
-    duplicate_values = [v for v in unique_values if v in existing_value_set]
-    if duplicate_values:
-        raise BadRequestException(f"该类型和label组合下已存在以下值：{', '.join(duplicate_values)}")
-    
-    # 批量创建选项
+    # 批量创建选项（同一个option的所有value记录共享option_group_id）
+    # 注意：由于是新创建的option，option_group_id是新的，所以不需要检查重复
     new_options = []
     for value in unique_values:
         new_option = DictOption(
+            option_group_id=option_group_id,
             dict_type_id=dict_type.id,
             label=dict_option.label,
             value=value,
@@ -343,18 +334,18 @@ async def create_dict_option(
     for option in new_options:
         db.refresh(option)
     
-    # 返回格式：按dict_type和label分组，value作为列表（包含id）
-    # 由于是批量创建，所有选项的dict_type、label、status都相同，需要收集value列表（包含id）
-    value_list = [{"id": str(option.id), "value": option.value} for option in new_options]
+    # 返回格式：一个option是一个整体，包含option_id、label、value（列表）、status
+    value_list = [option.value for option in new_options]
     
     result_data = {
         "dict_type": dict_type.type,
         "label": dict_option.label,
         "value": value_list,
+        "option_id": str(option_group_id),
         "status": dict_option.status
     }
     
-    return success_response(data=result_data, msg=f"成功创建 {len(value_list)} 个字典选项")
+    return success_response(data=result_data, msg=f"成功创建 1 个字典选项（包含 {len(value_list)} 个值）")
 
 
 @router.get("/dict-options", summary="获取字典选项列表")
@@ -390,23 +381,20 @@ async def get_dict_options(
     # 获取所有符合条件的选项（不分页，因为需要分组）
     dict_options = query_obj.order_by(DictOption.created_at.desc()).all()
     
-    # 按dict_type和label分组，收集value列表（包含id）
+    # 按option_group_id分组，每个分组是一个option
     grouped_options = {}
     for do in dict_options:
-        # 使用(dict_type, label)作为分组key
-        group_key = (do.dict_type.type, do.label)
-        if group_key not in grouped_options:
-            grouped_options[group_key] = {
+        # 使用option_group_id作为分组key
+        if do.option_group_id not in grouped_options:
+            grouped_options[do.option_group_id] = {
                 "dict_type": do.dict_type.type,
                 "label": do.label,
                 "value": [],
-                "status": do.status  # 使用第一个选项的status（通常相同）
+                "option_id": str(do.option_group_id),
+                "status": do.status
             }
-        # 每个value包含id和value
-        grouped_options[group_key]["value"].append({
-            "id": str(do.id),
-            "value": do.value
-        })
+        # 收集value列表（字符串数组）
+        grouped_options[do.option_group_id]["value"].append(do.value)
     
     # 转换为列表
     option_list = list(grouped_options.values())
@@ -440,11 +428,12 @@ async def update_dict_option_by_id(
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
     # 查询字典选项（全局共享）
-    dict_option = db.query(DictOption).filter(DictOption.id == int(option_id)).first()
-    if not dict_option:
+    # option_id就是option_group_id，找到该option的所有记录
+    option_records = db.query(DictOption).filter(DictOption.option_group_id == int(option_id)).all()
+    if not option_records:
         raise NotFoundException("字典选项不存在")
     
-    return await _update_dict_option_internal(dict_option, dict_option_update, db)
+    return await _update_dict_option_internal(option_records, dict_option_update, db)
 
 
 @router.put("/dict-options/by-type-value", summary="更新字典选项（通过dictType和value）")
@@ -487,18 +476,30 @@ async def update_dict_option_by_type_value(
         status=dict_option_update.status
     )
     
-    return await _update_dict_option_internal(dict_option, update_data, db)
+    # 找到该option的所有记录（通过option_group_id）
+    option_records = db.query(DictOption).filter(
+        DictOption.option_group_id == dict_option.option_group_id
+    ).all()
+    
+    return await _update_dict_option_internal(option_records, update_data, db)
 
 
 async def _update_dict_option_internal(
-    dict_option: DictOption,
+    option_records: List[DictOption],
     dict_option_update: DictOptionUpdate,
     db: Session
 ):
-    """内部更新字典选项的通用逻辑"""
+    """内部更新字典选项的通用逻辑（option是一个整体，通过option_group_id标识）"""
+    
+    if not option_records:
+        raise NotFoundException("字典选项不存在")
+    
+    # 使用第一个记录作为参考
+    first_record = option_records[0]
+    option_group_id = first_record.option_group_id
     
     # 如果更新dict_type，需要验证新的类型是否存在（全局共享）
-    new_dict_type_id = dict_option.dict_type_id
+    new_dict_type_id = first_record.dict_type_id
     if dict_option_update.dict_type:
         new_dict_type = db.query(DictType).filter(DictType.type == dict_option_update.dict_type).first()
         if not new_dict_type:
@@ -506,54 +507,59 @@ async def _update_dict_option_internal(
         new_dict_type_id = new_dict_type.id
     
     # 需要确定更新后使用的label（如果更新了label，使用新的label；否则使用当前的label）
-    new_label = dict_option_update.label if dict_option_update.label is not None else dict_option.label
+    new_label = dict_option_update.label if dict_option_update.label is not None else first_record.label
     
     # 如果更新value列表（批量更新）
     if dict_option_update.value is not None:
         # 去重
         unique_values = list(dict.fromkeys(dict_option_update.value))
         
-        # 查询该分组下的所有现有选项
+        # 查询该option_group_id下的所有现有记录
         existing_options = db.query(DictOption).filter(
-            and_(
-                DictOption.dict_type_id == new_dict_type_id,
-                DictOption.label == new_label
-            )
+            DictOption.option_group_id == option_group_id
         ).all()
         
         existing_value_set = {opt.value for opt in existing_options}
         new_value_set = set(unique_values)
         
-        # 需要删除的选项（在数据库中但不在新列表中）
+        # 需要删除的记录（在数据库中但不在新列表中）
         to_delete = [opt for opt in existing_options if opt.value not in new_value_set]
         for opt in to_delete:
             db.delete(opt)
         
-        # 需要创建的选项（在新列表中但不在数据库中）
+        # 需要创建的记录（在新列表中但不在数据库中）
         to_create = [v for v in unique_values if v not in existing_value_set]
         for value in to_create:
             new_option = DictOption(
+                option_group_id=option_group_id,
                 dict_type_id=new_dict_type_id,
                 label=new_label,
                 value=value,
-                status=dict_option_update.status if dict_option_update.status is not None else dict_option.status
+                status=dict_option_update.status if dict_option_update.status is not None else first_record.status
             )
             db.add(new_option)
         
-        # 更新现有选项的状态（如果status有更新）
-        if dict_option_update.status is not None:
+        # 更新现有记录的状态和dict_type_id、label（如果status有更新）
+        if dict_option_update.status is not None or dict_option_update.dict_type or dict_option_update.label:
             for opt in existing_options:
                 if opt.value in new_value_set:
-                    opt.status = dict_option_update.status
+                    if dict_option_update.status is not None:
+                        opt.status = dict_option_update.status
+                    if dict_option_update.dict_type:
+                        opt.dict_type_id = new_dict_type_id
+                    if dict_option_update.label is not None:
+                        opt.label = new_label
     
-    # 更新其他字段
-    if dict_option_update.dict_type:
-        dict_option.dict_type_id = new_dict_type_id
-    if dict_option_update.label is not None:
-        dict_option.label = new_label
-    if dict_option_update.status is not None and dict_option_update.value is None:
-        # 如果value是列表，status已经在上面更新了
-        dict_option.status = dict_option_update.status
+    # 如果只更新其他字段（不更新value）
+    else:
+        if dict_option_update.dict_type or dict_option_update.label or dict_option_update.status is not None:
+            for opt in option_records:
+                if dict_option_update.dict_type:
+                    opt.dict_type_id = new_dict_type_id
+                if dict_option_update.label is not None:
+                    opt.label = new_label
+                if dict_option_update.status is not None:
+                    opt.status = dict_option_update.status
     
     db.commit()
     
@@ -561,25 +567,22 @@ async def _update_dict_option_internal(
     if dict_option_update.dict_type:
         dict_type = db.query(DictType).filter(DictType.id == new_dict_type_id).first()
     else:
-        db.refresh(dict_option)
-        dict_type = dict_option.dict_type
+        dict_type = first_record.dict_type
     
-    # 返回格式：按dict_type和label分组，value作为列表（包含id）
-    # 查询该dict_type和label下的所有value（使用更新后的label）
+    # 返回格式：一个option是一个整体，包含option_id、label、value（列表）、status
+    # 查询该option_group_id下的所有记录
     all_options = db.query(DictOption).filter(
-        and_(
-            DictOption.dict_type_id == new_dict_type_id,
-            DictOption.label == new_label
-        )
-    ).all()
+        DictOption.option_group_id == option_group_id
+    ).order_by(DictOption.id).all()
     
-    value_list = [{"id": str(opt.id), "value": opt.value} for opt in all_options]
+    value_list = [opt.value for opt in all_options]
     
     result_data = {
         "dict_type": dict_type.type,
         "label": new_label,
         "value": value_list,
-        "status": all_options[0].status if all_options else (dict_option_update.status if dict_option_update.status is not None else dict_option.status)
+        "option_id": str(option_group_id),
+        "status": all_options[0].status if all_options else (dict_option_update.status if dict_option_update.status is not None else first_record.status)
     }
     
     return success_response(data=result_data, msg="字典选项更新成功")

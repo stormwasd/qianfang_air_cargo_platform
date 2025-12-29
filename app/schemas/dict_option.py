@@ -45,18 +45,13 @@ class DictOptionResponse(BaseModel):
         from_attributes = True
 
 
-class DictOptionValueItem(BaseModel):
-    """字典选项值项（包含id和value）"""
-    id: str  # 选项ID
-    value: str  # 存储的值
-
-
-class DictOptionGroupedResponse(BaseModel):
-    """字典选项分组响应schema（按dict_type和label分组）"""
+class DictOptionItemResponse(BaseModel):
+    """字典选项项响应schema（一个option是一个整体）"""
     dict_type: str  # 字典类型的唯一标识
     label: str  # 显示字段
-    value: List[DictOptionValueItem]  # 存储的值列表（包含id和value）
-    status: bool  # 状态（所有选项的状态应该相同）
+    value: List[str]  # 存储的值列表（字符串数组，如：["L", "X"]）
+    option_id: str  # 选项ID（对应这个value列表）
+    status: bool  # 状态
     
     class Config:
         from_attributes = True
@@ -69,9 +64,9 @@ class DictOptionListResponse(BaseModel):
 
 
 class DictOptionGroupedListResponse(BaseModel):
-    """字典选项分组列表响应schema（新格式，按dict_type和label分组）"""
+    """字典选项分组列表响应schema（新格式，每个item是一个option）"""
     total: int
-    items: List[DictOptionGroupedResponse]
+    items: List[DictOptionItemResponse]
 
 
 class DictOptionQuery(BaseModel):

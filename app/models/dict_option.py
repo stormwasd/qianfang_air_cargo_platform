@@ -9,10 +9,11 @@ from app.utils.helpers import get_china_now
 
 
 class DictOption(Base):
-    """字典选项表（每个用户的字典选项独立）"""
+    """字典选项表（全局共享）"""
     __tablename__ = "dict_options"
     
-    id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="字典选项ID")
+    id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="字典选项记录ID")
+    option_group_id = Column(BigInteger, nullable=False, index=True, comment="选项组ID（同一个option的所有value记录共享此ID）")
     dict_type_id = Column(BigInteger, ForeignKey("dict_types.id", ondelete="CASCADE"), nullable=False, index=True, comment="字典类型ID")
     label = Column(String(100), nullable=False, comment="显示字段")
     value = Column(String(200), nullable=False, comment="存储的值")
@@ -23,9 +24,9 @@ class DictOption(Base):
     # 关系
     dict_type = relationship("DictType", foreign_keys=[dict_type_id])
     
-    # 唯一索引：同一类型和label组合下不能有重复的value
+    # 唯一索引：同一option_group_id下不能有重复的value
     __table_args__ = (
-        Index('idx_dict_type_label_value', 'dict_type_id', 'label', 'value', unique=True),
+        Index('idx_option_group_value', 'option_group_id', 'value', unique=True),
     )
     
     def __repr__(self):
