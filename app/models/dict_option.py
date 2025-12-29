@@ -23,9 +23,9 @@ class DictOption(Base):
     # 关系
     dict_type = relationship("DictType", foreign_keys=[dict_type_id])
     
-    # 唯一索引：同一类型下不能有重复的value
+    # 唯一索引：同一类型和label组合下不能有重复的value
     __table_args__ = (
-        Index('idx_dict_type_value', 'dict_type_id', 'value', unique=True),
+        Index('idx_dict_type_label_value', 'dict_type_id', 'label', 'value', unique=True),
     )
     
     def __repr__(self):

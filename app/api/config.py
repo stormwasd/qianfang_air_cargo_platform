@@ -310,10 +310,11 @@ async def create_dict_option(
     # 检查是否有重复的value（去重）
     unique_values = list(dict.fromkeys(dict_option.value))  # 保持顺序并去重
     
-    # 检查同一类型下是否已存在相同的value
+    # 检查同一类型和label组合下是否已存在相同的value
     existing_values = db.query(DictOption.value).filter(
         and_(
             DictOption.dict_type_id == dict_type.id,
+            DictOption.label == dict_option.label,
             DictOption.value.in_(unique_values)
         )
     ).all()
@@ -322,7 +323,7 @@ async def create_dict_option(
     # 找出已存在的value
     duplicate_values = [v for v in unique_values if v in existing_value_set]
     if duplicate_values:
-        raise BadRequestException(f"该类型下已存在以下值：{', '.join(duplicate_values)}")
+        raise BadRequestException(f"该类型和label组合下已存在以下值：{', '.join(duplicate_values)}")
     
     # 批量创建选项
     new_options = []
@@ -452,7 +453,7 @@ async def update_dict_option_by_type_value(
     更新字典选项接口（通过dictType和value唯一标识）
     
     - **dict_type**: 父级type（字典类型的唯一标识，如：freight_code）
-    - **value**: 存储的值（用于定位要更新的选项，同一类型下value唯一）
+    - **value**: 存储的值（用于定位要更新的选项，同一类型和label组合下value唯一）
     - **label**: 显示字段（可选）
     - **status**: 状态（可选）
     
@@ -500,20 +501,24 @@ async def _update_dict_option_internal(
             raise NotFoundException(f"字典类型 '{dict_option_update.dict_type}' 不存在")
         new_dict_type_id = new_dict_type.id
     
-    # 如果更新value或dict_type，检查是否与其他选项冲突
-    if dict_option_update.value or dict_option_update.dict_type:
+    # 如果更新value、dict_type或label，检查是否与其他选项冲突
+    # 需要确定检查时使用的label（如果更新了label，使用新的label；否则使用当前的label）
+    check_label = dict_option_update.label if dict_option_update.label is not None else dict_option.label
+    
+    if dict_option_update.value or dict_option_update.dict_type or dict_option_update.label:
         check_value = dict_option_update.value if dict_option_update.value else dict_option.value
         check_type_id = new_dict_type_id
         
         existing_option = db.query(DictOption).filter(
             and_(
                 DictOption.dict_type_id == check_type_id,
+                DictOption.label == check_label,
                 DictOption.value == check_value,
                 DictOption.id != dict_option.id
             )
         ).first()
         if existing_option:
-            raise BadRequestException(f"该类型下已存在值为 '{check_value}' 的选项")
+            raise BadRequestException(f"该类型和label组合下已存在值为 '{check_value}' 的选项")
     
     # 更新字段
     if dict_option_update.dict_type:
