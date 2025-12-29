@@ -2,11 +2,12 @@ from app.models.user import User
 from app.models.department import Department
 from app.models.customer import Customer
 from app.models.config import BusinessConfig
-from app.models.business_option import BusinessOption
+from app.models.dict_type import DictType
+from app.models.dict_option import DictOption
 from app.models.waybill import Waybill
 from app.models.booking import Booking
 from app.models.settlement import Settlement
 from app.models.user_department import user_department  # 确保关联表被导入
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "BusinessOption", "Waybill", "Booking", "Settlement"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement"]
 
