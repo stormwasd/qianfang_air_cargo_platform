@@ -73,10 +73,8 @@ async def login(
     if not user.is_active:
         raise ForbiddenException("用户已被禁用")
     
-    # 检查是否已初始化配置
-    has_initialized = db.query(BusinessConfig).filter(
-        BusinessConfig.user_id == user.id
-    ).first() is not None
+    # 检查是否已初始化配置（全局唯一配置）
+    has_initialized = db.query(BusinessConfig).first() is not None
     
     # 生成token
     # 注意：JWT标准要求sub字段必须是字符串

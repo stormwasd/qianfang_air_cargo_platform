@@ -23,7 +23,6 @@ class DictTypeUpdate(BaseModel):
 class DictTypeResponse(BaseModel):
     """字典类型响应schema"""
     id: str  # ID以字符串形式返回
-    user_id: str  # 用户ID以字符串形式返回
     name: str
     type: str
     status: bool

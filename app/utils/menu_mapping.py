@@ -76,12 +76,6 @@ PERMISSION_MENU_MAP: Dict[str, List[MenuType]] = {
             ]
         },
         {
-            "name": "系统管理",
-            "children": [
-                {"name": "业务参数管理"}
-            ]
-        },
-        {
             "name": "用户中心",
             "children": [
                 {"name": "用户中心"}
@@ -99,12 +93,6 @@ PERMISSION_MENU_MAP: Dict[str, List[MenuType]] = {
             "name": "客户管理",
             "children": [
                 {"name": "客户管理"}
-            ]
-        },
-        {
-            "name": "系统管理",
-            "children": [
-                {"name": "业务参数管理"}
             ]
         },
         {
@@ -130,12 +118,6 @@ PERMISSION_MENU_MAP: Dict[str, List[MenuType]] = {
             ]
         },
         {
-            "name": "系统管理",
-            "children": [
-                {"name": "业务参数管理"}
-            ]
-        },
-        {
             "name": "用户中心",
             "children": [
                 {"name": "用户中心"}
@@ -153,12 +135,6 @@ PERMISSION_MENU_MAP: Dict[str, List[MenuType]] = {
             "name": "客户管理",
             "children": [
                 {"name": "客户管理"}
-            ]
-        },
-        {
-            "name": "系统管理",
-            "children": [
-                {"name": "业务参数管理"}
             ]
         },
         {
@@ -184,12 +160,6 @@ PERMISSION_MENU_MAP: Dict[str, List[MenuType]] = {
             ]
         },
         {
-            "name": "系统管理",
-            "children": [
-                {"name": "业务参数管理"}
-            ]
-        },
-        {
             "name": "用户中心",
             "children": [
                 {"name": "用户中心"}
@@ -207,12 +177,6 @@ PERMISSION_MENU_MAP: Dict[str, List[MenuType]] = {
             "name": "客户管理",
             "children": [
                 {"name": "客户管理"}
-            ]
-        },
-        {
-            "name": "系统管理",
-            "children": [
-                {"name": "业务参数管理"}
             ]
         },
         {

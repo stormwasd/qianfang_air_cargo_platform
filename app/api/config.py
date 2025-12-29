@@ -37,14 +37,13 @@ async def save_config(
     - **config_data**: 配置数据（JSON格式）
     
     说明：
-    - 如果用户尚未配置，则创建新配置
-    - 如果用户已有配置，则更新现有配置
+    - 全局唯一配置，如果尚未配置，则创建新配置
+    - 如果已有配置，则更新现有配置
     - 这是一个 upsert 操作（update or insert）
+    - 只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 查询是否已存在配置
-    existing_config = db.query(BusinessConfig).filter(
-        BusinessConfig.user_id == current_user.id
-    ).first()
+    # 查询是否已存在配置（全局唯一）
+    existing_config = db.query(BusinessConfig).first()
     
     config_json = json.dumps(config_data.config_data, ensure_ascii=False)
     
@@ -58,7 +57,6 @@ async def save_config(
     else:
         # 创建新配置
         new_config = BusinessConfig(
-            user_id=current_user.id,
             config_data=config_json
         )
         db.add(new_config)
@@ -71,7 +69,6 @@ async def save_config(
     response_data = json.loads(config.config_data)
     result_data = {
         "id": str(config.id),
-        "user_id": str(config.user_id),
         "config_data": response_data,
         "created_at": format_datetime_china(config.created_at),
         "updated_at": format_datetime_china(config.updated_at)
@@ -79,19 +76,18 @@ async def save_config(
     return success_response(data=result_data, msg=msg)
 
 
-@router.get("", summary="获取当前用户配置")
+@router.get("", summary="获取业务参数配置")
 async def get_current_config(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    获取当前用户的业务参数配置
+    获取业务参数配置（全局唯一配置）
     
-    如果用户尚未配置，返回404错误
+    如果尚未配置，返回404错误
+    只有管理员可以操作此接口（通过菜单权限控制）
     """
-    config = db.query(BusinessConfig).filter(
-        BusinessConfig.user_id == current_user.id
-    ).first()
+    config = db.query(BusinessConfig).first()
     
     if not config:
         raise NotFoundException("未找到配置信息，请先保存配置")
@@ -99,7 +95,6 @@ async def get_current_config(
     response_data = json.loads(config.config_data)
     config_data = {
         "id": str(config.id),
-        "user_id": str(config.user_id),
         "config_data": response_data,
         "created_at": format_datetime_china(config.created_at),
         "updated_at": format_datetime_china(config.updated_at)
@@ -121,20 +116,16 @@ async def create_dict_type(
     - **name**: 名称
     - **type**: 唯一类型标识（如：freight_code, goods_code）
     - **status**: 状态（True=开启，False=禁用）
+    
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 检查该用户下type是否已存在
-    existing_type = db.query(DictType).filter(
-        and_(
-            DictType.user_id == current_user.id,
-            DictType.type == dict_type.type
-        )
-    ).first()
+    # 检查type是否已存在（全局唯一）
+    existing_type = db.query(DictType).filter(DictType.type == dict_type.type).first()
     if existing_type:
         raise BadRequestException(f"类型标识 '{dict_type.type}' 已存在")
     
     # 创建新类型
     new_dict_type = DictType(
-        user_id=current_user.id,
         name=dict_type.name,
         type=dict_type.type,
         status=dict_type.status
@@ -167,9 +158,11 @@ async def get_dict_types(
     - **status**: 状态筛选（可选）
     - **page**: 页码（默认1）
     - **page_size**: 每页数量（默认10，最大100）
+    
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 构建查询（只查询当前用户的字典类型）
-    query_obj = db.query(DictType).filter(DictType.user_id == current_user.id)
+    # 构建查询（全局共享）
+    query_obj = db.query(DictType)
     
     # 状态筛选
     if query.status is not None:
@@ -186,7 +179,6 @@ async def get_dict_types(
     for dt in dict_types:
         type_list.append({
             "id": str(dt.id),
-            "user_id": str(dt.user_id),
             "name": dt.name,
             "type": dt.type,
             "status": dt.status,
@@ -212,22 +204,18 @@ async def update_dict_type(
     
     - **type_id**: 字典类型ID（字符串格式）
     - 所有字段都是可选的，只更新传入的字段
-    """
-    # 查询字典类型（只能更新当前用户的）
-    dict_type = db.query(DictType).filter(
-        and_(
-            DictType.id == int(type_id),
-            DictType.user_id == current_user.id
-        )
-    ).first()
-    if not dict_type:
-        raise NotFoundException("字典类型不存在或无权限访问")
     
-    # 如果更新type字段，检查是否与该用户下的其他类型冲突
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
+    """
+    # 查询字典类型
+    dict_type = db.query(DictType).filter(DictType.id == int(type_id)).first()
+    if not dict_type:
+        raise NotFoundException("字典类型不存在")
+    
+    # 如果更新type字段，检查是否与其他类型冲突（全局唯一）
     if dict_type_update.type and dict_type_update.type != dict_type.type:
         existing_type = db.query(DictType).filter(
             and_(
-                DictType.user_id == current_user.id,
                 DictType.type == dict_type_update.type,
                 DictType.id != int(type_id)
             )
@@ -248,7 +236,6 @@ async def update_dict_type(
     
     result_data = {
         "id": str(dict_type.id),
-        "user_id": str(dict_type.user_id),
         "name": dict_type.name,
         "type": dict_type.type,
         "status": dict_type.status,
@@ -274,14 +261,11 @@ async def create_dict_option(
     - **label**: 显示字段
     - **value**: 存储的值
     - **status**: 状态（True=开启，False=禁用）
+    
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 查询字典类型（只能使用当前用户的字典类型）
-    dict_type = db.query(DictType).filter(
-        and_(
-            DictType.user_id == current_user.id,
-            DictType.type == dict_option.dict_type
-        )
-    ).first()
+    # 查询字典类型（全局共享）
+    dict_type = db.query(DictType).filter(DictType.type == dict_option.dict_type).first()
     if not dict_type:
         raise NotFoundException(f"字典类型 '{dict_option.dict_type}' 不存在")
     
@@ -333,14 +317,13 @@ async def get_dict_options(
     - **status**: 状态筛选（可选）
     - **page**: 页码（默认1）
     - **page_size**: 每页数量（默认10，最大100）
+    
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 构建查询（只查询当前用户的字典选项）
+    # 构建查询（全局共享）
     query_obj = db.query(DictOption).join(
         DictType, 
-        and_(
-            DictOption.dict_type_id == DictType.id,
-            DictType.user_id == current_user.id
-        )
+        DictOption.dict_type_id == DictType.id
     )
     
     # 字典类型筛选
@@ -389,29 +372,18 @@ async def update_dict_option(
     
     - **option_id**: 字典选项ID（字符串格式）
     - 所有字段都是可选的，只更新传入的字段
-    """
-    # 查询字典选项（只能更新当前用户的）
-    dict_option = db.query(DictOption).join(
-        DictType,
-        DictOption.dict_type_id == DictType.id
-    ).filter(
-        and_(
-            DictType.user_id == current_user.id,
-            DictOption.id == int(option_id)
-        )
-    ).first()
-    if not dict_option:
-        raise NotFoundException("字典选项不存在或无权限访问")
     
-    # 如果更新dict_type，需要验证新的类型是否存在（必须是当前用户的）
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
+    """
+    # 查询字典选项（全局共享）
+    dict_option = db.query(DictOption).filter(DictOption.id == int(option_id)).first()
+    if not dict_option:
+        raise NotFoundException("字典选项不存在")
+    
+    # 如果更新dict_type，需要验证新的类型是否存在（全局共享）
     new_dict_type_id = dict_option.dict_type_id
     if dict_option_update.dict_type:
-        new_dict_type = db.query(DictType).filter(
-            and_(
-                DictType.user_id == current_user.id,
-                DictType.type == dict_option_update.dict_type
-            )
-        ).first()
+        new_dict_type = db.query(DictType).filter(DictType.type == dict_option_update.dict_type).first()
         if not new_dict_type:
             raise NotFoundException(f"字典类型 '{dict_option_update.dict_type}' 不存在")
         new_dict_type_id = new_dict_type.id
