@@ -342,21 +342,18 @@ async def create_dict_option(
     for option in new_options:
         db.refresh(option)
     
-    # 返回创建的选项列表
-    result_list = []
-    for option in new_options:
-        result_list.append({
-            "id": str(option.id),
-            "dict_type_id": str(option.dict_type_id),
-            "dict_type": dict_type.type,
-            "label": option.label,
-            "value": option.value,
-            "status": option.status,
-            "created_at": format_datetime_china(option.created_at),
-            "updated_at": format_datetime_china(option.updated_at)
-        })
+    # 返回格式：按dict_type和label分组，value作为列表
+    # 由于是批量创建，所有选项的dict_type、label、status都相同，只需要收集value列表
+    value_list = [option.value for option in new_options]
     
-    return success_response(data={"items": result_list, "count": len(result_list)}, msg=f"成功创建 {len(result_list)} 个字典选项")
+    result_data = {
+        "dict_type": dict_type.type,
+        "label": dict_option.label,
+        "value": value_list,
+        "status": dict_option.status
+    }
+    
+    return success_response(data=result_data, msg=f"成功创建 {len(value_list)} 个字典选项")
 
 
 @router.get("/dict-options", summary="获取字典选项列表")
@@ -389,28 +386,35 @@ async def get_dict_options(
     if query.status is not None:
         query_obj = query_obj.filter(DictOption.status == query.status)
     
-    # 获取总数
-    total = query_obj.count()
+    # 获取所有符合条件的选项（不分页，因为需要分组）
+    dict_options = query_obj.order_by(DictOption.created_at.desc()).all()
     
-    # 分页
-    offset = (query.page - 1) * query.page_size
-    dict_options = query_obj.order_by(DictOption.created_at.desc()).offset(offset).limit(query.page_size).all()
-    
-    option_list = []
+    # 按dict_type和label分组，收集value列表
+    grouped_options = {}
     for do in dict_options:
-        option_list.append({
-            "id": str(do.id),
-            "dict_type_id": str(do.dict_type_id),
-            "dict_type": do.dict_type.type,
-            "label": do.label,
-            "value": do.value,
-            "status": do.status,
-            "created_at": format_datetime_china(do.created_at),
-            "updated_at": format_datetime_china(do.updated_at)
-        })
+        # 使用(dict_type, label)作为分组key
+        group_key = (do.dict_type.type, do.label)
+        if group_key not in grouped_options:
+            grouped_options[group_key] = {
+                "dict_type": do.dict_type.type,
+                "label": do.label,
+                "value": [],
+                "status": do.status  # 使用第一个选项的status（通常相同）
+            }
+        grouped_options[group_key]["value"].append(do.value)
+    
+    # 转换为列表
+    option_list = list(grouped_options.values())
+    
+    # 获取分组后的总数
+    total = len(option_list)
+    
+    # 分页处理（对分组后的结果进行分页）
+    offset = (query.page - 1) * query.page_size
+    paginated_items = option_list[offset:offset + query.page_size]
     
     return success_response(
-        data={"total": total, "items": option_list},
+        data={"total": total, "items": paginated_items},
         msg="查询成功"
     )
 
@@ -527,15 +531,22 @@ async def _update_dict_option_internal(
     # 重新加载关联的dict_type
     db.refresh(dict_option.dict_type)
     
+    # 返回格式：按dict_type和label分组，value作为列表
+    # 查询该dict_type和label下的所有value（使用更新后的label）
+    all_options = db.query(DictOption).filter(
+        and_(
+            DictOption.dict_type_id == dict_option.dict_type_id,
+            DictOption.label == dict_option.label
+        )
+    ).all()
+    
+    value_list = [opt.value for opt in all_options]
+    
     result_data = {
-        "id": str(dict_option.id),
-        "dict_type_id": str(dict_option.dict_type_id),
         "dict_type": dict_option.dict_type.type,
-        "label": dict_option.label,
-        "value": dict_option.value,
-        "status": dict_option.status,
-        "created_at": format_datetime_china(dict_option.created_at),
-        "updated_at": format_datetime_china(dict_option.updated_at)
+        "label": dict_option.label,  # 使用更新后的label
+        "value": value_list,
+        "status": dict_option.status
     }
     
     return success_response(data=result_data, msg="字典选项更新成功")

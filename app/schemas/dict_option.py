@@ -31,7 +31,7 @@ class DictOptionUpdateByIdentifier(BaseModel):
 
 
 class DictOptionResponse(BaseModel):
-    """字典选项响应schema"""
+    """字典选项响应schema（单个选项）"""
     id: str  # ID以字符串形式返回
     dict_type_id: str
     dict_type: str  # 字典类型的唯一标识
@@ -45,10 +45,27 @@ class DictOptionResponse(BaseModel):
         from_attributes = True
 
 
+class DictOptionGroupedResponse(BaseModel):
+    """字典选项分组响应schema（按dict_type和label分组）"""
+    dict_type: str  # 字典类型的唯一标识
+    label: str  # 显示字段
+    value: List[str]  # 存储的值列表
+    status: bool  # 状态（所有选项的状态应该相同）
+    
+    class Config:
+        from_attributes = True
+
+
 class DictOptionListResponse(BaseModel):
-    """字典选项列表响应schema"""
+    """字典选项列表响应schema（旧格式，保留兼容）"""
     total: int
     items: List[DictOptionResponse]
+
+
+class DictOptionGroupedListResponse(BaseModel):
+    """字典选项分组列表响应schema（新格式，按dict_type和label分组）"""
+    total: int
+    items: List[DictOptionGroupedResponse]
 
 
 class DictOptionQuery(BaseModel):
