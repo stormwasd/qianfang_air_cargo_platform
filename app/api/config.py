@@ -3,7 +3,7 @@
 """
 import json
 from typing import List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from app.core.exceptions import NotFoundException, BadRequestException
 from app.core.response import success_response
 from sqlalchemy.orm import Session
@@ -214,6 +214,50 @@ async def get_dict_types(
     return success_response(
         data={"total": total, "items": type_list},
         msg="查询成功"
+    )
+
+
+@router.delete("/dict-types/{identifier}", summary="删除字典类型")
+async def delete_dict_type(
+    identifier: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    删除字典类型接口（支持通过id或type定位）
+    
+    - **identifier**: 字典类型ID（字符串格式）或type唯一标识（如：freight_code）
+    
+    说明：
+    - 删除字典类型会自动删除关联的所有字典选项（CASCADE级联删除）
+    - 只有管理员可以操作此接口（通过菜单权限控制）
+    """
+    # 尝试按ID查找
+    try:
+        type_id = int(identifier)
+        dict_type = db.query(DictType).filter(DictType.id == type_id).first()
+    except ValueError:
+        # 如果不是数字，则按type查找
+        dict_type = db.query(DictType).filter(DictType.type == identifier).first()
+    
+    if not dict_type:
+        raise NotFoundException(f"字典类型不存在（identifier: {identifier}）")
+    
+    # 统计关联的字典选项数量（用于提示信息）
+    option_count = db.query(DictOption).filter(DictOption.dict_type_id == dict_type.id).count()
+    
+    # 删除字典类型（CASCADE会自动删除关联的字典选项）
+    db.delete(dict_type)
+    db.commit()
+    
+    return success_response(
+        data={
+            "id": str(dict_type.id),
+            "type": dict_type.type,
+            "name": dict_type.name,
+            "deleted_options_count": option_count
+        },
+        msg=f"字典类型删除成功，已删除 {option_count} 个关联的字典选项" if option_count > 0 else "字典类型删除成功"
     )
 
 
@@ -558,4 +602,102 @@ async def _update_dict_option_internal(
     }
     
     return success_response(data=result_data, msg="字典选项更新成功")
+
+
+@router.delete("/dict-options/by-option-id/{option_id}", summary="删除字典选项（通过option_id）")
+async def delete_dict_option_by_id(
+    option_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    删除字典选项接口（通过option_id定位）
+    
+    - **option_id**: 字典选项ID（字符串格式，即option_group_id）
+    
+    说明：
+    - 删除一个option会删除该option_group_id下的所有value记录
+    - 只有管理员可以操作此接口（通过菜单权限控制）
+    """
+    # 查询该option_group_id下的所有记录
+    option_records = db.query(DictOption).filter(DictOption.option_group_id == int(option_id)).all()
+    if not option_records:
+        raise NotFoundException(f"字典选项不存在（option_id: {option_id}）")
+    
+    # 获取第一个记录的信息（用于返回）
+    first_record = option_records[0]
+    dict_type = first_record.dict_type
+    label = first_record.label
+    value_count = len(option_records)
+    
+    # 删除该option_group_id下的所有记录
+    for option in option_records:
+        db.delete(option)
+    db.commit()
+    
+    return success_response(
+        data={
+            "option_id": str(option_id),
+            "dict_type": dict_type.type,
+            "label": label,
+            "deleted_values_count": value_count
+        },
+        msg=f"字典选项删除成功，已删除 {value_count} 个值"
+    )
+
+
+@router.delete("/dict-options/by-type-label", summary="删除字典选项（通过dict_type和label）")
+async def delete_dict_option_by_type_label(
+    dict_type: str = Query(..., description="父级type（字典类型的唯一标识，如：freight_code）"),
+    label: str = Query(..., description="显示字段"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    删除字典选项接口（通过dict_type和label定位）
+    
+    - **dict_type**: 父级type（字典类型的唯一标识，如：freight_code）
+    - **label**: 显示字段
+    
+    说明：
+    - 删除一个option会删除该dict_type和label组合下的所有value记录
+    - 只有管理员可以操作此接口（通过菜单权限控制）
+    """
+    # 查询字典类型
+    dict_type_obj = db.query(DictType).filter(DictType.type == dict_type).first()
+    if not dict_type_obj:
+        raise NotFoundException(f"字典类型 '{dict_type}' 不存在")
+    
+    # 查询该dict_type和label下的第一个选项记录（用于获取option_group_id）
+    existing_option = db.query(DictOption).filter(
+        and_(
+            DictOption.dict_type_id == dict_type_obj.id,
+            DictOption.label == label
+        )
+    ).first()
+    
+    if not existing_option:
+        raise NotFoundException(f"字典选项不存在（dict_type: {dict_type}, label: {label}）")
+    
+    # 查询该option_group_id下的所有记录
+    option_records = db.query(DictOption).filter(
+        DictOption.option_group_id == existing_option.option_group_id
+    ).all()
+    
+    value_count = len(option_records)
+    
+    # 删除该option_group_id下的所有记录
+    for option in option_records:
+        db.delete(option)
+    db.commit()
+    
+    return success_response(
+        data={
+            "option_id": str(existing_option.option_group_id),
+            "dict_type": dict_type,
+            "label": label,
+            "deleted_values_count": value_count
+        },
+        msg=f"字典选项删除成功，已删除 {value_count} 个值"
+    )
 
