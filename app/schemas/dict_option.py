@@ -22,6 +22,14 @@ class DictOptionUpdate(BaseModel):
     status: Optional[bool] = Field(None, description="状态（True=开启，False=禁用）")
 
 
+class DictOptionUpdateByIdentifier(BaseModel):
+    """通过dictType和value更新字典选项schema"""
+    dict_type: str = Field(..., description="父级type（字典类型的唯一标识）", min_length=1, max_length=50)
+    value: str = Field(..., description="存储的值（用于定位要更新的选项）", min_length=1, max_length=200)
+    label: Optional[str] = Field(None, description="显示字段", min_length=1, max_length=100)
+    status: Optional[bool] = Field(None, description="状态（True=开启，False=禁用）")
+
+
 class DictOptionResponse(BaseModel):
     """字典选项响应schema"""
     id: str  # ID以字符串形式返回
