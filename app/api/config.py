@@ -22,6 +22,7 @@ from app.schemas.dict_option import (
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.utils.helpers import format_datetime_china
+from app.utils.snowflake import generate_id
 
 router = APIRouter()
 
