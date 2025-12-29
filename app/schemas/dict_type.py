@@ -41,6 +41,7 @@ class DictTypeListResponse(BaseModel):
 
 class DictTypeQuery(BaseModel):
     """字典类型查询schema"""
+    type: Optional[str] = Field(None, description="类型标识筛选（唯一标识，如：freight_code）")
     status: Optional[bool] = Field(None, description="状态筛选（True=开启，False=禁用）")
     page: int = Field(1, ge=1, description="页码")
     page_size: int = Field(10, ge=1, le=100, description="每页数量")

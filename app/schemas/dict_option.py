@@ -7,10 +7,10 @@ from datetime import datetime
 
 
 class DictOptionCreate(BaseModel):
-    """创建字典选项schema"""
+    """创建字典选项schema（支持批量创建）"""
     dict_type: str = Field(..., description="父级type（字典类型的唯一标识，如：freight_code）", min_length=1, max_length=50)
     label: str = Field(..., description="显示字段", min_length=1, max_length=100)
-    value: str = Field(..., description="存储的值", min_length=1, max_length=200)
+    value: List[str] = Field(..., description="存储的值列表（每个值会创建一个选项）", min_items=1)
     status: bool = Field(True, description="状态（True=开启，False=禁用）")
 
 
