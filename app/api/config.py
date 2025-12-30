@@ -217,6 +217,42 @@ async def get_dict_types(
     )
 
 
+@router.get("/dict-types/{identifier}", summary="获取字典类型详情")
+async def get_dict_type(
+    identifier: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取字典类型详情接口（支持通过id或type定位）
+    
+    - **identifier**: 字典类型ID（字符串格式）或type唯一标识（如：freight_code）
+    
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
+    """
+    # 尝试按ID查找
+    try:
+        type_id = int(identifier)
+        dict_type = db.query(DictType).filter(DictType.id == type_id).first()
+    except ValueError:
+        # 如果不是数字，则按type查找
+        dict_type = db.query(DictType).filter(DictType.type == identifier).first()
+    
+    if not dict_type:
+        raise NotFoundException(f"字典类型不存在（identifier: {identifier}）")
+    
+    result_data = {
+        "id": str(dict_type.id),
+        "name": dict_type.name,
+        "type": dict_type.type,
+        "status": dict_type.status,
+        "created_at": format_datetime_china(dict_type.created_at),
+        "updated_at": format_datetime_china(dict_type.updated_at)
+    }
+    
+    return success_response(data=result_data, msg="查询成功")
+
+
 @router.delete("/dict-types/{identifier}", summary="删除字典类型")
 async def delete_dict_type(
     identifier: str,
@@ -413,6 +449,100 @@ async def get_dict_options(
         data={"total": total, "items": paginated_items},
         msg="查询成功"
     )
+
+
+@router.get("/dict-options/detail", summary="获取字典选项详情")
+async def get_dict_option(
+    option_id: str = Query(None, description="字典选项ID（字符串格式，即option_group_id）"),
+    dict_type: str = Query(None, description="父级type（字典类型的唯一标识，如：freight_code）"),
+    label: str = Query(None, description="显示字段"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取字典选项详情接口（支持两种定位方式：option_id 或 dict_type+label）
+    
+    **定位方式（二选一）**：
+    - **方式1**: 通过 `option_id` 定位（即option_group_id）
+    - **方式2**: 通过 `dict_type` + `label` 定位
+    
+    说明：
+    - 必须提供其中一种定位方式，不能同时提供，也不能都不提供
+    - 返回一个option的完整信息，包含option_id、label、value（列表）、status
+    - 只有管理员可以操作此接口（通过菜单权限控制）
+    """
+    # 验证参数：必须提供其中一种定位方式
+    if option_id and (dict_type or label):
+        raise BadRequestException("不能同时提供 option_id 和 (dict_type, label)，请选择其中一种定位方式")
+    
+    if not option_id and not (dict_type and label):
+        raise BadRequestException("必须提供 option_id 或 (dict_type + label) 其中一种定位方式")
+    
+    option_records = None
+    option_group_id = None
+    dict_type_obj = None
+    result_dict_type = None
+    result_label = None
+    result_status = None
+    
+    # 方式1：通过 option_id 定位
+    if option_id:
+        try:
+            option_group_id = int(option_id)
+            option_records = db.query(DictOption).filter(DictOption.option_group_id == option_group_id).all()
+            if not option_records:
+                raise NotFoundException(f"字典选项不存在（option_id: {option_id}）")
+            
+            # 获取第一个记录的信息（用于返回）
+            first_record = option_records[0]
+            dict_type_obj = first_record.dict_type
+            result_dict_type = dict_type_obj.type
+            result_label = first_record.label
+            result_status = first_record.status
+            
+        except ValueError:
+            raise BadRequestException(f"option_id 必须是数字格式（当前值: {option_id}）")
+    
+    # 方式2：通过 dict_type + label 定位
+    else:
+        # 查询字典类型
+        dict_type_obj = db.query(DictType).filter(DictType.type == dict_type).first()
+        if not dict_type_obj:
+            raise NotFoundException(f"字典类型 '{dict_type}' 不存在")
+        
+        # 查询该dict_type和label下的第一个选项记录（用于获取option_group_id）
+        existing_option = db.query(DictOption).filter(
+            and_(
+                DictOption.dict_type_id == dict_type_obj.id,
+                DictOption.label == label
+            )
+        ).first()
+        
+        if not existing_option:
+            raise NotFoundException(f"字典选项不存在（dict_type: {dict_type}, label: {label}）")
+        
+        option_group_id = existing_option.option_group_id
+        result_dict_type = dict_type
+        result_label = label
+        result_status = existing_option.status
+        
+        # 查询该option_group_id下的所有记录
+        option_records = db.query(DictOption).filter(
+            DictOption.option_group_id == option_group_id
+        ).all()
+    
+    # 构建返回数据
+    value_list = [opt.value for opt in option_records]
+    
+    result_data = {
+        "dict_type": result_dict_type,
+        "label": result_label,
+        "value": value_list,
+        "option_id": str(option_group_id),
+        "status": result_status
+    }
+    
+    return success_response(data=result_data, msg="查询成功")
 
 
 @router.put("/dict-options/by-type-label", summary="创建或更新字典选项（通过dictType和label，upsert）")
