@@ -86,13 +86,14 @@ async def get_current_config(
     """
     获取业务参数配置（全局唯一配置）
     
-    如果尚未配置，返回404错误
+    如果尚未配置，返回 code=0，data=null（这是正常情况，不是错误）
     只有管理员可以操作此接口（通过菜单权限控制）
     """
     config = db.query(BusinessConfig).first()
     
     if not config:
-        raise NotFoundException("未找到配置信息，请先保存配置")
+        # 没有配置是正常情况，返回 code=0，data=null
+        return success_response(data=None, msg="暂无配置信息")
     
     response_data = json.loads(config.config_data)
     config_data = {
