@@ -2,30 +2,25 @@
 业务参数配置接口
 """
 import json
-from typing import List
-from fastapi import APIRouter, Depends, Query
-from app.core.exceptions import NotFoundException, BadRequestException
+from fastapi import APIRouter, Depends, Path
+from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
 from app.core.response import success_response
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 from app.database import get_db
 from app.models.config import BusinessConfig
 from app.models.dict_type import DictType
 from app.models.dict_option import DictOption
 from app.schemas.config import BusinessConfigCreate
-from app.schemas.dict_type import (
-    DictTypeCreate, DictTypeQuery
-)
-from app.schemas.dict_option import (
-    DictOptionUpdate, DictOptionUpsert, DictOptionValueDelete, DictOptionValueUpdate, DictOptionQuery, DictOptionItemResponse
-)
+from app.schemas.dict_type import DictTypeCreate, DictTypeUpdate, DictTypeQuery
+from app.schemas.dict_option import DictOptionCreate, DictOptionUpdate, DictOptionQuery
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.utils.helpers import format_datetime_china
-from app.utils.snowflake import generate_id
 
 router = APIRouter()
 
+
+# ==================== 业务参数配置接口 ====================
 
 @router.put("", summary="保存业务参数配置")
 async def save_config(
@@ -107,64 +102,46 @@ async def get_current_config(
 
 # ==================== 字典类型管理接口 ====================
 
-@router.post("/dict-types", summary="创建或更新字典类型（upsert）")
-async def upsert_dict_type(
-    dict_type: DictTypeCreate,
+@router.post("/dict-types", summary="创建字典类型")
+async def create_dict_type(
+    dict_type_data: DictTypeCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    创建或更新字典类型接口（upsert模式：按type查找，存在则更新，不存在则创建）
+    创建字典类型接口
     
     - **name**: 名称
     - **type**: 唯一类型标识（如：freight_code, goods_code）
-    - **status**: 状态（True=开启，False=禁用）
+    - **status**: 状态（0=禁用，1=开启）
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 按type查找是否存在
-    existing_type = db.query(DictType).filter(DictType.type == dict_type.type).first()
-    
+    # 检查type是否已存在
+    existing_type = db.query(DictType).filter(DictType.type == dict_type_data.type).first()
     if existing_type:
-        # 存在则更新
-        if dict_type.name is not None:
-            existing_type.name = dict_type.name
-        if dict_type.status is not None:
-            existing_type.status = dict_type.status
-        db.commit()
-        db.refresh(existing_type)
-        
-        result_data = {
-            "id": str(existing_type.id),
-            "name": existing_type.name,
-            "type": existing_type.type,
-            "status": existing_type.status,
-            "created_at": format_datetime_china(existing_type.created_at),
-            "updated_at": format_datetime_china(existing_type.updated_at)
-        }
-        
-        return success_response(data=result_data, msg="字典类型更新成功")
-    else:
-        # 不存在则创建
-        new_dict_type = DictType(
-            name=dict_type.name,
-            type=dict_type.type,
-            status=dict_type.status
-        )
-        db.add(new_dict_type)
-        db.commit()
-        db.refresh(new_dict_type)
-        
-        result_data = {
-            "id": str(new_dict_type.id),
-            "name": new_dict_type.name,
-            "type": new_dict_type.type,
-            "status": new_dict_type.status,
-            "created_at": format_datetime_china(new_dict_type.created_at),
-            "updated_at": format_datetime_china(new_dict_type.updated_at)
-        }
-        
-        return success_response(data=result_data, msg="字典类型创建成功")
+        raise ConflictException(f"类型标识 '{dict_type_data.type}' 已存在")
+    
+    # 创建新字典类型
+    new_dict_type = DictType(
+        name=dict_type_data.name,
+        type=dict_type_data.type,
+        status=dict_type_data.status
+    )
+    db.add(new_dict_type)
+    db.commit()
+    db.refresh(new_dict_type)
+    
+    result_data = {
+        "id": str(new_dict_type.id),
+        "name": new_dict_type.name,
+        "type": new_dict_type.type,
+        "status": new_dict_type.status,
+        "created_at": format_datetime_china(new_dict_type.created_at),
+        "updated_at": format_datetime_china(new_dict_type.updated_at)
+    }
+    
+    return success_response(data=result_data, msg="字典类型创建成功")
 
 
 @router.get("/dict-types", summary="获取字典类型列表")
@@ -177,7 +154,7 @@ async def get_dict_types(
     获取字典类型列表接口
     
     - **type**: 类型标识筛选（可选，唯一标识，如：freight_code）
-    - **status**: 状态筛选（可选）
+    - **status**: 状态筛选（可选，0=禁用，1=开启）
     - **page**: 页码（默认1）
     - **page_size**: 每页数量（默认10，最大100）
     
@@ -201,9 +178,10 @@ async def get_dict_types(
     offset = (query.page - 1) * query.page_size
     dict_types = query_obj.order_by(DictType.created_at.desc()).offset(offset).limit(query.page_size).all()
     
-    type_list = []
+    # 构建响应
+    items = []
     for dt in dict_types:
-        type_list.append({
+        items.append({
             "id": str(dt.id),
             "name": dt.name,
             "type": dt.type,
@@ -213,34 +191,32 @@ async def get_dict_types(
         })
     
     return success_response(
-        data={"total": total, "items": type_list},
+        data={"total": total, "items": items},
         msg="查询成功"
     )
 
 
-@router.get("/dict-types/{identifier}", summary="获取字典类型详情")
-async def get_dict_type(
-    identifier: str,
+@router.get("/dict-types/{dict_type_id}", summary="获取字典类型详情")
+async def get_dict_type_detail(
+    dict_type_id: str = Path(..., description="字典类型ID"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    获取字典类型详情接口（支持通过id或type定位）
+    获取字典类型详情接口
     
-    - **identifier**: 字典类型ID（字符串格式）或type唯一标识（如：freight_code）
+    - **dict_type_id**: 字典类型ID（字符串格式）
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 尝试按ID查找
     try:
-        type_id = int(identifier)
-        dict_type = db.query(DictType).filter(DictType.id == type_id).first()
+        type_id = int(dict_type_id)
     except ValueError:
-        # 如果不是数字，则按type查找
-        dict_type = db.query(DictType).filter(DictType.type == identifier).first()
+        raise BadRequestException(f"dict_type_id 必须是数字格式（当前值: {dict_type_id}）")
     
+    dict_type = db.query(DictType).filter(DictType.id == type_id).first()
     if not dict_type:
-        raise NotFoundException(f"字典类型不存在（identifier: {identifier}）")
+        raise NotFoundException(f"字典类型不存在（id: {dict_type_id}）")
     
     result_data = {
         "id": str(dict_type.id),
@@ -254,191 +230,167 @@ async def get_dict_type(
     return success_response(data=result_data, msg="查询成功")
 
 
-@router.delete("/dict-types/{identifier}", summary="删除字典类型")
-async def delete_dict_type(
-    identifier: str,
+@router.put("/dict-types/{dict_type_id}", summary="更新字典类型")
+async def update_dict_type(
+    dict_type_data: DictTypeUpdate,
+    dict_type_id: str = Path(..., description="字典类型ID"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    删除字典类型接口（支持通过id或type定位）
+    更新字典类型接口
     
-    - **identifier**: 字典类型ID（字符串格式）或type唯一标识（如：freight_code）
+    - **dict_type_id**: 字典类型ID（字符串格式）
+    - **name**: 名称（可选）
+    - **type**: 唯一类型标识（可选）
+    - **status**: 状态（可选，0=禁用，1=开启）
+    
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
+    """
+    try:
+        type_id = int(dict_type_id)
+    except ValueError:
+        raise BadRequestException(f"dict_type_id 必须是数字格式（当前值: {dict_type_id}）")
+    
+    dict_type = db.query(DictType).filter(DictType.id == type_id).first()
+    if not dict_type:
+        raise NotFoundException(f"字典类型不存在（id: {dict_type_id}）")
+    
+    # 如果更新type，检查是否与其他类型冲突
+    if dict_type_data.type is not None and dict_type_data.type != dict_type.type:
+        existing_type = db.query(DictType).filter(
+            DictType.type == dict_type_data.type,
+            DictType.id != type_id
+        ).first()
+        if existing_type:
+            raise ConflictException(f"类型标识 '{dict_type_data.type}' 已被其他字典类型使用")
+        dict_type.type = dict_type_data.type
+    
+    # 更新其他字段
+    if dict_type_data.name is not None:
+        dict_type.name = dict_type_data.name
+    if dict_type_data.status is not None:
+        dict_type.status = dict_type_data.status
+    
+    db.commit()
+    db.refresh(dict_type)
+    
+    result_data = {
+        "id": str(dict_type.id),
+        "name": dict_type.name,
+        "type": dict_type.type,
+        "status": dict_type.status,
+        "created_at": format_datetime_china(dict_type.created_at),
+        "updated_at": format_datetime_china(dict_type.updated_at)
+    }
+    
+    return success_response(data=result_data, msg="字典类型更新成功")
+
+
+@router.delete("/dict-types/{dict_type_id}", summary="删除字典类型")
+async def delete_dict_type(
+    dict_type_id: str = Path(..., description="字典类型ID"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    删除字典类型接口
+    
+    - **dict_type_id**: 字典类型ID（字符串格式）
     
     说明：
     - 删除字典类型会自动删除关联的所有字典选项（CASCADE级联删除）
     - 只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 尝试按ID查找
     try:
-        type_id = int(identifier)
-        dict_type = db.query(DictType).filter(DictType.id == type_id).first()
+        type_id = int(dict_type_id)
     except ValueError:
-        # 如果不是数字，则按type查找
-        dict_type = db.query(DictType).filter(DictType.type == identifier).first()
+        raise BadRequestException(f"dict_type_id 必须是数字格式（当前值: {dict_type_id}）")
     
+    dict_type = db.query(DictType).filter(DictType.id == type_id).first()
     if not dict_type:
-        raise NotFoundException(f"字典类型不存在（identifier: {identifier}）")
+        raise NotFoundException(f"字典类型不存在（id: {dict_type_id}）")
     
-    # 统计关联的字典选项数量（用于提示信息）
-    option_count = db.query(DictOption).filter(DictOption.dict_type_id == dict_type.id).count()
+    # 统计关联的选项数量
+    options_count = db.query(DictOption).filter(DictOption.dict_type_id == type_id).count()
     
-    # 删除字典类型（CASCADE会自动删除关联的字典选项）
+    # 删除字典类型（关联的选项会自动级联删除）
+    dict_type_type = dict_type.type
+    dict_type_name = dict_type.name
     db.delete(dict_type)
     db.commit()
     
     return success_response(
         data={
-            "id": str(dict_type.id),
-            "type": dict_type.type,
-            "name": dict_type.name,
-            "deleted_options_count": option_count
+            "id": dict_type_id,
+            "type": dict_type_type,
+            "name": dict_type_name,
+            "deleted_options_count": options_count
         },
-        msg=f"字典类型删除成功，已删除 {option_count} 个关联的字典选项" if option_count > 0 else "字典类型删除成功"
+        msg=f"字典类型删除成功，已删除 {options_count} 个关联的字典选项"
     )
-
-
 
 
 # ==================== 字典选项管理接口 ====================
 
-@router.post("/dict-options", summary="创建或更新字典选项（upsert，追加模式）")
-async def upsert_dict_option(
-    dict_option: DictOptionUpsert,
+def _parse_value_json(value_str: str) -> list:
+    """解析value字段的JSON字符串为列表"""
+    try:
+        value_list = json.loads(value_str)
+        if isinstance(value_list, list):
+            return value_list
+        return [value_str]
+    except json.JSONDecodeError:
+        return [value_str]
+
+
+@router.post("/dict-options", summary="创建字典选项")
+async def create_dict_option(
+    dict_option_data: DictOptionCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    创建或更新字典选项接口（upsert模式：按dict_type和label查找，存在则追加value，不存在则创建）
+    创建字典选项接口
     
     - **dict_type**: 父级type（字典类型的唯一标识，如：freight_code）
     - **label**: 显示字段
-    - **value**: 存储的值（单个字符串如："L"，或字符串数组如：["M", "L"]，支持批量操作）
-    - **status**: 状态（True=开启，False=禁用）
+    - **value**: 存储的值（数组格式，如：["L", "M", "X"]）
+    - **status**: 状态（0=禁用，1=开启）
     
-    说明：
-    - 如果option不存在，则创建新option，包含传入的value
-    - 如果option已存在，则追加传入的value（如果value已存在，则不重复添加，返回现有数据）
-    - 只有管理员可以操作此接口（通过菜单权限控制）
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 查询字典类型（全局共享）
-    dict_type = db.query(DictType).filter(DictType.type == dict_option.dict_type).first()
+    # 查询字典类型
+    dict_type = db.query(DictType).filter(DictType.type == dict_option_data.dict_type).first()
     if not dict_type:
-        raise NotFoundException(f"字典类型 '{dict_option.dict_type}' 不存在")
+        raise NotFoundException(f"字典类型 '{dict_option_data.dict_type}' 不存在")
     
-    # 将value统一转换为列表（支持单个字符串和列表）
-    if isinstance(dict_option.value, str):
-        input_values = [dict_option.value]
-    else:
-        input_values = dict_option.value
+    # 将value列表转为JSON字符串存储
+    value_json = json.dumps(dict_option_data.value, ensure_ascii=False)
     
-    # 去重
-    unique_input_values = list(dict.fromkeys(input_values))
+    # 创建新字典选项
+    new_option = DictOption(
+        dict_type_id=dict_type.id,
+        label=dict_option_data.label,
+        value=value_json,
+        status=dict_option_data.status
+    )
+    db.add(new_option)
+    db.commit()
+    db.refresh(new_option)
     
-    # 按dict_type和label查找是否存在
-    existing_option = db.query(DictOption).filter(
-        and_(
-            DictOption.dict_type_id == dict_type.id,
-            DictOption.label == dict_option.label
-        )
-    ).first()
+    result_data = {
+        "id": str(new_option.id),
+        "dict_type_id": str(new_option.dict_type_id),
+        "dict_type": dict_type.type,
+        "label": new_option.label,
+        "value": dict_option_data.value,  # 返回数组格式
+        "status": new_option.status,
+        "created_at": format_datetime_china(new_option.created_at),
+        "updated_at": format_datetime_china(new_option.updated_at)
+    }
     
-    if existing_option:
-        # 存在则追加：找到该option_group_id下的所有记录
-        option_group_id = existing_option.option_group_id
-        option_records = db.query(DictOption).filter(
-            DictOption.option_group_id == option_group_id
-        ).all()
-        
-        # 获取现有的value列表
-        existing_values = {opt.value for opt in option_records}
-        
-        # 找出需要新增的value（不在现有列表中的）
-        values_to_add = [v for v in unique_input_values if v not in existing_values]
-        
-        if not values_to_add:
-            # 所有value都已存在，返回现有数据
-            value_list = [opt.value for opt in option_records]
-            result_data = {
-                "dict_type": dict_type.type,
-                "label": dict_option.label,
-                "value": value_list,
-                "option_id": str(option_group_id),
-                "status": option_records[0].status if option_records else dict_option.status
-            }
-            return success_response(data=result_data, msg="所有值已存在，返回现有数据")
-        
-        # 追加新的value
-        new_options = []
-        for value in values_to_add:
-            new_option = DictOption(
-                option_group_id=option_group_id,
-                dict_type_id=dict_type.id,
-                label=dict_option.label,
-                value=value,
-                status=dict_option.status
-            )
-            new_options.append(new_option)
-            db.add(new_option)
-        
-        db.commit()
-        
-        # 刷新新创建的选项
-        for option in new_options:
-            db.refresh(option)
-        
-        # 重新查询所有记录（包括新添加的）
-        all_option_records = db.query(DictOption).filter(
-            DictOption.option_group_id == option_group_id
-        ).all()
-        
-        value_list = [opt.value for opt in all_option_records]
-        
-        result_data = {
-            "dict_type": dict_type.type,
-            "label": dict_option.label,
-            "value": value_list,
-            "option_id": str(option_group_id),
-            "status": dict_option.status
-        }
-        
-        return success_response(data=result_data, msg=f"成功追加 {len(values_to_add)} 个值到现有选项")
-    else:
-        # 不存在则创建
-        # 生成option_group_id（用于标识这个option）
-        option_group_id = generate_id()
-        
-        # 批量创建选项（同一个option的所有value记录共享option_group_id）
-        new_options = []
-        for value in unique_input_values:
-            new_option = DictOption(
-                option_group_id=option_group_id,
-                dict_type_id=dict_type.id,
-                label=dict_option.label,
-                value=value,
-                status=dict_option.status
-            )
-            new_options.append(new_option)
-            db.add(new_option)
-        
-        db.commit()
-        
-        # 刷新所有新创建的选项
-        for option in new_options:
-            db.refresh(option)
-        
-        # 返回格式：一个option是一个整体，包含option_id、label、value（列表）、status
-        value_list = [option.value for option in new_options]
-        
-        result_data = {
-            "dict_type": dict_type.type,
-            "label": dict_option.label,
-            "value": value_list,
-            "option_id": str(option_group_id),
-            "status": dict_option.status
-        }
-        
-        return success_response(data=result_data, msg=f"成功创建 1 个字典选项（包含 {len(value_list)} 个值）")
+    return success_response(data=result_data, msg="字典选项创建成功")
 
 
 @router.get("/dict-options", summary="获取字典选项列表")
@@ -451,7 +403,7 @@ async def get_dict_options(
     获取字典选项列表接口
     
     - **dict_type**: 字典类型（唯一标识，如：freight_code）（可选）
-    - **status**: 状态筛选（可选）
+    - **status**: 状态筛选（可选，0=禁用，1=开启）
     - **page**: 页码（默认1）
     - **page_size**: 每页数量（默认10，最大100）
     
@@ -471,715 +423,175 @@ async def get_dict_options(
     if query.status is not None:
         query_obj = query_obj.filter(DictOption.status == query.status)
     
-    # 获取所有符合条件的选项（不分页，因为需要分组）
-    dict_options = query_obj.order_by(DictOption.created_at.desc()).all()
+    # 获取总数
+    total = query_obj.count()
     
-    # 按option_group_id分组，每个分组是一个option
-    grouped_options = {}
-    for do in dict_options:
-        # 使用option_group_id作为分组key
-        if do.option_group_id not in grouped_options:
-            grouped_options[do.option_group_id] = {
-                "dict_type": do.dict_type.type,
-                "label": do.label,
-                "value": [],
-                "option_id": str(do.option_group_id),
-                "status": do.status
-            }
-        # 收集value列表（字符串数组）
-        grouped_options[do.option_group_id]["value"].append(do.value)
-    
-    # 转换为列表
-    option_list = list(grouped_options.values())
-    
-    # 获取分组后的总数
-    total = len(option_list)
-    
-    # 分页处理（对分组后的结果进行分页）
+    # 分页
     offset = (query.page - 1) * query.page_size
-    paginated_items = option_list[offset:offset + query.page_size]
+    dict_options = query_obj.order_by(DictOption.created_at.desc()).offset(offset).limit(query.page_size).all()
+    
+    # 构建响应
+    items = []
+    for do in dict_options:
+        # 解析value JSON字符串为列表
+        value_list = _parse_value_json(do.value)
+        
+        items.append({
+            "id": str(do.id),
+            "dict_type_id": str(do.dict_type_id),
+            "dict_type": do.dict_type.type,
+            "label": do.label,
+            "value": value_list,  # 返回数组格式
+            "status": do.status,
+            "created_at": format_datetime_china(do.created_at),
+            "updated_at": format_datetime_china(do.updated_at)
+        })
     
     return success_response(
-        data={"total": total, "items": paginated_items},
+        data={"total": total, "items": items},
         msg="查询成功"
     )
 
 
-@router.get("/dict-options/detail", summary="获取字典选项详情")
-async def get_dict_option(
-    option_id: str = Query(None, description="字典选项ID（字符串格式，即option_group_id）"),
-    dict_type: str = Query(None, description="父级type（字典类型的唯一标识，如：freight_code）"),
-    label: str = Query(None, description="显示字段"),
+@router.get("/dict-options/{option_id}", summary="获取字典选项详情")
+async def get_dict_option_detail(
+    option_id: str = Path(..., description="字典选项ID"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    获取字典选项详情接口（支持两种定位方式：option_id 或 dict_type+label）
+    获取字典选项详情接口
     
-    **定位方式（二选一）**：
-    - **方式1**: 通过 `option_id` 定位（即option_group_id）
-    - **方式2**: 通过 `dict_type` + `label` 定位
+    - **option_id**: 字典选项ID（字符串格式）
     
-    说明：
-    - 必须提供其中一种定位方式，不能同时提供，也不能都不提供
-    - 返回一个option的完整信息，包含option_id、label、value（列表）、status
-    - 只有管理员可以操作此接口（通过菜单权限控制）
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 验证参数：必须提供其中一种定位方式
-    if option_id and (dict_type or label):
-        raise BadRequestException("不能同时提供 option_id 和 (dict_type, label)，请选择其中一种定位方式")
+    try:
+        opt_id = int(option_id)
+    except ValueError:
+        raise BadRequestException(f"option_id 必须是数字格式（当前值: {option_id}）")
     
-    if not option_id and not (dict_type and label):
-        raise BadRequestException("必须提供 option_id 或 (dict_type + label) 其中一种定位方式")
+    dict_option = db.query(DictOption).filter(DictOption.id == opt_id).first()
+    if not dict_option:
+        raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    option_records = None
-    option_group_id = None
-    dict_type_obj = None
-    result_dict_type = None
-    result_label = None
-    result_status = None
-    
-    # 方式1：通过 option_id 定位
-    if option_id:
-        try:
-            option_group_id = int(option_id)
-            option_records = db.query(DictOption).filter(DictOption.option_group_id == option_group_id).all()
-            if not option_records:
-                # 如果 option 不存在（没有记录），返回 404
-                raise NotFoundException(f"字典选项不存在（option_id: {option_id}）")
-            
-            # 获取第一个记录的信息（用于返回）
-            first_record = option_records[0]
-            dict_type_obj = first_record.dict_type
-            result_dict_type = dict_type_obj.type
-            result_label = first_record.label
-            result_status = first_record.status
-            
-        except ValueError:
-            raise BadRequestException(f"option_id 必须是数字格式（当前值: {option_id}）")
-    
-    # 方式2：通过 dict_type + label 定位
-    else:
-        # 查询字典类型
-        dict_type_obj = db.query(DictType).filter(DictType.type == dict_type).first()
-        if not dict_type_obj:
-            raise NotFoundException(f"字典类型 '{dict_type}' 不存在")
-        
-        # 查询该dict_type和label下的第一个选项记录（用于获取option_group_id）
-        existing_option = db.query(DictOption).filter(
-            and_(
-                DictOption.dict_type_id == dict_type_obj.id,
-                DictOption.label == label
-            )
-        ).first()
-        
-        if not existing_option:
-            raise NotFoundException(f"字典选项不存在（dict_type: {dict_type}, label: {label}）")
-        
-        option_group_id = existing_option.option_group_id
-        result_dict_type = dict_type
-        result_label = label
-        result_status = existing_option.status
-        
-        # 查询该option_group_id下的所有记录
-        option_records = db.query(DictOption).filter(
-            DictOption.option_group_id == option_group_id
-        ).all()
-    
-    # 构建返回数据
-    value_list = [opt.value for opt in option_records]
+    # 解析value JSON字符串为列表
+    value_list = _parse_value_json(dict_option.value)
     
     result_data = {
-        "dict_type": result_dict_type,
-        "label": result_label,
-        "value": value_list,
-        "option_id": str(option_group_id),
-        "status": result_status
+        "id": str(dict_option.id),
+        "dict_type_id": str(dict_option.dict_type_id),
+        "dict_type": dict_option.dict_type.type,
+        "label": dict_option.label,
+        "value": value_list,  # 返回数组格式
+        "status": dict_option.status,
+        "created_at": format_datetime_china(dict_option.created_at),
+        "updated_at": format_datetime_china(dict_option.updated_at)
     }
     
     return success_response(data=result_data, msg="查询成功")
 
 
-@router.put("/dict-options/by-type-label", summary="创建或更新字典选项（通过dictType和label，upsert，追加模式）")
-async def upsert_dict_option_by_type_label(
-    dict_option_upsert: DictOptionUpsert,
+@router.put("/dict-options/{option_id}", summary="更新字典选项")
+async def update_dict_option(
+    dict_option_data: DictOptionUpdate,
+    option_id: str = Path(..., description="字典选项ID"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    创建或更新字典选项接口（upsert模式：按dict_type和label查找，存在则追加value，不存在则创建）
+    更新字典选项接口（整体替换）
     
-    - **dict_type**: 父级type（字典类型的唯一标识，如：freight_code）
-    - **label**: 显示字段
-    - **value**: 存储的值（单个字符串如："L"，或字符串数组如：["M", "L"]，支持批量操作）
-    - **status**: 状态（True=开启，False=禁用）
+    - **option_id**: 字典选项ID（字符串格式）
+    - **dict_type**: 父级type（可选，字典类型的唯一标识）
+    - **label**: 显示字段（可选）
+    - **value**: 存储的值（可选，数组格式，整体替换）
+    - **status**: 状态（可选，0=禁用，1=开启）
     
     说明：
-    - 如果option不存在，则创建新option，包含传入的value
-    - 如果option已存在，则追加传入的value（如果value已存在，则不重复添加，返回现有数据）
-    - 如果字典类型不存在，返回404错误
+    - 更新时，传入的字段会整体替换原有值
+    - value数组会整体替换，不是追加
     - 只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 查询字典类型
-    dict_type = db.query(DictType).filter(DictType.type == dict_option_upsert.dict_type).first()
-    if not dict_type:
-        raise NotFoundException(f"字典类型 '{dict_option_upsert.dict_type}' 不存在")
+    try:
+        opt_id = int(option_id)
+    except ValueError:
+        raise BadRequestException(f"option_id 必须是数字格式（当前值: {option_id}）")
     
-    # 将value统一转换为列表（支持单个字符串和列表）
-    if isinstance(dict_option_upsert.value, str):
-        input_values = [dict_option_upsert.value]
-    else:
-        input_values = dict_option_upsert.value
+    dict_option = db.query(DictOption).filter(DictOption.id == opt_id).first()
+    if not dict_option:
+        raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    # 去重
-    unique_input_values = list(dict.fromkeys(input_values))
-    
-    # 按dict_type和label查找是否存在
-    existing_option = db.query(DictOption).filter(
-        and_(
-            DictOption.dict_type_id == dict_type.id,
-            DictOption.label == dict_option_upsert.label
-        )
-    ).first()
-    
-    if existing_option:
-        # 存在则追加：找到该option_group_id下的所有记录
-        option_group_id = existing_option.option_group_id
-        option_records = db.query(DictOption).filter(
-            DictOption.option_group_id == option_group_id
-        ).all()
-        
-        # 获取现有的value列表
-        existing_values = {opt.value for opt in option_records}
-        
-        # 找出需要新增的value（不在现有列表中的）
-        values_to_add = [v for v in unique_input_values if v not in existing_values]
-        
-        if not values_to_add:
-            # 所有value都已存在，返回现有数据
-            value_list = [opt.value for opt in option_records]
-            result_data = {
-                "dict_type": dict_type.type,
-                "label": dict_option_upsert.label,
-                "value": value_list,
-                "option_id": str(option_group_id),
-                "status": option_records[0].status if option_records else dict_option_upsert.status
-            }
-            return success_response(data=result_data, msg="所有值已存在，返回现有数据")
-        
-        # 追加新的value
-        new_options = []
-        for value in values_to_add:
-            new_option = DictOption(
-                option_group_id=option_group_id,
-                dict_type_id=dict_type.id,
-                label=dict_option_upsert.label,
-                value=value,
-                status=dict_option_upsert.status
-            )
-            new_options.append(new_option)
-            db.add(new_option)
-        
-        db.commit()
-        
-        # 刷新新创建的选项
-        for option in new_options:
-            db.refresh(option)
-        
-        # 重新查询所有记录（包括新添加的）
-        all_option_records = db.query(DictOption).filter(
-            DictOption.option_group_id == option_group_id
-        ).all()
-        
-        value_list = [opt.value for opt in all_option_records]
-        
-        result_data = {
-            "dict_type": dict_type.type,
-            "label": dict_option_upsert.label,
-            "value": value_list,
-            "option_id": str(option_group_id),
-            "status": dict_option_upsert.status
-        }
-        
-        return success_response(data=result_data, msg=f"成功追加 {len(values_to_add)} 个值到现有选项")
-    else:
-        # 不存在则创建
-        # 生成option_group_id（用于标识这个option）
-        option_group_id = generate_id()
-        
-        # 批量创建选项（同一个option的所有value记录共享option_group_id）
-        new_options = []
-        for value in unique_input_values:
-            new_option = DictOption(
-                option_group_id=option_group_id,
-                dict_type_id=dict_type.id,
-                label=dict_option_upsert.label,
-                value=value,
-                status=dict_option_upsert.status
-            )
-            new_options.append(new_option)
-            db.add(new_option)
-        
-        db.commit()
-        
-        # 刷新所有新创建的选项
-        for option in new_options:
-            db.refresh(option)
-        
-        # 返回格式：一个option是一个整体，包含option_id、label、value（列表）、status
-        value_list = [option.value for option in new_options]
-        
-        result_data = {
-            "dict_type": dict_type.type,
-            "label": dict_option_upsert.label,
-            "value": value_list,
-            "option_id": str(option_group_id),
-            "status": dict_option_upsert.status
-        }
-        
-        return success_response(data=result_data, msg=f"成功创建 1 个字典选项（包含 {len(value_list)} 个值）")
-
-
-async def _update_dict_option_internal(
-    option_records: List[DictOption],
-    dict_option_update: DictOptionUpdate,
-    db: Session
-):
-    """内部更新字典选项的通用逻辑（option是一个整体，通过option_group_id标识）"""
-    
-    if not option_records:
-        raise NotFoundException("字典选项不存在")
-    
-    # 使用第一个记录作为参考
-    first_record = option_records[0]
-    option_group_id = first_record.option_group_id
-    
-    # 如果更新dict_type，需要验证新的类型是否存在（全局共享）
-    new_dict_type_id = first_record.dict_type_id
-    if dict_option_update.dict_type:
-        new_dict_type = db.query(DictType).filter(DictType.type == dict_option_update.dict_type).first()
+    # 如果更新dict_type，检查新的类型是否存在
+    if dict_option_data.dict_type is not None:
+        new_dict_type = db.query(DictType).filter(DictType.type == dict_option_data.dict_type).first()
         if not new_dict_type:
-            raise NotFoundException(f"字典类型 '{dict_option_update.dict_type}' 不存在")
-        new_dict_type_id = new_dict_type.id
+            raise NotFoundException(f"字典类型 '{dict_option_data.dict_type}' 不存在")
+        dict_option.dict_type_id = new_dict_type.id
     
-    # 需要确定更新后使用的label（如果更新了label，使用新的label；否则使用当前的label）
-    new_label = dict_option_update.label if dict_option_update.label is not None else first_record.label
-    
-    # 如果更新value列表（批量更新）
-    if dict_option_update.value is not None:
-        # 去重
-        unique_values = list(dict.fromkeys(dict_option_update.value))
-        
-        # 查询该option_group_id下的所有现有记录
-        existing_options = db.query(DictOption).filter(
-            DictOption.option_group_id == option_group_id
-        ).all()
-        
-        existing_value_set = {opt.value for opt in existing_options}
-        new_value_set = set(unique_values)
-        
-        # 需要删除的记录（在数据库中但不在新列表中）
-        to_delete = [opt for opt in existing_options if opt.value not in new_value_set]
-        for opt in to_delete:
-            db.delete(opt)
-        
-        # 需要创建的记录（在新列表中但不在数据库中）
-        to_create = [v for v in unique_values if v not in existing_value_set]
-        for value in to_create:
-            new_option = DictOption(
-                option_group_id=option_group_id,
-                dict_type_id=new_dict_type_id,
-                label=new_label,
-                value=value,
-                status=dict_option_update.status if dict_option_update.status is not None else first_record.status
-            )
-            db.add(new_option)
-        
-        # 更新现有记录的状态和dict_type_id、label（如果status有更新）
-        if dict_option_update.status is not None or dict_option_update.dict_type or dict_option_update.label:
-            for opt in existing_options:
-                if opt.value in new_value_set:
-                    if dict_option_update.status is not None:
-                        opt.status = dict_option_update.status
-                    if dict_option_update.dict_type:
-                        opt.dict_type_id = new_dict_type_id
-                    if dict_option_update.label is not None:
-                        opt.label = new_label
-    
-    # 如果只更新其他字段（不更新value）
-    else:
-        if dict_option_update.dict_type or dict_option_update.label or dict_option_update.status is not None:
-            for opt in option_records:
-                if dict_option_update.dict_type:
-                    opt.dict_type_id = new_dict_type_id
-                if dict_option_update.label is not None:
-                    opt.label = new_label
-                if dict_option_update.status is not None:
-                    opt.status = dict_option_update.status
+    # 更新其他字段
+    if dict_option_data.label is not None:
+        dict_option.label = dict_option_data.label
+    if dict_option_data.value is not None:
+        # 将value列表转为JSON字符串存储（整体替换）
+        dict_option.value = json.dumps(dict_option_data.value, ensure_ascii=False)
+    if dict_option_data.status is not None:
+        dict_option.status = dict_option_data.status
     
     db.commit()
+    db.refresh(dict_option)
     
-    # 重新加载关联的dict_type
-    if dict_option_update.dict_type:
-        dict_type = db.query(DictType).filter(DictType.id == new_dict_type_id).first()
-    else:
-        dict_type = first_record.dict_type
-    
-    # 返回格式：一个option是一个整体，包含option_id、label、value（列表）、status
-    # 查询该option_group_id下的所有记录
-    all_options = db.query(DictOption).filter(
-        DictOption.option_group_id == option_group_id
-    ).order_by(DictOption.id).all()
-    
-    value_list = [opt.value for opt in all_options]
+    # 解析value JSON字符串为列表
+    value_list = _parse_value_json(dict_option.value)
     
     result_data = {
-        "dict_type": dict_type.type,
-        "label": new_label,
-        "value": value_list,
-        "option_id": str(option_group_id),
-        "status": all_options[0].status if all_options else (dict_option_update.status if dict_option_update.status is not None else first_record.status)
+        "id": str(dict_option.id),
+        "dict_type_id": str(dict_option.dict_type_id),
+        "dict_type": dict_option.dict_type.type,
+        "label": dict_option.label,
+        "value": value_list,  # 返回数组格式
+        "status": dict_option.status,
+        "created_at": format_datetime_china(dict_option.created_at),
+        "updated_at": format_datetime_china(dict_option.updated_at)
     }
     
     return success_response(data=result_data, msg="字典选项更新成功")
 
 
-@router.delete("/dict-options", summary="删除字典选项")
+@router.delete("/dict-options/{option_id}", summary="删除字典选项")
 async def delete_dict_option(
-    option_id: str = Query(None, description="字典选项ID（字符串格式，即option_group_id）"),
-    dict_type: str = Query(None, description="父级type（字典类型的唯一标识，如：freight_code）"),
-    label: str = Query(None, description="显示字段"),
+    option_id: str = Path(..., description="字典选项ID"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    删除字典选项接口（支持两种定位方式：option_id 或 dict_type+label）
+    删除字典选项接口
     
-    **定位方式（二选一）**：
-    - **方式1**: 通过 `option_id` 定位（即option_group_id）
-    - **方式2**: 通过 `dict_type` + `label` 定位
+    - **option_id**: 字典选项ID（字符串格式）
     
-    说明：
-    - 必须提供其中一种定位方式，不能同时提供，也不能都不提供
-    - 删除一个option会删除该option_group_id下的所有value记录
-    - 只有管理员可以操作此接口（通过菜单权限控制）
+    说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 验证参数：必须提供其中一种定位方式
-    if option_id and (dict_type or label):
-        raise BadRequestException("不能同时提供 option_id 和 (dict_type, label)，请选择其中一种定位方式")
+    try:
+        opt_id = int(option_id)
+    except ValueError:
+        raise BadRequestException(f"option_id 必须是数字格式（当前值: {option_id}）")
     
-    if not option_id and not (dict_type and label):
-        raise BadRequestException("必须提供 option_id 或 (dict_type + label) 其中一种定位方式")
+    dict_option = db.query(DictOption).filter(DictOption.id == opt_id).first()
+    if not dict_option:
+        raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    option_records = None
-    option_group_id = None
-    dict_type_obj = None
-    result_dict_type = None
-    result_label = None
+    # 保存信息用于返回
+    option_label = dict_option.label
+    option_dict_type = dict_option.dict_type.type
     
-    # 方式1：通过 option_id 定位
-    if option_id:
-        try:
-            option_group_id = int(option_id)
-            option_records = db.query(DictOption).filter(DictOption.option_group_id == option_group_id).all()
-            if not option_records:
-                raise NotFoundException(f"字典选项不存在（option_id: {option_id}）")
-            
-            # 获取第一个记录的信息（用于返回）
-            first_record = option_records[0]
-            dict_type_obj = first_record.dict_type
-            result_dict_type = dict_type_obj.type
-            result_label = first_record.label
-            
-        except ValueError:
-            raise BadRequestException(f"option_id 必须是数字格式（当前值: {option_id}）")
-    
-    # 方式2：通过 dict_type + label 定位
-    else:
-        # 查询字典类型
-        dict_type_obj = db.query(DictType).filter(DictType.type == dict_type).first()
-        if not dict_type_obj:
-            raise NotFoundException(f"字典类型 '{dict_type}' 不存在")
-        
-        # 查询该dict_type和label下的第一个选项记录（用于获取option_group_id）
-        existing_option = db.query(DictOption).filter(
-            and_(
-                DictOption.dict_type_id == dict_type_obj.id,
-                DictOption.label == label
-            )
-        ).first()
-        
-        if not existing_option:
-            raise NotFoundException(f"字典选项不存在（dict_type: {dict_type}, label: {label}）")
-        
-        option_group_id = existing_option.option_group_id
-        result_dict_type = dict_type
-        result_label = label
-        
-        # 查询该option_group_id下的所有记录
-        option_records = db.query(DictOption).filter(
-            DictOption.option_group_id == option_group_id
-        ).all()
-    
-    # 执行删除
-    value_count = len(option_records)
-    for option in option_records:
-        db.delete(option)
+    db.delete(dict_option)
     db.commit()
     
     return success_response(
         data={
-            "option_id": str(option_group_id),
-            "dict_type": result_dict_type,
-            "label": result_label,
-            "deleted_values_count": value_count
+            "id": option_id,
+            "dict_type": option_dict_type,
+            "label": option_label
         },
-        msg=f"字典选项删除成功，已删除 {value_count} 个值"
+        msg="字典选项删除成功"
     )
-
-
-@router.delete("/dict-options/value", summary="删除字典选项中的某个value")
-async def delete_dict_option_value(
-    delete_data: DictOptionValueDelete,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    删除字典选项中的某个value接口
-    
-    **定位方式（二选一）**：
-    - **方式1**: 通过 `option_id` 定位（即option_group_id）
-    - **方式2**: 通过 `dict_type` + `label` 定位
-    
-    - **value**: 要删除的值（单个字符串）
-    
-    说明：
-    - 必须提供其中一种定位方式，不能同时提供，也不能都不提供
-    - 删除指定的value后，如果option没有value了，保留空option，但返回空列表
-    - 只有管理员可以操作此接口（通过菜单权限控制）
-    """
-    # 验证参数：必须提供其中一种定位方式
-    if delete_data.option_id and (delete_data.dict_type or delete_data.label):
-        raise BadRequestException("不能同时提供 option_id 和 (dict_type, label)，请选择其中一种定位方式")
-    
-    if not delete_data.option_id and not (delete_data.dict_type and delete_data.label):
-        raise BadRequestException("必须提供 option_id 或 (dict_type + label) 其中一种定位方式")
-    
-    option_records = None
-    option_group_id = None
-    dict_type_obj = None
-    result_dict_type = None
-    result_label = None
-    
-    # 方式1：通过 option_id 定位
-    if delete_data.option_id:
-        try:
-            option_group_id = int(delete_data.option_id)
-            option_records = db.query(DictOption).filter(DictOption.option_group_id == option_group_id).all()
-            if not option_records:
-                raise NotFoundException(f"字典选项不存在（option_id: {delete_data.option_id}）")
-            
-            # 获取第一个记录的信息（用于返回）
-            first_record = option_records[0]
-            dict_type_obj = first_record.dict_type
-            result_dict_type = dict_type_obj.type
-            result_label = first_record.label
-            
-        except ValueError:
-            raise BadRequestException(f"option_id 必须是数字格式（当前值: {delete_data.option_id}）")
-    
-    # 方式2：通过 dict_type + label 定位
-    else:
-        # 查询字典类型
-        dict_type_obj = db.query(DictType).filter(DictType.type == delete_data.dict_type).first()
-        if not dict_type_obj:
-            raise NotFoundException(f"字典类型 '{delete_data.dict_type}' 不存在")
-        
-        # 查询该dict_type和label下的第一个选项记录（用于获取option_group_id）
-        existing_option = db.query(DictOption).filter(
-            and_(
-                DictOption.dict_type_id == dict_type_obj.id,
-                DictOption.label == delete_data.label
-            )
-        ).first()
-        
-        if not existing_option:
-            raise NotFoundException(f"字典选项不存在（dict_type: {delete_data.dict_type}, label: {delete_data.label}）")
-        
-        option_group_id = existing_option.option_group_id
-        result_dict_type = delete_data.dict_type
-        result_label = delete_data.label
-        
-        # 查询该option_group_id下的所有记录
-        option_records = db.query(DictOption).filter(
-            DictOption.option_group_id == option_group_id
-        ).all()
-    
-    # 查找要删除的value对应的记录
-    value_to_delete = delete_data.value
-    record_to_delete = None
-    for opt in option_records:
-        if opt.value == value_to_delete:
-            record_to_delete = opt
-            break
-    
-    if not record_to_delete:
-        raise NotFoundException(f"值 '{value_to_delete}' 不存在于该选项中")
-    
-    # 删除该记录
-    db.delete(record_to_delete)
-    db.commit()
-    
-    # 重新查询剩余的记录
-    remaining_records = db.query(DictOption).filter(
-        DictOption.option_group_id == option_group_id
-    ).all()
-    
-    # 构建返回数据
-    value_list = [opt.value for opt in remaining_records] if remaining_records else []
-    
-    result_data = {
-        "dict_type": result_dict_type,
-        "label": result_label,
-        "value": value_list,  # 如果为空，返回空列表
-        "option_id": str(option_group_id),
-        "status": remaining_records[0].status if remaining_records else (option_records[0].status if option_records else True)
-    }
-    
-    if not value_list:
-        return success_response(data=result_data, msg=f"成功删除值 '{value_to_delete}'，选项现在为空")
-    else:
-        return success_response(data=result_data, msg=f"成功删除值 '{value_to_delete}'")
-
-
-@router.put("/dict-options/value", summary="更新字典选项中的某个value（替换模式）")
-async def update_dict_option_value(
-    update_data: DictOptionValueUpdate,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    更新字典选项中的某个value接口（替换模式：将old_value替换为new_value）
-    
-    **定位方式（二选一）**：
-    - **方式1**: 通过 `option_id` 定位（即option_group_id）
-    - **方式2**: 通过 `dict_type` + `label` 定位
-    
-    - **old_value**: 要更新的旧值（单个字符串）
-    - **new_value**: 新的值（单个字符串）
-    
-    说明：
-    - 必须提供其中一种定位方式，不能同时提供，也不能都不提供
-    - 将指定的old_value替换为new_value
-    - 如果new_value已存在，则不添加，只删除old_value
-    - 只有管理员可以操作此接口（通过菜单权限控制）
-    """
-    # 验证参数：必须提供其中一种定位方式
-    if update_data.option_id and (update_data.dict_type or update_data.label):
-        raise BadRequestException("不能同时提供 option_id 和 (dict_type, label)，请选择其中一种定位方式")
-    
-    if not update_data.option_id and not (update_data.dict_type and update_data.label):
-        raise BadRequestException("必须提供 option_id 或 (dict_type + label) 其中一种定位方式")
-    
-    # 验证old_value和new_value不能相同
-    if update_data.old_value == update_data.new_value:
-        raise BadRequestException("旧值和新值不能相同")
-    
-    option_records = None
-    option_group_id = None
-    dict_type_obj = None
-    result_dict_type = None
-    result_label = None
-    
-    # 方式1：通过 option_id 定位
-    if update_data.option_id:
-        try:
-            option_group_id = int(update_data.option_id)
-            option_records = db.query(DictOption).filter(DictOption.option_group_id == option_group_id).all()
-            if not option_records:
-                raise NotFoundException(f"字典选项不存在（option_id: {update_data.option_id}）")
-            
-            # 获取第一个记录的信息（用于返回）
-            first_record = option_records[0]
-            dict_type_obj = first_record.dict_type
-            result_dict_type = dict_type_obj.type
-            result_label = first_record.label
-            
-        except ValueError:
-            raise BadRequestException(f"option_id 必须是数字格式（当前值: {update_data.option_id}）")
-    
-    # 方式2：通过 dict_type + label 定位
-    else:
-        # 查询字典类型
-        dict_type_obj = db.query(DictType).filter(DictType.type == update_data.dict_type).first()
-        if not dict_type_obj:
-            raise NotFoundException(f"字典类型 '{update_data.dict_type}' 不存在")
-        
-        # 查询该dict_type和label下的第一个选项记录（用于获取option_group_id）
-        existing_option = db.query(DictOption).filter(
-            and_(
-                DictOption.dict_type_id == dict_type_obj.id,
-                DictOption.label == update_data.label
-            )
-        ).first()
-        
-        if not existing_option:
-            raise NotFoundException(f"字典选项不存在（dict_type: {update_data.dict_type}, label: {update_data.label}）")
-        
-        option_group_id = existing_option.option_group_id
-        result_dict_type = update_data.dict_type
-        result_label = update_data.label
-        
-        # 查询该option_group_id下的所有记录
-        option_records = db.query(DictOption).filter(
-            DictOption.option_group_id == option_group_id
-        ).all()
-    
-    # 查找要更新的old_value对应的记录
-    old_value = update_data.old_value
-    new_value = update_data.new_value
-    record_to_update = None
-    for opt in option_records:
-        if opt.value == old_value:
-            record_to_update = opt
-            break
-    
-    if not record_to_update:
-        raise NotFoundException(f"值 '{old_value}' 不存在于该选项中")
-    
-    # 检查new_value是否已存在
-    existing_new_value = None
-    for opt in option_records:
-        if opt.value == new_value:
-            existing_new_value = opt
-            break
-    
-    if existing_new_value:
-        # new_value已存在，只删除old_value
-        db.delete(record_to_update)
-        db.commit()
-        msg = f"值 '{old_value}' 已删除，新值 '{new_value}' 已存在"
-    else:
-        # new_value不存在，更新old_value为new_value
-        record_to_update.value = new_value
-        db.commit()
-        msg = f"成功将值 '{old_value}' 更新为 '{new_value}'"
-    
-    # 重新查询剩余的记录
-    remaining_records = db.query(DictOption).filter(
-        DictOption.option_group_id == option_group_id
-    ).all()
-    
-    # 构建返回数据
-    value_list = [opt.value for opt in remaining_records] if remaining_records else []
-    
-    result_data = {
-        "dict_type": result_dict_type,
-        "label": result_label,
-        "value": value_list,
-        "option_id": str(option_group_id),
-        "status": remaining_records[0].status if remaining_records else (option_records[0].status if option_records else True)
-    }
-    
-    return success_response(data=result_data, msg=msg)
-
