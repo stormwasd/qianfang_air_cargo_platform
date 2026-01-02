@@ -155,8 +155,8 @@ async def get_dict_types(
     
     - **type**: 类型标识筛选（可选，唯一标识，如：freight_code）
     - **status**: 状态筛选（可选，0=禁用，1=开启）
-    - **page**: 页码（默认1）
-    - **page_size**: 每页数量（默认10，最大100）
+    - **page**: 页码（可选，不传则不分页，返回全部）
+    - **page_size**: 每页数量（可选，不传则不分页，返回全部）
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
@@ -174,9 +174,16 @@ async def get_dict_types(
     # 获取总数
     total = query_obj.count()
     
-    # 分页
-    offset = (query.page - 1) * query.page_size
-    dict_types = query_obj.order_by(DictType.created_at.desc()).offset(offset).limit(query.page_size).all()
+    # 排序
+    query_obj = query_obj.order_by(DictType.created_at.desc())
+    
+    # 分页（只有同时传了page和page_size才分页）
+    if query.page is not None and query.page_size is not None:
+        offset = (query.page - 1) * query.page_size
+        dict_types = query_obj.offset(offset).limit(query.page_size).all()
+    else:
+        # 不分页，返回全部
+        dict_types = query_obj.all()
     
     # 构建响应
     items = []
@@ -390,8 +397,8 @@ async def get_dict_options(
     
     - **dict_type**: 字典类型（唯一标识，如：freight_code）（可选）
     - **status**: 状态筛选（可选，0=禁用，1=开启）
-    - **page**: 页码（默认1）
-    - **page_size**: 每页数量（默认10，最大100）
+    - **page**: 页码（可选，不传则不分页，返回全部）
+    - **page_size**: 每页数量（可选，不传则不分页，返回全部）
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
@@ -412,9 +419,16 @@ async def get_dict_options(
     # 获取总数
     total = query_obj.count()
     
-    # 分页
-    offset = (query.page - 1) * query.page_size
-    dict_options = query_obj.order_by(DictOption.created_at.desc()).offset(offset).limit(query.page_size).all()
+    # 排序
+    query_obj = query_obj.order_by(DictOption.created_at.desc())
+    
+    # 分页（只有同时传了page和page_size才分页）
+    if query.page is not None and query.page_size is not None:
+        offset = (query.page - 1) * query.page_size
+        dict_options = query_obj.offset(offset).limit(query.page_size).all()
+    else:
+        # 不分页，返回全部
+        dict_options = query_obj.all()
     
     # 构建响应
     items = []
