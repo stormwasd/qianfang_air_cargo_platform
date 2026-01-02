@@ -333,17 +333,6 @@ async def delete_dict_type(
 
 # ==================== 字典选项管理接口 ====================
 
-def _parse_value_json(value_str: str) -> list:
-    """解析value字段的JSON字符串为列表"""
-    try:
-        value_list = json.loads(value_str)
-        if isinstance(value_list, list):
-            return value_list
-        return [value_str]
-    except json.JSONDecodeError:
-        return [value_str]
-
-
 @router.post("/dict-options", summary="创建字典选项")
 async def create_dict_option(
     dict_option_data: DictOptionCreate,
@@ -355,7 +344,7 @@ async def create_dict_option(
     
     - **dict_type**: 父级type（字典类型的唯一标识，如：freight_code）
     - **label**: 显示字段
-    - **value**: 存储的值（数组格式，如：["L", "M", "X"]）
+    - **value**: 存储的值（单个字符串，如："L"）
     - **status**: 状态（0=禁用，1=开启）
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
@@ -365,14 +354,11 @@ async def create_dict_option(
     if not dict_type:
         raise NotFoundException(f"字典类型 '{dict_option_data.dict_type}' 不存在")
     
-    # 将value列表转为JSON字符串存储
-    value_json = json.dumps(dict_option_data.value, ensure_ascii=False)
-    
     # 创建新字典选项
     new_option = DictOption(
         dict_type_id=dict_type.id,
         label=dict_option_data.label,
-        value=value_json,
+        value=dict_option_data.value,
         status=dict_option_data.status
     )
     db.add(new_option)
@@ -384,7 +370,7 @@ async def create_dict_option(
         "dict_type_id": str(new_option.dict_type_id),
         "dict_type": dict_type.type,
         "label": new_option.label,
-        "value": dict_option_data.value,  # 返回数组格式
+        "value": new_option.value,
         "status": new_option.status,
         "created_at": format_datetime_china(new_option.created_at),
         "updated_at": format_datetime_china(new_option.updated_at)
@@ -433,15 +419,12 @@ async def get_dict_options(
     # 构建响应
     items = []
     for do in dict_options:
-        # 解析value JSON字符串为列表
-        value_list = _parse_value_json(do.value)
-        
         items.append({
             "id": str(do.id),
             "dict_type_id": str(do.dict_type_id),
             "dict_type": do.dict_type.type,
             "label": do.label,
-            "value": value_list,  # 返回数组格式
+            "value": do.value,
             "status": do.status,
             "created_at": format_datetime_china(do.created_at),
             "updated_at": format_datetime_china(do.updated_at)
@@ -475,15 +458,12 @@ async def get_dict_option_detail(
     if not dict_option:
         raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    # 解析value JSON字符串为列表
-    value_list = _parse_value_json(dict_option.value)
-    
     result_data = {
         "id": str(dict_option.id),
         "dict_type_id": str(dict_option.dict_type_id),
         "dict_type": dict_option.dict_type.type,
         "label": dict_option.label,
-        "value": value_list,  # 返回数组格式
+        "value": dict_option.value,
         "status": dict_option.status,
         "created_at": format_datetime_china(dict_option.created_at),
         "updated_at": format_datetime_china(dict_option.updated_at)
@@ -500,17 +480,16 @@ async def update_dict_option(
     db: Session = Depends(get_db)
 ):
     """
-    更新字典选项接口（整体替换）
+    更新字典选项接口
     
     - **option_id**: 字典选项ID（字符串格式）
     - **dict_type**: 父级type（可选，字典类型的唯一标识）
     - **label**: 显示字段（可选）
-    - **value**: 存储的值（可选，数组格式，整体替换）
+    - **value**: 存储的值（可选，单个字符串）
     - **status**: 状态（可选，0=禁用，1=开启）
     
     说明：
-    - 更新时，传入的字段会整体替换原有值
-    - value数组会整体替换，不是追加
+    - 传入的字段会更新，未传入的保持原值
     - 只有管理员可以操作此接口（通过菜单权限控制）
     """
     try:
@@ -533,23 +512,19 @@ async def update_dict_option(
     if dict_option_data.label is not None:
         dict_option.label = dict_option_data.label
     if dict_option_data.value is not None:
-        # 将value列表转为JSON字符串存储（整体替换）
-        dict_option.value = json.dumps(dict_option_data.value, ensure_ascii=False)
+        dict_option.value = dict_option_data.value
     if dict_option_data.status is not None:
         dict_option.status = dict_option_data.status
     
     db.commit()
     db.refresh(dict_option)
     
-    # 解析value JSON字符串为列表
-    value_list = _parse_value_json(dict_option.value)
-    
     result_data = {
         "id": str(dict_option.id),
         "dict_type_id": str(dict_option.dict_type_id),
         "dict_type": dict_option.dict_type.type,
         "label": dict_option.label,
-        "value": value_list,  # 返回数组格式
+        "value": dict_option.value,
         "status": dict_option.status,
         "created_at": format_datetime_china(dict_option.created_at),
         "updated_at": format_datetime_china(dict_option.updated_at)
