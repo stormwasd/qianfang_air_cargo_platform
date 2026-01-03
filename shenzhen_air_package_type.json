@@ -1,0 +1,100 @@
+{
+    "dict_type": {
+        "name": "深航货物包装类型",
+        "type": "shenzhen_air_package_type",
+        "status": 1
+    },
+    "options": [
+        {
+            "label": "package_type",
+            "value": "木箱",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "纸箱",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "编织袋",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "竹篓",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "麻袋",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "塑料袋",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "木架",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "无包装",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "铁箱",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "布袋",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "铁桶",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "塑料箱",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "泡沫箱",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "铁笼",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "钢筋笼",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "鱼苗箱",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "纤维板箱",
+            "status": 1
+        },
+        {
+            "label": "package_type",
+            "value": "航空箱",
+            "status": 1
+        }
+    ]
+}
+
