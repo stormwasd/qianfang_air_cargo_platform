@@ -6,170 +6,169 @@
     },
     "options": [
         {
-            "label": "cargo_code",
+            "label": "配件",
             "value": "000",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "报纸",
             "value": "001",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "海鲜",
             "value": "008",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "文件资料",
             "value": "014",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "贵重物品",
             "value": "016",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "警犬",
             "value": "043",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "普货",
             "value": "044",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "猫 Cat",
             "value": "048",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "家犬Dog",
             "value": "049",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "蛙Frog",
             "value": "050",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "棉纱",
             "value": "052",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "鹦鹉Parrot",
             "value": "061",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "邮件",
             "value": "123",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "手机 锂离子电池与设备包装在一起，符合包装PI966第二部分相关要求。",
             "value": "966",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "手机 锂离子电池安装在设备中，符合包装PI967第二部分相关要求。",
             "value": "967",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "锂金属电池与设备包装在一起，符合包装PI969第二部",
             "value": "969",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "锂金属电池安装在设备中，符合包装PI970第二部分相关要求。",
             "value": "970",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "超值货物1:300",
             "value": "971",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "广州邮件",
             "value": "GZY",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "汇通专项",
             "value": "HTZ",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "干冰",
             "value": "ICE",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "鸡苗 Chicks",
             "value": "JYM",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "科捷专项",
             "value": "KJZ",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "医疗血液制品",
             "value": "LHO",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "手机 锂离子电池，符合包装说明PI966、PI967第二部分相关要求。",
             "value": "P67",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "全峰专项",
             "value": "QFZ",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "申通专项",
             "value": "STZ",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "托运书",
             "value": "TYS",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "唯品会专项",
             "value": "WPC",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "小米专项",
             "value": "XMZ",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "锂电池协议",
             "value": "XYL",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "圆通专项",
             "value": "YTZ",
             "status": 1
         },
         {
-            "label": "cargo_code",
+            "label": "赵强专项",
             "value": "ZQC",
             "status": 1
         }
     ]
 }
-
