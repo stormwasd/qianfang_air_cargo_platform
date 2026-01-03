@@ -1,0 +1,35 @@
+{
+    "dict_type": {
+        "name": "深航运价代码",
+        "type": "shenzhen_air_freight_code",
+        "status": 1
+    },
+    "options": [
+        {
+            "label": "freight_code",
+            "value": "A1",
+            "status": 1
+        },
+        {
+            "label": "freight_code",
+            "value": "A3",
+            "status": 1
+        },
+        {
+            "label": "freight_code",
+            "value": "AP",
+            "status": 1
+        },
+        {
+            "label": "freight_code",
+            "value": "D8",
+            "status": 1
+        },
+        {
+            "label": "freight_code",
+            "value": "F3",
+            "status": 1
+        }
+    ]
+}
+
