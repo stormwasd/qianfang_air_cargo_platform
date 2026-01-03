@@ -6,30 +6,29 @@
     },
     "options": [
         {
-            "label": "freight_code",
+            "label": "普货",
             "value": "A1",
             "status": 1
         },
         {
-            "label": "freight_code",
+            "label": "纺织品",
             "value": "A3",
             "status": 1
         },
         {
-            "label": "freight_code",
+            "label": "电商类",
             "value": "AP",
             "status": 1
         },
         {
-            "label": "freight_code",
+            "label": "锂电池C舱",
             "value": "D8",
             "status": 1
         },
         {
-            "label": "freight_code",
+            "label": "当日达",
             "value": "F3",
             "status": 1
         }
     ]
 }
-
