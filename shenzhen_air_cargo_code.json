@@ -1,0 +1,175 @@
+{
+    "dict_type": {
+        "name": "深航货物代码",
+        "type": "shenzhen_air_cargo_code",
+        "status": 1
+    },
+    "options": [
+        {
+            "label": "cargo_code",
+            "value": "000",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "001",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "008",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "014",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "016",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "043",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "044",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "048",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "049",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "050",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "052",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "061",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "123",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "966",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "967",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "969",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "970",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "971",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "GZY",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "HTZ",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "ICE",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "JYM",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "KJZ",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "LHO",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "P67",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "QFZ",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "STZ",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "TYS",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "WPC",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "XMZ",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "XYL",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "YTZ",
+            "status": 1
+        },
+        {
+            "label": "cargo_code",
+            "value": "ZQC",
+            "status": 1
+        }
+    ]
+}
+
