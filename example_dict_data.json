@@ -1,0 +1,35 @@
+{
+    "dict_type": {
+        "name": "运价代码",
+        "type": "freight_code",
+        "status": 1
+    },
+    "options": [
+        {
+            "label": "最低运价",
+            "value": "M",
+            "status": 1
+        },
+        {
+            "label": "最低运价",
+            "value": "N",
+            "status": 1
+        },
+        {
+            "label": "普通运价",
+            "value": "Q",
+            "status": 1
+        },
+        {
+            "label": "普通运价",
+            "value": "R",
+            "status": 1
+        },
+        {
+            "label": "指定商品运价",
+            "value": "C",
+            "status": 1
+        }
+    ]
+}
+

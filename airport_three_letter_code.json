@@ -1,0 +1,925 @@
+{
+    "dict_type": {
+        "name": "机场三字代码",
+        "type": "airport_three_letter_code",
+        "status": 1
+    },
+    "options": [
+        {
+            "label": "origin_arrival_stations",
+            "value": "PEK",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "PKX",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TSN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "SJW",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TVS",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "BPE",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HDG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "ZQZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CDE",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TYN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CIH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DAT",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LFQ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YCU",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WUT",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LLV",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HET",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "XIL",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "BAV",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HLD",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WUA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CIF",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "NHZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TGO",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DSN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "SHE",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DDG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YKH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "AOG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DLC",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CGQ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "NBS",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YNJ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TNH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HRB",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HEK",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "NDG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JXA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "MDG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "OHE",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JMU",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DQA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "SHA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "PVG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "NKG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LYG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WUX",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HIA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CZX",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "AZJ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "NTG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YNZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YTY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "XUZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HGH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WNZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "NGB",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YIW",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HSN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HYN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JUZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HFE",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "FUG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TXN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "AQG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WHA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JUH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TNA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TAO",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YNT",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DOY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WEF",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JNG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WEH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "RIZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "KHN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JGS",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JDZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "SQD",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YIC",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JIU",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "FOC",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "XMN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JJN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WUS",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LCX",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CAN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "SZX",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "ZUH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "SWA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "ZHA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HSC",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "MXZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HUZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "FUO",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "NNG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "KWL",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LZH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "BHY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WUZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "AEB",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YLX",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HCJ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HAK",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "SYX",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CGO",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LYA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "NNY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "XAI",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CSX",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DYG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CGD",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HNY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YYA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HJJ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WGN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LLF",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HCZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WUH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YIH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "XFN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "ENH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "WDS",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "SHS",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "EHU",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CKG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "CTU",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TFU",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "MIG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "NAO",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YBP",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DZH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "PZI",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DCY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "GYS",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "BZX",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "KGT",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LZO",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "KMG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LJG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JHG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DLU",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TCZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DIG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "SYM",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LNJ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "ZAT",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "KWE",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "ZYI",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TEN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "BFJ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LPF",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "AVA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LXA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LZY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "RKZ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "URC",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "KHG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "KRL",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YIN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "AKU",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HTN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "KRY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TLQ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "AAT",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HMI",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "KCA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "TCG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "YTW",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "ACF",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "XIY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "UYN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "HZG",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "ENY",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "AKA",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LHW",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "DNH",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "JGN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "LNL",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "IQN",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "THQ",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "INC",
+            "status": 1
+        },
+        {
+            "label": "origin_arrival_stations",
+            "value": "XNN",
+            "status": 1
+        }
+    ]
+}
+
