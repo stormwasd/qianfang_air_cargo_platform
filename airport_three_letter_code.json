@@ -6,920 +6,924 @@
     },
     "options": [
         {
-            "label": "origin_arrival_stations",
+            "label": "北京首都机场",
             "value": "PEK",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "北京大兴机场",
             "value": "PKX",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "天津滨海机场",
             "value": "TSN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "石家庄正定机场",
             "value": "SJW",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "唐山三女河机场",
             "value": "TVS",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "秦皇岛北戴河机场",
             "value": "BPE",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "邯郸机场",
             "value": "HDG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "张家口宁远机场",
             "value": "ZQZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "承德普宁机场",
             "value": "CDE",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "太原武宿机场",
             "value": "TYN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "长治王村机场",
             "value": "CIH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "大同云冈机场",
             "value": "DAT",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "临汾乔李机场",
             "value": "LFQ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "运城张孝机场",
             "value": "YCU",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "忻州五台山机场",
             "value": "WUT",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "吕梁大武机场",
             "value": "LLV",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "呼和浩特白塔机场",
             "value": "HET",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "锡林浩特机场",
             "value": "XIL",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "包头东河机场",
             "value": "BAV",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "呼伦贝尔海拉尔机场",
             "value": "HLD",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "乌海机场",
             "value": "WUA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "赤峰玉龙机场",
             "value": "CIF",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "满洲里西郊机场",
             "value": "NHZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "通辽机场",
             "value": "TGO",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "鄂尔多斯伊金霍洛机场",
             "value": "DSN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "沈阳桃仙机场",
             "value": "SHE",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "丹东浪头机场",
             "value": "DDG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "营口兰旗机场",
             "value": "YKH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "鞍山腾鳌机场",
             "value": "AOG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "大连周水子机场",
             "value": "DLC",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "长春龙嘉机场",
             "value": "CGQ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "长白山机场",
             "value": "NBS",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "延吉朝阳川机场",
             "value": "YNJ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "通化三源浦机场",
             "value": "TNH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "哈尔滨太平机场",
             "value": "HRB",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "黑河瑷珲机场",
             "value": "HEK",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "齐齐哈尔三家子机场",
             "value": "NDG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "鸡西兴凯湖机场",
             "value": "JXA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "牡丹江海浪机场",
             "value": "MDG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "漠河古莲机场",
             "value": "OHE",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "佳木斯东郊机场",
             "value": "JMU",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "大庆萨尔图机场",
             "value": "DQA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "上海虹桥机场",
             "value": "SHA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "上海浦东机场",
             "value": "PVG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "南京禄口机场",
             "value": "NKG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "连云港花果山机场",
             "value": "LYG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "无锡苏南硕放机场",
             "value": "WUX",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "淮安涟水机场",
             "value": "HIA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "常州奔牛机场",
             "value": "CZX",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "镇江大路机场",
             "value": "AZJ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "南通兴东机场",
             "value": "NTG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "盐城南阳机场",
             "value": "YNZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "扬州泰州机场",
             "value": "YTY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "徐州观音机场",
             "value": "XUZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "杭州萧山机场",
             "value": "HGH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "温州龙湾机场",
             "value": "WNZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "宁波栎社机场",
             "value": "NGB",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "义乌机场",
             "value": "YIW",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "舟山普陀山机场",
             "value": "HSN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "台州路桥机场",
             "value": "HYN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "衢州机场",
             "value": "JUZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "合肥新桥机场",
             "value": "HFE",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "阜阳西关机场",
             "value": "FUG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "黄山屯溪机场",
             "value": "TXN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "安庆天柱山机场",
             "value": "AQG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "芜湖宣城机场",
             "value": "WHA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "池州九华山机场",
             "value": "JUH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "济南遥墙机场",
             "value": "TNA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "青岛胶东机场",
             "value": "TAO",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "烟台蓬莱机场",
             "value": "YNT",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "东营胜利机场",
             "value": "DOY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "潍坊机场",
             "value": "WEF",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "济宁曲阜机场",
             "value": "JNG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "威海大水泊机场",
             "value": "WEH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "日照山字河机场",
             "value": "RIZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "南昌昌北机场",
             "value": "KHN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "吉安井冈山机场",
             "value": "JGS",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "景德镇罗家机场",
             "value": "JDZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "上饶三清山机场",
             "value": "SQD",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "宜春明月山机场",
             "value": "YIC",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "九江庐山机场",
             "value": "JIU",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "福州长乐机场",
             "value": "FOC",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "厦门高崎机场",
             "value": "XMN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "泉州晋江机场",
             "value": "JJN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "南平武夷山",
             "value": "WUS",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "龙岩冠豸山机场",
             "value": "LCX",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "广州白云机场",
             "value": "CAN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "深圳宝安机场",
             "value": "SZX",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "珠海金湾机场",
             "value": "ZUH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "揭阳潮汕机场",
             "value": "SWA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "湛江吴川机场",
             "value": "ZHA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "韶关丹霞机场",
             "value": "HSC",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "梅州梅县机场",
             "value": "MXZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "惠州平潭机场",
             "value": "HUZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "佛山沙堤机场",
             "value": "FUO",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "南宁吴圩机场",
             "value": "NNG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "桂林两江机场",
             "value": "KWL",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "柳州白莲机场",
             "value": "LZH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "北海福成机场",
             "value": "BHY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "梧州西江机场",
             "value": "WUZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "百色巴马机场",
             "value": "AEB",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "玉林福绵机场",
             "value": "YLX",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "河池金城江机场",
             "value": "HCJ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "海口美兰机场",
             "value": "HAK",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "三亚凤凰机场",
             "value": "SYX",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "郑州新郑机场",
             "value": "CGO",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "洛阳北郊机场",
             "value": "LYA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "南阳姜营机场",
             "value": "NNY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "信阳明港机场",
             "value": "XAI",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "长沙黄花机场",
             "value": "CSX",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "张家界荷花机场",
             "value": "DYG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "常德桃花源机场",
             "value": "CGD",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "衡阳南岳机场",
             "value": "HNY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "岳阳三荷机场",
             "value": "YYA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "怀化芷江机场",
             "value": "HJJ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "邵阳武冈市机场",
             "value": "WGN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "永州零陵机场",
             "value": "LLF",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "郴州北湖机场",
             "value": "HCZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "武汉天河机场",
             "value": "WUH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "宜昌三峡机场",
             "value": "YIH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "襄阳刘集机场",
             "value": "XFN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "恩施许家坪机场",
             "value": "ENH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "十堰武当山机场",
             "value": "WDS",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "荆州沙市机场",
             "value": "SHS",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "鄂州花湖机场",
             "value": "EHU",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "重庆江北机场",
             "value": "CKG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "成都双流机场",
             "value": "CTU",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "成都天府机场",
             "value": "TFU",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "绵阳南郊机场",
             "value": "MIG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "南充高坪机场",
             "value": "NAO",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "宜宾五粮液机场",
             "value": "YBP",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "达州金垭机场",
             "value": "DZH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "攀枝花保安营机场",
             "value": "PZI",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "稻城西丁机场",
             "value": "DCY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "广元盘龙机场",
             "value": "GYS",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "巴中恩阳机场",
             "value": "BZX",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "甘孜康定机场",
             "value": "KGT",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "泸州云龙机场",
             "value": "LZO",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "昆明长水机场",
             "value": "KMG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "丽江三义机场",
             "value": "LJG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "西双版纳嘎洒机场",
             "value": "JHG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "大理荒草坝机场",
             "value": "DLU",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "腾冲驼峰机场",
             "value": "TCZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "迪庆香格里拉机场",
             "value": "DIG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "普洱思茅机场",
             "value": "SYM",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "临沧博尚机场",
             "value": "LNJ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "昭通机场",
             "value": "ZAT",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "贵阳龙洞堡机场",
             "value": "KWE",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "遵义新舟机场",
             "value": "ZYI",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "铜仁凤凰机场",
             "value": "TEN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "毕节飞雄机场",
             "value": "BFJ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "六盘水月照机场",
             "value": "LPF",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "安顺黄果树机场",
             "value": "AVA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "拉萨贡嘎机场",
             "value": "LXA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "林芝米林机场",
             "value": "LZY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "日喀则和平机场",
             "value": "RKZ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "乌鲁木齐地窝堡机场",
             "value": "URC",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "喀什机场",
             "value": "KHG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "库尔勒梨城机场",
             "value": "KRL",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "伊宁机场",
             "value": "YIN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "阿克苏红旗坡机场",
             "value": "AKU",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "和田机场",
             "value": "HTN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "克拉玛依古海机场",
             "value": "KRY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "吐鲁番交河机场",
             "value": "TLQ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "阿勒泰雪都机场",
             "value": "AAT",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "哈密伊州机场",
             "value": "HMI",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "库车龟兹机场",
             "value": "KCA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "塔城千泉机场",
             "value": "TCG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "于田万方机场",
             "value": "YTW",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "伊宁机场",
+            "value": "YIN",
+            "status": 1
+        },
+        {
+            "label": "阿拉尔塔里木机场",
             "value": "ACF",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "西安咸阳机场",
             "value": "XIY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "榆林西沙机场",
             "value": "UYN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "汉中城固机场",
             "value": "HZG",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "延安南泥湾机场",
             "value": "ENY",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "安康富强机场",
             "value": "AKA",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "兰州中川机场",
             "value": "LHW",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "敦煌莫高机场",
             "value": "DNH",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "嘉峪关机场",
             "value": "JGN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "陇南成县机场",
             "value": "LNL",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "庆阳西峰机场",
             "value": "IQN",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "天水麦积山机场",
             "value": "THQ",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "银川河东机场",
             "value": "INC",
             "status": 1
         },
         {
-            "label": "origin_arrival_stations",
+            "label": "西宁曹家堡机场",
             "value": "XNN",
             "status": 1
         }
     ]
 }
-
