@@ -1,0 +1,20 @@
+{
+    "dict_type": {
+        "name": "南航产品名称",
+        "type": "china_southern_air_product_name",
+        "status": 1
+    },
+    "options": [
+        {
+            "label": "南航标运",
+            "value": "南航标运",
+            "status": 1
+        },
+        {
+            "label": "南航快运",
+            "value": "南航快运",
+            "status": 1
+        }
+    ]
+}
+
