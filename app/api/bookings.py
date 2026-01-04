@@ -126,9 +126,42 @@ async def get_bookings(
         # 解析form_data JSON
         form_data_dict = json.loads(booking.form_data)
         
+        # 处理bookings字段：将bookings中的数据展开到form_data中
+        # 支持两种情况：
+        # 1. bookings是数组：取第一个元素（通常只有一个元素）
+        # 2. bookings是对象：提取fullData、visibleData或tableData的第一个元素
+        processed_form_data = form_data_dict.copy()
+        
+        if "bookings" in processed_form_data:
+            bookings_data = processed_form_data.pop("bookings")
+            
+            # 情况1：bookings是数组
+            if isinstance(bookings_data, list) and len(bookings_data) > 0:
+                # 取第一个元素，将其字段合并到form_data中
+                first_booking = bookings_data[0]
+                if isinstance(first_booking, dict):
+                    processed_form_data.update(first_booking)
+            
+            # 情况2：bookings是对象（包含fullData、visibleData、tableData等）
+            elif isinstance(bookings_data, dict):
+                # 优先使用fullData，如果没有则使用visibleData，再没有则使用tableData
+                booking_items = None
+                if "fullData" in bookings_data and isinstance(bookings_data["fullData"], list) and len(bookings_data["fullData"]) > 0:
+                    booking_items = bookings_data["fullData"]
+                elif "visibleData" in bookings_data and isinstance(bookings_data["visibleData"], list) and len(bookings_data["visibleData"]) > 0:
+                    booking_items = bookings_data["visibleData"]
+                elif "tableData" in bookings_data and isinstance(bookings_data["tableData"], list) and len(bookings_data["tableData"]) > 0:
+                    booking_items = bookings_data["tableData"]
+                
+                # 如果找到了数据数组，取第一个元素合并到form_data中
+                if booking_items and len(booking_items) > 0:
+                    first_booking = booking_items[0]
+                    if isinstance(first_booking, dict):
+                        processed_form_data.update(first_booking)
+        
         booking_list.append({
             "id": str(booking.id),
-            "form_data": form_data_dict,
+            "form_data": processed_form_data,
             "booking_status": booking.booking_status,
             "invoice_status": booking.invoice_status,
             "booking_time": format_datetime_china(booking.booking_time),
