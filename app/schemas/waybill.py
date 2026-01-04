@@ -7,8 +7,99 @@ from datetime import datetime, date
 
 
 class WaybillCreate(BaseModel):
-    """创建运单schema"""
-    form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式）")
+    """
+    创建运单schema
+    
+    form_data 数据结构说明：
+    form_data 是一个字典结构，根据选择的航司（airline字段）包含不同的字段：
+    
+    - airline（必填）：航司名称，值为"深圳航空"或"南方航空"
+    
+    深圳航空字段结构：
+    {
+      "airline": "深圳航空",
+      "flight_info": {
+        "destination": "",  // 到达站
+        "flight_date": "",  // 航班日期
+        "flight_number": "",  // 航班号
+        "origin_station": ""  // 始发站
+      },
+      "shipper_consignee_info": {
+        "consignee_info": "",  // 收货人信息
+        "shipper_info": "",  // 发货人信息
+        "shipper_unit": ""  // 托运单位
+      },
+      "cargo_info": {
+        "quantity": "",  // 件数
+        "weight": "",  // 重量
+        "chargeable_weight": "",  // 计费重量
+        "freight_code": "",  // 运价代码
+        "cargo_code": "",  // 货物代码
+        "cargo_name": "",  // 货物名称
+        "package": ""  // 包装
+      },
+      "other_fees": {
+        "packaging_fee": "",  // 包装费
+        "pickup_fee": "",  // 上门提货费
+        "delivery_fee": ""  // 派送费
+      }
+    }
+    
+    南方航空字段结构：
+    {
+      "airline": "南方航空",
+      "flight_info": {
+        "destination": "",  // 到达站
+        "flight_date": "",  // 航班日期
+        "flight_number": "",  // 航班号
+        "booking_remark": "",  // 订舱备注
+        "origin_station": ""  // 始发站
+      },
+      "cargo_info": {
+        "cargo_type": "",  // 货物类型
+        "cargo_code": "",  // 货物代码
+        "cargo_name": "",  // 货物名称
+        "quantity": "",  // 件数
+        "weight": "",  // 重量
+        "booking_volume": "",  // 订舱体积
+        "product_name": "",  // 产品名称
+        "oversized_cargo": "",  // 超规货
+        "special_cargo_code": ""  // 特货码
+      },
+      "contact_info": {
+        "consignee": "",  // 收货人
+        "consignee_phone": "",  // 手机号（收货人）
+        "shipper_unit": "",  // 托运单位
+        "shipper": "",  // 托运人
+        "shipper_phone": "",  // 手机号（托运人）
+        "address": {  // 地址（对象类型）
+          "region": "",  // 省/市/区
+          "detail": ""  // 详细地址
+        }
+      },
+      "dangerous_goods_declaration": {
+        "no_hidden_dangerous_goods": "",  // 该票货物无隐含危险品
+        "agent_checker_signature": "",  // 代理公司检查人签字
+        "agent_consignor_signature": ""  // 代理公司交运人签字
+      },
+      "other_info": {
+        "order_contact": "",  // 订单联系人
+        "contact_phone": "",  // 联系人电话
+        "settlement_file_number": ""  // 结算文件号
+      },
+      "other_fees": {
+        "packaging_fee": "",  // 包装费
+        "pickup_fee": "",  // 上门提货费
+        "delivery_fee": ""  // 派送费
+      }
+    }
+    
+    说明：
+    - 所有字段的值都是字符串类型
+    - address 是对象类型，包含 region（省/市/区）和 detail（详细地址）两个字段
+    - 不同航司的字段结构不同，前端需要根据 airline 字段来展示对应的表单字段
+    """
+    form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），根据航司类型包含不同的字段结构")
 
 
 class WaybillQuery(BaseModel):
