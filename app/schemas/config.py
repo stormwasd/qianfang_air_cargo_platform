@@ -15,7 +15,7 @@ class BusinessConfigCreate(BaseModel):
     第一层：航司代码（如："shenzhen_air"、"china_southern_air"）
     第二层：业务类型（如："booking"、"document"、"print"、"booking_and_create"）
     第三层：参数组代码（如："shenzhen_air_login"、"business_default"等）
-    第四层：参数项（键值对，值为字符串，特殊说明：printer_config 是数组类型，支持配置多个打印机）
+    第四层：参数项（键值对，值为字符串，特殊说明：printer_config 是数组类型，支持配置多个打印机；address 是对象类型，包含region和detail字段）
     
     示例结构：
     {
@@ -83,7 +83,15 @@ class BusinessConfigCreate(BaseModel):
             "special_cargo_code": "",
             "agent_checker_name": "",
             "agent_consignor_name": "",
-            "order_contact_name": ""
+            "order_contact_name": "",
+            "order_contact_phone": "",
+            "settlement_file_number": "",
+            "shipper": "",
+            "phone": "",
+            "address": {
+              "region": "",
+              "detail": ""
+            }
           }
         },
         "print": {
