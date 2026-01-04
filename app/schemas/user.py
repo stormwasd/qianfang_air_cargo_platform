@@ -103,7 +103,7 @@ class LoginResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-    has_initialized: bool = Field(..., description="是否已初始化配置")
+    has_initialized: Optional[bool] = Field(None, description="是否已初始化配置（仅管理员权限用户返回此字段）")
     permissions: List[str] = Field(..., description="用户权限列表")
 
 

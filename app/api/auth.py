@@ -11,6 +11,7 @@ from app.schemas.user import LoginRequest
 from app.core.security import verify_password, create_access_token, create_refresh_token, verify_token
 from app.core.exceptions import UnauthorizedException, ForbiddenException
 from app.core.response import success_response
+from app.core.permissions import is_admin
 from app.utils.helpers import parse_json_permissions, format_datetime_china
 from app.utils.menu_mapping import generate_menus_by_permissions
 
@@ -39,8 +40,8 @@ async def login(
         "data": {
             "access_token": "xxx",
             "refresh_token": "xxx",
-            "has_initialized": false,
-            "permissions": ["管理员"],
+            "has_initialized": false,  // 仅管理员权限用户返回此字段
+            "permissions": ["admin"],
             "menus": [...],
             "user": {
                 "id": "1234567890123456789",
@@ -51,7 +52,7 @@ async def login(
                     {"id": "1234567890123456789", "name": "技术部"},
                     {"id": "1234567890123456790", "name": "运营部"}
                 ],
-                "permissions": ["管理员"],
+                "permissions": ["admin"],
                 "is_active": true,
                 "created_at": "2025-01-01T00:00:00",
                 "updated_at": "2025-01-01T00:00:00"
@@ -59,6 +60,8 @@ async def login(
         },
         "msg": "登录成功"
     }
+    
+    注意：has_initialized 字段仅对管理员权限用户返回，因为业务参数管理只有管理员权限才能看到
     """
     # 查找用户，并加载部门关系
     user = db.query(User).options(joinedload(User.departments)).filter(User.phone == login_data.phone).first()
@@ -73,9 +76,6 @@ async def login(
     if not user.is_active:
         raise ForbiddenException("用户已被禁用")
     
-    # 检查是否已初始化配置（全局唯一配置）
-    has_initialized = db.query(BusinessConfig).first() is not None
-    
     # 生成token
     # 注意：JWT标准要求sub字段必须是字符串
     # 包含token_version用于JWT失效机制
@@ -89,29 +89,34 @@ async def login(
     # 根据权限生成菜单
     menus = generate_menus_by_permissions(permissions)
     
-    # 构建用户完整信息（ID转换为字符串）
-    user_info = {
-        "id": str(user.id),
-        "phone": user.phone,
-        "name": user.name,
-        "department_ids": [str(dept.id) for dept in user.departments],
-        "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
+    # 构建返回数据
+    response_data = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
         "permissions": permissions,
-        "is_active": user.is_active,
-                "created_at": format_datetime_china(user.created_at),
-                "updated_at": format_datetime_china(user.updated_at),
+        "menus": menus,
+        "user": {
+            "id": str(user.id),
+            "phone": user.phone,
+            "name": user.name,
+            "department_ids": [str(dept.id) for dept in user.departments],
+            "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
+            "permissions": permissions,
+            "is_active": user.is_active,
+            "created_at": format_datetime_china(user.created_at),
+            "updated_at": format_datetime_china(user.updated_at),
+        }
     }
+    
+    # 只有管理员权限才返回 has_initialized（业务参数管理只有管理员权限才能看到）
+    if is_admin(permissions):
+        # 检查是否已初始化配置（全局唯一配置）
+        has_initialized = db.query(BusinessConfig).first() is not None
+        response_data["has_initialized"] = has_initialized
     
     # 返回统一格式
     return success_response(
-        data={
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "has_initialized": has_initialized,
-            "permissions": permissions,
-            "menus": menus,
-            "user": user_info
-        },
+        data=response_data,
         msg="登录成功"
     )
 
