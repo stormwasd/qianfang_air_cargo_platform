@@ -399,6 +399,7 @@ async def get_dict_options(
     - **status**: 状态筛选（可选，0=禁用，1=开启）
     - **page**: 页码（可选，不传则不分页，返回全部）
     - **page_size**: 每页数量（可选，不传则不分页，返回全部）
+    - **order**: 排序方式（可选，asc=从小到大，desc=从大到小），仅当所有选项的value全为数字时生效，不传则默认从小到大排序
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
@@ -419,16 +420,43 @@ async def get_dict_options(
     # 获取总数
     total = query_obj.count()
     
-    # 排序
-    query_obj = query_obj.order_by(DictOption.created_at.desc())
+    # 先查询所有数据（在排序和分页之前）
+    all_dict_options = query_obj.all()
+    
+    # 检查所有value是否全为数字
+    def is_numeric(value: str) -> bool:
+        """检查字符串是否为数字（包括整数和小数）"""
+        try:
+            float(value)
+            return True
+        except (ValueError, TypeError):
+            return False
+    
+    all_values_numeric = all(is_numeric(do.value) for do in all_dict_options) if all_dict_options else False
+    
+    # 排序逻辑
+    if all_values_numeric:
+        # 所有value全为数字，按value排序
+        # 如果order参数存在，使用order参数；如果不存在，默认从小到大（asc）
+        sort_order = query.order if query.order else "asc"
+        reverse = (sort_order == "desc")
+        dict_options = sorted(
+            all_dict_options,
+            key=lambda x: float(x.value),
+            reverse=reverse
+        )
+    else:
+        # 不全为数字，保持原有排序（按创建时间倒序），不受order参数影响
+        dict_options = sorted(
+            all_dict_options,
+            key=lambda x: x.created_at,
+            reverse=True
+        )
     
     # 分页（只有同时传了page和page_size才分页）
     if query.page is not None and query.page_size is not None:
         offset = (query.page - 1) * query.page_size
-        dict_options = query_obj.offset(offset).limit(query.page_size).all()
-    else:
-        # 不分页，返回全部
-        dict_options = query_obj.all()
+        dict_options = dict_options[offset:offset + query.page_size]
     
     # 构建响应
     items = []
