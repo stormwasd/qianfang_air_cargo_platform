@@ -14,6 +14,7 @@ from app.core.response import success_response
 from app.core.permissions import is_admin
 from app.utils.helpers import parse_json_permissions, format_datetime_china
 from app.utils.menu_mapping import generate_menus_by_permissions
+from app.api.deps import get_current_active_user
 
 router = APIRouter()
 
@@ -194,5 +195,41 @@ async def refresh_token(
             "refresh_token": new_refresh_token
         },
         msg="token刷新成功"
+    )
+
+
+@router.post("/logout", summary="退出登录")
+async def logout(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    退出登录接口
+    
+    通过递增用户的token_version使所有现有的access_token和refresh_token失效。
+    用户需要重新登录才能获取新的token。
+    
+    需要认证：需要在请求头中携带有效的access_token
+    
+    返回格式：
+    {
+        "code": 0,
+        "data": null,
+        "msg": "退出登录成功"
+    }
+    
+    说明：
+    - 退出登录后，所有现有的access_token和refresh_token都会失效
+    - 用户需要重新登录才能获取新的token
+    - 即使token尚未过期，也会因为token_version不匹配而无法使用
+    """
+    # 递增token_version，使所有现有的token失效
+    current_user.token_version = (current_user.token_version or 0) + 1
+    db.commit()
+    
+    # 返回统一格式
+    return success_response(
+        data=None,
+        msg="退出登录成功"
     )
 
