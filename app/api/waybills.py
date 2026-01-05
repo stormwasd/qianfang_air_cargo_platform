@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from sqlalchemy.dialects.mysql import JSON
-from app.core.exceptions import NotFoundException
+from app.core.exceptions import NotFoundException, BadRequestException
 from app.core.response import success_response
 from app.database import get_db
 from app.models.waybill import Waybill, ExecutionStatus
@@ -32,7 +32,23 @@ async def create_waybill(
     - 自动设置booking_date为当前日期（中国时间）
     - 所有执行状态默认为"未执行"
     - waybill_number和departure_time初始为null，由RPA后续写入
+    - 深圳航空的运单必须提供 flight_info.waybill_type 字段（运单类型）
     """
+    # 验证深圳航空的运单类型字段
+    # airline 可能是字典值（"1"=深圳航空，"2"=南方航空）或字符串（"深圳航空"、"南方航空"）
+    airline = waybill.form_data.get("airline", "")
+    # 判断是否为深圳航空：支持字典值 "1" 或字符串 "深圳航空"
+    is_shenzhen_air = airline == "1" or airline == "深圳航空"
+    if is_shenzhen_air:
+        flight_info = waybill.form_data.get("flight_info")
+        # 检查 flight_info 是否存在且为字典类型
+        if not isinstance(flight_info, dict):
+            raise BadRequestException("深圳航空的运单必须提供 flight_info 对象")
+        waybill_type = flight_info.get("waybill_type")
+        # 验证 waybill_type 是否存在且非空
+        if not waybill_type or (isinstance(waybill_type, str) and not waybill_type.strip()):
+            raise BadRequestException("深圳航空的运单必须提供 flight_info.waybill_type 字段（运单类型）")
+    
     # 将form_data转换为JSON字符串
     form_data_json = json.dumps(waybill.form_data, ensure_ascii=False)
     
@@ -87,6 +103,7 @@ async def get_waybills(
     - **airline**: 航司（模糊搜索，从form_data.airline中提取）
     - **destination**: 目的站（模糊搜索，从form_data.flight_info.destination中提取）
     - **flight_number**: 航班号（模糊搜索，从form_data.flight_info.flight_number中提取）
+    - **waybill_type**: 运单类型（模糊搜索，从form_data.flight_info.waybill_type中提取，仅深圳航空）
     - **shipper**: 托运单位（模糊搜索，从form_data中提取，支持深圳航空的shipper_consignee_info.shipper_unit和南方航空的contact_info.shipper_unit）
     - **waybill_number**: 运单号（模糊搜索）
     - **page**: 页码（默认1）
@@ -168,6 +185,18 @@ async def get_waybills(
                 ),
                 func.CHAR
             ).like(f"%{query.flight_number}%")
+        )
+    
+    if query.waybill_type:
+        # 运单类型在flight_info.waybill_type中（仅深圳航空）
+        query_obj = query_obj.filter(
+            func.cast(
+                func.json_extract(
+                    func.cast(Waybill.form_data, JSON), 
+                    "$.flight_info.waybill_type"
+                ),
+                func.CHAR
+            ).like(f"%{query.waybill_type}%")
         )
     
     if query.shipper:
