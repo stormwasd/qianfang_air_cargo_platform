@@ -353,6 +353,7 @@ async def create_dict_option(
     - **label**: 显示字段
     - **value**: 存储的值（单个字符串，如："L"）
     - **status**: 状态（0=禁用，1=开启）
+    - **color_type**: 颜色类型（用于前端区分状态颜色，非必填）
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
@@ -362,11 +363,18 @@ async def create_dict_option(
         raise NotFoundException(f"字典类型 '{dict_option_data.dict_type}' 不存在")
     
     # 创建新字典选项
+    # 处理 color_type：如果为空字符串或只包含空白字符，设置为 None
+    color_type_value = None
+    if dict_option_data.color_type is not None:
+        stripped_color_type = dict_option_data.color_type.strip()
+        color_type_value = stripped_color_type if stripped_color_type else None
+    
     new_option = DictOption(
         dict_type_id=dict_type.id,
         label=dict_option_data.label,
         value=dict_option_data.value,
-        status=dict_option_data.status
+        status=dict_option_data.status,
+        color_type=color_type_value
     )
     db.add(new_option)
     db.commit()
@@ -379,6 +387,7 @@ async def create_dict_option(
         "label": new_option.label,
         "value": new_option.value,
         "status": new_option.status,
+        "color_type": new_option.color_type,
         "created_at": format_datetime_china(new_option.created_at),
         "updated_at": format_datetime_china(new_option.updated_at)
     }
@@ -468,6 +477,7 @@ async def get_dict_options(
             "label": do.label,
             "value": do.value,
             "status": do.status,
+            "color_type": do.color_type,
             "created_at": format_datetime_china(do.created_at),
             "updated_at": format_datetime_china(do.updated_at)
         })
@@ -507,6 +517,7 @@ async def get_dict_option_detail(
         "label": dict_option.label,
         "value": dict_option.value,
         "status": dict_option.status,
+        "color_type": dict_option.color_type,
         "created_at": format_datetime_china(dict_option.created_at),
         "updated_at": format_datetime_china(dict_option.updated_at)
     }
@@ -529,6 +540,7 @@ async def update_dict_option(
     - **label**: 显示字段（可选）
     - **value**: 存储的值（可选，单个字符串）
     - **status**: 状态（可选，0=禁用，1=开启）
+    - **color_type**: 颜色类型（可选，用于前端区分状态颜色）
     
     说明：
     - 传入的字段会更新，未传入的保持原值
@@ -557,6 +569,13 @@ async def update_dict_option(
         dict_option.value = dict_option_data.value
     if dict_option_data.status is not None:
         dict_option.status = dict_option_data.status
+    # color_type 字段：如果提供了值（非 None），就更新；如果为 None，保持原值
+    # 支持传入空字符串来清空 color_type 字段（空字符串会被转换为 None）
+    if dict_option_data.color_type is not None:
+        # 如果传入空字符串或只包含空白字符，设置为 None（清空字段）
+        # 否则设置为去除首尾空白后的值
+        stripped_value = dict_option_data.color_type.strip()
+        dict_option.color_type = stripped_value if stripped_value else None
     
     db.commit()
     db.refresh(dict_option)
@@ -568,6 +587,7 @@ async def update_dict_option(
         "label": dict_option.label,
         "value": dict_option.value,
         "status": dict_option.status,
+        "color_type": dict_option.color_type,
         "created_at": format_datetime_china(dict_option.created_at),
         "updated_at": format_datetime_china(dict_option.updated_at)
     }

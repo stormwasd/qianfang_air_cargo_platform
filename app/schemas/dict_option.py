@@ -12,6 +12,7 @@ class DictOptionCreate(BaseModel):
     label: str = Field(..., description="显示字段", min_length=1, max_length=100)
     value: str = Field(..., description="存储的值（单个字符串，如：\"L\"）", min_length=1, max_length=200)
     status: int = Field(1, description="状态（0=禁用，1=开启）", ge=0, le=1)
+    color_type: Optional[str] = Field(None, description="颜色类型（用于前端区分状态颜色，非必填）", max_length=50)
 
 
 class DictOptionUpdate(BaseModel):
@@ -20,6 +21,7 @@ class DictOptionUpdate(BaseModel):
     label: Optional[str] = Field(None, description="显示字段", min_length=1, max_length=100)
     value: Optional[str] = Field(None, description="存储的值（单个字符串）", min_length=1, max_length=200)
     status: Optional[int] = Field(None, description="状态（0=禁用，1=开启）", ge=0, le=1)
+    color_type: Optional[str] = Field(None, description="颜色类型（用于前端区分状态颜色，非必填）", max_length=50)
 
 
 class DictOptionResponse(BaseModel):
@@ -30,6 +32,7 @@ class DictOptionResponse(BaseModel):
     label: str  # 显示字段
     value: str  # 存储的值（单个字符串）
     status: int  # 状态（0=禁用，1=开启）
+    color_type: Optional[str] = None  # 颜色类型（用于前端区分状态颜色，非必填）
     created_at: datetime
     updated_at: datetime
     

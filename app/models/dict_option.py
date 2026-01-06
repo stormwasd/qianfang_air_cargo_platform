@@ -17,6 +17,7 @@ class DictOption(Base):
     label = Column(String(100), nullable=False, comment="显示字段")
     value = Column(String(200), nullable=False, comment="存储的值（单个字符串）")
     status = Column(Integer, default=1, nullable=False, index=True, comment="状态（0=禁用，1=开启）")
+    color_type = Column(String(50), nullable=True, comment="颜色类型（用于前端区分状态颜色，非必填）")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     

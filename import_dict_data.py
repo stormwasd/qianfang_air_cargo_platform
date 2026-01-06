@@ -148,6 +148,7 @@ def import_dict_options(db, dict_type: DictType, options: List[Dict[str, Any]],
         label = option_data["label"]
         value = option_data["value"]
         status = option_data.get("status", 1)
+        color_type = option_data.get("color_type")  # 支持color_type字段（可选）
         
         # 检查是否已存在（根据 dict_type_id, label, value 组合）
         existing_option = db.query(DictOption).filter(
@@ -160,6 +161,8 @@ def import_dict_options(db, dict_type: DictType, options: List[Dict[str, Any]],
             if update_if_exists:
                 # 更新现有选项
                 existing_option.status = status
+                if color_type is not None:
+                    existing_option.color_type = color_type
                 updated_count += 1
                 print(f"  ✅ 更新选项：{label} = {value}")
             else:
@@ -171,7 +174,8 @@ def import_dict_options(db, dict_type: DictType, options: List[Dict[str, Any]],
                 dict_type_id=dict_type.id,
                 label=label,
                 value=value,
-                status=status
+                status=status,
+                color_type=color_type
             )
             db.add(new_option)
             created_count += 1
