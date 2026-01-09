@@ -29,7 +29,62 @@ async def create_settlement(
     """
     新增结算单接口
     
-    - **form_data**: 表单数据（JSON格式），前端可以传入任意字段
+    form_data包含三大块信息：基础信息、分单信息、主单信息（所有键名使用英文，遵循snake_case命名规范）
+    
+    **基础信息**：
+    - transport_method: 运输方式
+    - airline: 所属航司（必填）
+    - origin_station: 始发站
+    - destination: 目的站
+    - flight_number: 航班号
+    - flight_date: 航班日期
+    - customer_name: 客户名称
+    - recipient_name: 收件人名称
+    - cargo_name: 货物名称
+    - quantity: 件数
+    - weight: 重量
+    - chargeable_weight: 计费重量
+    
+    **分单信息**：
+    - sub_rate: 费率
+    - sub_airline_fee: 航空费用
+    - sub_document_fee: 制单费
+    - sub_telegraph_fee: 电报费
+    - sub_telegraph_number: 电报号
+    - sub_cca_fee: CCA费用
+    - sub_packaging_fee: 包装费
+    - sub_pickup_fee: 上门提货费
+    - sub_airport_pickup_fee: 机场提货费
+    - sub_delivery_fee: 派送费
+    - sub_carrier_deduction: 承运扣款
+    - sub_other_fee: 其他费用
+    - sub_other_fee_remark: 其他费用备注
+    - sub_total_amount: 总金额
+    - settlement_method: 结算方式
+    - sub_remark: 备注
+    - settlement_status: 结算状态（未结算/已结算）
+    
+    **主单信息**：
+    - master_airwaybill_number: 主单号（建议包含，用于关联运单表查询航司制单日期）
+    - master_rate: 费率
+    - master_airline_fee: 航空费用
+    - master_fuel_surcharge: 航空燃油费
+    - master_transit_weight: 过站重量
+    - master_transit_fee: 过站费
+    - master_cca_cost: CCA成本
+    - master_packaging_fee: 包装费
+    - master_telegraph_fee: 电报费
+    - master_pickup_unit: 上门提货单位
+    - master_pickup_fee: 上门提货费
+    - master_delivery_unit: 派送单位
+    - master_airport_pickup_fee: 机场提货费
+    - master_delivery_fee: 派送费
+    - master_other_fee: 其他费用
+    - master_total_cost: 成本总金额
+    - master_remark: 备注
+    - financial_review: 财务审核（未审核/已审核）
+    
+    所有字段都是可选的，所有字段的值都是字符串类型
     """
     # 将form_data转换为JSON字符串
     form_data_json = json.dumps(settlement.form_data, ensure_ascii=False)
@@ -69,6 +124,8 @@ async def get_settlements(
     - **customer_name**: 客户名称/发货人名称（模糊搜索，从form_data JSON中提取）
     - **flight_number**: 航班号（模糊搜索，从form_data JSON中提取）
     - **master_airwaybill_number**: 主单号（模糊搜索，从form_data JSON中提取）
+    - **settlement_status**: 结算状态（精确匹配，从form_data JSON中提取，可选值：未结算、已结算）
+    - **financial_review**: 财务审核状态（精确匹配，从form_data JSON中提取，可选值：未审核、已审核）
     - **booking_date_start**: 航司制单日期开始（格式：YYYY-MM-DD，通过主单号关联运单表获取开单日期）
     - **booking_date_end**: 航司制单日期结束（格式：YYYY-MM-DD，通过主单号关联运单表获取开单日期）
     - **page**: 页码（默认1）
@@ -163,6 +220,30 @@ async def get_settlements(
             ).like(f"%{query.master_airwaybill_number}%")
         )
     
+    # 结算状态筛选（精确匹配）
+    if query.settlement_status:
+        query_obj = query_obj.filter(
+            func.cast(
+                func.json_extract(
+                    func.cast(Settlement.form_data, JSON),
+                    "$.settlement_status"
+                ),
+                func.CHAR
+            ) == query.settlement_status
+        )
+    
+    # 财务审核状态筛选（精确匹配）
+    if query.financial_review:
+        query_obj = query_obj.filter(
+            func.cast(
+                func.json_extract(
+                    func.cast(Settlement.form_data, JSON),
+                    "$.financial_review"
+                ),
+                func.CHAR
+            ) == query.financial_review
+        )
+    
     # 航司制单日期范围筛选（通过关联的运单表获取booking_date）
     if query.booking_date_start or query.booking_date_end:
         if query.booking_date_start:
@@ -183,17 +264,56 @@ async def get_settlements(
         Settlement.created_at.desc()
     ).offset(offset).limit(query.page_size).all()
     
+    # 批量查询关联的运单信息（优化性能，避免N+1查询）
+    # 收集所有主单号
+    master_airwaybill_numbers = []
+    settlement_form_data_map = {}
+    for settlement in settlements:
+        form_data_dict = json.loads(settlement.form_data)
+        settlement_form_data_map[settlement.id] = form_data_dict
+        master_airwaybill_number = form_data_dict.get("master_airwaybill_number")
+        if master_airwaybill_number:
+            master_airwaybill_numbers.append(master_airwaybill_number)
+    
+    # 批量查询Waybill，建立主单号到booking_date的映射
+    waybill_map = {}
+    if master_airwaybill_numbers:
+        waybills = db.query(Waybill).filter(
+            Waybill.waybill_number.in_(master_airwaybill_numbers)
+        ).all()
+        waybill_map = {waybill.waybill_number: waybill for waybill in waybills}
+    
     settlement_list = []
     for settlement in settlements:
-        # 解析form_data JSON
-        form_data_dict = json.loads(settlement.form_data)
+        form_data_dict = settlement_form_data_map[settlement.id]
+        master_airwaybill_number = form_data_dict.get("master_airwaybill_number")
+        waybill = waybill_map.get(master_airwaybill_number) if master_airwaybill_number else None
         
-        settlement_list.append({
+        # 提取指定字段
+        settlement_item = {
             "id": str(settlement.id),
-            "form_data": form_data_dict,
+            "airline_record_time": waybill.booking_date.isoformat() if waybill and waybill.booking_date else None,  # 航司录单时间
+            "airline": form_data_dict.get("airline"),  # 所属航司
+            "master_airwaybill_number": master_airwaybill_number,  # 主单号
+            "flight_number": form_data_dict.get("flight_number"),  # 航班号
+            "destination": form_data_dict.get("destination"),  # 目的站
+            "flight_date": form_data_dict.get("flight_date"),  # 航班日期
+            "shipper_unit": form_data_dict.get("customer_name"),  # 托运单位（就是客户名称）
+            "quantity": form_data_dict.get("quantity"),  # 件数
+            "weight": form_data_dict.get("weight"),  # 重量
+            "chargeable_weight": form_data_dict.get("chargeable_weight"),  # 计费重量
+            "transit_weight": form_data_dict.get("master_transit_weight"),  # 过站重量
+            "cargo_name": form_data_dict.get("cargo_name"),  # 货物名称
+            "customer_name": form_data_dict.get("customer_name"),  # 客户名称
+            "airline_rate": form_data_dict.get("sub_rate"),  # 航空费率
+            "airline_fee": form_data_dict.get("sub_airline_fee"),  # 航空运价
+            "packaging_fee": form_data_dict.get("sub_packaging_fee"),  # 包装费
+            "pickup_fee": form_data_dict.get("sub_pickup_fee"),  # 上门提货费
             "created_at": format_datetime_china(settlement.created_at),
             "updated_at": format_datetime_china(settlement.updated_at)
-        })
+        }
+        
+        settlement_list.append(settlement_item)
     
     return success_response(
         data={"total": total, "items": settlement_list},
