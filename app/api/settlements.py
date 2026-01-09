@@ -66,7 +66,7 @@ async def create_settlement(
     - settlement_status: 结算状态（未结算/已结算）
     
     **主单信息**：
-    - master_airwaybill_number: 主单号（建议包含，用于关联运单表查询航司制单日期）
+    - master_airwaybill_number: 主单号（主单信息的第一个字段，建议包含，用于关联运单表查询航司录单时间）
     - master_rate: 费率
     - master_airline_fee: 航空费用
     - master_fuel_surcharge: 航空燃油费
