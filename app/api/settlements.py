@@ -39,6 +39,7 @@ async def create_settlement(
     - flight_number: 航班号
     - flight_date: 航班日期
     - airline_record_time: 航司录单时间（格式：YYYY-MM-DD）
+    - master_airwaybill_number: 主单号（建议包含，用于关联运单表查询航司录单时间）
     - customer_name: 客户名称
     - recipient_name: 收件人名称
     - cargo_name: 货物名称
@@ -66,7 +67,6 @@ async def create_settlement(
     - settlement_status: 结算状态（未结算/已结算）
     
     **主单信息**：
-    - master_airwaybill_number: 主单号（主单信息的第一个字段，建议包含，用于关联运单表查询航司录单时间）
     - master_rate: 费率
     - master_airline_fee: 航空费用
     - master_fuel_surcharge: 航空燃油费
@@ -245,7 +245,8 @@ async def get_settlements(
             ) == query.financial_review
         )
     
-    # 航司录单时间范围筛选（从form_data JSON中的airline_record_time字段提取）
+    # 航司录单时间范围筛选（从存储的结算单form_data JSON中的airline_record_time字段提取）
+    # 注意：筛选时只考虑存储在结算单form_data中的值，不考虑通过主单号关联运单表获取的值
     if query.airline_record_time_start or query.airline_record_time_end:
         # 提取airline_record_time字段（格式：YYYY-MM-DD字符串）
         # 由于airline_record_time是YYYY-MM-DD格式的字符串，可以直接进行字符串比较
@@ -305,10 +306,14 @@ async def get_settlements(
         waybill = waybill_map.get(master_airwaybill_number) if master_airwaybill_number else None
         
         # 提取指定字段
-        # 航司录单时间：优先使用form_data中的airline_record_time，如果没有则从关联的运单表获取
-        airline_record_time = form_data_dict.get("airline_record_time")
-        if not airline_record_time and waybill and waybill.booking_date:
+        # 航司录单时间：优先使用通过主单号关联运单表获取的值，如果关联上了并且有值则用它，如果没有关联上或没有值则使用form_data中用户输入的airline_record_time
+        airline_record_time = None
+        if waybill and waybill.booking_date:
+            # 如果通过主单号关联上了运单表并且有值，优先使用运单表的booking_date
             airline_record_time = waybill.booking_date.isoformat()
+        else:
+            # 如果没有关联上或没有值，使用form_data中用户输入的airline_record_time
+            airline_record_time = form_data_dict.get("airline_record_time")
         
         settlement_item = {
             "id": str(settlement.id),
