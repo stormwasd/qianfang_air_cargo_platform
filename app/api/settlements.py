@@ -38,6 +38,7 @@ async def create_settlement(
     - destination: 目的站
     - flight_number: 航班号
     - flight_date: 航班日期
+    - airline_record_time: 航司录单时间（格式：YYYY-MM-DD）
     - customer_name: 客户名称
     - recipient_name: 收件人名称
     - cargo_name: 货物名称
@@ -126,16 +127,16 @@ async def get_settlements(
     - **master_airwaybill_number**: 主单号（模糊搜索，从form_data JSON中提取）
     - **settlement_status**: 结算状态（精确匹配，从form_data JSON中提取，可选值：未结算、已结算）
     - **financial_review**: 财务审核状态（精确匹配，从form_data JSON中提取，可选值：未审核、已审核）
-    - **booking_date_start**: 航司制单日期开始（格式：YYYY-MM-DD，通过主单号关联运单表获取开单日期）
-    - **booking_date_end**: 航司制单日期结束（格式：YYYY-MM-DD，通过主单号关联运单表获取开单日期）
+    - **airline_record_time_start**: 航司录单时间开始（格式：YYYY-MM-DD，从form_data JSON中的airline_record_time字段筛选）
+    - **airline_record_time_end**: 航司录单时间结束（格式：YYYY-MM-DD，从form_data JSON中的airline_record_time字段筛选）
     - **page**: 页码（默认1）
     - **page_size**: 每页数量（默认10，最大100）
     
-    支持多条件组合筛选，航司制单日期通过主单号关联运单表查询
+    支持多条件组合筛选，航司录单时间从form_data JSON中提取进行日期范围筛选
     """
-    # 构建基础查询，关联运单表
-    # 通过结算单的form_data JSON中的主单号，关联运单表的waybill_number字段
-    # 注意：在join条件中，需要使用String类型而不是func.CHAR
+    # 构建基础查询
+    # 注意：虽然查询筛选不需要关联运单表，但列表返回时可能需要从运单表获取航司录单时间作为fallback
+    # 所以保留outerjoin，但查询筛选时只使用form_data中的airline_record_time
     query_obj = db.query(Settlement).outerjoin(
         Waybill,
         func.cast(
@@ -244,15 +245,29 @@ async def get_settlements(
             ) == query.financial_review
         )
     
-    # 航司制单日期范围筛选（通过关联的运单表获取booking_date）
-    if query.booking_date_start or query.booking_date_end:
-        if query.booking_date_start:
+    # 航司录单时间范围筛选（从form_data JSON中的airline_record_time字段提取）
+    if query.airline_record_time_start or query.airline_record_time_end:
+        # 提取airline_record_time字段（格式：YYYY-MM-DD字符串）
+        # 由于airline_record_time是YYYY-MM-DD格式的字符串，可以直接进行字符串比较
+        airline_record_time_expr = func.cast(
+            func.json_extract(
+                func.cast(Settlement.form_data, JSON),
+                "$.airline_record_time"
+            ),
+            String(100)
+        )
+        
+        if query.airline_record_time_start:
+            # 将查询参数转换为字符串格式进行比较（YYYY-MM-DD格式可以直接字符串比较）
+            start_date_str = query.airline_record_time_start.isoformat()
             query_obj = query_obj.filter(
-                Waybill.booking_date >= query.booking_date_start
+                airline_record_time_expr >= start_date_str
             )
-        if query.booking_date_end:
+        if query.airline_record_time_end:
+            # 将查询参数转换为字符串格式进行比较
+            end_date_str = query.airline_record_time_end.isoformat()
             query_obj = query_obj.filter(
-                Waybill.booking_date <= query.booking_date_end
+                airline_record_time_expr <= end_date_str
             )
     
     # 获取总数（需要去重，因为JOIN可能产生重复）
@@ -290,9 +305,14 @@ async def get_settlements(
         waybill = waybill_map.get(master_airwaybill_number) if master_airwaybill_number else None
         
         # 提取指定字段
+        # 航司录单时间：优先使用form_data中的airline_record_time，如果没有则从关联的运单表获取
+        airline_record_time = form_data_dict.get("airline_record_time")
+        if not airline_record_time and waybill and waybill.booking_date:
+            airline_record_time = waybill.booking_date.isoformat()
+        
         settlement_item = {
             "id": str(settlement.id),
-            "airline_record_time": waybill.booking_date.isoformat() if waybill and waybill.booking_date else None,  # 航司录单时间
+            "airline_record_time": airline_record_time,  # 航司录单时间
             "airline": form_data_dict.get("airline"),  # 所属航司
             "master_airwaybill_number": master_airwaybill_number,  # 主单号
             "flight_number": form_data_dict.get("flight_number"),  # 航班号
