@@ -23,7 +23,7 @@ class WaybillCreate(BaseModel):
         "flight_date": "",  // 航班日期
         "flight_number": "",  // 航班号
         "origin_station": "",  // 始发站
-        "waybill_type": ""  // 运单类型（必填，仅深圳航空需要，如：普通运单、加急运单等）
+        "waybill_type": ""  // 运单类型（可选，仅深圳航空，如：普通运单、加急运单等）
       },
       "shipper_consignee_info": {
         "consignee_info": "",  // 收货人信息
@@ -99,7 +99,7 @@ class WaybillCreate(BaseModel):
     - 所有字段的值都是字符串类型
     - address 是对象类型，包含 region（省/市/区）和 detail（详细地址）两个字段
     - 不同航司的字段结构不同，前端需要根据 airline 字段来展示对应的表单字段
-    - 深圳航空的运单必须提供 flight_info.waybill_type 字段（运单类型），南方航空不需要此字段
+    - 深圳航空的运单可以选择性提供 flight_info.waybill_type 字段（运单类型），南方航空不需要此字段
     """
     form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），根据航司类型包含不同的字段结构")
 
