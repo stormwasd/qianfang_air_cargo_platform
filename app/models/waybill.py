@@ -13,6 +13,7 @@ class ExecutionStatus(str, enum.Enum):
     NOT_EXECUTED = "未执行"
     EXECUTING = "执行中"
     FAILED = "执行失败"
+    SUCCESS = "执行成功"  # RPA执行成功状态
 
 
 class Waybill(Base):
@@ -27,6 +28,7 @@ class Waybill(Base):
     document_print_status = Column(String(20), nullable=False, default=ExecutionStatus.NOT_EXECUTED.value, index=True, comment="单据打印执行状态（未执行、执行中、执行失败）")
     departure_time = Column(DateTime(timezone=True), nullable=True, comment="起飞时间（RPA执行后写入，中国时间UTC+8）")
     booking_date = Column(Date, nullable=False, index=True, comment="开单日期（格式：YYYY-MM-DD）")
+    rpa_work_uuid = Column(String(100), nullable=True, index=True, comment="RPA任务workUuid（用于查询RPA执行状态）")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     

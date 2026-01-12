@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     # CORS配置
     CORS_ORIGINS: List[str] = ["*"]
     
+    # RPA API配置
+    RPA_API_BASE_URL: str = "https://z-commander-api.ai-indeed.com"
+    RPA_API_APP_KEY: str = "56505085de31411d95c7d55d7d77147c"
+    RPA_API_APP_SECRET: str = "iZfoiSTRiBkTSzpiPTxCfcPuiOtXcC"
+    RPA_API_COOKIE: str = "JSESSIONID=3251C9354C6364367DF927B56A1E3CCE"
+    
+    # RPA任务配置
+    RPA_SHENZHEN_AIR_JOB_UUID: str = "e1b259766b97e5e115c21b2614158a5f"  # 深航新增运单任务jobUuid
+    RPA_SHENZHEN_AIR_QUEUE_UUID: str = "8e53aa16fb8642489e899998283da28f"  # 深航获取运单号队列UUID
+    
     # 应用配置
     DEBUG: bool = Field(default=False, description="调试模式")
     
