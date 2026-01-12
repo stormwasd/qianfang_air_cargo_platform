@@ -337,10 +337,9 @@ def poll_rpa_void_status(waybill_id: int, work_uuid: str, job_uuid: str):
                                 if dict_value:
                                     waybill.waybill_void_status = dict_value
                                 
-                                # 如果作废成功(status=5)，删除运单记录
+                                # 如果作废成功(status=5)，记录日志（保留记录用于留痕，不删除）
                                 if rpa_status == 5:
-                                    print(f"运单作废成功，删除运单记录: waybill_id={waybill_id}, waybill_number={waybill.waybill_number}")
-                                    db_session.delete(waybill)
+                                    print(f"运单作废成功: waybill_id={waybill_id}, waybill_number={waybill.waybill_number}, waybill_void_status={dict_value}")
                                 
                                 db_session.commit()
                             
@@ -609,7 +608,7 @@ async def void_waybill(
     3. 调用深航作废运单任务RPA接口
     4. 从RPA响应中提取workUuid并保存到数据库（覆盖之前的rpa_work_uuid）
     5. 启动后台任务轮询RPA作废执行状态
-    6. 当RPA作废成功时，自动删除该运单记录
+    6. 当RPA作废成功时，更新运单作废状态为"3"（作废成功），保留记录用于留痕
     
     - **waybill_id**: 运单ID（字符串格式）
     """
