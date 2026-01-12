@@ -23,7 +23,7 @@ class Waybill(Base):
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="运单ID")
     waybill_number = Column(String(100), nullable=True, index=True, comment="运单号（RPA执行后写入）")
     form_data = Column(Text, nullable=False, comment="表单数据，JSON格式存储")
-    airline_record_status = Column(String(20), nullable=False, default=ExecutionStatus.NOT_EXECUTED.value, index=True, comment="航司录单执行状态（未执行、执行中、执行失败）")
+    airline_record_status = Column(String(20), nullable=False, default="0", index=True, comment="航司录单执行状态（数据字典值：0=未开单，1=开单中，2=失败，3=成功）")
     cargo_station_record_status = Column(String(20), nullable=False, default=ExecutionStatus.NOT_EXECUTED.value, index=True, comment="货站录单执行状态（未执行、执行中、执行失败）")
     document_print_status = Column(String(20), nullable=False, default=ExecutionStatus.NOT_EXECUTED.value, index=True, comment="单据打印执行状态（未执行、执行中、执行失败）")
     departure_time = Column(DateTime(timezone=True), nullable=True, comment="起飞时间（RPA执行后写入，中国时间UTC+8）")

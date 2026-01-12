@@ -16,7 +16,7 @@ from app.schemas.waybill import (
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china, get_china_today
 from app.services.rpa_service import rpa_service
-from app.utils.rpa_status_mapper import map_rpa_status_to_execution_status
+from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 
 router = APIRouter()
 
@@ -60,7 +60,7 @@ async def create_waybill(
     new_waybill = Waybill(
         form_data=form_data_json,
         booking_date=booking_date,
-        airline_record_status=ExecutionStatus.NOT_EXECUTED.value,
+        airline_record_status="0",  # 数据字典值："0"=未开单
         cargo_station_record_status=ExecutionStatus.NOT_EXECUTED.value,
         document_print_status=ExecutionStatus.NOT_EXECUTED.value
     )
@@ -323,8 +323,10 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
                 print(f"运单不是深航，停止轮询: {waybill_id}, airline={airline}")
                 return
             
-            max_polls = 60  # 最多轮询60次
-            poll_interval = 5  # 每次间隔5秒
+            # 从配置文件读取轮询参数
+            from app.config import settings
+            max_polls = settings.RPA_POLL_MAX_COUNT
+            poll_interval = settings.RPA_POLL_INTERVAL
             
             for i in range(max_polls):
                 # 等待一段时间后查询
@@ -341,16 +343,16 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
                             # 更新运单状态
                             waybill = db_session.query(Waybill).filter(Waybill.id == waybill_id).first()
                             if waybill:
-                                # 映射RPA状态到系统执行状态
-                                execution_status = map_rpa_status_to_execution_status(rpa_status)
-                                if execution_status:
-                                    waybill.airline_record_status = execution_status
+                                # 映射RPA状态到系统数据字典的值
+                                # RPA status -> 数据字典值："1"（开单中）、"2"（失败）、"3"（成功）
+                                dict_value = map_rpa_status_to_dict_value(rpa_status)
+                                if dict_value:
+                                    waybill.airline_record_status = dict_value
                                     
                                     # 如果状态是成功(5)，获取运单号（仅深航）
                                     if rpa_status == 5 and not waybill.waybill_number and is_shenzhen_air:
                                         try:
                                             # 调用获取运单号接口（深航专用）
-                                            from app.config import settings
                                             waybill_suffix = await rpa_service.get_shenzhen_air_waybill_number(
                                                 settings.RPA_SHENZHEN_AIR_QUEUE_UUID
                                             )
@@ -416,9 +418,7 @@ async def execute_waybill(
     if not is_shenzhen_air:
         raise BadRequestException("当前仅支持深圳航空的运单执行")
     
-    # 检查是否已经执行过
-    if waybill.rpa_work_uuid:
-        raise BadRequestException("该运单已经执行过，不能重复执行")
+    # 允许重复执行，会覆盖之前的rpa_work_uuid
     
     # 从form_data中提取RPA接口所需的参数
     flight_info = form_data_dict.get("flight_info", {})
@@ -482,8 +482,9 @@ async def execute_waybill(
             raise BadRequestException("RPA接口未返回workUuid")
         
         # 保存workUuid到数据库
+        # 状态设置为"1"（开单中），对应数据字典invoice_status的value="1"
         waybill.rpa_work_uuid = work_uuid
-        waybill.airline_record_status = ExecutionStatus.EXECUTING.value
+        waybill.airline_record_status = "1"  # 数据字典值："1"=开单中
         db.commit()
         db.refresh(waybill)
         
