@@ -63,6 +63,7 @@ async def create_waybill(
         "airline_record_status": new_waybill.airline_record_status,
         "cargo_station_record_status": new_waybill.cargo_station_record_status,
         "document_print_status": new_waybill.document_print_status,
+        "waybill_void_status": new_waybill.waybill_void_status,
         "departure_time": format_datetime_china(new_waybill.departure_time),
         "booking_date": new_waybill.booking_date.isoformat(),
         "rpa_work_uuid": new_waybill.rpa_work_uuid,
@@ -230,6 +231,7 @@ async def get_waybills(
             "airline_record_status": waybill.airline_record_status,
             "cargo_station_record_status": waybill.cargo_station_record_status,
             "document_print_status": waybill.document_print_status,
+            "waybill_void_status": waybill.waybill_void_status,
             "departure_time": format_datetime_china(waybill.departure_time),
             "booking_date": waybill.booking_date.isoformat(),
             "rpa_work_uuid": waybill.rpa_work_uuid,
@@ -268,6 +270,7 @@ async def get_waybill(
         "airline_record_status": waybill.airline_record_status,
         "cargo_station_record_status": waybill.cargo_station_record_status,
         "document_print_status": waybill.document_print_status,
+        "waybill_void_status": waybill.waybill_void_status,
         "departure_time": format_datetime_china(waybill.departure_time),
         "booking_date": waybill.booking_date.isoformat(),
         "rpa_work_uuid": waybill.rpa_work_uuid,
@@ -276,6 +279,83 @@ async def get_waybill(
     }
     
     return success_response(data=waybill_data, msg="查询成功")
+
+
+def poll_rpa_void_status(waybill_id: int, work_uuid: str, job_uuid: str):
+    """
+    轮询RPA作废状态的后台任务
+    
+    Args:
+        waybill_id: 运单ID
+        work_uuid: RPA workUuid
+        job_uuid: RPA jobUuid
+    """
+    import asyncio
+    from app.database import SessionLocal
+    
+    async def _poll():
+        # 创建新的数据库会话（因为后台任务在独立线程中运行）
+        db_session = SessionLocal()
+        try:
+            # 首先检查运单是否存在，并判断是否为深航
+            waybill = db_session.query(Waybill).filter(Waybill.id == waybill_id).first()
+            if not waybill:
+                print(f"运单不存在，停止轮询: {waybill_id}")
+                return
+            
+            # 判断是否为深航（只有深航才需要轮询RPA状态）
+            form_data_dict = json.loads(waybill.form_data)
+            airline = form_data_dict.get("airline", "")
+            is_shenzhen_air = airline == "1" or airline == "深圳航空"
+            if not is_shenzhen_air:
+                print(f"运单不是深航，停止轮询: {waybill_id}, airline={airline}")
+                return
+            
+            # 从配置文件读取轮询参数
+            from app.config import settings
+            max_polls = settings.RPA_POLL_MAX_COUNT
+            poll_interval = settings.RPA_POLL_INTERVAL
+            
+            for i in range(max_polls):
+                # 等待一段时间后查询
+                await asyncio.sleep(poll_interval)
+                
+                # 查询RPA作废状态（仅深航）
+                try:
+                    status_data = await rpa_service.query_shenzhen_air_waybill_status(job_uuid)
+                    status_info = rpa_service.extract_status_from_query_response(status_data, work_uuid)
+                    
+                    if status_info:
+                        rpa_status = status_info.get("status")
+                        if rpa_status is not None:
+                            # 更新运单作废状态
+                            waybill = db_session.query(Waybill).filter(Waybill.id == waybill_id).first()
+                            if waybill:
+                                # 映射RPA状态到系统数据字典的值（作废状态）
+                                # RPA status -> 数据字典值："1"（作废中）、"2"（作废失败）、"3"（作废成功）
+                                dict_value = map_rpa_status_to_dict_value(rpa_status)
+                                if dict_value:
+                                    waybill.waybill_void_status = dict_value
+                                
+                                db_session.commit()
+                            
+                            # 如果状态是成功(5)或失败(3)，停止轮询
+                            if rpa_status in [3, 5]:
+                                break
+                except Exception as e:
+                    # 记录错误但继续轮询
+                    print(f"轮询RPA作废状态失败: {str(e)}")
+                    continue
+        finally:
+            db_session.close()
+    
+    # 在新的事件循环中运行异步函数
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_poll())
+    finally:
+        loop.close()
 
 
 def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
@@ -492,6 +572,7 @@ async def execute_waybill(
             "airline_record_status": waybill.airline_record_status,
             "cargo_station_record_status": waybill.cargo_station_record_status,
             "document_print_status": waybill.document_print_status,
+            "waybill_void_status": waybill.waybill_void_status,
             "departure_time": format_datetime_china(waybill.departure_time),
             "booking_date": waybill.booking_date.isoformat(),
             "rpa_work_uuid": waybill.rpa_work_uuid,
@@ -505,4 +586,99 @@ async def execute_waybill(
         raise
     except Exception as e:
         raise BadRequestException(f"调用RPA接口失败: {str(e)}")
+
+
+@router.post("/{waybill_id}/void", summary="运单作废")
+async def void_waybill(
+    waybill_id: str,
+    background_tasks: BackgroundTasks,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    运单作废接口
+    
+    此接口会：
+    1. 根据运单的airline判断是否为深航（airline="1"或"深圳航空"）
+    2. 如果是深航，从waybill_number中提取运单号后八位（去除"479-"前缀）
+    3. 调用深航作废运单任务RPA接口
+    4. 从RPA响应中提取workUuid并保存到数据库（覆盖之前的rpa_work_uuid）
+    5. 启动后台任务轮询RPA作废执行状态
+    
+    - **waybill_id**: 运单ID（字符串格式）
+    """
+    # 查询运单
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    if not waybill:
+        raise NotFoundException("运单不存在")
+    
+    # 检查运单号是否存在
+    if not waybill.waybill_number:
+        raise BadRequestException("运单号不存在，无法作废")
+    
+    # 解析form_data
+    form_data_dict = json.loads(waybill.form_data)
+    airline = form_data_dict.get("airline", "")
+    
+    # 判断是否为深圳航空
+    is_shenzhen_air = airline == "1" or airline == "深圳航空"
+    if not is_shenzhen_air:
+        raise BadRequestException("当前仅支持深圳航空的运单作废")
+    
+    # 提取运单号后八位（去除深航前缀"479-"）
+    waybill_number_8 = rpa_service.extract_waybill_suffix(waybill.waybill_number)
+    
+    # 验证运单号后八位
+    if not waybill_number_8 or len(waybill_number_8) != 8:
+        raise BadRequestException(f"运单号格式不正确，无法提取后八位: {waybill.waybill_number}")
+    
+    # 调用RPA作废接口
+    try:
+        rpa_response = await rpa_service.cancel_shenzhen_air_waybill(waybill_number_8)
+        
+        # 提取workUuid
+        work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+        if not work_uuid:
+            raise BadRequestException("RPA作废接口未返回workUuid")
+        
+        # 保存workUuid到数据库（覆盖之前的rpa_work_uuid）
+        # 状态设置为"1"（作废中），对应数据字典invoice_status的value="1"
+        waybill.rpa_work_uuid = work_uuid
+        waybill.waybill_void_status = "1"  # 数据字典值："1"=作废中
+        db.commit()
+        db.refresh(waybill)
+        
+        # 启动后台任务轮询RPA作废状态
+        from app.config import settings
+        background_tasks.add_task(
+            poll_rpa_void_status,
+            waybill_id=int(waybill_id),
+            work_uuid=work_uuid,
+            job_uuid=settings.RPA_SHENZHEN_AIR_VOID_JOB_UUID
+        )
+        
+        # 解析form_data JSON
+        form_data_dict = json.loads(waybill.form_data)
+        
+        waybill_data = {
+            "id": str(waybill.id),
+            "waybill_number": waybill.waybill_number,
+            "form_data": form_data_dict,
+            "airline_record_status": waybill.airline_record_status,
+            "cargo_station_record_status": waybill.cargo_station_record_status,
+            "document_print_status": waybill.document_print_status,
+            "waybill_void_status": waybill.waybill_void_status,
+            "departure_time": format_datetime_china(waybill.departure_time),
+            "booking_date": waybill.booking_date.isoformat(),
+            "rpa_work_uuid": waybill.rpa_work_uuid,
+            "created_at": format_datetime_china(waybill.created_at),
+            "updated_at": format_datetime_china(waybill.updated_at)
+        }
+        
+        return success_response(data=waybill_data, msg="运单作废成功，正在处理中")
+        
+    except BadRequestException:
+        raise
+    except Exception as e:
+        raise BadRequestException(f"调用RPA作废接口失败: {str(e)}")
 

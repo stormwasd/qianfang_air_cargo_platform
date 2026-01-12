@@ -249,6 +249,59 @@ class RPAService:
             完整运单号（如：479-58841145）
         """
         return f"479-{waybill_suffix}"
+    
+    def extract_waybill_suffix(self, waybill_number: str) -> str:
+        """
+        提取运单号后八位（去除深航前缀 "479-"）
+        
+        Args:
+            waybill_number: 完整运单号（如：479-58841145 或 58841145）
+        
+        Returns:
+            运单号后八位（如：58841145）
+        """
+        if waybill_number.startswith("479-"):
+            return waybill_number[4:]  # 去除 "479-" 前缀
+        return waybill_number
+    
+    async def cancel_shenzhen_air_waybill(self, waybill_number_8: str) -> Dict[str, Any]:
+        """
+        调用深航作废运单任务RPA接口（仅适用于深圳航空，airline="1"或"深圳航空"）
+        
+        Args:
+            waybill_number_8: 运单号后八位（如：58841145）
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_SHENZHEN_AIR_VOID_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "waybill_number_8": waybill_number_8
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                # 检查RPA接口返回的code
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "RPA作废接口调用失败")
+                    raise BadRequestException(f"RPA作废接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"RPA作废接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"RPA作废接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"RPA作废接口调用异常: {str(e)}")
 
 
 # 创建全局RPA服务实例

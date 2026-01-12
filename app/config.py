@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     
     # RPA任务配置
     RPA_SHENZHEN_AIR_JOB_UUID: str = "e1b259766b97e5e115c21b2614158a5f"  # 深航新增运单任务jobUuid
+    RPA_SHENZHEN_AIR_VOID_JOB_UUID: str = "a7c653b789a20bb955bf22163a9bd7c9"  # 深航作废运单任务jobUuid
     RPA_SHENZHEN_AIR_QUEUE_UUID: str = "8e53aa16fb8642489e899998283da28f"  # 深航获取运单号队列UUID
     
     # RPA轮询配置
