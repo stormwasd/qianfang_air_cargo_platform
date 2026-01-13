@@ -13,6 +13,7 @@ class BookingStatus(str, enum.Enum):
     NOT_EXECUTED = "未执行"
     EXECUTING = "执行中"
     FAILED = "执行失败"
+    SUCCESS = "执行成功"  # RPA执行成功状态
 
 
 class InvoiceStatus(str, enum.Enum):
@@ -31,6 +32,7 @@ class Booking(Base):
     invoice_status = Column(String(20), nullable=False, default=InvoiceStatus.NOT_INVOICED.value, index=True, comment="开单状态（未开单、成功）")
     booking_time = Column(DateTime(timezone=True), nullable=False, comment="订舱时间（中国时间UTC+8）")
     master_airwaybill_number = Column(String(100), nullable=True, index=True, comment="主单号（开单RPA成功后写入，如：475-65665）")
+    rpa_work_uuid = Column(String(100), nullable=True, index=True, comment="RPA任务workUuid（用于查询RPA执行状态）")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
