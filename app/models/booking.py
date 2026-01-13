@@ -28,7 +28,7 @@ class Booking(Base):
     
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="订舱ID")
     form_data = Column(Text, nullable=False, comment="表单数据，JSON格式存储")
-    booking_status = Column(String(20), nullable=False, default=BookingStatus.NOT_EXECUTED.value, index=True, comment="订舱状态（未执行、执行中、执行失败）")
+    booking_status = Column(String(20), nullable=False, default="0", index=True, comment="订舱状态（数据字典值：0=未执行，1=执行中，2=失败，3=成功）")
     invoice_status = Column(String(20), nullable=False, default=InvoiceStatus.NOT_INVOICED.value, index=True, comment="开单状态（未开单、成功）")
     booking_time = Column(DateTime(timezone=True), nullable=False, comment="订舱时间（中国时间UTC+8）")
     master_airwaybill_number = Column(String(100), nullable=True, index=True, comment="主单号（开单RPA成功后写入，如：475-65665）")

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy.dialects.mysql import JSON
 from app.core.response import success_response
-from app.core.exceptions import BadRequestException
+from app.core.exceptions import BadRequestException, NotFoundException
 from app.database import get_db, SessionLocal
 from app.models.booking import Booking, BookingStatus, InvoiceStatus
 from app.models.config import BusinessConfig
@@ -73,18 +73,11 @@ def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_
                             # 更新订舱状态
                             booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
                             if booking:
-                                # 映射RPA状态到系统状态
-                                # RPA status -> 系统状态："1"（执行中）、"2"（执行失败）、"3"（执行成功）
-                                # 使用数据字典值存储，与运单保持一致
+                                # 映射RPA状态到系统数据字典的值
+                                # RPA status -> 数据字典值："1"（执行中）、"2"（执行失败）、"3"（执行成功）
                                 dict_value = map_rpa_status_to_dict_value(rpa_status)
                                 if dict_value:
-                                    # 将数据字典值转换为BookingStatus枚举值
-                                    if dict_value == "1":
-                                        booking.booking_status = BookingStatus.EXECUTING.value  # "执行中"
-                                    elif dict_value == "2":
-                                        booking.booking_status = BookingStatus.FAILED.value  # "执行失败"
-                                    elif dict_value == "3":
-                                        booking.booking_status = BookingStatus.SUCCESS.value  # "执行成功"
+                                    booking.booking_status = dict_value
                                     
                                     # 如果状态是成功(5)，获取运单号（仅南航）
                                     if rpa_status == 5 and not booking.master_airwaybill_number and is_china_southern_air:
@@ -242,22 +235,21 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
     return params
 
 
-@router.post("", summary="确认订舱信息并提交")
+@router.post("", summary="提交订舱信息")
 async def create_booking(
     booking: BookingCreate,
-    background_tasks: BackgroundTasks,
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    确认订舱信息并提交接口
+    提交订舱信息接口
     
     - **form_data**: 表单数据（JSON格式），前端可以传入任意字段
     - 自动设置booking_time为当前时间（中国时间）
-    - 订舱状态默认为"未执行"
+    - 订舱状态默认为"0"（未执行，数据字典值）
     - 开单状态默认为"未开单"
     - master_airwaybill_number初始为null，由RPA后续写入
-    - 如果airline="2"（南方航空），会自动调用南航订舱RPA接口
+    - 此接口仅保存订舱信息，不调用RPA接口
     """
     # 将form_data转换为JSON字符串
     form_data_json = json.dumps(booking.form_data, ensure_ascii=False)
@@ -265,88 +257,16 @@ async def create_booking(
     # 获取当前时间（中国时间）作为订舱时间
     booking_time = get_china_now()
     
-    # 解析form_data判断是否为南航
-    form_data_dict = booking.form_data
-    airline = form_data_dict.get("airline", "")
-    is_china_southern_air = airline == "2" or airline == "南方航空"
-    
     # 创建订舱记录
     new_booking = Booking(
         form_data=form_data_json,
         booking_time=booking_time,
-        booking_status=BookingStatus.NOT_EXECUTED.value,
+        booking_status="0",  # 数据字典值："0"=未执行
         invoice_status=InvoiceStatus.NOT_INVOICED.value
     )
     db.add(new_booking)
     db.commit()
     db.refresh(new_booking)
-    
-    # 如果是南航，调用RPA订舱接口
-    if is_china_southern_air:
-        try:
-            # 获取业务参数配置
-            business_config = _get_business_config(db)
-            if not business_config:
-                raise BadRequestException("业务参数配置不存在，无法调用南航订舱接口")
-            
-            # 提取并映射参数
-            rpa_params = _extract_china_southern_air_params(form_data_dict, business_config)
-            
-            # 验证必填参数
-            required_params = [
-                "address_of_the_application_executable_file_tangyi",
-                "system_account",
-                "login_password",
-                "system_url",
-                "origin_station",
-                "destination",
-                "flight_date",
-                "flight_number",
-                "cargo_type",
-                "cargo_code",
-                "cargo_name",
-                "quantity",
-                "weight",
-                "special_cargo_code",
-                "shipper",
-                "shipper_phone",
-                "consignee",
-                "consignee_phone"
-            ]
-            
-            missing_params = [key for key in required_params if not rpa_params.get(key)]
-            if missing_params:
-                raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
-            
-            # 调用RPA订舱接口
-            rpa_response = await rpa_service.create_china_southern_air_booking(**rpa_params)
-            
-            # 提取workUuid
-            work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
-            if not work_uuid:
-                raise BadRequestException("RPA订舱接口未返回workUuid")
-            
-            # 保存workUuid到数据库
-            # 状态设置为"执行中"
-            new_booking.rpa_work_uuid = work_uuid
-            new_booking.booking_status = BookingStatus.EXECUTING.value
-            db.commit()
-            db.refresh(new_booking)
-            
-            # 启动后台任务轮询RPA状态
-            background_tasks.add_task(
-                poll_china_southern_air_booking_status,
-                booking_id=int(new_booking.id),
-                work_uuid=work_uuid,
-                job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID
-            )
-        except BadRequestException:
-            raise
-        except Exception as e:
-            # RPA调用失败不影响订舱记录创建，但记录错误
-            print(f"调用南航订舱RPA接口失败: {str(e)}")
-            # 可以选择抛出异常或继续执行
-            # raise BadRequestException(f"调用南航订舱RPA接口失败: {str(e)}")
     
     # 解析form_data JSON
     form_data_dict = json.loads(new_booking.form_data)
@@ -364,6 +284,121 @@ async def create_booking(
     }
     
     return success_response(data=booking_data, msg="订舱信息提交成功")
+
+
+@router.post("/{booking_id}/execute", summary="确认并执行订舱")
+async def execute_booking(
+    booking_id: str,
+    background_tasks: BackgroundTasks,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    确认并执行订舱接口
+    
+    此接口会：
+    1. 根据订舱的airline判断是否为南航（airline="2"或"南方航空"）
+    2. 如果是南航，调用南航订舱任务RPA接口
+    3. 从RPA响应中提取workUuid并保存到数据库
+    4. 启动后台任务轮询RPA执行状态
+    
+    - **booking_id**: 订舱ID（字符串格式）
+    """
+    # 查询订舱
+    booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+    if not booking:
+        raise NotFoundException("订舱不存在")
+    
+    # 解析form_data
+    form_data_dict = json.loads(booking.form_data)
+    airline = form_data_dict.get("airline", "")
+    
+    # 判断是否为南方航空
+    is_china_southern_air = airline == "2" or airline == "南方航空"
+    if not is_china_southern_air:
+        raise BadRequestException("当前仅支持南方航空的订舱执行")
+    
+    # 允许重复执行，会覆盖之前的rpa_work_uuid
+    
+    # 获取业务参数配置
+    business_config = _get_business_config(db)
+    if not business_config:
+        raise BadRequestException("业务参数配置不存在，无法调用南航订舱接口")
+    
+    # 提取并映射参数
+    rpa_params = _extract_china_southern_air_params(form_data_dict, business_config)
+    
+    # 验证必填参数
+    required_params = [
+        "address_of_the_application_executable_file_tangyi",
+        "system_account",
+        "login_password",
+        "system_url",
+        "origin_station",
+        "destination",
+        "flight_date",
+        "flight_number",
+        "cargo_type",
+        "cargo_code",
+        "cargo_name",
+        "quantity",
+        "weight",
+        "special_cargo_code",
+        "shipper",
+        "shipper_phone",
+        "consignee",
+        "consignee_phone"
+    ]
+    
+    missing_params = [key for key in required_params if not rpa_params.get(key)]
+    if missing_params:
+        raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
+    
+    # 调用RPA接口
+    try:
+        rpa_response = await rpa_service.create_china_southern_air_booking(**rpa_params)
+        
+        # 提取workUuid
+        work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+        if not work_uuid:
+            raise BadRequestException("RPA订舱接口未返回workUuid")
+        
+        # 保存workUuid到数据库
+        # 状态设置为"1"（执行中），对应数据字典值="1"
+        booking.rpa_work_uuid = work_uuid
+        booking.booking_status = "1"  # 数据字典值："1"=执行中
+        db.commit()
+        db.refresh(booking)
+        
+        # 启动后台任务轮询RPA状态
+        background_tasks.add_task(
+            poll_china_southern_air_booking_status,
+            booking_id=int(booking_id),
+            work_uuid=work_uuid,
+            job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID
+        )
+        
+        # 解析form_data JSON
+        form_data_dict = json.loads(booking.form_data)
+        
+        booking_data = {
+            "id": str(booking.id),
+            "form_data": form_data_dict,
+            "booking_status": booking.booking_status,
+            "invoice_status": booking.invoice_status,
+            "booking_time": format_datetime_china(booking.booking_time),
+            "master_airwaybill_number": booking.master_airwaybill_number,
+            "rpa_work_uuid": booking.rpa_work_uuid,
+            "created_at": format_datetime_china(booking.created_at),
+            "updated_at": format_datetime_china(booking.updated_at)
+        }
+        
+        return success_response(data=booking_data, msg="订舱执行成功，正在处理中")
+        
+    except BadRequestException:
+        raise
+    except Exception as e:
+        raise BadRequestException(f"调用RPA接口失败: {str(e)}")
 
 
 @router.get("", summary="订舱列表")
