@@ -34,6 +34,8 @@ class Booking(Base):
     master_airwaybill_number = Column(String(100), nullable=True, index=True, comment="主单号（开单RPA成功后写入，如：784-47888190）")
     rpa_work_uuid = Column(String(100), nullable=True, index=True, comment="RPA任务workUuid（用于查询RPA执行状态，订舱或退舱时都会更新）")
     booking_cancel_status = Column(String(20), nullable=False, default="0", index=True, comment="退舱状态（数据字典值：0=未退舱，1=退舱中，2=退舱失败，3=退舱成功）")
+    rpa_queue_uuid = Column(String(100), nullable=True, index=True, comment="RPA队列UUID（动态创建，用于获取运单号）")
+    rpa_queue_id = Column(String(100), nullable=True, comment="RPA队列ID（动态创建，用于删除队列）")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     

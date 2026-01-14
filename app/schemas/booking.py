@@ -69,6 +69,8 @@ class BookingResponse(BaseModel):
     booking_time: datetime
     master_airwaybill_number: Optional[str]
     rpa_work_uuid: Optional[str]
+    rpa_queue_uuid: Optional[str]
+    rpa_queue_id: Optional[str]
     booking_cancel_status: str
     created_at: datetime
     updated_at: datetime

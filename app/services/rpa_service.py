@@ -587,6 +587,81 @@ class RPAService:
         复用查询深航运单状态的接口，因为RPA状态查询接口是通用的
         """
         return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
+    
+    async def create_queue(self, queue_name: str, max_queue_number: int = 999, is_expire: bool = False) -> Dict[str, Any]:
+        """
+        创建队列接口（通用，适用于所有航司）
+        
+        Args:
+            queue_name: 队列名称（如：nanhang_air_queue_waybill_number）
+            max_queue_number: 最大队列数量（默认999）
+            is_expire: 是否过期（默认False）
+        
+        Returns:
+            RPA接口返回的数据，包含queueID和queueUUID
+        """
+        url = f"{self.base_url}/openAPI/v1/queue/add"
+        
+        payload = {
+            "queueName": queue_name,
+            "maxQueueNumber": max_queue_number,
+            "isExpire": is_expire
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                # 检查RPA接口返回的code
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "创建队列失败")
+                    raise BadRequestException(f"创建队列失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"创建队列HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"创建队列请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"创建队列异常: {str(e)}")
+    
+    async def delete_queue(self, queue_id: str) -> bool:
+        """
+        删除队列接口（通用，适用于所有航司）
+        
+        Args:
+            queue_id: 队列ID（从创建队列接口返回的queueID）
+        
+        Returns:
+            删除是否成功（True表示成功）
+        """
+        url = f"{self.base_url}/openAPI/v1/queue/delete"
+        
+        payload = {
+            "id": int(queue_id) if queue_id.isdigit() else queue_id
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                # 检查RPA接口返回的code
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "删除队列失败")
+                    raise BadRequestException(f"删除队列失败: {error_msg}")
+                
+                # 返回data字段的值（通常是True）
+                return result.get("data", False)
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"删除队列HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"删除队列请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"删除队列异常: {str(e)}")
 
 
 # 创建全局RPA服务实例
