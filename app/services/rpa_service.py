@@ -497,6 +497,90 @@ class RPAService:
         """
         # 复用深航的状态查询接口，因为接口路径和参数格式相同
         return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
+    
+    def extract_waybill_suffix_china_southern_air(self, waybill_number: str) -> str:
+        """
+        提取南航运单号后八位（去除前缀 "784-"）（仅适用于南方航空）
+        
+        Args:
+            waybill_number: 完整运单号（如：784-47888190）
+        
+        Returns:
+            运单号后八位（如：47888190），如果格式不正确则返回空字符串
+        """
+        if not waybill_number:
+            return ""
+        
+        # 去除可能的空格
+        waybill_number = waybill_number.strip()
+        
+        # 如果包含 "784-" 前缀，去除它
+        if waybill_number.startswith("784-"):
+            waybill_number = waybill_number[4:]
+        
+        # 返回后八位（如果长度超过8位，取最后8位）
+        if len(waybill_number) >= 8:
+            return waybill_number[-8:]
+        
+        return waybill_number
+    
+    async def cancel_china_southern_air_booking(
+        self,
+        system_url: str,
+        system_account: str,
+        login_password: str,
+        waybill_number_8: str
+    ) -> Dict[str, Any]:
+        """
+        调用南航退舱任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
+        
+        Args:
+            system_url: 系统URL
+            system_account: 系统账号
+            login_password: 登录密码
+            waybill_number_8: 运单号后八位（如：47888190）
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "system_url": system_url,
+                "system_account": system_account,
+                "login_password": login_password,
+                "waybill_number_8": waybill_number_8
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                # 检查RPA接口返回的code
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "南航退舱RPA接口调用失败")
+                    raise BadRequestException(f"南航退舱RPA接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"南航退舱RPA接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"南航退舱RPA接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"南航退舱RPA接口调用异常: {str(e)}")
+    
+    async def query_china_southern_air_cancel_status(self, job_uuid: str, start_time: Optional[str] = None, end_time: Optional[str] = None, size: int = 1000000) -> Dict[str, Any]:
+        """
+        查询南航退舱任务状态接口（仅适用于南方航空，airline="2"或"南方航空"）
+        复用查询深航运单状态的接口，因为RPA状态查询接口是通用的
+        """
+        return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
 
 
 # 创建全局RPA服务实例

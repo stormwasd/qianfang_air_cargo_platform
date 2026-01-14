@@ -502,6 +502,7 @@ async def get_bookings(
             "booking_time": format_datetime_china(booking.booking_time),
             "master_airwaybill_number": booking.master_airwaybill_number,
             "rpa_work_uuid": booking.rpa_work_uuid,
+            "booking_cancel_status": booking.booking_cancel_status,
             "created_at": format_datetime_china(booking.created_at),
             "updated_at": format_datetime_china(booking.updated_at)
         })
@@ -510,4 +511,198 @@ async def get_bookings(
         data={"total": total, "items": booking_list},
         msg="查询成功"
     )
+
+
+def poll_china_southern_air_cancel_status(booking_id: int, work_uuid: str, job_uuid: str):
+    """
+    轮询南航退舱RPA状态的后台任务
+    
+    Args:
+        booking_id: 订舱ID
+        work_uuid: RPA workUuid
+        job_uuid: RPA jobUuid
+    """
+    import asyncio
+    from app.database import SessionLocal
+    
+    async def _poll():
+        # 创建新的数据库会话（因为后台任务在独立线程中运行）
+        db_session = SessionLocal()
+        try:
+            # 首先检查订舱是否存在，并判断是否为南航
+            booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
+            if not booking:
+                print(f"订舱不存在，停止轮询: {booking_id}")
+                return
+            
+            # 判断是否为南航（只有南航才需要轮询RPA状态）
+            form_data_dict = json.loads(booking.form_data)
+            airline = form_data_dict.get("airline", "")
+            is_china_southern_air = airline == "2" or airline == "南方航空"
+            if not is_china_southern_air:
+                print(f"订舱不是南航，停止轮询: {booking_id}, airline={airline}")
+                return
+            
+            # 从配置文件读取轮询参数
+            from app.config import settings
+            max_polls = settings.RPA_POLL_MAX_COUNT
+            poll_interval = settings.RPA_POLL_INTERVAL
+            
+            for i in range(max_polls):
+                # 等待一段时间后查询
+                await asyncio.sleep(poll_interval)
+                
+                # 查询RPA退舱状态（仅南航）
+                try:
+                    status_data = await rpa_service.query_china_southern_air_cancel_status(job_uuid)
+                    status_info = rpa_service.extract_status_from_query_response(status_data, work_uuid)
+                    
+                    if status_info:
+                        rpa_status = status_info.get("status")
+                        if rpa_status is not None:
+                            # 更新退舱状态
+                            booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
+                            if booking:
+                                # 映射RPA状态到系统数据字典的值
+                                # RPA status -> 数据字典值："1"（退舱中）、"2"（退舱失败）、"3"（退舱成功）
+                                dict_value = map_rpa_status_to_dict_value(rpa_status)
+                                if dict_value:
+                                    booking.booking_cancel_status = dict_value
+                                
+                                db_session.commit()
+                            
+                            # 如果状态是成功(5)或失败(3)，停止轮询
+                            if rpa_status in [3, 5]:
+                                break
+                except Exception as e:
+                    # 记录错误但继续轮询
+                    print(f"轮询南航退舱RPA状态失败: {str(e)}")
+                    continue
+        finally:
+            db_session.close()
+    
+    # 在新的事件循环中运行异步函数
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_poll())
+    finally:
+        loop.close()
+
+
+@router.post("/{booking_id}/cancel", summary="退舱")
+async def cancel_booking(
+    booking_id: str,
+    background_tasks: BackgroundTasks,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    退舱接口
+    
+    此接口会：
+    1. 根据订舱的airline判断是否为南航（airline="2"或"南方航空"）
+    2. 如果是南航，从master_airwaybill_number中提取运单号后八位（去除"784-"前缀）
+    3. 从业务参数配置中获取system_url、system_account、login_password
+    4. 调用南航退舱任务RPA接口
+    5. 从RPA响应中提取workUuid并保存到数据库（覆盖之前的rpa_work_uuid）
+    6. 启动后台任务轮询RPA退舱执行状态
+    7. 当RPA退舱成功时，更新退舱状态为"3"（退舱成功），保留记录用于留痕
+    
+    - **booking_id**: 订舱ID（字符串格式）
+    """
+    # 查询订舱
+    booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+    if not booking:
+        raise NotFoundException("订舱不存在")
+    
+    # 检查主单号是否存在
+    if not booking.master_airwaybill_number:
+        raise BadRequestException("主单号不存在，无法退舱")
+    
+    # 解析form_data
+    form_data_dict = json.loads(booking.form_data)
+    airline = form_data_dict.get("airline", "")
+    
+    # 判断是否为南方航空
+    is_china_southern_air = airline == "2" or airline == "南方航空"
+    if not is_china_southern_air:
+        raise BadRequestException("当前仅支持南方航空的退舱")
+    
+    # 提取运单号后八位（去除南航前缀"784-"）
+    waybill_number_8 = rpa_service.extract_waybill_suffix_china_southern_air(booking.master_airwaybill_number)
+    
+    # 验证运单号后八位
+    if not waybill_number_8 or len(waybill_number_8) != 8:
+        raise BadRequestException(f"主单号格式不正确，无法提取后八位: {booking.master_airwaybill_number}")
+    
+    # 获取业务参数配置
+    business_config = _get_business_config(db)
+    if not business_config:
+        raise BadRequestException("业务参数配置不存在，无法调用南航退舱接口")
+    
+    # 从业务参数中获取南航登录配置
+    china_southern_air_config = business_config.get("china_southern_air", {})
+    booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
+    china_southern_air_login = booking_and_create_config.get("china_southern_air_login", {})
+    
+    system_url = china_southern_air_login.get("system_url", "")
+    system_account = china_southern_air_login.get("system_account", "")
+    login_password = china_southern_air_login.get("login_password", "")
+    
+    # 验证必填参数
+    if not system_url or not system_account or not login_password:
+        raise BadRequestException("业务参数配置中缺少南航登录信息（system_url、system_account、login_password）")
+    
+    # 调用RPA退舱接口
+    try:
+        rpa_response = await rpa_service.cancel_china_southern_air_booking(
+            system_url=system_url,
+            system_account=system_account,
+            login_password=login_password,
+            waybill_number_8=waybill_number_8
+        )
+        
+        # 提取workUuid
+        work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+        if not work_uuid:
+            raise BadRequestException("RPA退舱接口未返回workUuid")
+        
+        # 保存workUuid到数据库（覆盖之前的rpa_work_uuid）
+        # 状态设置为"1"（退舱中），对应数据字典值="1"
+        booking.rpa_work_uuid = work_uuid
+        booking.booking_cancel_status = "1"  # 数据字典值："1"=退舱中
+        db.commit()
+        db.refresh(booking)
+        
+        # 启动后台任务轮询RPA退舱状态
+        background_tasks.add_task(
+            poll_china_southern_air_cancel_status,
+            booking_id=int(booking_id),
+            work_uuid=work_uuid,
+            job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID
+        )
+        
+        # 解析form_data JSON
+        form_data_dict = json.loads(booking.form_data)
+        
+        booking_data = {
+            "id": str(booking.id),
+            "form_data": form_data_dict,
+            "booking_status": booking.booking_status,
+            "invoice_status": booking.invoice_status,
+            "booking_time": format_datetime_china(booking.booking_time),
+            "master_airwaybill_number": booking.master_airwaybill_number,
+            "rpa_work_uuid": booking.rpa_work_uuid,
+            "booking_cancel_status": booking.booking_cancel_status,
+            "created_at": format_datetime_china(booking.created_at),
+            "updated_at": format_datetime_china(booking.updated_at)
+        }
+        
+        return success_response(data=booking_data, msg="退舱成功，正在处理中")
+        
+    except BadRequestException:
+        raise
+    except Exception as e:
+        raise BadRequestException(f"调用RPA退舱接口失败: {str(e)}")
 
