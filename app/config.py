@@ -62,7 +62,12 @@ class Settings(BaseSettings):
     # RPA任务配置
     RPA_SHENZHEN_AIR_JOB_UUID: str = "e1b259766b97e5e115c21b2614158a5f"  # 深航新增运单任务jobUuid
     RPA_SHENZHEN_AIR_VOID_JOB_UUID: str = "a7c653b789a20bb955bf22163a9bd7c9"  # 深航作废运单任务jobUuid
-    RPA_SHENZHEN_AIR_QUEUE_UUID: str = "8e53aa16fb8642489e899998283da28f"  # 深航获取运单号队列UUID
+    RPA_SHENZHEN_AIR_QUEUE_UUID: str = "8e53aa16fb8642489e899998283da28f"  # 深航获取运单号队列UUID（历史遗留，已不使用）
+    # 深航开单队列名称（固定队列名称，每次执行开单时都会创建新队列实例）
+    RPA_SHENZHEN_AIR_QUEUE_WAYBILL_NUMBER: str = "shenzhen_air_kaidan_queue_waybill_number"  # 深航开单运单号队列名称
+    RPA_SHENZHEN_AIR_QUEUE_FREIGHT_RATE: str = "shenzhen_air_kaidan_queue_freight_rate"  # 深航开单费率队列名称
+    RPA_SHENZHEN_AIR_QUEUE_FREIGHT: str = "shenzhen_air_kaidan_queue_freight"  # 深航开单运费队列名称
+    RPA_SHENZHEN_AIR_QUEUE_DELIVERY_FEE: str = "shenzhen_air_kaidan_queue_delivery_fee"  # 深航开单派送费队列名称
     RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID: str = "4971126222078ca6b2fa992432024d99"  # 南航订舱任务jobUuid
     RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID: str = "196dde6fbcfd15e2e0641caf8720c7d7"  # 南航退舱任务jobUuid
     RPA_CHINA_SOUTHERN_AIR_QUEUE_UUID: str = "d5933f787b77482aa486da4fd3ffdcfd"  # 南航获取运单号队列UUID（历史遗留，已不使用）

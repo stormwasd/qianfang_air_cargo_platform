@@ -30,6 +30,7 @@ class Waybill(Base):
     departure_time = Column(DateTime(timezone=True), nullable=True, comment="起飞时间（RPA执行后写入，中国时间UTC+8）")
     booking_date = Column(Date, nullable=False, index=True, comment="开单日期（格式：YYYY-MM-DD）")
     rpa_work_uuid = Column(String(100), nullable=True, index=True, comment="RPA任务workUuid（用于查询RPA执行状态，新增或作废时都会更新）")
+    rpa_queue_uuids = Column(Text, nullable=True, comment="RPA队列UUIDs（JSON格式，存储4个队列的UUID和ID信息）")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
