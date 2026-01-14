@@ -166,8 +166,12 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
     """
     提取并映射南航订舱RPA接口所需的参数
     
+    参数优先级：
+    1. 优先使用form_data中的值
+    2. 如果form_data中没有，则从业务参数配置中的南航数据部分获取
+    
     Args:
-        form_data: 用户提交的表单数据
+        form_data: 用户提交的表单数据（从booking表的form_data字段获取）
         business_config: 业务参数配置
     
     Returns:
@@ -183,17 +187,30 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
     business_default = booking_and_create_config.get("business_default", {})
     address = business_default.get("address", {})
     
-    # 处理region（省/市/区）
-    # region可能是数组格式：["44", "4403", "440306"]，也可能是字符串格式："44/4403/440306"
-    region = address.get("region", "")
-    if isinstance(region, list):
+    # 从form_data中提取数据
+    contact_info = form_data.get("contact_info", {})
+    flight_info = form_data.get("flight_info", {})
+    cargo_info = form_data.get("cargo_info", {})
+    dangerous_goods_declaration = form_data.get("dangerous_goods_declaration", {})
+    
+    # 处理region（省/市/区）- 优先从form_data获取，如果没有则从业务参数配置获取
+    # 先尝试从form_data中获取address信息
+    form_address = form_data.get("address", {})
+    form_region = form_address.get("region", "")
+    
+    # 如果form_data中没有region，则从业务参数配置获取
+    if not form_region:
+        form_region = address.get("region", "")
+    
+    # 处理region格式（可能是数组或字符串）
+    if isinstance(form_region, list):
         # 数组格式，直接取三个元素
-        region_province = region[0] if len(region) > 0 else ""
-        region_city = region[1] if len(region) > 1 else ""
-        region_district = region[2] if len(region) > 2 else ""
-    elif isinstance(region, str):
+        region_province = form_region[0] if len(form_region) > 0 else ""
+        region_city = form_region[1] if len(form_region) > 1 else ""
+        region_district = form_region[2] if len(form_region) > 2 else ""
+    elif isinstance(form_region, str):
         # 字符串格式，按"/"分割
-        region_parts = region.split("/") if region else []
+        region_parts = form_region.split("/") if form_region else []
         region_province = region_parts[0] if len(region_parts) > 0 else ""
         region_city = region_parts[1] if len(region_parts) > 1 else ""
         region_district = region_parts[2] if len(region_parts) > 2 else ""
@@ -202,69 +219,76 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         region_city = ""
         region_district = ""
     
-    # 从form_data中提取数据（支持从contact_info中提取）
-    contact_info = form_data.get("contact_info", {})
-    flight_info = form_data.get("flight_info", {})
-    cargo_info = form_data.get("cargo_info", {})
-    dangerous_goods_declaration = form_data.get("dangerous_goods_declaration", {})
+    # address_detail：优先从form_data获取，如果没有则从业务参数配置获取
+    address_detail = form_address.get("detail", "") or address.get("detail", "")
     
-    # address_of_the_application_executable_file_tangyi 对应 config_data.china_southern_air.booking_and_create.tangi_login.address_of_the_application_executable_file_tangyi
-    # 如果不存在，则使用tangi_login.app_name作为备选
+    # address_of_the_application_executable_file_tangyi：从业务参数配置获取（这个参数通常不在form_data中）
     address_of_app = tangi_login.get("address_of_the_application_executable_file_tangyi", "")
     if not address_of_app:
         address_of_app = tangi_login.get("app_name", "")
     
-    # order_contact_name可能包含姓名和电话，格式如："唐文旭/13823668395"
+    # order_contact_name和order_contact_phone：优先从form_data获取，如果没有则从业务参数配置获取
+    order_contact_name_raw = form_data.get("order_contact_name", "") or business_default.get("order_contact_name", "")
+    order_contact_phone_raw = form_data.get("order_contact_phone", "") or business_default.get("order_contact_phone", "")
+    
     # 如果order_contact_phone不存在，尝试从order_contact_name中提取（按"/"分割，取第二部分）
-    order_contact_name_raw = business_default.get("order_contact_name", "")
-    order_contact_phone_raw = business_default.get("order_contact_phone", "")
     if not order_contact_phone_raw and order_contact_name_raw and "/" in order_contact_name_raw:
         # 从order_contact_name中提取电话（格式：姓名/电话）
         parts = order_contact_name_raw.split("/", 1)
         order_contact_name_raw = parts[0] if len(parts) > 0 else order_contact_name_raw
         order_contact_phone_raw = parts[1] if len(parts) > 1 else ""
     
-    # origin_station、cargo_type、cargo_code优先从业务参数获取，如果form_data中有则覆盖
-    origin_station = flight_info.get("origin_station", "") or business_default.get("origin_station", "")
-    cargo_type = cargo_info.get("cargo_type", "") or business_default.get("cargo_type", "")
-    cargo_code = cargo_info.get("cargo_code", "") or business_default.get("cargo_code", "")
-    
-    # 映射参数
+    # 映射参数（优先使用form_data，如果没有则使用业务参数配置）
     params = {
-        # 从业务参数获取
+        # 登录信息：从业务参数配置获取（这些通常不在form_data中）
         "address_of_the_application_executable_file_tangyi": address_of_app,
         "system_account": china_southern_air_login.get("system_account", ""),
         "login_password": china_southern_air_login.get("login_password", ""),
         "system_url": china_southern_air_login.get("system_url", ""),
+        
+        # 地址信息：优先使用form_data，如果没有则使用业务参数配置
         "region_province_shipper": region_province,
         "region_city_shipper": region_city,
         "region_city_district": region_district,
-        "address_detail": address.get("detail", ""),
+        "address_detail": address_detail,
+        
+        # 联系人信息：优先使用form_data，如果没有则使用业务参数配置
         "order_contact_name": order_contact_name_raw,
         "order_contact_phone": order_contact_phone_raw,
-        "agent_checker_name": business_default.get("agent_checker_name", ""),
-        "agent_consignor_name": business_default.get("agent_consignor_name", ""),
-        "shipper": business_default.get("shipper", ""),
-        "shipper_phone": business_default.get("phone", ""),
-        "booking_remark": business_default.get("booking_remark", ""),  # 通过键 "booking_remark" 获取
-        "settlement_file_number": business_default.get("settlement_file_number", ""),  # 通过键 "settlement_file_number" 获取
         
-        # origin_station优先从业务参数获取，如果form_data中有则覆盖
-        "origin_station": origin_station,
-        "destination": flight_info.get("destination", ""),
-        "flight_date": flight_info.get("flight_date", ""),
-        "flight_number": flight_info.get("flight_number", ""),
-        # cargo_type和cargo_code优先从业务参数获取，如果form_data中有则覆盖
-        "cargo_type": cargo_type,
-        "cargo_code": cargo_code,
-        "cargo_name": cargo_info.get("cargo_name", ""),
-        "quantity": cargo_info.get("quantity", ""),
-        "weight": cargo_info.get("weight", ""),
-        "special_cargo_code": cargo_info.get("special_cargo_code", ""),
-        "consignee_phone": contact_info.get("consignee_phone", ""),
-        "consignee": contact_info.get("consignee", ""),
-        "oversized_cargo": cargo_info.get("oversized_cargo", "0"),
-        "no_dangerous_goods": dangerous_goods_declaration.get("no_hidden_dangerous_goods", "0"),
+        # 代理信息：优先使用form_data，如果没有则使用业务参数配置
+        "agent_checker_name": form_data.get("agent_checker_name", "") or business_default.get("agent_checker_name", ""),
+        "agent_consignor_name": form_data.get("agent_consignor_name", "") or business_default.get("agent_consignor_name", ""),
+        
+        # 发货人信息：优先使用form_data，如果没有则使用业务参数配置
+        "shipper": form_data.get("shipper", "") or contact_info.get("shipper", "") or business_default.get("shipper", ""),
+        "shipper_phone": form_data.get("shipper_phone", "") or contact_info.get("shipper_phone", "") or business_default.get("phone", ""),
+        
+        # 备注和结算文件号：优先使用form_data，如果没有则使用业务参数配置
+        "booking_remark": form_data.get("booking_remark", "") or business_default.get("booking_remark", ""),
+        "settlement_file_number": form_data.get("settlement_file_number", "") or business_default.get("settlement_file_number", ""),
+        
+        # 航班信息：优先使用form_data，如果没有则使用业务参数配置
+        "origin_station": flight_info.get("origin_station", "") or form_data.get("origin_station", "") or business_default.get("origin_station", ""),
+        "destination": flight_info.get("destination", "") or form_data.get("destination", ""),
+        "flight_date": flight_info.get("flight_date", "") or form_data.get("flight_date", ""),
+        "flight_number": flight_info.get("flight_number", "") or form_data.get("flight_number", ""),
+        
+        # 货物信息：优先使用form_data，如果没有则使用业务参数配置
+        "cargo_type": cargo_info.get("cargo_type", "") or form_data.get("cargo_type", "") or business_default.get("cargo_type", ""),
+        "cargo_code": cargo_info.get("cargo_code", "") or form_data.get("cargo_code", "") or business_default.get("cargo_code", ""),
+        "cargo_name": cargo_info.get("cargo_name", "") or form_data.get("cargo_name", ""),
+        "quantity": cargo_info.get("quantity", "") or form_data.get("quantity", ""),
+        "weight": cargo_info.get("weight", "") or form_data.get("weight", ""),
+        "special_cargo_code": cargo_info.get("special_cargo_code", "") or form_data.get("special_cargo_code", "") or business_default.get("special_cargo_code", ""),
+        
+        # 收货人信息：优先使用form_data，如果没有则使用业务参数配置
+        "consignee_phone": contact_info.get("consignee_phone", "") or form_data.get("consignee_phone", ""),
+        "consignee": contact_info.get("consignee", "") or form_data.get("consignee", ""),
+        
+        # 其他信息：优先使用form_data，如果没有则使用默认值
+        "oversized_cargo": cargo_info.get("oversized_cargo", "") or form_data.get("oversized_cargo", "0"),
+        "no_dangerous_goods": dangerous_goods_declaration.get("no_hidden_dangerous_goods", "") or form_data.get("no_dangerous_goods", "0"),
     }
     
     return params
