@@ -198,7 +198,7 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
     
     # 映射参数
     params = {
-        # 从业务参数获取
+        # 从业务参数配置获取（通过键获取）
         "address_of_the_application_executable_file_tangyi": address_of_app,
         "system_account": china_southern_air_login.get("system_account", ""),
         "login_password": china_southern_air_login.get("login_password", ""),
@@ -213,6 +213,8 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         "agent_consignor_name": business_default.get("agent_consignor_name", ""),
         "shipper": business_default.get("shipper", ""),
         "shipper_phone": business_default.get("phone", ""),
+        "booking_remark": business_default.get("booking_remark", ""),  # 通过键 "booking_remark" 获取
+        "settlement_file_number": business_default.get("settlement_file_number", ""),  # 通过键 "settlement_file_number" 获取
         
         # origin_station优先从业务参数获取，如果form_data中有则覆盖
         "origin_station": origin_station,

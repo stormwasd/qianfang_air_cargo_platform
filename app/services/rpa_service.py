@@ -365,6 +365,7 @@ class RPAService:
         cargo_type: str,
         cargo_code: str,
         flight_number: str,
+        booking_remark: str,
         cargo_name: str,
         quantity: str,
         weight: str,
@@ -374,6 +375,7 @@ class RPAService:
         region_city_district: str,
         address_detail: str,
         consignee_phone: str,
+        settlement_file_number: str,
         order_contact_name: str,
         order_contact_phone: str,
         agent_checker_name: str,
@@ -398,6 +400,7 @@ class RPAService:
             cargo_type: 货物类型
             cargo_code: 货物代码
             flight_number: 航班号
+            booking_remark: 订舱备注
             cargo_name: 货物名称
             quantity: 件数
             weight: 重量
@@ -407,6 +410,7 @@ class RPAService:
             region_city_district: 发货人区
             address_detail: 详细地址
             consignee_phone: 收货人电话
+            settlement_file_number: 结算文件号
             order_contact_name: 订单联系人姓名
             order_contact_phone: 订单联系人电话
             agent_checker_name: 代理检查人姓名
