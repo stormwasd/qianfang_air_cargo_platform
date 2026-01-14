@@ -78,36 +78,55 @@ def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_
                                 dict_value = map_rpa_status_to_dict_value(rpa_status)
                                 if dict_value:
                                     booking.booking_status = dict_value
-                                    
-                                    # 如果状态是成功(5)，获取运单号（仅南航）
-                                    if rpa_status == 5 and not booking.master_airwaybill_number and is_china_southern_air:
+                                
+                                # 如果状态是成功(5)，获取运单号（仅南航）
+                                if rpa_status == 5 and is_china_southern_air:
+                                    try:
+                                        # 使用本次创建的queue_uuid获取运单号
+                                        if booking.rpa_queue_uuid:
+                                            waybill_suffix = await rpa_service.get_china_southern_air_waybill_number(
+                                                booking.rpa_queue_uuid
+                                            )
+                                            
+                                            if waybill_suffix:
+                                                # 格式化运单号（南航需要加上前缀 "784-"）
+                                                waybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_suffix)
+                                                booking.master_airwaybill_number = waybill_number
+                                            
+                                            # 无论是否成功获取运单号，都要删除队列
+                                            if booking.rpa_queue_id:
+                                                try:
+                                                    await rpa_service.delete_queue(booking.rpa_queue_id)
+                                                    # 清空队列信息
+                                                    booking.rpa_queue_uuid = None
+                                                    booking.rpa_queue_id = None
+                                                except Exception as delete_error:
+                                                    # 删除队列失败不影响主流程，只记录错误
+                                                    print(f"删除队列失败: {str(delete_error)}")
+                                        else:
+                                            print(f"订舱 {booking_id} 没有queue_uuid，无法获取运单号")
+                                    except Exception as e:
+                                        # 记录错误但不影响状态更新
+                                        print(f"获取运单号失败: {str(e)}")
+                                        # 即使获取运单号失败，也要尝试删除队列
+                                        booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
+                                        if booking and booking.rpa_queue_id:
+                                            try:
+                                                await rpa_service.delete_queue(booking.rpa_queue_id)
+                                                booking.rpa_queue_uuid = None
+                                                booking.rpa_queue_id = None
+                                            except Exception as delete_error:
+                                                print(f"删除队列失败: {str(delete_error)}")
+                                
+                                # 如果状态是失败(3)，也需要清理队列
+                                elif rpa_status == 3:
+                                    if booking.rpa_queue_id:
                                         try:
-                                            # 使用本次创建的queue_uuid获取运单号
-                                            if booking.rpa_queue_uuid:
-                                                waybill_suffix = await rpa_service.get_china_southern_air_waybill_number(
-                                                    booking.rpa_queue_uuid
-                                                )
-                                                
-                                                if waybill_suffix:
-                                                    # 格式化运单号（南航需要加上前缀 "784-"）
-                                                    waybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_suffix)
-                                                    booking.master_airwaybill_number = waybill_number
-                                                    
-                                                    # 获取运单号成功后，删除队列
-                                                    if booking.rpa_queue_id:
-                                                        try:
-                                                            await rpa_service.delete_queue(booking.rpa_queue_id)
-                                                            # 清空队列信息
-                                                            booking.rpa_queue_uuid = None
-                                                            booking.rpa_queue_id = None
-                                                        except Exception as delete_error:
-                                                            # 删除队列失败不影响主流程，只记录错误
-                                                            print(f"删除队列失败: {str(delete_error)}")
-                                            else:
-                                                print(f"订舱 {booking_id} 没有queue_uuid，无法获取运单号")
-                                        except Exception as e:
-                                            # 记录错误但不影响状态更新
-                                            print(f"获取运单号失败: {str(e)}")
+                                            await rpa_service.delete_queue(booking.rpa_queue_id)
+                                            booking.rpa_queue_uuid = None
+                                            booking.rpa_queue_id = None
+                                        except Exception as delete_error:
+                                            print(f"删除队列失败: {str(delete_error)}")
                                 
                                 db_session.commit()
                             
