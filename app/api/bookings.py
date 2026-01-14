@@ -82,29 +82,16 @@ def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_
                                     # 如果状态是成功(5)，获取运单号（仅南航）
                                     if rpa_status == 5 and not booking.master_airwaybill_number and is_china_southern_air:
                                         try:
-                                            # 使用动态创建的queue_uuid获取运单号
-                                            if booking.rpa_queue_uuid:
-                                                waybill_suffix = await rpa_service.get_china_southern_air_waybill_number(
-                                                    booking.rpa_queue_uuid
-                                                )
-                                                
-                                                if waybill_suffix:
-                                                    # 格式化运单号（南航需要加上前缀 "784-"）
-                                                    waybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_suffix)
-                                                    booking.master_airwaybill_number = waybill_number
-                                                    
-                                                    # 获取运单号成功后，删除队列
-                                                    if booking.rpa_queue_id:
-                                                        try:
-                                                            await rpa_service.delete_queue(booking.rpa_queue_id)
-                                                            # 清空队列信息
-                                                            booking.rpa_queue_uuid = None
-                                                            booking.rpa_queue_id = None
-                                                        except Exception as delete_error:
-                                                            # 删除队列失败不影响主流程，只记录错误
-                                                            print(f"删除队列失败: {str(delete_error)}")
-                                            else:
-                                                print(f"订舱 {booking_id} 没有queue_uuid，无法获取运单号")
+                                            # 使用固定的队列UUID获取运单号（从配置文件读取）
+                                            from app.config import settings
+                                            waybill_suffix = await rpa_service.get_china_southern_air_waybill_number(
+                                                settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_UUID
+                                            )
+                                            
+                                            if waybill_suffix:
+                                                # 格式化运单号（南航需要加上前缀 "784-"）
+                                                waybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_suffix)
+                                                booking.master_airwaybill_number = waybill_number
                                         except Exception as e:
                                             # 记录错误但不影响状态更新
                                             print(f"获取运单号失败: {str(e)}")
@@ -113,17 +100,6 @@ def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_
                             
                             # 如果状态是成功(5)或失败(3)，停止轮询
                             if rpa_status in [3, 5]:
-                                # 如果状态是失败(3)，也需要清理队列
-                                if rpa_status == 3:
-                                    booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
-                                    if booking and booking.rpa_queue_id:
-                                        try:
-                                            await rpa_service.delete_queue(booking.rpa_queue_id)
-                                            booking.rpa_queue_uuid = None
-                                            booking.rpa_queue_id = None
-                                            db_session.commit()
-                                        except Exception as delete_error:
-                                            print(f"删除队列失败: {str(delete_error)}")
                                 break
                 except Exception as e:
                     # 记录错误但继续轮询
@@ -381,28 +357,7 @@ async def execute_booking(
     if missing_params:
         raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
     
-    # 在调用RPA接口之前，先创建队列
-    queue_uuid = None
-    queue_id = None
-    try:
-        # 生成唯一的队列名称（使用订舱ID确保唯一性）
-        queue_name = f"nanhang_air_queue_waybill_number_{booking_id}"
-        queue_data = await rpa_service.create_queue(
-            queue_name=queue_name,
-            max_queue_number=999,
-            is_expire=False
-        )
-        queue_uuid = queue_data.get("queueUUID", "")
-        queue_id = str(queue_data.get("queueID", ""))
-        
-        if not queue_uuid:
-            raise BadRequestException("创建队列失败，未返回queueUUID")
-    except BadRequestException:
-        raise
-    except Exception as e:
-        raise BadRequestException(f"创建队列失败: {str(e)}")
-    
-    # 调用RPA接口
+    # 调用RPA接口（使用固定的队列UUID，不需要动态创建队列）
     try:
         rpa_response = await rpa_service.create_china_southern_air_booking(**rpa_params)
         
@@ -411,11 +366,9 @@ async def execute_booking(
         if not work_uuid:
             raise BadRequestException("RPA订舱接口未返回workUuid")
         
-        # 保存workUuid和队列信息到数据库
+        # 保存workUuid到数据库
         # 状态设置为"1"（执行中），对应数据字典值="1"
         booking.rpa_work_uuid = work_uuid
-        booking.rpa_queue_uuid = queue_uuid
-        booking.rpa_queue_id = queue_id
         booking.booking_status = "1"  # 数据字典值："1"=执行中
         db.commit()
         db.refresh(booking)
@@ -552,8 +505,6 @@ async def get_bookings(
             "booking_time": format_datetime_china(booking.booking_time),
             "master_airwaybill_number": booking.master_airwaybill_number,
             "rpa_work_uuid": booking.rpa_work_uuid,
-            "rpa_queue_uuid": booking.rpa_queue_uuid,
-            "rpa_queue_id": booking.rpa_queue_id,
             "booking_cancel_status": booking.booking_cancel_status,
             "created_at": format_datetime_china(booking.created_at),
             "updated_at": format_datetime_china(booking.updated_at)
@@ -746,8 +697,6 @@ async def cancel_booking(
             "booking_time": format_datetime_china(booking.booking_time),
             "master_airwaybill_number": booking.master_airwaybill_number,
             "rpa_work_uuid": booking.rpa_work_uuid,
-            "rpa_queue_uuid": booking.rpa_queue_uuid,
-            "rpa_queue_id": booking.rpa_queue_id,
             "booking_cancel_status": booking.booking_cancel_status,
             "created_at": format_datetime_china(booking.created_at),
             "updated_at": format_datetime_china(booking.updated_at)
