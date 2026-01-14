@@ -11,6 +11,7 @@ from app.core.response import success_response
 from app.database import get_db
 from app.models.waybill import Waybill, ExecutionStatus
 from app.models.settlement import Settlement
+from app.models.config import BusinessConfig
 from app.schemas.waybill import (
     WaybillCreate, WaybillQuery
 )
@@ -610,6 +611,75 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
         loop.close()
 
 
+def _get_business_config(db: Session) -> dict:
+    """
+    获取业务参数配置
+    
+    Returns:
+        业务参数配置字典，如果不存在则返回空字典
+    """
+    config = db.query(BusinessConfig).first()
+    if not config:
+        return {}
+    return json.loads(config.config_data)
+
+
+def _extract_shenzhen_air_params(form_data: dict, business_config: dict) -> dict:
+    """
+    提取并映射深航开单RPA接口所需的参数
+    
+    参数优先级：
+    1. 优先使用form_data中的值
+    2. 如果form_data中没有，则从业务参数配置中的深航数据部分获取
+    
+    Args:
+        form_data: 运单的form_data字典
+        business_config: 业务参数配置字典
+    
+    Returns:
+        映射后的RPA接口参数字典
+    """
+    # 从业务参数配置中获取深航相关配置
+    shenzhen_air_config = business_config.get("shenzhen_air", {})
+    booking_config = shenzhen_air_config.get("booking", {})
+    shenzhen_air_login = booking_config.get("shenzhen_air_login", {})
+    business_default = booking_config.get("business_default", {})
+    
+    # 从form_data中提取数据
+    flight_info = form_data.get("flight_info", {})
+    shipper_consignee_info = form_data.get("shipper_consignee_info", {})
+    cargo_info = form_data.get("cargo_info", {})
+    
+    # 映射参数（优先使用form_data，如果没有则使用业务参数配置）
+    params = {
+        # 登录信息：从业务参数配置获取
+        "system_url": shenzhen_air_login.get("system_url", ""),
+        "system_account": shenzhen_air_login.get("system_account", ""),
+        "login_password": shenzhen_air_login.get("login_password", ""),
+        
+        # 航班信息：优先使用form_data，如果没有则使用业务参数配置
+        "origin_station": flight_info.get("origin_station") or business_default.get("origin_station", ""),
+        "destination": flight_info.get("destination", ""),
+        "flight_date": flight_info.get("flight_date", ""),
+        "flight_number": flight_info.get("flight_number", ""),
+        
+        # 发货收货信息：优先使用form_data，如果没有则使用业务参数配置
+        "shipper_info": shipper_consignee_info.get("shipper_info") or business_default.get("shipper_info", ""),
+        "consignee_info": shipper_consignee_info.get("consignee_info", ""),
+        
+        # 货物信息：优先使用form_data，如果没有则使用业务参数配置
+        "quantity": cargo_info.get("quantity", ""),
+        "weight": cargo_info.get("weight", ""),
+        "freight_code": cargo_info.get("freight_code") or business_default.get("freight_code", ""),
+        "cargo_code": cargo_info.get("cargo_code") or business_default.get("cargo_code", ""),
+        "cargo_name": cargo_info.get("cargo_name") or business_default.get("cargo_name", ""),
+        "waybill_type": flight_info.get("waybill_type", ""),  # 运单类型，从form_data获取，可能为空
+        "package": cargo_info.get("package") or business_default.get("package", "")
+    }
+    
+    return params
+
+
 @router.post("/{waybill_id}/execute", summary="确认并执行运单")
 async def execute_waybill(
     waybill_id: str,
@@ -644,42 +714,34 @@ async def execute_waybill(
     
     # 允许重复执行，会覆盖之前的rpa_work_uuid
     
-    # 从form_data中提取RPA接口所需的参数
-    flight_info = form_data_dict.get("flight_info", {})
-    shipper_consignee_info = form_data_dict.get("shipper_consignee_info", {})
-    cargo_info = form_data_dict.get("cargo_info", {})
+    # 获取业务参数配置
+    business_config = _get_business_config(db)
+    if not business_config:
+        raise BadRequestException("业务参数配置不存在，无法调用深航开单接口")
     
-    # 提取参数（确保所有参数都有值）
-    origin_station = flight_info.get("origin_station", "")
-    destination = flight_info.get("destination", "")
-    flight_date = flight_info.get("flight_date", "")
-    flight_number = flight_info.get("flight_number", "")
-    shipper_info = shipper_consignee_info.get("shipper_info", "")
-    consignee_info = shipper_consignee_info.get("consignee_info", "")
-    quantity = cargo_info.get("quantity", "")
-    weight = cargo_info.get("weight", "")
-    freight_code = cargo_info.get("freight_code", "")
-    cargo_code = cargo_info.get("cargo_code", "")
-    cargo_name = cargo_info.get("cargo_name", "")
-    package = cargo_info.get("package", "")
+    # 提取并映射参数（优先使用form_data，如果没有则使用业务参数配置）
+    rpa_params = _extract_shenzhen_air_params(form_data_dict, business_config)
     
     # 验证必填参数
-    required_params = {
-        "origin_station": origin_station,
-        "destination": destination,
-        "flight_date": flight_date,
-        "flight_number": flight_number,
-        "shipper_info": shipper_info,
-        "consignee_info": consignee_info,
-        "quantity": quantity,
-        "weight": weight,
-        "freight_code": freight_code,
-        "cargo_code": cargo_code,
-        "cargo_name": cargo_name,
-        "package": package
-    }
+    required_params = [
+        "system_url",
+        "system_account",
+        "login_password",
+        "origin_station",
+        "destination",
+        "flight_date",
+        "flight_number",
+        "shipper_info",
+        "consignee_info",
+        "quantity",
+        "weight",
+        "freight_code",
+        "cargo_code",
+        "cargo_name",
+        "package"
+    ]
     
-    missing_params = [key for key, value in required_params.items() if not value]
+    missing_params = [key for key in required_params if not rpa_params.get(key)]
     if missing_params:
         raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
     
@@ -719,18 +781,22 @@ async def execute_waybill(
     # 调用RPA接口
     try:
         rpa_response = await rpa_service.create_shenzhen_air_waybill(
-            origin_station=origin_station,
-            destination=destination,
-            flight_date=flight_date,
-            flight_number=flight_number,
-            shipper_info=shipper_info,
-            consignee_info=consignee_info,
-            quantity=quantity,
-            weight=weight,
-            freight_code=freight_code,
-            cargo_code=cargo_code,
-            cargo_name=cargo_name,
-            package=package
+            system_url=rpa_params["system_url"],
+            system_account=rpa_params["system_account"],
+            login_password=rpa_params["login_password"],
+            origin_station=rpa_params["origin_station"],
+            destination=rpa_params["destination"],
+            flight_date=rpa_params["flight_date"],
+            flight_number=rpa_params["flight_number"],
+            shipper_info=rpa_params["shipper_info"],
+            consignee_info=rpa_params["consignee_info"],
+            quantity=rpa_params["quantity"],
+            weight=rpa_params["weight"],
+            freight_code=rpa_params["freight_code"],
+            cargo_code=rpa_params["cargo_code"],
+            cargo_name=rpa_params["cargo_name"],
+            waybill_type=rpa_params["waybill_type"],
+            package=rpa_params["package"]
         )
         
         # 提取workUuid

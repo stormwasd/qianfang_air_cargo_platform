@@ -32,6 +32,9 @@ class RPAService:
     
     async def create_shenzhen_air_waybill(
         self,
+        system_url: str,
+        system_account: str,
+        login_password: str,
         origin_station: str,
         destination: str,
         flight_date: str,
@@ -43,12 +46,16 @@ class RPAService:
         freight_code: str,
         cargo_code: str,
         cargo_name: str,
+        waybill_type: str,
         package: str
     ) -> Dict[str, Any]:
         """
         调用深航新增运单任务RPA接口（仅适用于深圳航空，airline="1"或"深圳航空"）
         
         Args:
+            system_url: 系统URL（从业务参数配置获取）
+            system_account: 系统账号（从业务参数配置获取）
+            login_password: 登录密码（从业务参数配置获取）
             origin_station: 始发站（如：SZX）
             destination: 目的站（如：TAO）
             flight_date: 航班日期（格式：YYYY-MM-DD，如：2026-01-15）
@@ -60,6 +67,7 @@ class RPAService:
             freight_code: 运价代码（如：GEN）
             cargo_code: 货物代码（如：044）
             cargo_name: 货物名称（如：衣物）
+            waybill_type: 运单类型（可选，可能为空）
             package: 包装（如：麻袋）
         
         Returns:
@@ -71,6 +79,9 @@ class RPAService:
             "jobUuid": settings.RPA_SHENZHEN_AIR_JOB_UUID,
             "operation": 1,
             "inputParam": {
+                "system_url": system_url,
+                "system_account": system_account,
+                "login_password": login_password,
                 "origin_station": origin_station,
                 "destination": destination,
                 "flight_date": flight_date,
@@ -82,6 +93,7 @@ class RPAService:
                 "freight_code": freight_code,
                 "cargo_code": cargo_code,
                 "cargo_name": cargo_name,
+                "waybill_type": waybill_type,
                 "package": package
             }
         }
