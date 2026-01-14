@@ -65,8 +65,8 @@ class Settings(BaseSettings):
     RPA_SHENZHEN_AIR_QUEUE_UUID: str = "8e53aa16fb8642489e899998283da28f"  # 深航获取运单号队列UUID
     RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID: str = "4971126222078ca6b2fa992432024d99"  # 南航订舱任务jobUuid
     RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID: str = "196dde6fbcfd15e2e0641caf8720c7d7"  # 南航退舱任务jobUuid
-    RPA_CHINA_SOUTHERN_AIR_QUEUE_UUID: str = "d5933f787b77482aa486da4fd3ffdcfd"  # 南航获取运单号队列UUID（固定队列）
-    RPA_CHINA_SOUTHERN_AIR_QUEUE_NAME: str = "nanhang_air_dingcang_queue_waybill_number"  # 南航订舱队列名称（固定队列名称，用于后续扩展）
+    RPA_CHINA_SOUTHERN_AIR_QUEUE_UUID: str = "d5933f787b77482aa486da4fd3ffdcfd"  # 南航获取运单号队列UUID（历史遗留，已不使用）
+    RPA_CHINA_SOUTHERN_AIR_QUEUE_NAME: str = "nanhang_air_dingcang_queue_waybill_number"  # 南航订舱队列名称（固定队列名称，每次执行订舱时都会创建新队列实例）
     
     # RPA轮询配置
     RPA_POLL_INTERVAL: int = Field(default=5, ge=1, le=300, description="RPA状态轮询间隔（秒），默认5秒")
