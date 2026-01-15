@@ -36,6 +36,7 @@ class Booking(Base):
     booking_cancel_status = Column(String(20), nullable=False, default="0", index=True, comment="退舱状态（数据字典值：0=未退舱，1=退舱中，2=退舱失败，3=退舱成功）")
     rpa_queue_uuid = Column(String(100), nullable=True, index=True, comment="RPA队列UUID（动态创建，用于获取运单号）")
     rpa_queue_id = Column(String(100), nullable=True, comment="RPA队列ID（动态创建，用于删除队列）")
+    rpa_queue_uuids = Column(Text, nullable=True, comment="RPA队列UUIDs和IDs（JSON格式，用于直接开单时存储多个队列信息）")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     

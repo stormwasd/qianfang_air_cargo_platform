@@ -11,6 +11,7 @@ from app.core.exceptions import BadRequestException, NotFoundException
 from app.database import get_db, SessionLocal
 from app.models.booking import Booking, BookingStatus, InvoiceStatus
 from app.models.config import BusinessConfig
+from app.models.settlement import Settlement
 from app.schemas.booking import (
     BookingCreate, BookingQuery
 )
@@ -793,4 +794,393 @@ async def cancel_booking(
         raise
     except Exception as e:
         raise BadRequestException(f"调用RPA退舱接口失败: {str(e)}")
+
+
+def poll_china_southern_air_direct_invoice_status(booking_id: int, work_uuid: str, job_uuid: str):
+    """
+    轮询南航直接开单RPA状态的后台任务
+    
+    Args:
+        booking_id: 订舱ID
+        work_uuid: RPA workUuid
+        job_uuid: RPA jobUuid
+    """
+    import asyncio
+    
+    async def _poll():
+        # 创建新的数据库会话（因为后台任务在独立线程中运行）
+        db_session = SessionLocal()
+        try:
+            # 首先检查订舱是否存在，并判断是否为南航
+            booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
+            if not booking:
+                print(f"订舱不存在，停止轮询: {booking_id}")
+                return
+            
+            # 判断是否为南航（只有南航才需要轮询RPA状态）
+            form_data_dict = json.loads(booking.form_data)
+            airline = form_data_dict.get("airline", "")
+            is_china_southern_air = airline == "2" or airline == "南方航空"
+            
+            if not is_china_southern_air:
+                print(f"订舱 {booking_id} 不是南航，停止轮询")
+                return
+            
+            # 获取队列信息（从rpa_queue_uuids字段获取）
+            queues_info = {}
+            if booking.rpa_queue_uuids:
+                queues_info = json.loads(booking.rpa_queue_uuids)
+            
+            # 轮询RPA状态
+            poll_count = 0
+            max_poll_count = settings.RPA_POLL_MAX_COUNT
+            poll_interval = settings.RPA_POLL_INTERVAL
+            
+            while poll_count < max_poll_count:
+                await asyncio.sleep(poll_interval)
+                poll_count += 1
+                
+                try:
+                    # 查询RPA状态
+                    status_response = await rpa_service.query_china_southern_air_booking_status(
+                        job_uuid=job_uuid
+                    )
+                    
+                    # 从响应中提取状态信息
+                    status_info = rpa_service.extract_status_from_response(status_response, work_uuid)
+                    
+                    if status_info:
+                        rpa_status = status_info.get("status")
+                        if rpa_status is not None:
+                            # 更新开单状态
+                            booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
+                            if booking:
+                                # 如果状态是成功(5)，获取队列数据并创建结算单
+                                if rpa_status == 5:
+                                    try:
+                                        # 从四个队列中获取数据
+                                        rate_data = None
+                                        freight_data = None
+                                        fuel_costs_data = None
+                                        extended_service_fee_data = None
+                                        
+                                        # 获取费率
+                                        if "rate" in queues_info and queues_info["rate"].get("queueUUID"):
+                                            try:
+                                                rate_data = await rpa_service.get_china_southern_air_waybill_number(
+                                                    queues_info["rate"]["queueUUID"]
+                                                )
+                                            except Exception as e:
+                                                print(f"获取费率失败: {str(e)}")
+                                        
+                                        # 获取运费
+                                        if "freight" in queues_info and queues_info["freight"].get("queueUUID"):
+                                            try:
+                                                freight_data = await rpa_service.get_china_southern_air_waybill_number(
+                                                    queues_info["freight"]["queueUUID"]
+                                                )
+                                            except Exception as e:
+                                                print(f"获取运费失败: {str(e)}")
+                                        
+                                        # 获取燃油费
+                                        if "fuel_costs" in queues_info and queues_info["fuel_costs"].get("queueUUID"):
+                                            try:
+                                                fuel_costs_data = await rpa_service.get_china_southern_air_waybill_number(
+                                                    queues_info["fuel_costs"]["queueUUID"]
+                                                )
+                                            except Exception as e:
+                                                print(f"获取燃油费失败: {str(e)}")
+                                        
+                                        # 获取延伸服务费
+                                        if "extended_service_fee" in queues_info and queues_info["extended_service_fee"].get("queueUUID"):
+                                            try:
+                                                extended_service_fee_data = await rpa_service.get_china_southern_air_waybill_number(
+                                                    queues_info["extended_service_fee"]["queueUUID"]
+                                                )
+                                            except Exception as e:
+                                                print(f"获取延伸服务费失败: {str(e)}")
+                                        
+                                        # 构建结算单数据
+                                        form_data_dict = json.loads(booking.form_data)
+                                        flight_info = form_data_dict.get("flight_info", {})
+                                        contact_info = form_data_dict.get("contact_info", {})
+                                        cargo_info = form_data_dict.get("cargo_info", {})
+                                        
+                                        # 获取业务参数配置中的shipper
+                                        business_config = _get_business_config(db_session)
+                                        customer_name = ""
+                                        if business_config:
+                                            china_southern_air_config = business_config.get("china_southern_air", {})
+                                            booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
+                                            business_default = booking_and_create_config.get("business_default", {})
+                                            customer_name = business_default.get("shipper", "")
+                                        
+                                        # 获取RPA调用时间（精确到日）
+                                        rpa_call_time = get_china_now().strftime("%Y-%m-%d")
+                                        
+                                        # 构建结算单数据
+                                        settlement_data = {
+                                            "airline_record_time": rpa_call_time,
+                                            "settlement_method": "1",
+                                            "settlement_status": "0",
+                                            "financial_review": "1",
+                                            "master_airwaybill_number": booking.master_airwaybill_number or "",
+                                            "transport_method": "0",
+                                            "airline": "2",  # 南航是2
+                                            "origin_station": flight_info.get("origin_station", ""),
+                                            "destination": flight_info.get("destination", ""),
+                                            "flight_number": flight_info.get("flight_number", ""),
+                                            "flight_date": flight_info.get("flight_date", ""),
+                                            "customer_name": customer_name,
+                                            "recipient_name": contact_info.get("consignee", ""),
+                                            "cargo_name": cargo_info.get("cargo_name", ""),
+                                            "quantity": cargo_info.get("quantity", ""),
+                                            "weight": cargo_info.get("weight", ""),
+                                            "chargeable_weight": "1",
+                                            "sub_rate": "1",
+                                            "sub_airline_fee": "1",
+                                            "sub_document_fee": "1",
+                                            "sub_telegraph_fee": "1",
+                                            "sub_telegraph_number": "1",
+                                            "sub_cca_fee": "1",
+                                            "sub_packaging_fee": "1",
+                                            "sub_pickup_fee": "1",
+                                            "sub_airport_pickup_fee": "1",
+                                            "sub_delivery_fee": "1",
+                                            "sub_carrier_deduction": "1",
+                                            "sub_other_fee": "1",
+                                            "sub_other_fee_remark": "1",
+                                            "sub_total_amount": "1",
+                                            "sub_remark": "1",
+                                            "master_rate": rate_data.strip('"').strip("'") if rate_data else "1",
+                                            "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "1",
+                                            "master_fuel_surcharge": fuel_costs_data.strip('"').strip("'") if fuel_costs_data else "1",
+                                            "master_transit_weight": "1",
+                                            "master_transit_fee": extended_service_fee_data.strip('"').strip("'") if extended_service_fee_data else "1",
+                                            "master_cca_cost": "1",
+                                            "master_packaging_fee": "1",
+                                            "master_telegraph_fee": "1",
+                                            "master_pickup_unit": "1",
+                                            "master_pickup_fee": "1",
+                                            "master_delivery_unit": "1",
+                                            "master_airport_pickup_fee": "1",
+                                            "master_delivery_fee": "1",
+                                            "master_other_fee": "1",
+                                            "master_total_cost": "1",
+                                            "master_remark": "1"
+                                        }
+                                        
+                                        # 创建结算单
+                                        try:
+                                            settlement = Settlement(
+                                                form_data=json.dumps(settlement_data, ensure_ascii=False)
+                                            )
+                                            db_session.add(settlement)
+                                            db_session.commit()
+                                            
+                                            # 更新订舱的开单状态为成功
+                                            booking.invoice_status = "成功"
+                                        except Exception as e:
+                                            print(f"创建结算单失败: {str(e)}")
+                                    finally:
+                                        # 无论是否成功获取数据和创建结算单，都删除所有队列
+                                        for queue_key, queue_data in queues_info.items():
+                                            if queue_data.get("queueID"):
+                                                try:
+                                                    await rpa_service.delete_queue(queue_data["queueID"])
+                                                except Exception as delete_error:
+                                                    print(f"删除队列失败 ({queue_key}): {str(delete_error)}")
+                                        # 清空队列信息
+                                        booking.rpa_queue_uuids = None
+                                        db_session.commit()
+                                
+                                # 如果状态是失败(3)，也需要清理队列
+                                elif rpa_status == 3:
+                                    if queues_info:
+                                        for queue_key, queue_data in queues_info.items():
+                                            if queue_data.get("queueID"):
+                                                try:
+                                                    await rpa_service.delete_queue(queue_data["queueID"])
+                                                except Exception as delete_error:
+                                                    print(f"删除队列失败 ({queue_key}): {str(delete_error)}")
+                                        # 清空队列信息
+                                        booking.rpa_queue_uuids = None
+                                        db_session.commit()
+                            
+                            # 如果状态是成功(5)或失败(3)，停止轮询
+                            if rpa_status in [3, 5]:
+                                break
+                except Exception as e:
+                    # 记录错误但继续轮询
+                    print(f"轮询南航直接开单RPA状态失败: {str(e)}")
+                    continue
+        finally:
+            db_session.close()
+    
+    # 在新的事件循环中运行异步函数
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_poll())
+    finally:
+        loop.close()
+
+
+@router.post("/{booking_id}/direct-invoice", summary="南航直接开单")
+async def direct_invoice(
+    booking_id: str,
+    background_tasks: BackgroundTasks,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    南航直接开单接口
+    
+    此接口会：
+    1. 根据订舱的airline判断是否为南航（airline="2"或"南方航空"）
+    2. 检查订舱是否有master_airwaybill_number
+    3. 如果是南航，创建4个队列，调用南航直接开单任务RPA接口
+    4. 从RPA响应中提取workUuid并保存到数据库
+    5. 启动后台任务轮询RPA执行状态
+    6. 当RPA执行成功后，从4个队列中获取数据，创建结算单，然后删除队列
+    
+    - **booking_id**: 订舱ID（字符串格式）
+    """
+    # 查询订舱
+    booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+    if not booking:
+        raise NotFoundException("订舱不存在")
+    
+    # 解析form_data
+    form_data_dict = json.loads(booking.form_data)
+    airline = form_data_dict.get("airline", "")
+    
+    # 判断是否为南方航空
+    is_china_southern_air = airline == "2" or airline == "南方航空"
+    if not is_china_southern_air:
+        raise BadRequestException("当前仅支持南方航空的直接开单")
+    
+    # 检查是否有主单号
+    if not booking.master_airwaybill_number:
+        raise BadRequestException("订舱尚未完成，无法进行开单操作")
+    
+    # 获取业务参数配置
+    business_config = _get_business_config(db)
+    if not business_config:
+        raise BadRequestException("业务参数配置不存在，无法调用南航直接开单接口")
+    
+    # 从业务参数配置中获取南航登录信息
+    china_southern_air_config = business_config.get("china_southern_air", {})
+    booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
+    china_southern_air_login = booking_and_create_config.get("china_southern_air_login", {})
+    
+    system_url = china_southern_air_login.get("system_url", "")
+    system_account = china_southern_air_login.get("system_account", "")
+    login_password = china_southern_air_login.get("login_password", "")
+    
+    if not system_url or not system_account or not login_password:
+        raise BadRequestException("业务参数配置中缺少南航登录信息")
+    
+    # 从master_airwaybill_number中提取waybill_number_8（以"-"分割，取最后一部分）
+    waybill_number_8 = booking.master_airwaybill_number.split("-")[-1] if "-" in booking.master_airwaybill_number else booking.master_airwaybill_number
+    
+    # 在调用RPA接口之前，先循环创建4个队列（使用固定的队列名称）
+    queue_configs = [
+        {"name": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_RATE, "key": "rate"},
+        {"name": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_FREIGHT, "key": "freight"},
+        {"name": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_FUEL_COSTS, "key": "fuel_costs"},
+        {"name": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_EXTENDED_SERVICE_FEE, "key": "extended_service_fee"}
+    ]
+    queues_info = {}
+    try:
+        for queue_config in queue_configs:
+            queue_data = await rpa_service.create_queue(
+                queue_name=queue_config["name"],
+                max_queue_number=999,
+                is_expire=False
+            )
+            queue_uuid = queue_data.get("queueUUID", "")
+            queue_id = str(queue_data.get("queueID", ""))
+            
+            if not queue_uuid:
+                raise BadRequestException(f"创建队列失败，未返回queueUUID: {queue_config['name']}")
+            
+            queues_info[queue_config["key"]] = {
+                "queueUUID": queue_uuid,
+                "queueID": queue_id,
+                "queueName": queue_config["name"]
+            }
+    except BadRequestException:
+        raise
+    except Exception as e:
+        raise BadRequestException(f"创建队列失败: {str(e)}")
+    
+    # 调用RPA接口
+    try:
+        rpa_response = await rpa_service.create_china_southern_air_direct_invoice(
+            system_url=system_url,
+            system_account=system_account,
+            login_password=login_password,
+            waybill_number_8=waybill_number_8
+        )
+        
+        # 提取workUuid
+        work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+        if not work_uuid:
+            raise BadRequestException("RPA直接开单接口未返回workUuid")
+        
+        # 保存workUuid和队列信息到数据库
+        booking.rpa_work_uuid = work_uuid
+        booking.rpa_queue_uuids = json.dumps(queues_info, ensure_ascii=False)
+        db.commit()
+        db.refresh(booking)
+        
+        # 启动后台任务轮询RPA状态
+        background_tasks.add_task(
+            poll_china_southern_air_direct_invoice_status,
+            booking_id=int(booking_id),
+            work_uuid=work_uuid,
+            job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID
+        )
+        
+        # 解析form_data JSON
+        form_data_dict = json.loads(booking.form_data)
+        
+        booking_data = {
+            "id": str(booking.id),
+            "form_data": form_data_dict,
+            "booking_status": booking.booking_status,
+            "invoice_status": booking.invoice_status,
+            "booking_time": format_datetime_china(booking.booking_time),
+            "master_airwaybill_number": booking.master_airwaybill_number,
+            "rpa_work_uuid": booking.rpa_work_uuid,
+            "rpa_queue_uuid": booking.rpa_queue_uuid,
+            "rpa_queue_id": booking.rpa_queue_id,
+            "booking_cancel_status": booking.booking_cancel_status,
+            "created_at": format_datetime_china(booking.created_at),
+            "updated_at": format_datetime_china(booking.updated_at)
+        }
+        
+        return success_response(data=booking_data, msg="直接开单成功，正在处理中")
+        
+    except BadRequestException:
+        # 如果RPA调用失败，也尝试删除已创建的队列
+        if queues_info:
+            for queue_key, queue_data in queues_info.items():
+                if queue_data.get("queueID"):
+                    try:
+                        await rpa_service.delete_queue(queue_data["queueID"])
+                    except Exception as delete_error:
+                        print(f"RPA调用失败后删除队列 {queue_data['queueName']} 失败: {str(delete_error)}")
+        raise
+    except Exception as e:
+        # 如果RPA调用失败，也尝试删除已创建的队列
+        if queues_info:
+            for queue_key, queue_data in queues_info.items():
+                if queue_data.get("queueID"):
+                    try:
+                        await rpa_service.delete_queue(queue_data["queueID"])
+                    except Exception as delete_error:
+                        print(f"RPA调用失败后删除队列 {queue_data['queueName']} 失败: {str(delete_error)}")
+        raise BadRequestException(f"调用RPA直接开单接口失败: {str(e)}")
 

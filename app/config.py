@@ -70,8 +70,14 @@ class Settings(BaseSettings):
     RPA_SHENZHEN_AIR_QUEUE_DELIVERY_FEE: str = "shenzhen_air_kaidan_queue_delivery_fee"  # 深航开单派送费队列名称
     RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID: str = "4971126222078ca6b2fa992432024d99"  # 南航订舱任务jobUuid
     RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID: str = "196dde6fbcfd15e2e0641caf8720c7d7"  # 南航退舱任务jobUuid
+    RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID: str = "167b4cbefd18d7311d55844cdb36c398"  # 南航直接开单任务jobUuid
     RPA_CHINA_SOUTHERN_AIR_QUEUE_UUID: str = "d5933f787b77482aa486da4fd3ffdcfd"  # 南航获取运单号队列UUID（历史遗留，已不使用）
     RPA_CHINA_SOUTHERN_AIR_QUEUE_NAME: str = "nanhang_air_dingcang_queue_waybill_number"  # 南航订舱队列名称（固定队列名称，每次执行订舱时都会创建新队列实例）
+    # 南航直接开单队列名称（固定队列名称，每次执行开单时都会创建新队列实例）
+    RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_RATE: str = "nanhang_air_dingcang_kaidan_direct_queue_rate"  # 南航直接开单费率队列名称
+    RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_FREIGHT: str = "nanhang_air_dingcang_kaidan_direct_queue_freight"  # 南航直接开单运费队列名称
+    RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_FUEL_COSTS: str = "nanhang_air_dingcang_kaidan_direct_queue_fuel_costs"  # 南航直接开单燃油费队列名称
+    RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_EXTENDED_SERVICE_FEE: str = "nanhang_air_dingcang_kaidan_direct_queue_extended_service_fee"  # 南航直接开单延伸服务费队列名称
     
     # RPA轮询配置
     RPA_POLL_INTERVAL: int = Field(default=5, ge=1, le=300, description="RPA状态轮询间隔（秒），默认5秒")

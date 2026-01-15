@@ -600,6 +600,57 @@ class RPAService:
         """
         return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
     
+    async def create_china_southern_air_direct_invoice(
+        self,
+        system_url: str,
+        system_account: str,
+        login_password: str,
+        waybill_number_8: str
+    ) -> Dict[str, Any]:
+        """
+        调用南航直接开单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
+        
+        Args:
+            system_url: 系统URL（从业务参数配置获取）
+            system_account: 系统账号（从业务参数配置获取）
+            login_password: 登录密码（从业务参数配置获取）
+            waybill_number_8: 运单号后八位（从booking.master_airwaybill_number提取，以"-"分割取最后一部分）
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "system_url": system_url,
+                "system_account": system_account,
+                "login_password": login_password,
+                "waybill_number_8": waybill_number_8
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                # 检查RPA接口返回的code
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "南航直接开单RPA接口调用失败")
+                    raise BadRequestException(f"南航直接开单RPA接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"南航直接开单RPA接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"南航直接开单RPA接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"南航直接开单RPA接口调用异常: {str(e)}")
+    
     async def create_queue(self, queue_name: str, max_queue_number: int = 999, is_expire: bool = False) -> Dict[str, Any]:
         """
         创建队列接口（通用，适用于所有航司）
