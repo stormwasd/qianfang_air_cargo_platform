@@ -841,13 +841,13 @@ def poll_china_southern_air_direct_invoice_status(booking_id: int, work_uuid: st
                 poll_count += 1
                 
                 try:
-                    # 查询RPA状态
-                    status_response = await rpa_service.query_china_southern_air_booking_status(
+                    # 查询RPA状态（直接开单使用专门的查询方法）
+                    status_response = await rpa_service.query_china_southern_air_direct_invoice_status(
                         job_uuid=job_uuid
                     )
                     
                     # 从响应中提取状态信息
-                    status_info = rpa_service.extract_status_from_response(status_response, work_uuid)
+                    status_info = rpa_service.extract_status_from_query_response(status_response, work_uuid)
                     
                     if status_info:
                         rpa_status = status_info.get("status")
@@ -855,6 +855,24 @@ def poll_china_southern_air_direct_invoice_status(booking_id: int, work_uuid: st
                             # 更新开单状态
                             booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
                             if booking:
+                                # 映射RPA状态到系统数据字典的值
+                                # 开单状态的数据字典值："0"=未开单，"1"=开单中，"2"=失败，"3"=成功
+                                # RPA status=1(执行中) -> invoice_status="1"(开单中)
+                                # RPA status=3(失败) -> invoice_status="2"(失败)
+                                # RPA status=5(成功) -> invoice_status="3"(成功)
+                                if rpa_status == 1:
+                                    # 执行中，更新为"1"（开单中）
+                                    booking.invoice_status = "1"
+                                    db_session.commit()
+                                elif rpa_status == 3:
+                                    # 失败，更新为"2"（失败）
+                                    booking.invoice_status = "2"
+                                    db_session.commit()
+                                elif rpa_status == 5:
+                                    # 成功，更新为"3"（成功）
+                                    booking.invoice_status = "3"
+                                    db_session.commit()
+                                
                                 # 如果状态是成功(5)，获取队列数据并创建结算单
                                 if rpa_status == 5:
                                     try:
@@ -978,8 +996,7 @@ def poll_china_southern_air_direct_invoice_status(booking_id: int, work_uuid: st
                                             db_session.add(settlement)
                                             db_session.commit()
                                             
-                                            # 更新订舱的开单状态为成功
-                                            booking.invoice_status = "成功"
+                                            # 开单状态已在上面更新为"1"（成功），这里不需要再次更新
                                         except Exception as e:
                                             print(f"创建结算单失败: {str(e)}")
                                     finally:

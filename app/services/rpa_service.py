@@ -600,6 +600,13 @@ class RPAService:
         """
         return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
     
+    async def query_china_southern_air_direct_invoice_status(self, job_uuid: str, start_time: Optional[str] = None, end_time: Optional[str] = None, size: int = 1000000) -> Dict[str, Any]:
+        """
+        查询南航直接开单任务状态接口（仅适用于南方航空，airline="2"或"南方航空"）
+        复用查询深航运单状态的接口，因为RPA状态查询接口是通用的
+        """
+        return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
+    
     async def create_china_southern_air_direct_invoice(
         self,
         system_url: str,
