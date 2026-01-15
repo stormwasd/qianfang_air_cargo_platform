@@ -307,7 +307,7 @@ async def create_booking(
     - **form_data**: 表单数据（JSON格式），前端可以传入任意字段
     - 自动设置booking_time为当前时间（中国时间）
     - 订舱状态默认为"0"（未执行，数据字典值）
-    - 开单状态默认为"未开单"
+    - 开单状态默认为"0"（未开单，数据字典值）
     - master_airwaybill_number初始为null，由RPA后续写入
     - 此接口仅保存订舱信息，不调用RPA接口
     """
@@ -322,7 +322,7 @@ async def create_booking(
         form_data=form_data_json,
         booking_time=booking_time,
         booking_status="0",  # 数据字典值："0"=未执行
-        invoice_status=InvoiceStatus.NOT_INVOICED.value
+        invoice_status="0"  # 数据字典值："0"=未开单
     )
     db.add(new_booking)
     db.commit()
