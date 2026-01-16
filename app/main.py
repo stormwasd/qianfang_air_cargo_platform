@@ -1,6 +1,7 @@
 """
 FastAPI应用主入口
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -10,6 +11,29 @@ from app.api import api_router
 from app.core.middleware import setup_cors_middleware
 from app.core.exceptions import BaseAPIException
 from app.core.response import error_response
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    应用生命周期管理
+    启动时启动RPA Worker，关闭时停止Worker
+    """
+    # 启动时
+    if settings.RPA_QUEUE_ENABLED:
+        from app.services.rpa_worker import rpa_worker_manager
+        rpa_worker_manager.start_workers()
+        print(f"RPA任务队列已启用，启动了 {settings.RPA_QUEUE_WORKER_COUNT} 个Worker")
+    else:
+        print("RPA任务队列已禁用")
+    
+    yield
+    
+    # 关闭时
+    if settings.RPA_QUEUE_ENABLED:
+        from app.services.rpa_worker import rpa_worker_manager
+        rpa_worker_manager.stop_workers()
+        print("RPA Worker已停止")
 
 
 def create_application() -> FastAPI:
@@ -24,6 +48,7 @@ def create_application() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        lifespan=lifespan,  # 添加生命周期管理
     )
     
     # 配置中间件

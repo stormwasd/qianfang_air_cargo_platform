@@ -106,9 +106,9 @@ class WaybillCreate(BaseModel):
 
 class WaybillQuery(BaseModel):
     """运单查询schema"""
-    airline_record_status: Optional[str] = Field(None, description="航司录单执行状态筛选（未执行、执行中、执行失败）")
-    cargo_station_record_status: Optional[str] = Field(None, description="货站录单执行状态筛选（未执行、执行中、执行失败）")
-    document_print_status: Optional[str] = Field(None, description="单据打印执行状态筛选（未执行、执行中、执行失败）")
+    airline_record_status: Optional[str] = Field(None, description="航司录单执行状态筛选（数据字典值：0=未开单，1=开单中，2=失败，3=成功）")
+    cargo_station_record_status: Optional[str] = Field(None, description="货站录单执行状态筛选（数据字典值：0=未执行，1=执行中，2=失败）")
+    document_print_status: Optional[str] = Field(None, description="单据打印执行状态筛选（数据字典值：0=未执行，1=执行中，2=失败）")
     booking_date_start: Optional[date] = Field(None, description="开单日期开始（格式：YYYY-MM-DD）")
     booking_date_end: Optional[date] = Field(None, description="开单日期结束（格式：YYYY-MM-DD）")
     airline: Optional[str] = Field(None, description="航司（模糊搜索）")

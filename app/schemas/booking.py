@@ -51,11 +51,26 @@ class BookingCreate(BaseModel):
     form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），包含航司和订舱信息数组（支持批量订舱）")
 
 
+class BookingUpdate(BaseModel):
+    """
+    修改订舱schema
+    
+    form_data 数据结构说明：
+    form_data 是一个字典结构，包含航司和订舱信息数组：
+    
+    - airline（必填）：航司名称
+    - bookings（必填）：订舱信息数组，通常只包含一条记录（长度为1）
+    
+    注意：修改时，bookings数组应该只包含一条记录，因为每条订舱记录对应数据库中的一条记录
+    """
+    form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），包含航司和订舱信息数组（通常只包含一条记录）")
+
+
 class BookingQuery(BaseModel):
     """订舱查询schema"""
     airline: Optional[str] = Field(None, description="航司（模糊搜索，从form_data JSON中提取）")
-    booking_status: Optional[str] = Field(None, description="订舱状态筛选（未执行、执行中、执行失败）")
-    invoice_status: Optional[str] = Field(None, description="开单状态筛选（未开单、成功）")
+    booking_status: Optional[str] = Field(None, description="订舱状态筛选（数据字典值：0=未执行，1=执行中，2=失败，3=成功）")
+    invoice_status: Optional[str] = Field(None, description="开单状态筛选（数据字典值：0=未开单，1=开单中，2=失败，3=成功）")
     page: int = Field(1, ge=1, description="页码")
     page_size: int = Field(10, ge=1, le=100, description="每页数量")
 

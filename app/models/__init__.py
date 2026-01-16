@@ -7,7 +7,8 @@ from app.models.dict_option import DictOption
 from app.models.waybill import Waybill
 from app.models.booking import Booking
 from app.models.settlement import Settlement
+from app.models.rpa_task import RPATask
 from app.models.user_department import user_department  # 确保关联表被导入
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask"]
 
