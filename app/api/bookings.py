@@ -168,8 +168,33 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
     提取并映射南航订舱RPA接口所需的参数
     
     参数优先级：
-    1. 优先使用form_data中的值
-    2. 如果form_data中没有，则从业务参数配置中的南航数据部分获取
+    1. 优先使用form_data.bookings[0]中的值（新的数据结构）
+    2. 如果form_data.bookings[0]中没有，则从业务参数配置中的南航数据部分获取
+    
+    注意：form_data结构为：
+    {
+      "airline": "南方航空",
+      "bookings": [
+        {
+          "origin_station": "CAN",
+          "destination": "PEK",
+          "flight_date": "2025-01-15",
+          "shipper_unit": "XX物流公司",
+          "flight_number": "CZ1234",
+          "booking_remark": "备注信息",
+          "cargo_type": "普通货物",
+          "cargo_code": "0001",
+          "cargo_name": "货物名称",
+          "quantity": "10",
+          "weight": "100.5",
+          "oversized_cargo": "否",
+          "special_cargo_code": "",
+          "no_dangerous_goods": "是",
+          "consignee": "收货人",
+          "consignee_phone": "13800138000"
+        }
+      ]
+    }
     
     Args:
         form_data: 用户提交的表单数据（从booking表的form_data字段获取）
@@ -188,11 +213,9 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
     business_default = booking_and_create_config.get("business_default", {})
     address = business_default.get("address", {})
     
-    # 从form_data中提取数据
-    contact_info = form_data.get("contact_info", {})
-    flight_info = form_data.get("flight_info", {})
-    cargo_info = form_data.get("cargo_info", {})
-    dangerous_goods_declaration = form_data.get("dangerous_goods_declaration", {})
+    # 从form_data.bookings数组中获取第一个订舱记录（新数据结构）
+    bookings = form_data.get("bookings", [])
+    booking_item = bookings[0] if bookings and len(bookings) > 0 else {}
     
     # 处理region（省/市/区）- 优先从form_data获取，如果没有则从业务参数配置获取
     # 先尝试从form_data中获取address信息
@@ -239,7 +262,7 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         order_contact_name_raw = parts[0] if len(parts) > 0 else order_contact_name_raw
         order_contact_phone_raw = parts[1] if len(parts) > 1 else ""
     
-    # 映射参数（优先使用form_data，如果没有则使用业务参数配置）
+    # 映射参数（优先使用form_data.bookings[0]，如果没有则使用业务参数配置）
     params = {
         # 登录信息：从业务参数配置获取（这些通常不在form_data中）
         "address_of_the_application_executable_file_tangyi": address_of_app,
@@ -261,35 +284,35 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         "agent_checker_name": form_data.get("agent_checker_name", "") or business_default.get("agent_checker_name", ""),
         "agent_consignor_name": form_data.get("agent_consignor_name", "") or business_default.get("agent_consignor_name", ""),
         
-        # 发货人信息：优先使用form_data，如果没有则使用业务参数配置
-        "shipper": form_data.get("shipper", "") or contact_info.get("shipper", "") or business_default.get("shipper", ""),
-        "shipper_phone": form_data.get("shipper_phone", "") or contact_info.get("shipper_phone", "") or business_default.get("phone", ""),
+        # 发货人信息：优先使用form_data.bookings[0].shipper_unit，如果没有则使用业务参数配置
+        "shipper": booking_item.get("shipper_unit", "") or form_data.get("shipper", "") or business_default.get("shipper", ""),
+        "shipper_phone": form_data.get("shipper_phone", "") or business_default.get("phone", ""),
         
-        # 备注和结算文件号：优先使用form_data，如果没有则使用业务参数配置
-        "booking_remark": form_data.get("booking_remark", "") or business_default.get("booking_remark", ""),
+        # 备注和结算文件号：优先使用form_data.bookings[0]，如果没有则使用业务参数配置
+        "booking_remark": booking_item.get("booking_remark", "") or form_data.get("booking_remark", "") or business_default.get("booking_remark", ""),
         "settlement_file_number": form_data.get("settlement_file_number", "") or business_default.get("settlement_file_number", ""),
         
-        # 航班信息：优先使用form_data，如果没有则使用业务参数配置
-        "origin_station": flight_info.get("origin_station", "") or form_data.get("origin_station", "") or business_default.get("origin_station", ""),
-        "destination": flight_info.get("destination", "") or form_data.get("destination", ""),
-        "flight_date": flight_info.get("flight_date", "") or form_data.get("flight_date", ""),
-        "flight_number": flight_info.get("flight_number", "") or form_data.get("flight_number", ""),
+        # 航班信息：优先使用form_data.bookings[0]，如果没有则使用业务参数配置
+        "origin_station": booking_item.get("origin_station", "") or business_default.get("origin_station", ""),
+        "destination": booking_item.get("destination", ""),
+        "flight_date": booking_item.get("flight_date", ""),
+        "flight_number": booking_item.get("flight_number", ""),
         
-        # 货物信息：优先使用form_data，如果没有则使用业务参数配置
-        "cargo_type": cargo_info.get("cargo_type", "") or form_data.get("cargo_type", "") or business_default.get("cargo_type", ""),
-        "cargo_code": cargo_info.get("cargo_code", "") or form_data.get("cargo_code", "") or business_default.get("cargo_code", ""),
-        "cargo_name": cargo_info.get("cargo_name", "") or form_data.get("cargo_name", ""),
-        "quantity": cargo_info.get("quantity", "") or form_data.get("quantity", ""),
-        "weight": cargo_info.get("weight", "") or form_data.get("weight", ""),
-        "special_cargo_code": cargo_info.get("special_cargo_code", "") or form_data.get("special_cargo_code", "") or business_default.get("special_cargo_code", ""),
+        # 货物信息：优先使用form_data.bookings[0]，如果没有则使用业务参数配置
+        "cargo_type": booking_item.get("cargo_type", "") or business_default.get("cargo_type", ""),
+        "cargo_code": booking_item.get("cargo_code", "") or business_default.get("cargo_code", ""),
+        "cargo_name": booking_item.get("cargo_name", ""),
+        "quantity": booking_item.get("quantity", ""),
+        "weight": booking_item.get("weight", ""),
+        "special_cargo_code": booking_item.get("special_cargo_code", "") or business_default.get("special_cargo_code", ""),
         
-        # 收货人信息：优先使用form_data，如果没有则使用业务参数配置
-        "consignee_phone": contact_info.get("consignee_phone", "") or form_data.get("consignee_phone", ""),
-        "consignee": contact_info.get("consignee", "") or form_data.get("consignee", ""),
+        # 收货人信息：优先使用form_data.bookings[0]
+        "consignee_phone": booking_item.get("consignee_phone", ""),
+        "consignee": booking_item.get("consignee", ""),
         
-        # 其他信息：优先使用form_data，如果没有则使用默认值
-        "oversized_cargo": cargo_info.get("oversized_cargo", "") or form_data.get("oversized_cargo", "0"),
-        "no_dangerous_goods": dangerous_goods_declaration.get("no_hidden_dangerous_goods", "") or form_data.get("no_dangerous_goods", "0"),
+        # 其他信息：优先使用form_data.bookings[0]，如果没有则使用默认值
+        "oversized_cargo": booking_item.get("oversized_cargo", "0"),
+        "no_dangerous_goods": booking_item.get("no_dangerous_goods", "0"),
     }
     
     return params
