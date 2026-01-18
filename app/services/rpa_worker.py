@@ -378,7 +378,8 @@ class RPAWorker:
                 
                 try:
                     settlement = Settlement(
-                        form_data=json.dumps(settlement_data, ensure_ascii=False)
+                        form_data=json.dumps(settlement_data, ensure_ascii=False),
+                        waybill_void_status=waybill.waybill_void_status or "0"  # 同步运单作废状态到结算单数据库字段
                     )
                     db.add(settlement)
                 except Exception as e:
@@ -450,6 +451,30 @@ class RPAWorker:
                             return
                         elif rpa_status == 5:
                             waybill.waybill_void_status = "3"  # 作废成功
+                            
+                            # 同步运单作废状态到结算单
+                            if waybill.waybill_number:
+                                try:
+                                    from sqlalchemy import func, cast, String
+                                    from sqlalchemy.dialects.mysql import JSON
+                                    # 通过主单号查找对应的结算单
+                                    settlements = db.query(Settlement).filter(
+                                        func.cast(
+                                            func.json_extract(
+                                                cast(Settlement.form_data, JSON),
+                                                "$.master_airwaybill_number"
+                                            ),
+                                            String(100)
+                                        ) == waybill.waybill_number
+                                    ).all()
+                                    
+                                    # 更新所有匹配的结算单的waybill_void_status数据库字段
+                                    for settlement in settlements:
+                                        settlement.waybill_void_status = "3"  # 作废成功
+                                        print(f"[Worker-{self.worker_id}] 已同步运单作废状态到结算单: settlement_id={settlement.id}, waybill_number={waybill.waybill_number}")
+                                except Exception as e:
+                                    print(f"[Worker-{self.worker_id}] 同步运单作废状态到结算单失败: {str(e)}")
+                            
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, True)
                             return

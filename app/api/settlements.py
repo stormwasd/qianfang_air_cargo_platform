@@ -103,6 +103,7 @@ async def create_settlement(
     settlement_data = {
         "id": str(new_settlement.id),
         "form_data": form_data_dict,
+        "waybill_void_status": new_settlement.waybill_void_status,
         "created_at": format_datetime_china(new_settlement.created_at),
         "updated_at": format_datetime_china(new_settlement.updated_at)
     }
@@ -334,6 +335,7 @@ async def get_settlements(
             "airline_fee": form_data_dict.get("sub_airline_fee"),  # 航空运价
             "packaging_fee": form_data_dict.get("sub_packaging_fee"),  # 包装费
             "pickup_fee": form_data_dict.get("sub_pickup_fee"),  # 上门提货费
+            "waybill_void_status": settlement.waybill_void_status,  # 运单作废状态
             "created_at": format_datetime_china(settlement.created_at),
             "updated_at": format_datetime_china(settlement.updated_at)
         }
@@ -367,6 +369,7 @@ async def get_settlement(
     settlement_data = {
         "id": str(settlement.id),
         "form_data": form_data_dict,
+        "waybill_void_status": settlement.waybill_void_status,
         "created_at": format_datetime_china(settlement.created_at),
         "updated_at": format_datetime_china(settlement.updated_at)
     }

@@ -342,6 +342,29 @@ def poll_rpa_void_status(waybill_id: int, work_uuid: str, job_uuid: str):
                                 # 如果作废成功(status=5)，记录日志（保留记录用于留痕，不删除）
                                 if rpa_status == 5:
                                     print(f"运单作废成功: waybill_id={waybill_id}, waybill_number={waybill.waybill_number}, waybill_void_status={dict_value}")
+                                    
+                                    # 同步运单作废状态到结算单
+                                    if waybill.waybill_number:
+                                        try:
+                                            from sqlalchemy import func, cast, String
+                                            from sqlalchemy.dialects.mysql import JSON
+                                            # 通过主单号查找对应的结算单
+                                            settlements = db_session.query(Settlement).filter(
+                                                func.cast(
+                                                    func.json_extract(
+                                                        cast(Settlement.form_data, JSON),
+                                                        "$.master_airwaybill_number"
+                                                    ),
+                                                    String(100)
+                                                ) == waybill.waybill_number
+                                            ).all()
+                                            
+                                            # 更新所有匹配的结算单的waybill_void_status数据库字段
+                                            for settlement in settlements:
+                                                settlement.waybill_void_status = "3"  # 作废成功
+                                                print(f"已同步运单作废状态到结算单: settlement_id={settlement.id}, waybill_number={waybill.waybill_number}")
+                                        except Exception as e:
+                                            print(f"同步运单作废状态到结算单失败: {str(e)}")
                                 
                                 db_session.commit()
                             
@@ -541,7 +564,8 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
                                                 # 创建结算单
                                                 try:
                                                     settlement = Settlement(
-                                                        form_data=json.dumps(settlement_data, ensure_ascii=False)
+                                                        form_data=json.dumps(settlement_data, ensure_ascii=False),
+                                                        waybill_void_status=waybill.waybill_void_status or "0"  # 同步运单作废状态到结算单数据库字段
                                                     )
                                                     db_session.add(settlement)
                                                     db_session.commit()
