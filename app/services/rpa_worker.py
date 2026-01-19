@@ -457,7 +457,9 @@ class RPAWorker:
                                 try:
                                     from sqlalchemy import func, cast, String
                                     from sqlalchemy.dialects.mysql import JSON
-                                    # 通过主单号查找对应的结算单
+                                    import json as json_lib
+                                    
+                                    # 方法1：使用JSON提取（更精确）
                                     settlements = db.query(Settlement).filter(
                                         func.cast(
                                             func.json_extract(
@@ -468,12 +470,30 @@ class RPAWorker:
                                         ) == waybill.waybill_number
                                     ).all()
                                     
+                                    # 如果方法1没找到，使用方法2：遍历所有settlement（备用方案）
+                                    if not settlements:
+                                        print(f"[Worker-{self.worker_id}] 方法1未找到结算单，使用方法2查找: waybill_number={waybill.waybill_number}")
+                                        all_settlements = db.query(Settlement).all()
+                                        for settlement in all_settlements:
+                                            try:
+                                                form_data_dict = json_lib.loads(settlement.form_data)
+                                                master_airwaybill_number = form_data_dict.get("master_airwaybill_number", "")
+                                                if master_airwaybill_number == waybill.waybill_number:
+                                                    settlements.append(settlement)
+                                            except Exception as e:
+                                                continue
+                                    
                                     # 更新所有匹配的结算单的waybill_void_status数据库字段
-                                    for settlement in settlements:
-                                        settlement.waybill_void_status = "3"  # 作废成功
-                                        print(f"[Worker-{self.worker_id}] 已同步运单作废状态到结算单: settlement_id={settlement.id}, waybill_number={waybill.waybill_number}")
+                                    if settlements:
+                                        for settlement in settlements:
+                                            settlement.waybill_void_status = "3"  # 作废成功
+                                            print(f"[Worker-{self.worker_id}] 已同步运单作废状态到结算单: settlement_id={settlement.id}, waybill_number={waybill.waybill_number}, waybill_void_status=3")
+                                    else:
+                                        print(f"[Worker-{self.worker_id}] 警告：未找到对应的结算单，waybill_number={waybill.waybill_number}")
                                 except Exception as e:
+                                    import traceback
                                     print(f"[Worker-{self.worker_id}] 同步运单作废状态到结算单失败: {str(e)}")
+                                    print(f"[Worker-{self.worker_id}] 错误详情: {traceback.format_exc()}")
                             
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, True)
