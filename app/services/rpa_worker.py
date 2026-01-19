@@ -173,7 +173,7 @@ class RPAWorker:
             waybill.rpa_queue_uuids = json.dumps(queues_info, ensure_ascii=False)
             db.commit()
         
-        # 调用RPA接口
+        # 调用RPA接口（传递队列UUID，让RPA知道把数据写入哪些队列）
         try:
             rpa_response = await asyncio.wait_for(
                 rpa_service.create_shenzhen_air_waybill(
@@ -192,7 +192,11 @@ class RPAWorker:
                     cargo_code=params.get("cargo_code", ""),
                     cargo_name=params.get("cargo_name", ""),
                     waybill_type=params.get("waybill_type", ""),
-                    package=params.get("package", "")
+                    package=params.get("package", ""),
+                    queue_uuid_waybill_number=queues_info.get("waybill_number", {}).get("queueUUID", ""),
+                    queue_uuid_freight_rate=queues_info.get("freight_rate", {}).get("queueUUID", ""),
+                    queue_uuid_freight=queues_info.get("freight", {}).get("queueUUID", ""),
+                    queue_uuid_delivery_fee=queues_info.get("delivery_fee", {}).get("queueUUID", "")
                 ),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
@@ -556,10 +560,14 @@ class RPAWorker:
                 except Exception as e:
                     print(f"[Worker-{self.worker_id}] 创建队列失败: {str(e)}")
         
-        # 调用RPA接口
+        # 调用RPA接口（传递queue_uuid，让RPA知道把运单号写入哪个队列）
         try:
+            # 将queue_uuid添加到params中
+            params_with_queue = params.copy()
+            params_with_queue["queue_uuid"] = queue_uuid or ""
+            
             rpa_response = await asyncio.wait_for(
-                rpa_service.create_china_southern_air_booking(**params),
+                rpa_service.create_china_southern_air_booking(**params_with_queue),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
             
@@ -802,14 +810,18 @@ class RPAWorker:
             booking.rpa_queue_uuids = json.dumps(queues_info, ensure_ascii=False)
             db.commit()
         
-        # 调用RPA接口
+        # 调用RPA接口（传递队列UUID，让RPA知道把数据写入哪些队列）
         try:
             rpa_response = await asyncio.wait_for(
                 rpa_service.create_china_southern_air_direct_invoice(
                     system_url=params.get("system_url", ""),
                     system_account=params.get("system_account", ""),
                     login_password=params.get("login_password", ""),
-                    waybill_number_8=params.get("waybill_number_8", "")
+                    waybill_number_8=params.get("waybill_number_8", ""),
+                    queue_uuid_rate=queues_info.get("rate", {}).get("queueUUID", ""),
+                    queue_uuid_freight=queues_info.get("freight", {}).get("queueUUID", ""),
+                    queue_uuid_fuel_costs=queues_info.get("fuel_costs", {}).get("queueUUID", ""),
+                    queue_uuid_extended_service_fee=queues_info.get("extended_service_fee", {}).get("queueUUID", "")
                 ),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
