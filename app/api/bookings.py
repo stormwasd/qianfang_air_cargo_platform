@@ -350,7 +350,9 @@ async def create_booking(
     
     输出：返回两条记录，每条记录的form_data.bookings只包含一个元素
     """
-    form_data_dict = booking.form_data.copy()
+    # 深拷贝form_data，避免修改原始数据
+    import copy
+    form_data_dict = copy.deepcopy(booking.form_data)
     
     # 获取bookings数组
     bookings_list = form_data_dict.get("bookings", [])
@@ -365,59 +367,68 @@ async def create_booking(
     # 获取当前时间（中国时间）作为订舱时间
     booking_time = get_china_now()
     
-    # 创建多条订舱记录
+    # 创建多条订舱记录（使用事务确保原子性）
     created_bookings = []
-    for booking_item in bookings_list:
-        # 为每条记录构建独立的form_data，bookings数组只包含当前这一条
-        single_form_data = form_data_dict.copy()
-        single_form_data["bookings"] = [booking_item]  # 只包含当前这一条
+    try:
+        for booking_item in bookings_list:
+            # 为每条记录构建独立的form_data，bookings数组只包含当前这一条
+            # 使用深拷贝确保每条记录的form_data完全独立
+            single_form_data = copy.deepcopy(form_data_dict)
+            single_form_data["bookings"] = [copy.deepcopy(booking_item)]  # 深拷贝booking_item，只包含当前这一条
+            
+            # 将form_data转换为JSON字符串
+            form_data_json = json.dumps(single_form_data, ensure_ascii=False)
+            
+            # 创建订舱记录
+            new_booking = Booking(
+                form_data=form_data_json,
+                booking_time=booking_time,
+                booking_status="0",  # 数据字典值："0"=未执行
+                invoice_status="0"  # 数据字典值："0"=未开单
+            )
+            db.add(new_booking)
+            created_bookings.append(new_booking)
         
-        # 将form_data转换为JSON字符串
-        form_data_json = json.dumps(single_form_data, ensure_ascii=False)
+        # 批量提交（确保原子性，要么全部成功，要么全部失败）
+        db.commit()
         
-        # 创建订舱记录
-        new_booking = Booking(
-            form_data=form_data_json,
-            booking_time=booking_time,
-            booking_status="0",  # 数据字典值："0"=未执行
-            invoice_status="0"  # 数据字典值："0"=未开单
+        # 刷新所有记录以获取数据库生成的ID等字段
+        for new_booking in created_bookings:
+            db.refresh(new_booking)
+        
+        # 构建返回数据
+        booking_list = []
+        for new_booking in created_bookings:
+            # 解析form_data JSON
+            form_data_dict_parsed = json.loads(new_booking.form_data)
+            
+            booking_list.append({
+                "id": str(new_booking.id),
+                "form_data": form_data_dict_parsed,
+                "booking_status": new_booking.booking_status,
+                "invoice_status": new_booking.invoice_status,
+                "booking_time": format_datetime_china(new_booking.booking_time),
+                "master_airwaybill_number": new_booking.master_airwaybill_number,
+                "rpa_work_uuid": new_booking.rpa_work_uuid,
+                "rpa_queue_uuid": new_booking.rpa_queue_uuid,
+                "rpa_queue_id": new_booking.rpa_queue_id,
+                "rpa_queue_uuids": new_booking.rpa_queue_uuids,
+                "booking_cancel_status": new_booking.booking_cancel_status,
+                "created_at": format_datetime_china(new_booking.created_at),
+                "updated_at": format_datetime_china(new_booking.updated_at)
+            })
+        
+        return success_response(
+            data={"items": booking_list, "count": len(booking_list)},
+            msg=f"订舱信息提交成功，共创建{len(booking_list)}条记录"
         )
-        db.add(new_booking)
-        created_bookings.append(new_booking)
-    
-    # 批量提交
-    db.commit()
-    
-    # 刷新所有记录
-    for new_booking in created_bookings:
-        db.refresh(new_booking)
-    
-    # 构建返回数据
-    booking_list = []
-    for new_booking in created_bookings:
-        # 解析form_data JSON
-        form_data_dict = json.loads(new_booking.form_data)
-        
-        booking_list.append({
-            "id": str(new_booking.id),
-            "form_data": form_data_dict,
-            "booking_status": new_booking.booking_status,
-            "invoice_status": new_booking.invoice_status,
-            "booking_time": format_datetime_china(new_booking.booking_time),
-            "master_airwaybill_number": new_booking.master_airwaybill_number,
-            "rpa_work_uuid": new_booking.rpa_work_uuid,
-            "rpa_queue_uuid": new_booking.rpa_queue_uuid,
-            "rpa_queue_id": new_booking.rpa_queue_id,
-            "rpa_queue_uuids": new_booking.rpa_queue_uuids,
-            "booking_cancel_status": new_booking.booking_cancel_status,
-            "created_at": format_datetime_china(new_booking.created_at),
-            "updated_at": format_datetime_china(new_booking.updated_at)
-        })
-    
-    return success_response(
-        data={"items": booking_list, "count": len(booking_list)},
-        msg=f"订舱信息提交成功，共创建{len(booking_list)}条记录"
-    )
+    except Exception as e:
+        # 发生异常时回滚，确保数据一致性
+        db.rollback()
+        import traceback
+        print(f"创建订舱记录失败: {str(e)}")
+        print(f"错误详情: {traceback.format_exc()}")
+        raise BadRequestException(f"创建订舱记录失败: {str(e)}")
 
 
 @router.post("/{booking_id}/execute", summary="确认并执行订舱")
