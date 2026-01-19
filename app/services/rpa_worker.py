@@ -245,8 +245,12 @@ class RPAWorker:
                         
                         # 如果成功，获取队列数据
                         if rpa_status == 5:
+                            # 处理成功后的数据获取，如果获取运单号失败，方法内部会将状态设置为失败并返回
                             await self._process_shenzhen_air_waybill_success(db, waybill, queues_info, params)
-                            rpa_task_service.complete_task(db, task.id, True)
+                            # 检查最终状态，如果运单号获取失败，状态会被设置为失败
+                            db.refresh(waybill)
+                            is_success = waybill.airline_record_status == "3" and waybill.waybill_number is not None
+                            rpa_task_service.complete_task(db, task.id, is_success)
                             return
                         
                         # 如果失败，清理队列
@@ -278,6 +282,7 @@ class RPAWorker:
         
         try:
             # 获取运单号
+            waybill_number_retrieved = False
             if "waybill_number" in queues_info:
                 try:
                     waybill_number_data = await rpa_service.get_shenzhen_air_waybill_number(
@@ -286,8 +291,16 @@ class RPAWorker:
                     if waybill_number_data:
                         waybill_number = rpa_service.format_shenzhen_air_waybill_number(waybill_number_data)
                         waybill.waybill_number = waybill_number
+                        waybill_number_retrieved = True
                 except Exception as e:
                     print(f"[Worker-{self.worker_id}] 获取运单号失败: {str(e)}")
+            
+            # 如果获取运单号失败，将状态设置为失败
+            if not waybill_number_retrieved:
+                waybill.airline_record_status = "2"  # 失败
+                print(f"[Worker-{self.worker_id}] RPA返回成功但获取运单号失败，将状态设置为失败")
+                db.commit()
+                return
             
             # 获取费率
             if "freight_rate" in queues_info:
@@ -601,13 +614,20 @@ class RPAWorker:
                         
                         # 如果成功，获取运单号
                         if rpa_status == 5:
+                            waybill_number_retrieved = False
                             if queue_uuid:
                                 try:
                                     waybill_suffix = await rpa_service.get_china_southern_air_waybill_number(queue_uuid)
                                     if waybill_suffix:
                                         booking.master_airwaybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_suffix)
+                                        waybill_number_retrieved = True
                                 except Exception as e:
                                     print(f"[Worker-{self.worker_id}] 获取南航运单号失败: {str(e)}")
+                            
+                            # 如果获取运单号失败，将状态设置为失败
+                            if not waybill_number_retrieved:
+                                booking.booking_status = "2"  # 失败
+                                print(f"[Worker-{self.worker_id}] RPA返回成功但获取主单号失败，将状态设置为失败")
                             
                             # 清理队列
                             if queue_id:
@@ -619,7 +639,8 @@ class RPAWorker:
                                 booking.rpa_queue_id = None
                             
                             db.commit()
-                            rpa_task_service.complete_task(db, task.id, True)
+                            # 只有成功获取运单号时才标记任务为成功
+                            rpa_task_service.complete_task(db, task.id, waybill_number_retrieved)
                             return
                         
                         # 如果失败，清理队列
