@@ -615,14 +615,20 @@ class RPAWorker:
                         # 如果成功，获取运单号
                         if rpa_status == 5:
                             waybill_number_retrieved = False
-                            if queue_uuid:
+                            # 优先使用传入的queue_uuid，如果为空则从数据库读取
+                            actual_queue_uuid = queue_uuid or booking.rpa_queue_uuid
+                            actual_queue_id = queue_id or booking.rpa_queue_id
+                            
+                            if actual_queue_uuid:
                                 try:
-                                    waybill_suffix = await rpa_service.get_china_southern_air_waybill_number(queue_uuid)
+                                    waybill_suffix = await rpa_service.get_china_southern_air_waybill_number(actual_queue_uuid)
                                     if waybill_suffix:
                                         booking.master_airwaybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_suffix)
                                         waybill_number_retrieved = True
                                 except Exception as e:
                                     print(f"[Worker-{self.worker_id}] 获取南航运单号失败: {str(e)}")
+                            else:
+                                print(f"[Worker-{self.worker_id}] 订舱 {booking.id} 没有queue_uuid，无法获取运单号")
                             
                             # 如果获取运单号失败，将状态设置为失败
                             if not waybill_number_retrieved:
@@ -630,9 +636,9 @@ class RPAWorker:
                                 print(f"[Worker-{self.worker_id}] RPA返回成功但获取主单号失败，将状态设置为失败")
                             
                             # 清理队列
-                            if queue_id:
+                            if actual_queue_id:
                                 try:
-                                    await rpa_service.delete_queue(queue_id)
+                                    await rpa_service.delete_queue(actual_queue_id)
                                 except:
                                     pass
                                 booking.rpa_queue_uuid = None

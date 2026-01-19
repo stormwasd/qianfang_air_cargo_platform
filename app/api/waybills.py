@@ -479,6 +479,7 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
                                             delivery_fee_data = None
                                             
                                             # 获取运单号
+                                            waybill_number_retrieved = False
                                             if "waybill_number" in queues_info:
                                                 try:
                                                     waybill_number_data = await rpa_service.get_shenzhen_air_waybill_number(
@@ -488,8 +489,14 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
                                                         # 格式化运单号（深航需要加上前缀 "479-"）
                                                         waybill_number = rpa_service.format_shenzhen_air_waybill_number(waybill_number_data)
                                                         waybill.waybill_number = waybill_number
+                                                        waybill_number_retrieved = True
                                                 except Exception as e:
                                                     print(f"获取运单号失败: {str(e)}")
+                                            
+                                            # 如果获取运单号失败，将状态设置为失败
+                                            if not waybill_number_retrieved:
+                                                waybill.airline_record_status = "2"  # 失败
+                                                print(f"运单 {waybill_id} RPA返回成功但获取运单号失败，将状态设置为失败")
                                             
                                             # 获取费率
                                             if "freight_rate" in queues_info:

@@ -82,6 +82,7 @@ def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_
                                 
                                 # 如果状态是成功(5)，获取运单号（仅南航）
                                 if rpa_status == 5 and is_china_southern_air:
+                                    waybill_number_retrieved = False
                                     try:
                                         # 使用本次创建的queue_uuid获取运单号
                                         if booking.rpa_queue_uuid:
@@ -93,6 +94,7 @@ def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_
                                                 # 格式化运单号（南航需要加上前缀 "784-"）
                                                 waybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_suffix)
                                                 booking.master_airwaybill_number = waybill_number
+                                                waybill_number_retrieved = True
                                             
                                             # 无论是否成功获取运单号，都要删除队列
                                             if booking.rpa_queue_id:
@@ -107,7 +109,7 @@ def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_
                                         else:
                                             print(f"订舱 {booking_id} 没有queue_uuid，无法获取运单号")
                                     except Exception as e:
-                                        # 记录错误但不影响状态更新
+                                        # 记录错误
                                         print(f"获取运单号失败: {str(e)}")
                                         # 即使获取运单号失败，也要尝试删除队列
                                         booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
@@ -118,6 +120,13 @@ def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_
                                                 booking.rpa_queue_id = None
                                             except Exception as delete_error:
                                                 print(f"删除队列失败: {str(delete_error)}")
+                                    
+                                    # 如果获取运单号失败，将状态设置为失败
+                                    if not waybill_number_retrieved:
+                                        booking = db_session.query(Booking).filter(Booking.id == booking_id).first()
+                                        if booking:
+                                            booking.booking_status = "2"  # 失败
+                                            print(f"订舱 {booking_id} RPA返回成功但获取主单号失败，将状态设置为失败")
                                 
                                 # 如果状态是失败(3)，也需要清理队列
                                 elif rpa_status == 3:
