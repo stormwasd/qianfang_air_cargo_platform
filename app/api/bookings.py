@@ -13,7 +13,7 @@ from app.models.booking import Booking
 from app.models.config import BusinessConfig
 from app.models.settlement import Settlement
 from app.schemas.booking import (
-    BookingCreate, BookingQuery, BookingUpdate
+    BookingCreate, BookingQuery, BookingUpdate, BookingExecuteRequest, BookingExecuteItem, BookingExecuteResponse
 )
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china, get_china_now
@@ -431,125 +431,182 @@ async def create_booking(
         raise BadRequestException(f"创建订舱记录失败: {str(e)}")
 
 
-@router.post("/{booking_id}/execute", summary="确认并执行订舱")
+@router.post("/execute", summary="确认并执行订舱（批量）")
 async def execute_booking(
-    booking_id: str,
+    request: BookingExecuteRequest,
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    确认并执行订舱接口（队列模式）
+    确认并执行订舱接口（队列模式，支持批量）
     
     此接口会：
-    1. 根据订舱的airline判断是否为南航（airline="2"或"南方航空"）
-    2. 如果是南航，创建RPA订舱任务并加入队列
-    3. Worker会从队列中取出任务执行RPA调用
-    4. 前端可以通过任务ID或订舱状态轮询获取执行结果
+    1. 接收一个或多个订舱ID列表
+    2. 对每个订舱ID，根据其airline判断是否为南航（airline="2"或"南方航空"）
+    3. 如果是南航，创建RPA订舱任务并加入队列
+    4. Worker会从队列中取出任务执行RPA调用
+    5. 前端可以通过任务ID或订舱状态轮询获取执行结果
     
-    - **booking_id**: 订舱ID（字符串格式）
+    - **booking_ids**: 订舱ID列表（字符串格式，至少包含一个ID）
     
     返回：
-    - task_id: RPA任务ID，可用于查询任务状态
+    - items: 每个订舱的执行结果列表，包含booking_id、task_id、success、error_message
+    - total: 总数量
+    - success_count: 成功数量
+    - failed_count: 失败数量
     """
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
-    # 查询订舱
-    booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
-    if not booking:
-        raise NotFoundException("订舱不存在")
+    # 验证booking_ids列表长度
+    if not request.booking_ids or len(request.booking_ids) < 1:
+        raise BadRequestException("booking_ids列表不能为空，至少需要包含一个订舱ID")
     
-    # 解析form_data
-    form_data_dict = json.loads(booking.form_data)
-    airline = form_data_dict.get("airline", "")
-    
-    # 判断是否为南方航空
-    is_china_southern_air = airline == "2" or airline == "南方航空"
-    if not is_china_southern_air:
-        raise BadRequestException("当前仅支持南方航空的订舱执行")
-    
-    # 检查是否有正在执行的同类型任务
-    existing_task = rpa_task_service.get_pending_task_for_target(
-        db,
-        target_type=RPATargetType.BOOKING.value,
-        target_id=int(booking_id),
-        task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value
-    )
-    if existing_task:
-        raise BadRequestException(f"该订舱已有待执行或执行中的订舱任务，任务ID: {existing_task.id}")
-    
-    # 获取业务参数配置
+    # 获取业务参数配置（所有订舱共享）
     business_config = _get_business_config(db)
     if not business_config:
         raise BadRequestException("业务参数配置不存在，无法调用南航订舱接口")
     
-    # 提取并映射参数
-    rpa_params = _extract_china_southern_air_params(form_data_dict, business_config)
-    
-    # 验证必填参数
-    required_params = [
-        "address_of_the_application_executable_file_tangyi",
-        "system_account",
-        "login_password",
-        "system_url",
-        "origin_station",
-        "destination",
-        "flight_date",
-        "flight_number",
-        "cargo_type",
-        "cargo_code",
-        "cargo_name",
-        "quantity",
-        "weight",
-        "special_cargo_code",
-        "shipper",
-        "shipper_phone",
-        "consignee",
-        "consignee_phone"
-    ]
-    
-    missing_params = [key for key in required_params if not rpa_params.get(key)]
-    if missing_params:
-        raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
-    
-    # 构建队列参数
+    # 构建队列参数（所有订舱共享）
     queue_params = {
         "queue_name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_NAME
     }
     
-    # 创建RPA任务
-    task = rpa_task_service.create_task(
-        db=db,
-        task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
-        target_type=RPATargetType.BOOKING.value,
-        target_id=int(booking_id),
-        params=rpa_params,
-        queue_params=queue_params,
-        job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID,
-        priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
-        created_by=current_user.id if current_user else None
+    # 存储每个订舱的执行结果
+    execute_results = []
+    success_count = 0
+    failed_count = 0
+    
+    # 遍历每个booking_id，创建RPA任务
+    for booking_id_str in request.booking_ids:
+        try:
+            booking_id = int(booking_id_str)
+            
+            # 查询订舱
+            booking = db.query(Booking).filter(Booking.id == booking_id).first()
+            if not booking:
+                execute_results.append(BookingExecuteItem(
+                    booking_id=booking_id_str,
+                    success=False,
+                    error_message="订舱不存在"
+                ))
+                failed_count += 1
+                continue
+            
+            # 解析form_data
+            form_data_dict = json.loads(booking.form_data)
+            airline = form_data_dict.get("airline", "")
+            
+            # 判断是否为南方航空
+            is_china_southern_air = airline == "2" or airline == "南方航空"
+            if not is_china_southern_air:
+                execute_results.append(BookingExecuteItem(
+                    booking_id=booking_id_str,
+                    success=False,
+                    error_message="当前仅支持南方航空的订舱执行"
+                ))
+                failed_count += 1
+                continue
+            
+            # 检查是否有正在执行的同类型任务
+            existing_task = rpa_task_service.get_pending_task_for_target(
+                db,
+                target_type=RPATargetType.BOOKING.value,
+                target_id=booking_id,
+                task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value
+            )
+            if existing_task:
+                execute_results.append(BookingExecuteItem(
+                    booking_id=booking_id_str,
+                    success=False,
+                    error_message=f"该订舱已有待执行或执行中的订舱任务，任务ID: {existing_task.id}"
+                ))
+                failed_count += 1
+                continue
+            
+            # 提取并映射参数
+            rpa_params = _extract_china_southern_air_params(form_data_dict, business_config)
+            
+            # 验证必填参数
+            required_params = [
+                "address_of_the_application_executable_file_tangyi",
+                "system_account",
+                "login_password",
+                "system_url",
+                "origin_station",
+                "destination",
+                "flight_date",
+                "flight_number",
+                "cargo_type",
+                "cargo_code",
+                "cargo_name",
+                "quantity",
+                "weight",
+                "special_cargo_code",
+                "shipper",
+                "shipper_phone",
+                "consignee",
+                "consignee_phone"
+            ]
+            
+            missing_params = [key for key in required_params if not rpa_params.get(key)]
+            if missing_params:
+                execute_results.append(BookingExecuteItem(
+                    booking_id=booking_id_str,
+                    success=False,
+                    error_message=f"缺少必填参数: {', '.join(missing_params)}"
+                ))
+                failed_count += 1
+                continue
+            
+            # 创建RPA任务
+            task = rpa_task_service.create_task(
+                db=db,
+                task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
+                target_type=RPATargetType.BOOKING.value,
+                target_id=booking_id,
+                params=rpa_params,
+                queue_params=queue_params,
+                job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID,
+                priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
+                created_by=current_user.id if current_user else None
+            )
+            
+            execute_results.append(BookingExecuteItem(
+                booking_id=booking_id_str,
+                task_id=str(task.id),
+                success=True,
+                error_message=None
+            ))
+            success_count += 1
+            
+        except ValueError:
+            execute_results.append(BookingExecuteItem(
+                booking_id=booking_id_str,
+                success=False,
+                error_message="订舱ID格式错误，必须是数字"
+            ))
+            failed_count += 1
+        except Exception as e:
+            execute_results.append(BookingExecuteItem(
+                booking_id=booking_id_str,
+                success=False,
+                error_message=f"处理订舱时发生错误: {str(e)}"
+            ))
+            failed_count += 1
+    
+    # 构建响应数据
+    response_data = BookingExecuteResponse(
+        items=execute_results,
+        total=len(execute_results),
+        success_count=success_count,
+        failed_count=failed_count
     )
     
-    # 解析form_data JSON
-    form_data_dict = json.loads(booking.form_data)
-    
-    booking_data = {
-        "id": str(booking.id),
-        "form_data": form_data_dict,
-        "booking_status": booking.booking_status,
-        "invoice_status": booking.invoice_status,
-        "booking_time": format_datetime_china(booking.booking_time),
-        "master_airwaybill_number": booking.master_airwaybill_number,
-        "rpa_work_uuid": booking.rpa_work_uuid,
-        "rpa_queue_uuid": booking.rpa_queue_uuid,
-        "rpa_queue_id": booking.rpa_queue_id,
-        "booking_cancel_status": booking.booking_cancel_status,
-        "created_at": format_datetime_china(booking.created_at),
-        "updated_at": format_datetime_china(booking.updated_at),
-        "task_id": str(task.id)  # 返回任务ID
-    }
-    
-    return success_response(data=booking_data, msg="订舱已加入执行队列，请等待处理")
+    return success_response(
+        data=response_data.dict(),
+        msg=f"批量执行完成，成功: {success_count}，失败: {failed_count}"
+    )
 
 
 @router.get("", summary="订舱列表")

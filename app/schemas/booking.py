@@ -99,3 +99,24 @@ class BookingListResponse(BaseModel):
     total: int
     items: List[BookingResponse]
 
+
+class BookingExecuteRequest(BaseModel):
+    """批量执行订舱请求schema"""
+    booking_ids: List[str] = Field(..., min_items=1, description="订舱ID列表（至少包含一个ID）")
+
+
+class BookingExecuteItem(BaseModel):
+    """单个订舱执行结果schema"""
+    booking_id: str
+    task_id: Optional[str] = None
+    success: bool
+    error_message: Optional[str] = None
+
+
+class BookingExecuteResponse(BaseModel):
+    """批量执行订舱响应schema"""
+    items: List[BookingExecuteItem]
+    total: int
+    success_count: int
+    failed_count: int
+
