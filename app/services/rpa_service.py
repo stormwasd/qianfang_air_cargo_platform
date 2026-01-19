@@ -47,11 +47,7 @@ class RPAService:
         cargo_code: str,
         cargo_name: str,
         waybill_type: str,
-        package: str,
-        queue_uuid_waybill_number: str = "",
-        queue_uuid_freight_rate: str = "",
-        queue_uuid_freight: str = "",
-        queue_uuid_delivery_fee: str = ""
+        package: str
     ) -> Dict[str, Any]:
         """
         调用深航新增运单任务RPA接口（仅适用于深圳航空，airline="1"或"深圳航空"）
@@ -73,10 +69,6 @@ class RPAService:
             cargo_name: 货物名称（如：衣物）
             waybill_type: 运单类型（可选，可能为空）
             package: 包装（如：麻袋）
-            queue_uuid_waybill_number: 运单号队列UUID，RPA执行成功后会将运单号写入此队列
-            queue_uuid_freight_rate: 费率队列UUID，RPA执行成功后会将费率写入此队列
-            queue_uuid_freight: 运费队列UUID，RPA执行成功后会将运费写入此队列
-            queue_uuid_delivery_fee: 派送费队列UUID，RPA执行成功后会将派送费写入此队列
         
         Returns:
             RPA接口返回的数据，包含workUuid等信息
@@ -102,11 +94,7 @@ class RPAService:
                 "cargo_code": cargo_code,
                 "cargo_name": cargo_name,
                 "waybill_type": waybill_type,
-                "package": package,
-                "queue_uuid_waybill_number": queue_uuid_waybill_number,
-                "queue_uuid_freight_rate": queue_uuid_freight_rate,
-                "queue_uuid_freight": queue_uuid_freight,
-                "queue_uuid_delivery_fee": queue_uuid_delivery_fee
+                "package": package
             }
         }
         
@@ -408,8 +396,7 @@ class RPAService:
         no_dangerous_goods: str,
         shipper: str,
         shipper_phone: str,
-        consignee: str,
-        queue_uuid: str = ""
+        consignee: str
     ) -> Dict[str, Any]:
         """
         调用南航订舱任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -445,7 +432,6 @@ class RPAService:
             shipper: 发货人
             shipper_phone: 发货人电话
             consignee: 收货人
-            queue_uuid: 队列UUID，RPA执行成功后会将运单号写入此队列
         
         Returns:
             RPA接口返回的数据，包含workUuid等信息
@@ -485,8 +471,7 @@ class RPAService:
                 "no_dangerous_goods": no_dangerous_goods,
                 "shipper": shipper,
                 "shipper_phone": shipper_phone,
-                "consignee": consignee,
-                "queue_uuid": queue_uuid
+                "consignee": consignee
             }
         }
         
@@ -627,11 +612,7 @@ class RPAService:
         system_url: str,
         system_account: str,
         login_password: str,
-        waybill_number_8: str,
-        queue_uuid_rate: str = "",
-        queue_uuid_freight: str = "",
-        queue_uuid_fuel_costs: str = "",
-        queue_uuid_extended_service_fee: str = ""
+        waybill_number_8: str
     ) -> Dict[str, Any]:
         """
         调用南航直接开单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -641,10 +622,6 @@ class RPAService:
             system_account: 系统账号（从业务参数配置获取）
             login_password: 登录密码（从业务参数配置获取）
             waybill_number_8: 运单号后八位（从booking.master_airwaybill_number提取，以"-"分割取最后一部分）
-            queue_uuid_rate: 费率队列UUID，RPA执行成功后会将费率写入此队列
-            queue_uuid_freight: 运费队列UUID，RPA执行成功后会将运费写入此队列
-            queue_uuid_fuel_costs: 燃油费队列UUID，RPA执行成功后会将燃油费写入此队列
-            queue_uuid_extended_service_fee: 延伸服务费队列UUID，RPA执行成功后会将延伸服务费写入此队列
         
         Returns:
             RPA接口返回的数据，包含workUuid等信息
@@ -658,11 +635,7 @@ class RPAService:
                 "system_url": system_url,
                 "system_account": system_account,
                 "login_password": login_password,
-                "waybill_number_8": waybill_number_8,
-                "queue_uuid_rate": queue_uuid_rate,
-                "queue_uuid_freight": queue_uuid_freight,
-                "queue_uuid_fuel_costs": queue_uuid_fuel_costs,
-                "queue_uuid_extended_service_fee": queue_uuid_extended_service_fee
+                "waybill_number_8": waybill_number_8
             }
         }
         
