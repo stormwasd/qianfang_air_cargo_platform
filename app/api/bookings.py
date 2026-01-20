@@ -772,6 +772,204 @@ async def get_booking(
     return success_response(data=booking_data, msg="查询成功")
 
 
+def _convert_booking_to_waybill_form_data(booking_form_data: dict, business_config: dict) -> dict:
+    """
+    将订舱数据转换为运单form_data结构
+    
+    订舱数据结构（扁平结构）：
+    {
+      "airline": "2",
+      "bookings": [
+        {
+          "origin_station": "CAN",
+          "destination": "PEK",
+          "flight_date": "2025-01-15",
+          "shipper_unit": "XX物流公司",
+          "flight_number": "CZ1234",
+          "booking_remark": "备注信息",
+          "cargo_type": "普通货物",
+          "cargo_code": "0001",
+          "cargo_name": "货物名称",
+          "quantity": "10",
+          "weight": "100.5",
+          "product_name": "产品名称",
+          "oversized_cargo": "否",
+          "special_cargo_code": "",
+          "no_dangerous_goods": "是",
+          "consignee": "收货人",
+          "consignee_phone": "13800138000"
+        }
+      ]
+    }
+    
+    转换为运单form_data结构（嵌套结构）：
+    {
+      "airline": "2",
+      "flight_info": { ... },
+      "cargo_info": { ... },
+      "contact_info": { ... },
+      "dangerous_goods_declaration": { ... },
+      "other_info": { ... },
+      "other_fees": { ... }
+    }
+    
+    Args:
+        booking_form_data: 订舱的form_data字典
+        business_config: 业务参数配置字典
+    
+    Returns:
+        转换后的运单form_data字典
+    """
+    # 获取航司
+    airline = booking_form_data.get("airline", "")
+    
+    # 从bookings数组中获取第一个订舱记录
+    bookings = booking_form_data.get("bookings", [])
+    booking_item = bookings[0] if bookings and len(bookings) > 0 else {}
+    
+    # 从业务参数配置中获取南航配置
+    china_southern_air_config = business_config.get("china_southern_air", {})
+    booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
+    business_default = booking_and_create_config.get("business_default", {})
+    default_address = business_default.get("address", {})
+    
+    # 处理region（省/市/区）
+    # 优先从业务参数配置获取（因为订舱时通常没有填写地址）
+    config_region = default_address.get("region", "")
+    config_detail = default_address.get("detail", "")
+    
+    # 处理region格式（可能是数组或字符串）
+    if isinstance(config_region, list):
+        # 数组格式，拼接为字符串（用"/"分隔）
+        region_str = "/".join(config_region) if config_region else ""
+    else:
+        region_str = config_region or ""
+    
+    # 构建运单form_data结构
+    waybill_form_data = {
+        "airline": airline,
+        
+        # 航班信息 flight_info
+        "flight_info": {
+            "origin_station": booking_item.get("origin_station", "") or business_default.get("origin_station", ""),
+            "destination": booking_item.get("destination", ""),
+            "flight_date": booking_item.get("flight_date", ""),
+            "flight_number": booking_item.get("flight_number", ""),
+            "booking_remark": booking_item.get("booking_remark", "") or business_default.get("booking_remark", "")
+        },
+        
+        # 货物信息 cargo_info
+        "cargo_info": {
+            "cargo_type": booking_item.get("cargo_type", "") or business_default.get("cargo_type", ""),
+            "cargo_code": booking_item.get("cargo_code", "") or business_default.get("cargo_code", ""),
+            "cargo_name": booking_item.get("cargo_name", ""),
+            "quantity": booking_item.get("quantity", ""),
+            "weight": booking_item.get("weight", ""),
+            "booking_volume": booking_item.get("booking_volume", ""),
+            "product_name": booking_item.get("product_name", ""),
+            "oversized_cargo": booking_item.get("oversized_cargo", ""),
+            "special_cargo_code": booking_item.get("special_cargo_code", "") or business_default.get("special_cargo_code", "")
+        },
+        
+        # 联系人信息 contact_info
+        "contact_info": {
+            "consignee": booking_item.get("consignee", ""),
+            "consignee_phone": booking_item.get("consignee_phone", ""),
+            "shipper_unit": booking_item.get("shipper_unit", ""),
+            "shipper": business_default.get("shipper", ""),
+            "shipper_phone": business_default.get("phone", ""),
+            "address": {
+                "region": region_str,
+                "detail": config_detail
+            }
+        },
+        
+        # 危险品声明 dangerous_goods_declaration
+        "dangerous_goods_declaration": {
+            "no_hidden_dangerous_goods": booking_item.get("no_dangerous_goods", ""),
+            "agent_checker_signature": business_default.get("agent_checker_name", ""),
+            "agent_consignor_signature": business_default.get("agent_consignor_name", "")
+        },
+        
+        # 其他信息 other_info
+        "other_info": {
+            "order_contact": business_default.get("order_contact_name", ""),
+            "contact_phone": business_default.get("order_contact_phone", ""),
+            "settlement_file_number": business_default.get("settlement_file_number", "")
+        },
+        
+        # 其他费用 other_fees（订舱时通常没有填写，留空）
+        "other_fees": {
+            "packaging_fee": "",
+            "pickup_fee": "",
+            "delivery_fee": ""
+        }
+    }
+    
+    return waybill_form_data
+
+
+@router.get("/{booking_id}/waybill-form", summary="获取订舱数据转运单form_data（回显接口）")
+async def get_booking_waybill_form(
+    booking_id: str,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取订舱数据转运单form_data接口（用于运单管理界面回显）
+    
+    此接口用于：
+    1. 用户在订舱执行后，选择来到运单管理界面进行开单
+    2. 系统将订舱数据（扁平结构）转换为运单form_data结构（嵌套结构）
+    3. 结合业务参数配置补充必要的字段（如shipper、shipper_phone、address等）
+    4. 返回符合运单新增接口所需的form_data数据结构
+    
+    **参数优先级**：
+    - 优先使用订舱时用户填写的数据
+    - 如果订舱数据中没有，则从业务参数配置的南航部分获取
+    
+    **使用场景**：
+    - 用户订舱执行成功后，可以选择"直接开单"或"来到运单管理界面开单"
+    - 如果选择后者，前端调用此接口获取回显数据，用户可以修改后再调用新增运单接口提交
+    
+    - **booking_id**: 订舱ID（字符串格式）
+    
+    返回：
+    - form_data: 符合运单新增接口所需的form_data数据结构
+    - booking_id: 订舱ID
+    - master_airwaybill_number: 主单号（如果已有）
+    """
+    # 查询订舱
+    booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+    if not booking:
+        raise NotFoundException("订舱不存在")
+    
+    # 解析form_data JSON
+    booking_form_data = json.loads(booking.form_data)
+    airline = booking_form_data.get("airline", "")
+    
+    # 判断是否为南方航空（目前仅支持南航）
+    is_china_southern_air = airline == "2" or airline == "南方航空"
+    if not is_china_southern_air:
+        raise BadRequestException("当前仅支持南方航空的订舱数据转换")
+    
+    # 获取业务参数配置
+    business_config = _get_business_config(db)
+    
+    # 将订舱数据转换为运单form_data结构
+    waybill_form_data = _convert_booking_to_waybill_form_data(booking_form_data, business_config)
+    
+    response_data = {
+        "booking_id": str(booking.id),
+        "form_data": waybill_form_data,
+        "master_airwaybill_number": booking.master_airwaybill_number,
+        "booking_status": booking.booking_status,
+        "invoice_status": booking.invoice_status
+    }
+    
+    return success_response(data=response_data, msg="查询成功")
+
+
 @router.put("/{booking_id}", summary="修改订舱信息")
 async def update_booking(
     booking_id: str,
