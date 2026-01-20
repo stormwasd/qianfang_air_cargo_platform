@@ -1122,11 +1122,80 @@ class RPAWorker:
                 db.add(settlement)
             except Exception as e:
                 print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
+            
+            # 同步创建waybills记录（将bookings的form_data结构转换为waybills的form_data结构）
+            try:
+                waybill_form_data = self._convert_booking_to_waybill_form_data(form_data_dict, booking_item, params)
+                new_waybill = Waybill(
+                    waybill_number=booking.master_airwaybill_number,
+                    form_data=json.dumps(waybill_form_data, ensure_ascii=False),
+                    airline_record_status="3",  # 成功（因为直接开单已成功）
+                    cargo_station_record_status="0",  # 未执行
+                    document_print_status="0",  # 未执行
+                    waybill_void_status="0",  # 未作废
+                    booking_date=get_china_now().date(),
+                    rpa_work_uuid=booking.rpa_work_uuid  # 同步RPA workUuid
+                )
+                db.add(new_waybill)
+                print(f"[Worker-{self.worker_id}] 同步创建waybill记录成功，订舱ID: {booking.id}, 运单号: {booking.master_airwaybill_number}")
+            except Exception as e:
+                print(f"[Worker-{self.worker_id}] 同步创建waybill记录失败: {str(e)}")
         finally:
             # 清理队列
             await self._cleanup_queues(queues_info)
             booking.rpa_queue_uuids = None
             db.commit()
+    
+    def _convert_booking_to_waybill_form_data(self, form_data_dict: dict, booking_item: dict, params: dict) -> dict:
+        """
+        将bookings表的form_data结构转换为waybills表的form_data结构
+        
+        bookings结构：扁平结构，数据在bookings[0]中
+        waybills结构：嵌套结构，按flight_info、cargo_info、contact_info等分组
+        
+        Args:
+            form_data_dict: bookings表的form_data
+            booking_item: bookings数组中的第一条记录
+            params: RPA参数（包含shipper等信息）
+        
+        Returns:
+            转换后的waybills form_data结构
+        """
+        # 获取业务参数中的shipper信息
+        shipper = params.get("shipper", "")
+        
+        waybill_form_data = {
+            "airline": form_data_dict.get("airline", "2"),
+            "flight_info": {
+                "origin_station": booking_item.get("origin_station", ""),
+                "destination": booking_item.get("destination", ""),
+                "flight_date": booking_item.get("flight_date", ""),
+                "flight_number": booking_item.get("flight_number", ""),
+                "booking_remark": booking_item.get("booking_remark", "")
+            },
+            "cargo_info": {
+                "cargo_type": booking_item.get("cargo_type", ""),
+                "cargo_code": booking_item.get("cargo_code", ""),
+                "cargo_name": booking_item.get("cargo_name", ""),
+                "quantity": str(booking_item.get("quantity", "")),
+                "weight": str(booking_item.get("weight", "")),
+                "product_name": booking_item.get("product_name", ""),
+                "oversized_cargo": str(booking_item.get("oversized_cargo", "0")),
+                "special_cargo_code": booking_item.get("special_cargo_code", "")
+            },
+            "contact_info": {
+                "consignee": booking_item.get("consignee", ""),
+                "consignee_phone": booking_item.get("consignee_phone", ""),
+                "shipper_unit": booking_item.get("shipper_unit", ""),
+                "shipper": shipper,
+                "shipper_phone": ""
+            },
+            "dangerous_goods_declaration": {
+                "no_hidden_dangerous_goods": str(booking_item.get("no_dangerous_goods", "0"))
+            }
+        }
+        
+        return waybill_form_data
     
     async def _execute_china_southern_air_waybill(self, db, task: RPATask):
         """执行南航新增运单任务"""
