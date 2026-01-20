@@ -476,9 +476,9 @@ async def execute_booking(
     if not business_config:
         raise BadRequestException("业务参数配置不存在，无法调用南航订舱接口")
     
-    # 构建队列参数（所有订舱共享）
+    # 构建队列参数（所有订舱共享，只使用运单号队列）
     queue_params = {
-        "queue_name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_NAME
+        "queue_name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_WAYBILL_NUMBER
     }
     
     # 存储每个订舱的执行结果
@@ -1376,13 +1376,13 @@ async def direct_invoice(
         "shipper": shipper  # 用于创建结算单
     }
     
-    # 构建队列参数
+    # 构建队列参数（使用4个费用队列）
     queue_params = {
         "queue_configs": [
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_RATE, "key": "rate"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_FREIGHT, "key": "freight"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_FUEL_COSTS, "key": "fuel_costs"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_EXTENDED_SERVICE_FEE, "key": "extended_service_fee"}
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_RATE, "key": "rate"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FREIGHT, "key": "freight"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FUEL_COSTS, "key": "fuel_costs"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_EXTENDED_SERVICE_FEE, "key": "extended_service_fee"}
         ]
     }
     
