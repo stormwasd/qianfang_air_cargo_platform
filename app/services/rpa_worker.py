@@ -123,6 +123,9 @@ class RPAWorker:
                         waybill.waybill_void_status = "2"  # 作废失败
                     elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value:
                         waybill.airline_record_status = "2"  # 开单失败
+                        # 如果运单关联了订舱，同步更新订舱的invoice_status为失败
+                        if waybill.booking_id:
+                            self._sync_booking_invoice_status(db, waybill.booking_id, "2")  # 失败
                     db.commit()
             elif task.target_type == RPATargetType.BOOKING.value:
                 booking = db.query(Booking).filter(Booking.id == task.target_id).first()
@@ -1208,6 +1211,11 @@ class RPAWorker:
             raise Exception("运单不存在")
         
         waybill.airline_record_status = "1"  # 开单中
+        
+        # 如果运单关联了订舱，同步更新订舱的invoice_status
+        if waybill.booking_id:
+            self._sync_booking_invoice_status(db, waybill.booking_id, "1")  # 开单中
+        
         db.commit()
         
         # 创建队列（4个队列：运单号、费率、运费、派送费）
@@ -1325,6 +1333,9 @@ class RPAWorker:
                         dict_value = map_rpa_status_to_dict_value(rpa_status)
                         if dict_value:
                             waybill.airline_record_status = dict_value
+                            # 如果运单关联了订舱，同步更新订舱的invoice_status
+                            if waybill.booking_id:
+                                self._sync_booking_invoice_status(db, waybill.booking_id, dict_value)
                         
                         # 如果成功，获取队列数据
                         if rpa_status == 5:
@@ -1333,6 +1344,9 @@ class RPAWorker:
                             # 检查最终状态，如果运单号获取失败，状态会被设置为失败
                             db.refresh(waybill)
                             is_success = waybill.airline_record_status == "3" and waybill.waybill_number is not None
+                            # 如果获取运单号失败，同步更新订舱状态为失败
+                            if not is_success and waybill.booking_id:
+                                self._sync_booking_invoice_status(db, waybill.booking_id, "2")  # 失败
                             rpa_task_service.complete_task(db, task.id, is_success)
                             return
                         
@@ -1353,6 +1367,9 @@ class RPAWorker:
         await self._cleanup_queues(queues_info)
         waybill.rpa_queue_uuids = None
         waybill.airline_record_status = "2"  # 失败
+        # 如果运单关联了订舱，同步更新订舱的invoice_status为失败
+        if waybill.booking_id:
+            self._sync_booking_invoice_status(db, waybill.booking_id, "2")  # 失败
         db.commit()
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单状态轮询超时")
     
@@ -1495,6 +1512,28 @@ class RPAWorker:
             await self._cleanup_queues(queues_info)
             waybill.rpa_queue_uuids = None
             db.commit()
+    
+    def _sync_booking_invoice_status(self, db, booking_id: int, new_status: str):
+        """
+        同步更新订舱的invoice_status字段
+        
+        当通过订舱回显数据创建的运单状态变化时，需要同步更新对应订舱的invoice_status
+        
+        Args:
+            db: 数据库会话
+            booking_id: 订舱ID
+            new_status: 新的状态值（数据字典值："0"=未开单，"1"=开单中，"2"=失败，"3"=成功）
+        """
+        try:
+            booking = db.query(Booking).filter(Booking.id == booking_id).first()
+            if booking:
+                old_status = booking.invoice_status
+                booking.invoice_status = new_status
+                print(f"[Worker-{self.worker_id}] 同步订舱开单状态: booking_id={booking_id}, {old_status} -> {new_status}")
+            else:
+                print(f"[Worker-{self.worker_id}] 同步订舱开单状态失败: 订舱不存在, booking_id={booking_id}")
+        except Exception as e:
+            print(f"[Worker-{self.worker_id}] 同步订舱开单状态异常: booking_id={booking_id}, error={str(e)}")
     
     async def _cleanup_queues(self, queues_info: dict):
         """清理队列"""

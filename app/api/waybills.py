@@ -33,10 +33,17 @@ async def create_waybill(
     新增运单接口
     
     - **form_data**: 表单数据（JSON格式），前端可以传入任意字段
+    - **booking_id**: 可选参数，关联的订舱ID（从订舱回显数据创建运单时传入）
     - 自动设置booking_date为当前日期（中国时间）
     - 所有执行状态默认为"未执行"
     - waybill_number和departure_time初始为null，由RPA后续写入
+    
+    **关于booking_id**：
+    - 当用户从订舱管理界面使用回显接口获取数据后，在运单管理界面创建运单时，应传入booking_id
+    - 传入booking_id后，当运单的airline_record_status状态变化时，会自动同步到对应订舱的invoice_status字段
+    - 如果不传入booking_id，则运单与订舱无关联，状态变化不会同步
     """
+    from app.models.booking import Booking
     
     # 将form_data转换为JSON字符串
     form_data_json = json.dumps(waybill.form_data, ensure_ascii=False)
@@ -44,9 +51,22 @@ async def create_waybill(
     # 获取当前日期（中国时间）
     booking_date = get_china_today()
     
+    # 处理booking_id
+    booking_id_value = None
+    if waybill.booking_id:
+        try:
+            booking_id_value = int(waybill.booking_id)
+            # 验证订舱是否存在
+            existing_booking = db.query(Booking).filter(Booking.id == booking_id_value).first()
+            if not existing_booking:
+                raise NotFoundException(f"关联的订舱不存在: {waybill.booking_id}")
+        except ValueError:
+            raise BadRequestException(f"booking_id格式错误: {waybill.booking_id}")
+    
     new_waybill = Waybill(
         form_data=form_data_json,
         booking_date=booking_date,
+        booking_id=booking_id_value,
         airline_record_status="0",  # 数据字典值："0"=未开单
         cargo_station_record_status="0",  # 数据字典值："0"=未执行
         document_print_status="0"  # 数据字典值："0"=未执行
@@ -60,6 +80,7 @@ async def create_waybill(
     
     waybill_data = {
         "id": str(new_waybill.id),
+        "booking_id": str(new_waybill.booking_id) if new_waybill.booking_id else None,
         "waybill_number": new_waybill.waybill_number,
         "form_data": form_data_dict,
         "airline_record_status": new_waybill.airline_record_status,

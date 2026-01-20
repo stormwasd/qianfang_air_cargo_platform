@@ -100,8 +100,10 @@ class WaybillCreate(BaseModel):
     - address 是对象类型，包含 region（省/市/区）和 detail（详细地址）两个字段
     - 不同航司的字段结构不同，前端需要根据 airline 字段来展示对应的表单字段
     - 深圳航空的运单可以选择性提供 flight_info.waybill_type 字段（运单类型），南方航空不需要此字段
+    - booking_id 是可选字段，用于从订舱回显数据创建运单时建立关联（当运单状态变化时会同步更新订舱的开单状态）
     """
     form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），根据航司类型包含不同的字段结构")
+    booking_id: Optional[str] = Field(None, description="关联的订舱ID（可选，从订舱回显数据创建运单时传入，用于同步状态）")
 
 
 class WaybillQuery(BaseModel):
