@@ -866,8 +866,8 @@ async def void_waybill(
     运单作废接口（队列模式）
     
     此接口会：
-    1. 根据运单的airline判断是否为深航（airline="1"或"深圳航空"）
-    2. 如果是深航，从waybill_number中提取运单号后八位（去除"479-"前缀）
+    1. 根据运单的airline判断航空公司（深航：airline="1"或"深圳航空"，南航：airline="2"或"南方航空"）
+    2. 从waybill_number中提取运单号后八位（深航去除"479-"前缀，南航去除"784-"前缀）
     3. 创建RPA作废任务并加入队列
     4. Worker会从队列中取出任务执行RPA调用
     5. 当RPA作废成功时，更新运单作废状态为"3"（作废成功），保留记录用于留痕
@@ -894,23 +894,34 @@ async def void_waybill(
     form_data_dict = json.loads(waybill.form_data)
     airline = form_data_dict.get("airline", "")
     
-    # 判断是否为深圳航空
+    # 判断航空公司
     is_shenzhen_air = airline == "1" or airline == "深圳航空"
-    if not is_shenzhen_air:
-        raise BadRequestException("当前仅支持深圳航空的运单作废")
+    is_china_southern_air = airline == "2" or airline == "南方航空"
+    
+    if not is_shenzhen_air and not is_china_southern_air:
+        raise BadRequestException("当前仅支持深圳航空和南方航空的运单作废")
+    
+    # 根据航空公司选择任务类型和配置
+    if is_shenzhen_air:
+        task_type = RPATaskType.SHENZHEN_AIR_WAYBILL_VOID.value
+        job_uuid = settings.RPA_SHENZHEN_AIR_VOID_JOB_UUID
+        # 提取运单号后八位（去除深航前缀"479-"）
+        waybill_number_8 = rpa_service.extract_waybill_suffix(waybill.waybill_number)
+    else:  # 南航
+        task_type = RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_VOID.value
+        job_uuid = settings.RPA_CHINA_SOUTHERN_AIR_VOID_JOB_UUID
+        # 提取运单号后八位（去除南航前缀"784-"）
+        waybill_number_8 = rpa_service.extract_waybill_suffix_china_southern_air(waybill.waybill_number)
     
     # 检查是否有正在执行的同类型任务
     existing_task = rpa_task_service.get_pending_task_for_target(
         db,
         target_type=RPATargetType.WAYBILL.value,
         target_id=int(waybill_id),
-        task_type=RPATaskType.SHENZHEN_AIR_WAYBILL_VOID.value
+        task_type=task_type
     )
     if existing_task:
         raise BadRequestException(f"该运单已有待执行或执行中的作废任务，任务ID: {existing_task.id}")
-    
-    # 提取运单号后八位（去除深航前缀"479-"）
-    waybill_number_8 = rpa_service.extract_waybill_suffix(waybill.waybill_number)
     
     # 验证运单号后八位
     if not waybill_number_8 or len(waybill_number_8) != 8:
@@ -924,11 +935,11 @@ async def void_waybill(
     # 创建RPA任务
     task = rpa_task_service.create_task(
         db=db,
-        task_type=RPATaskType.SHENZHEN_AIR_WAYBILL_VOID.value,
+        task_type=task_type,
         target_type=RPATargetType.WAYBILL.value,
         target_id=int(waybill_id),
         params=rpa_params,
-        job_uuid=settings.RPA_SHENZHEN_AIR_VOID_JOB_UUID,
+        job_uuid=job_uuid,
         priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
         created_by=current_user.id if current_user else None
     )

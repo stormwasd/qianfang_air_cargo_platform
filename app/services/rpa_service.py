@@ -658,6 +658,52 @@ class RPAService:
             except Exception as e:
                 raise BadRequestException(f"南航直接开单RPA接口调用异常: {str(e)}")
     
+    async def cancel_china_southern_air_waybill(self, waybill_number_8: str) -> Dict[str, Any]:
+        """
+        调用南航作废运单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
+        
+        Args:
+            waybill_number_8: 运单号后八位（如：47888190）
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_VOID_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "waybill_number_8": waybill_number_8
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                # 检查RPA接口返回的code
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "RPA作废接口调用失败")
+                    raise BadRequestException(f"RPA作废接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"RPA作废接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"RPA作废接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"RPA作废接口调用异常: {str(e)}")
+    
+    async def query_china_southern_air_waybill_void_status(self, job_uuid: str, start_time: Optional[str] = None, end_time: Optional[str] = None, size: int = 1000000) -> Dict[str, Any]:
+        """
+        查询南航作废运单任务状态接口（仅适用于南方航空，airline="2"或"南方航空"）
+        复用查询深航运单状态的接口，因为RPA状态查询接口是通用的
+        """
+        return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
+    
     async def create_queue(self, queue_name: str, max_queue_number: int = 999, is_expire: bool = False) -> Dict[str, Any]:
         """
         创建队列接口（通用，适用于所有航司）

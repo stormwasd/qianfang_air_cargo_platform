@@ -89,6 +89,8 @@ class RPAWorker:
                     await self._execute_china_southern_air_booking_cancel(db, task)
                 elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_INVOICE.value:
                     await self._execute_china_southern_air_direct_invoice(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_VOID.value:
+                    await self._execute_china_southern_air_waybill_void(db, task)
                 else:
                     print(f"[Worker-{self.worker_id}] 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -114,6 +116,8 @@ class RPAWorker:
                     if task.task_type == RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value:
                         waybill.airline_record_status = "2"  # 失败
                     elif task.task_type == RPATaskType.SHENZHEN_AIR_WAYBILL_VOID.value:
+                        waybill.waybill_void_status = "2"  # 作废失败
+                    elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_VOID.value:
                         waybill.waybill_void_status = "2"  # 作废失败
                     db.commit()
             elif task.target_type == RPATargetType.BOOKING.value:
@@ -447,6 +451,125 @@ class RPAWorker:
             
             try:
                 status_data = await rpa_service.query_shenzhen_air_waybill_status(job_uuid)
+                status_info = rpa_service.extract_status_from_query_response(status_data, work_uuid)
+                
+                if status_info:
+                    rpa_status = status_info.get("status")
+                    if rpa_status is not None:
+                        db.refresh(waybill)
+                        
+                        # 映射作废状态
+                        if rpa_status == 1:
+                            waybill.waybill_void_status = "1"  # 作废中
+                        elif rpa_status == 3:
+                            waybill.waybill_void_status = "2"  # 作废失败
+                            db.commit()
+                            rpa_task_service.complete_task(db, task.id, False, error_message="RPA作废执行失败")
+                            return
+                        elif rpa_status == 5:
+                            waybill.waybill_void_status = "3"  # 作废成功
+                            
+                            # 同步运单作废状态到结算单
+                            if waybill.waybill_number:
+                                try:
+                                    from sqlalchemy import func, cast, String
+                                    from sqlalchemy.dialects.mysql import JSON
+                                    import json as json_lib
+                                    
+                                    # 方法1：使用JSON提取（更精确）
+                                    settlements = db.query(Settlement).filter(
+                                        func.cast(
+                                            func.json_extract(
+                                                cast(Settlement.form_data, JSON),
+                                                "$.master_airwaybill_number"
+                                            ),
+                                            String(100)
+                                        ) == waybill.waybill_number
+                                    ).all()
+                                    
+                                    # 如果方法1没找到，使用方法2：遍历所有settlement（备用方案）
+                                    if not settlements:
+                                        print(f"[Worker-{self.worker_id}] 方法1未找到结算单，使用方法2查找: waybill_number={waybill.waybill_number}")
+                                        all_settlements = db.query(Settlement).all()
+                                        for settlement in all_settlements:
+                                            try:
+                                                form_data_dict = json_lib.loads(settlement.form_data)
+                                                master_airwaybill_number = form_data_dict.get("master_airwaybill_number", "")
+                                                if master_airwaybill_number == waybill.waybill_number:
+                                                    settlements.append(settlement)
+                                            except Exception as e:
+                                                continue
+                                    
+                                    # 更新所有匹配的结算单的waybill_void_status数据库字段
+                                    if settlements:
+                                        for settlement in settlements:
+                                            settlement.waybill_void_status = "3"  # 作废成功
+                                            print(f"[Worker-{self.worker_id}] 已同步运单作废状态到结算单: settlement_id={settlement.id}, waybill_number={waybill.waybill_number}, waybill_void_status=3")
+                                    else:
+                                        print(f"[Worker-{self.worker_id}] 警告：未找到对应的结算单，waybill_number={waybill.waybill_number}")
+                                except Exception as e:
+                                    import traceback
+                                    print(f"[Worker-{self.worker_id}] 同步运单作废状态到结算单失败: {str(e)}")
+                                    print(f"[Worker-{self.worker_id}] 错误详情: {traceback.format_exc()}")
+                            
+                            db.commit()
+                            rpa_task_service.complete_task(db, task.id, True)
+                            return
+                        
+                        db.commit()
+            except Exception as e:
+                print(f"[Worker-{self.worker_id}] 轮询作废状态失败: {str(e)}")
+                continue
+        
+        # 轮询超时
+        waybill.waybill_void_status = "2"  # 作废失败
+        db.commit()
+        rpa_task_service.complete_task(db, task.id, False, error_message="RPA作废状态轮询超时")
+    
+    async def _execute_china_southern_air_waybill_void(self, db, task: RPATask):
+        """执行南航作废任务"""
+        params = json.loads(task.params)
+        
+        # 更新运单状态为作废中
+        waybill = db.query(Waybill).filter(Waybill.id == task.target_id).first()
+        if not waybill:
+            raise Exception("运单不存在")
+        
+        waybill.waybill_void_status = "1"  # 作废中
+        db.commit()
+        
+        # 调用RPA接口
+        rpa_response = await asyncio.wait_for(
+            rpa_service.cancel_china_southern_air_waybill(params.get("waybill_number_8", "")),
+            timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+        )
+        
+        # 提取workUuid
+        work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+        if not work_uuid:
+            raise Exception("RPA作废接口未返回workUuid")
+        
+        # 保存workUuid
+        waybill.rpa_work_uuid = work_uuid
+        db.commit()
+        
+        # 更新任务的workUuid
+        rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
+        
+        # 轮询RPA状态
+        await self._poll_china_southern_air_void_status(db, task, waybill, work_uuid)
+    
+    async def _poll_china_southern_air_void_status(self, db, task: RPATask, waybill: Waybill, work_uuid: str):
+        """轮询南航作废RPA状态"""
+        max_polls = settings.RPA_POLL_MAX_COUNT
+        poll_interval = settings.RPA_POLL_INTERVAL
+        job_uuid = settings.RPA_CHINA_SOUTHERN_AIR_VOID_JOB_UUID
+        
+        for i in range(max_polls):
+            await asyncio.sleep(poll_interval)
+            
+            try:
+                status_data = await rpa_service.query_china_southern_air_waybill_void_status(job_uuid)
                 status_info = rpa_service.extract_status_from_query_response(status_data, work_uuid)
                 
                 if status_info:
