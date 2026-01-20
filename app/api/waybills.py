@@ -731,6 +731,180 @@ def _extract_shenzhen_air_params(form_data: dict, business_config: dict) -> dict
     return params
 
 
+def _extract_china_southern_air_waybill_params(form_data: dict, business_config: dict) -> dict:
+    """
+    提取并映射南航新增运单RPA接口所需的参数
+    
+    参数优先级：
+    1. 优先使用form_data中的值
+    2. 如果form_data中没有，则从业务参数配置中的南航数据部分获取
+    
+    注意：form_data结构为运单的南航结构：
+    {
+      "airline": "2",
+      "flight_info": {
+        "destination": "北京",
+        "flight_date": "2025-01-15",
+        "flight_number": "CZ5678",
+        "booking_remark": "备注信息",
+        "origin_station": "CAN"
+      },
+      "cargo_info": {
+        "cargo_type": "普通货物",
+        "cargo_code": "0001",
+        "cargo_name": "货物名称",
+        "quantity": "10",
+        "weight": "100.5",
+        "oversized_cargo": "否",
+        "special_cargo_code": ""
+      },
+      "contact_info": {
+        "consignee": "收货人",
+        "consignee_phone": "13800138000",
+        "shipper_unit": "XX物流公司",
+        "shipper": "托运人",
+        "shipper_phone": "13900139000",
+        "address": {
+          "region": "广东省/深圳市/南山区",
+          "detail": "科技园南区"
+        }
+      },
+      "dangerous_goods_declaration": {
+        "no_hidden_dangerous_goods": "是",
+        "agent_checker_signature": "检查人签字",
+        "agent_consignor_signature": "交运人签字"
+      },
+      "other_info": {
+        "order_contact": "订单联系人",
+        "contact_phone": "13700137000",
+        "settlement_file_number": "SF001"
+      }
+    }
+    
+    Args:
+        form_data: 运单的form_data字典
+        business_config: 业务参数配置字典
+    
+    Returns:
+        映射后的RPA接口参数字典
+    """
+    # 从业务参数中获取南航配置
+    china_southern_air_config = business_config.get("china_southern_air", {})
+    booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
+    
+    # 获取各个配置组
+    tangi_login = booking_and_create_config.get("tangi_login", {})
+    china_southern_air_login = booking_and_create_config.get("china_southern_air_login", {})
+    business_default = booking_and_create_config.get("business_default", {})
+    default_address = business_default.get("address", {})
+    
+    # 从form_data中提取各个部分
+    flight_info = form_data.get("flight_info", {})
+    cargo_info = form_data.get("cargo_info", {})
+    contact_info = form_data.get("contact_info", {})
+    dangerous_goods_declaration = form_data.get("dangerous_goods_declaration", {})
+    other_info = form_data.get("other_info", {})
+    
+    # 处理region（省/市/区）- 优先从form_data获取，如果没有则从业务参数配置获取
+    form_address = contact_info.get("address", {})
+    form_region = form_address.get("region", "")
+    
+    # 如果form_data中没有region，则从业务参数配置获取
+    if not form_region:
+        form_region = default_address.get("region", "")
+    
+    # 处理region格式（可能是数组或字符串）
+    if isinstance(form_region, list):
+        # 数组格式，直接取三个元素
+        region_province = form_region[0] if len(form_region) > 0 else ""
+        region_city = form_region[1] if len(form_region) > 1 else ""
+        region_district = form_region[2] if len(form_region) > 2 else ""
+    elif isinstance(form_region, str):
+        # 字符串格式，按"/"分割
+        region_parts = form_region.split("/") if form_region else []
+        region_province = region_parts[0] if len(region_parts) > 0 else ""
+        region_city = region_parts[1] if len(region_parts) > 1 else ""
+        region_district = region_parts[2] if len(region_parts) > 2 else ""
+    else:
+        region_province = ""
+        region_city = ""
+        region_district = ""
+    
+    # address_detail：优先从form_data获取，如果没有则从业务参数配置获取
+    address_detail = form_address.get("detail", "") or default_address.get("detail", "")
+    
+    # address_of_the_application_executable_file_tangyi：从业务参数配置获取（这个参数通常不在form_data中）
+    address_of_app = tangi_login.get("address_of_the_application_executable_file_tangyi", "")
+    if not address_of_app:
+        address_of_app = tangi_login.get("app_name", "")
+    
+    # order_contact_name和order_contact_phone：优先从form_data获取，如果没有则从业务参数配置获取
+    order_contact_name_raw = other_info.get("order_contact", "") or business_default.get("order_contact_name", "")
+    order_contact_phone_raw = other_info.get("contact_phone", "") or business_default.get("order_contact_phone", "")
+    
+    # 如果order_contact_phone不存在，尝试从order_contact_name中提取（按"/"分割，取第二部分）
+    if not order_contact_phone_raw and order_contact_name_raw and "/" in order_contact_name_raw:
+        # 从order_contact_name中提取电话（格式：姓名/电话）
+        parts = order_contact_name_raw.split("/", 1)
+        order_contact_name_raw = parts[0] if len(parts) > 0 else order_contact_name_raw
+        order_contact_phone_raw = parts[1] if len(parts) > 1 else ""
+    
+    # 映射参数（优先使用form_data，如果没有则使用业务参数配置）
+    params = {
+        # 登录信息：从业务参数配置获取（这些通常不在form_data中）
+        "address_of_the_application_executable_file_tangyi": address_of_app,
+        "system_account": china_southern_air_login.get("system_account", ""),
+        "login_password": china_southern_air_login.get("login_password", ""),
+        "system_url": china_southern_air_login.get("system_url", ""),
+        
+        # 地址信息：优先使用form_data，如果没有则使用业务参数配置
+        "region_province_shipper": region_province,
+        "region_city_shipper": region_city,
+        "region_city_district": region_district,
+        "address_detail": address_detail,
+        
+        # 联系人信息：优先使用form_data，如果没有则使用业务参数配置
+        "order_contact_name": order_contact_name_raw,
+        "order_contact_phone": order_contact_phone_raw,
+        
+        # 代理信息：优先使用form_data.dangerous_goods_declaration，如果没有则使用业务参数配置
+        "agent_checker_name": dangerous_goods_declaration.get("agent_checker_signature", "") or business_default.get("agent_checker_name", ""),
+        "agent_consignor_name": dangerous_goods_declaration.get("agent_consignor_signature", "") or business_default.get("agent_consignor_name", ""),
+        
+        # 发货人信息：优先使用form_data.contact_info，如果没有则使用业务参数配置
+        "shipper": contact_info.get("shipper", "") or contact_info.get("shipper_unit", "") or business_default.get("shipper", ""),
+        "shipper_phone": contact_info.get("shipper_phone", "") or business_default.get("phone", ""),
+        
+        # 备注和结算文件号：优先使用form_data，如果没有则使用业务参数配置
+        "booking_remark": flight_info.get("booking_remark", "") or business_default.get("booking_remark", ""),
+        "settlement_file_number": other_info.get("settlement_file_number", "") or business_default.get("settlement_file_number", ""),
+        
+        # 航班信息：优先使用form_data，如果没有则使用业务参数配置
+        "origin_station": flight_info.get("origin_station", "") or business_default.get("origin_station", ""),
+        "destination": flight_info.get("destination", ""),
+        "flight_date": flight_info.get("flight_date", ""),
+        "flight_number": flight_info.get("flight_number", ""),
+        
+        # 货物信息：优先使用form_data，如果没有则使用业务参数配置
+        "cargo_type": cargo_info.get("cargo_type", "") or business_default.get("cargo_type", ""),
+        "cargo_code": cargo_info.get("cargo_code", "") or business_default.get("cargo_code", ""),
+        "cargo_name": cargo_info.get("cargo_name", ""),
+        "quantity": cargo_info.get("quantity", ""),
+        "weight": cargo_info.get("weight", ""),
+        "special_cargo_code": cargo_info.get("special_cargo_code", "") or business_default.get("special_cargo_code", ""),
+        
+        # 收货人信息：优先使用form_data.contact_info
+        "consignee_phone": contact_info.get("consignee_phone", ""),
+        "consignee": contact_info.get("consignee", ""),
+        
+        # 其他信息：优先使用form_data，如果没有则使用默认值
+        "oversized_cargo": cargo_info.get("oversized_cargo", "0"),
+        "no_dangerous_goods": dangerous_goods_declaration.get("no_hidden_dangerous_goods", "0"),
+    }
+    
+    return params
+
+
 @router.post("/{waybill_id}/execute", summary="确认并执行运单")
 async def execute_waybill(
     waybill_id: str,
@@ -964,4 +1138,130 @@ async def void_waybill(
     }
     
     return success_response(data=waybill_data, msg="运单作废已加入执行队列，请等待处理")
+
+
+@router.post("/{waybill_id}/execute-china-southern-air", summary="南航新增运单")
+async def execute_china_southern_air_waybill(
+    waybill_id: str,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    南航新增运单接口（队列模式）
+    
+    此接口会：
+    1. 根据运单的airline判断是否为南航（airline="2"或"南方航空"）
+    2. 如果是南航，创建4个队列（waybill_number, freight_rate, freight, delivery_fee）
+    3. 创建RPA任务并加入队列
+    4. Worker会从队列中取出任务执行RPA调用
+    5. RPA任务完成后（成功或失败），Worker会：
+       - 成功：从队列中获取数据，创建结算记录，然后销毁队列
+       - 失败：直接销毁队列
+    6. 前端可以通过任务ID或运单状态轮询获取执行结果
+    
+    - **waybill_id**: 运单ID（字符串格式）
+    
+    返回：
+    - task_id: RPA任务ID，可用于查询任务状态
+    """
+    from app.config import settings
+    from app.services.rpa_task_service import rpa_task_service
+    from app.models.rpa_task import RPATaskType, RPATargetType
+    
+    # 查询运单
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    if not waybill:
+        raise NotFoundException("运单不存在")
+    
+    # 解析form_data
+    form_data_dict = json.loads(waybill.form_data)
+    airline = form_data_dict.get("airline", "")
+    
+    # 判断是否为南方航空
+    is_china_southern_air = airline == "2" or airline == "南方航空"
+    if not is_china_southern_air:
+        raise BadRequestException("此接口仅支持南方航空的运单执行，深圳航空请使用 /execute 接口")
+    
+    # 检查是否有正在执行的同类型任务
+    existing_task = rpa_task_service.get_pending_task_for_target(
+        db,
+        target_type=RPATargetType.WAYBILL.value,
+        target_id=int(waybill_id),
+        task_type=RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value
+    )
+    if existing_task:
+        raise BadRequestException(f"该运单已有待执行或执行中的南航新增运单任务，任务ID: {existing_task.id}")
+    
+    # 获取业务参数配置
+    business_config = _get_business_config(db)
+    if not business_config:
+        raise BadRequestException("业务参数配置不存在，无法调用南航新增运单接口")
+    
+    # 提取并映射参数（优先使用form_data，如果没有则使用业务参数配置）
+    rpa_params = _extract_china_southern_air_waybill_params(form_data_dict, business_config)
+    
+    # 验证必填参数
+    required_params = [
+        "address_of_the_application_executable_file_tangyi",
+        "system_account",
+        "login_password",
+        "system_url",
+        "origin_station",
+        "destination",
+        "flight_date",
+        "flight_number",
+        "cargo_name",
+        "quantity",
+        "weight",
+        "consignee",
+        "consignee_phone",
+        "shipper",
+        "shipper_phone"
+    ]
+    
+    missing_params = [key for key in required_params if not rpa_params.get(key)]
+    if missing_params:
+        raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
+    
+    # 构建队列参数（4个队列，与南航直接开单类似）
+    queue_params = {
+        "queue_configs": [
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_WAYBILL_NUMBER, "key": "waybill_number"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_RATE, "key": "freight_rate"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_FREIGHT, "key": "freight"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_FUEL_COSTS, "key": "delivery_fee"}
+        ]
+    }
+    
+    # 创建RPA任务
+    task = rpa_task_service.create_task(
+        db=db,
+        task_type=RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value,
+        target_type=RPATargetType.WAYBILL.value,
+        target_id=int(waybill_id),
+        params=rpa_params,
+        queue_params=queue_params,
+        job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID,
+        priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
+        created_by=current_user.id if current_user else None
+    )
+    
+    waybill_data = {
+        "id": str(waybill.id),
+        "waybill_number": waybill.waybill_number,
+        "form_data": form_data_dict,
+        "airline_record_status": waybill.airline_record_status,
+        "cargo_station_record_status": waybill.cargo_station_record_status,
+        "document_print_status": waybill.document_print_status,
+        "waybill_void_status": waybill.waybill_void_status,
+        "departure_time": format_datetime_china(waybill.departure_time),
+        "booking_date": waybill.booking_date.isoformat(),
+        "rpa_work_uuid": waybill.rpa_work_uuid,
+        "rpa_queue_uuids": waybill.rpa_queue_uuids,
+        "created_at": format_datetime_china(waybill.created_at),
+        "updated_at": format_datetime_china(waybill.updated_at),
+        "task_id": str(task.id)  # 返回任务ID
+    }
+    
+    return success_response(data=waybill_data, msg="南航新增运单已加入执行队列，请等待处理")
 

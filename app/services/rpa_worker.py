@@ -91,6 +91,8 @@ class RPAWorker:
                     await self._execute_china_southern_air_direct_invoice(db, task)
                 elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_VOID.value:
                     await self._execute_china_southern_air_waybill_void(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value:
+                    await self._execute_china_southern_air_waybill(db, task)
                 else:
                     print(f"[Worker-{self.worker_id}] 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -119,6 +121,8 @@ class RPAWorker:
                         waybill.waybill_void_status = "2"  # 作废失败
                     elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_VOID.value:
                         waybill.waybill_void_status = "2"  # 作废失败
+                    elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value:
+                        waybill.airline_record_status = "2"  # 开单失败
                     db.commit()
             elif task.target_type == RPATargetType.BOOKING.value:
                 booking = db.query(Booking).filter(Booking.id == task.target_id).first()
@@ -1122,6 +1126,295 @@ class RPAWorker:
             # 清理队列
             await self._cleanup_queues(queues_info)
             booking.rpa_queue_uuids = None
+            db.commit()
+    
+    async def _execute_china_southern_air_waybill(self, db, task: RPATask):
+        """执行南航新增运单任务"""
+        params = json.loads(task.params)
+        queue_params = json.loads(task.queue_params) if task.queue_params else None
+        
+        # 更新运单状态为执行中
+        waybill = db.query(Waybill).filter(Waybill.id == task.target_id).first()
+        if not waybill:
+            raise Exception("运单不存在")
+        
+        waybill.airline_record_status = "1"  # 开单中
+        db.commit()
+        
+        # 创建队列（4个队列：运单号、费率、运费、派送费）
+        queues_info = {}
+        if queue_params:
+            queue_configs = queue_params.get("queue_configs", [])
+            for queue_config in queue_configs:
+                try:
+                    queue_data = await asyncio.wait_for(
+                        rpa_service.create_queue(
+                            queue_name=queue_config["name"],
+                            max_queue_number=999,
+                            is_expire=False
+                        ),
+                        timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                    )
+                    queue_uuid = queue_data.get("queueUUID", "")
+                    queue_id = str(queue_data.get("queueID", ""))
+                    
+                    if queue_uuid:
+                        queues_info[queue_config["key"]] = {
+                            "queueUUID": queue_uuid,
+                            "queueID": queue_id,
+                            "queueName": queue_config["name"]
+                        }
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {str(e)}")
+        
+        # 保存队列信息到运单
+        if queues_info:
+            waybill.rpa_queue_uuids = json.dumps(queues_info, ensure_ascii=False)
+            db.commit()
+        
+        # 调用RPA接口
+        try:
+            rpa_response = await asyncio.wait_for(
+                rpa_service.create_china_southern_air_waybill(
+                    address_of_the_application_executable_file_tangyi=params.get("address_of_the_application_executable_file_tangyi", ""),
+                    system_account=params.get("system_account", ""),
+                    login_password=params.get("login_password", ""),
+                    system_url=params.get("system_url", ""),
+                    origin_station=params.get("origin_station", ""),
+                    destination=params.get("destination", ""),
+                    flight_date=params.get("flight_date", ""),
+                    cargo_type=params.get("cargo_type", ""),
+                    cargo_code=params.get("cargo_code", ""),
+                    flight_number=params.get("flight_number", ""),
+                    booking_remark=params.get("booking_remark", ""),
+                    cargo_name=params.get("cargo_name", ""),
+                    quantity=params.get("quantity", ""),
+                    weight=params.get("weight", ""),
+                    special_cargo_code=params.get("special_cargo_code", ""),
+                    region_province_shipper=params.get("region_province_shipper", ""),
+                    region_city_shipper=params.get("region_city_shipper", ""),
+                    region_city_district=params.get("region_city_district", ""),
+                    address_detail=params.get("address_detail", ""),
+                    consignee_phone=params.get("consignee_phone", ""),
+                    settlement_file_number=params.get("settlement_file_number", ""),
+                    order_contact_name=params.get("order_contact_name", ""),
+                    order_contact_phone=params.get("order_contact_phone", ""),
+                    agent_checker_name=params.get("agent_checker_name", ""),
+                    agent_consignor_name=params.get("agent_consignor_name", ""),
+                    oversized_cargo=params.get("oversized_cargo", "0"),
+                    no_dangerous_goods=params.get("no_dangerous_goods", "0"),
+                    shipper=params.get("shipper", ""),
+                    shipper_phone=params.get("shipper_phone", ""),
+                    consignee=params.get("consignee", "")
+                ),
+                timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+            )
+            
+            # 提取workUuid
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+            if not work_uuid:
+                raise Exception("RPA南航新增运单接口未返回workUuid")
+            
+            # 保存workUuid
+            waybill.rpa_work_uuid = work_uuid
+            db.commit()
+            
+            # 更新任务的workUuid
+            rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
+            
+            # 轮询RPA状态
+            await self._poll_china_southern_air_waybill_status(db, task, waybill, work_uuid, queues_info, params)
+            
+        except Exception as e:
+            # 清理队列
+            await self._cleanup_queues(queues_info)
+            waybill.rpa_queue_uuids = None
+            db.commit()
+            raise e
+    
+    async def _poll_china_southern_air_waybill_status(self, db, task: RPATask, waybill: Waybill, work_uuid: str, queues_info: dict, params: dict):
+        """轮询南航新增运单RPA状态"""
+        max_polls = settings.RPA_POLL_MAX_COUNT
+        poll_interval = settings.RPA_POLL_INTERVAL
+        job_uuid = settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID
+        
+        for i in range(max_polls):
+            await asyncio.sleep(poll_interval)
+            
+            try:
+                # 查询南航新增运单任务状态
+                status_data = await rpa_service.query_china_southern_air_waybill_status(job_uuid)
+                status_info = rpa_service.extract_status_from_query_response(status_data, work_uuid)
+                
+                if status_info:
+                    rpa_status = status_info.get("status")
+                    if rpa_status is not None:
+                        # 刷新运单对象
+                        db.refresh(waybill)
+                        
+                        # 更新运单状态
+                        dict_value = map_rpa_status_to_dict_value(rpa_status)
+                        if dict_value:
+                            waybill.airline_record_status = dict_value
+                        
+                        # 如果成功，获取队列数据
+                        if rpa_status == 5:
+                            # 处理成功后的数据获取，如果获取运单号失败，方法内部会将状态设置为失败并返回
+                            await self._process_china_southern_air_waybill_success(db, waybill, queues_info, params)
+                            # 检查最终状态，如果运单号获取失败，状态会被设置为失败
+                            db.refresh(waybill)
+                            is_success = waybill.airline_record_status == "3" and waybill.waybill_number is not None
+                            rpa_task_service.complete_task(db, task.id, is_success)
+                            return
+                        
+                        # 如果失败，清理队列
+                        elif rpa_status == 3:
+                            await self._cleanup_queues(queues_info)
+                            waybill.rpa_queue_uuids = None
+                            db.commit()
+                            rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单执行失败")
+                            return
+                        
+                        db.commit()
+            except Exception as e:
+                print(f"[Worker-{self.worker_id}] 轮询南航新增运单状态失败: {str(e)}")
+                continue
+        
+        # 轮询超时
+        await self._cleanup_queues(queues_info)
+        waybill.rpa_queue_uuids = None
+        waybill.airline_record_status = "2"  # 失败
+        db.commit()
+        rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单状态轮询超时")
+    
+    async def _process_china_southern_air_waybill_success(self, db, waybill: Waybill, queues_info: dict, params: dict):
+        """处理南航新增运单成功后的数据获取和结算单创建"""
+        waybill_number_data = None
+        freight_rate_data = None
+        freight_data = None
+        delivery_fee_data = None
+        
+        try:
+            # 获取运单号
+            waybill_number_retrieved = False
+            if "waybill_number" in queues_info:
+                try:
+                    waybill_number_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["waybill_number"]["queueUUID"]
+                    )
+                    if waybill_number_data:
+                        waybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_number_data)
+                        waybill.waybill_number = waybill_number
+                        waybill_number_retrieved = True
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 获取南航运单号失败: {str(e)}")
+            
+            # 如果获取运单号失败，将状态设置为失败
+            if not waybill_number_retrieved:
+                waybill.airline_record_status = "2"  # 失败
+                print(f"[Worker-{self.worker_id}] RPA返回成功但获取南航运单号失败，将状态设置为失败")
+                db.commit()
+                return
+            
+            # 获取费率
+            if "freight_rate" in queues_info:
+                try:
+                    freight_rate_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["freight_rate"]["queueUUID"]
+                    )
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 获取费率失败: {str(e)}")
+            
+            # 获取运费
+            if "freight" in queues_info:
+                try:
+                    freight_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["freight"]["queueUUID"]
+                    )
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 获取运费失败: {str(e)}")
+            
+            # 获取派送费
+            if "delivery_fee" in queues_info:
+                try:
+                    delivery_fee_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["delivery_fee"]["queueUUID"]
+                    )
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 获取派送费失败: {str(e)}")
+            
+            # 创建结算单
+            if waybill_number_data:
+                form_data_dict = json.loads(waybill.form_data)
+                flight_info = form_data_dict.get("flight_info", {})
+                cargo_info = form_data_dict.get("cargo_info", {})
+                contact_info = form_data_dict.get("contact_info", {})
+                
+                rpa_call_time = get_china_now().strftime("%Y-%m-%d")
+                
+                settlement_data = {
+                    "airline_record_time": rpa_call_time,
+                    "settlement_method": "1",
+                    "settlement_status": "0",
+                    "financial_review": "1",
+                    "master_airwaybill_number": waybill.waybill_number or "",
+                    "transport_method": "0",
+                    "airline": "2",  # 南航
+                    "origin_station": flight_info.get("origin_station", ""),
+                    "destination": flight_info.get("destination", ""),
+                    "flight_number": flight_info.get("flight_number", ""),
+                    "flight_date": flight_info.get("flight_date", ""),
+                    "customer_name": contact_info.get("shipper", "") or contact_info.get("shipper_unit", ""),
+                    "recipient_name": contact_info.get("consignee", ""),
+                    "cargo_name": cargo_info.get("cargo_name", ""),
+                    "quantity": cargo_info.get("quantity", ""),
+                    "weight": cargo_info.get("weight", ""),
+                    "chargeable_weight": "1",
+                    "sub_rate": "1",
+                    "sub_airline_fee": "1",
+                    "sub_document_fee": "1",
+                    "sub_telegraph_fee": "1",
+                    "sub_telegraph_number": "1",
+                    "sub_cca_fee": "1",
+                    "sub_packaging_fee": "1",
+                    "sub_pickup_fee": "1",
+                    "sub_airport_pickup_fee": "1",
+                    "sub_delivery_fee": "1",
+                    "sub_carrier_deduction": "1",
+                    "sub_other_fee": "1",
+                    "sub_other_fee_remark": "1",
+                    "sub_total_amount": "1",
+                    "sub_remark": "1",
+                    "master_rate": freight_rate_data.strip('"').strip("'") if freight_rate_data else "1",
+                    "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "1",
+                    "master_fuel_surcharge": "1",
+                    "master_transit_weight": "1",
+                    "master_transit_fee": "1",
+                    "master_cca_cost": "1",
+                    "master_packaging_fee": "1",
+                    "master_telegraph_fee": "1",
+                    "master_pickup_unit": "1",
+                    "master_pickup_fee": "1",
+                    "master_delivery_unit": "1",
+                    "master_airport_pickup_fee": "1",
+                    "master_delivery_fee": delivery_fee_data.strip('"').strip("'") if delivery_fee_data else "1",
+                    "master_other_fee": "1",
+                    "master_total_cost": "1",
+                    "master_remark": "1"
+                }
+                
+                try:
+                    settlement = Settlement(
+                        form_data=json.dumps(settlement_data, ensure_ascii=False),
+                        waybill_void_status=waybill.waybill_void_status or "0"  # 同步运单作废状态到结算单数据库字段
+                    )
+                    db.add(settlement)
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
+        finally:
+            # 清理队列
+            await self._cleanup_queues(queues_info)
+            waybill.rpa_queue_uuids = None
             db.commit()
     
     async def _cleanup_queues(self, queues_info: dict):
