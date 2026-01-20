@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID: str = "196dde6fbcfd15e2e0641caf8720c7d7"  # 南航退舱任务jobUuid
     RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID: str = "167b4cbefd18d7311d55844cdb36c398"  # 南航直接开单任务jobUuid
     RPA_CHINA_SOUTHERN_AIR_VOID_JOB_UUID: str = "6597981f58eae4a6dd0b025699215c44"  # 南航作废运单任务jobUuid
-    RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID: str = "c8922d01794a23ab1a0c4d66c9c45566"  # 南航新增运单任务jobUuid
+    RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID: str = "cc2bda248c24dbf57fa6cd2534ce5054"  # 南航新增运单任务jobUuid
     RPA_CHINA_SOUTHERN_AIR_QUEUE_UUID: str = "d5933f787b77482aa486da4fd3ffdcfd"  # 南航获取运单号队列UUID（历史遗留，已不使用）
     RPA_CHINA_SOUTHERN_AIR_QUEUE_NAME: str = "nanhang_air_dingcang_queue_waybill_number"  # 南航订舱队列名称（固定队列名称，每次执行订舱时都会创建新队列实例）
     # 南航直接开单队列名称（固定队列名称，每次执行开单时都会创建新队列实例）
