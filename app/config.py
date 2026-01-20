@@ -81,11 +81,11 @@ class Settings(BaseSettings):
     RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_FUEL_COSTS: str = "nanhang_air_dingcang_kaidan_direct_queue_fuel_costs"  # 南航直接开单燃油费队列名称
     RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_QUEUE_EXTENDED_SERVICE_FEE: str = "nanhang_air_dingcang_kaidan_direct_queue_extended_service_fee"  # 南航直接开单延伸服务费队列名称
     # 南航新增运单队列名称（固定队列名称，每次执行开单时都会创建新队列实例）
-    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_WAYBILL_NUMBER: str = "nanhang_air_waybill_queue_waybill_number"  # 南航新增运单-运单号队列名称
-    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_RATE: str = "nanhang_air_waybill_queue_rate"  # 南航新增运单-费率队列名称
-    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_FREIGHT: str = "nanhang_air_waybill_queue_freight"  # 南航新增运单-运费队列名称
-    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_FUEL_COSTS: str = "nanhang_air_waybill_queue_fuel_costs"  # 南航新增运单-燃油费队列名称
-    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_EXTENDED_SERVICE_FEE: str = "nanhang_air_waybill_queue_extended_service_fee"  # 南航新增运单-延伸服务费队列名称
+    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_WAYBILL_NUMBER: str = "nanhang_air_dingcang_kaidan_queue_waybill_number"  # 南航新增运单-运单号队列名称
+    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_RATE: str = "nanhang_air_dingcang_kaidan_queue_rate"  # 南航新增运单-费率队列名称
+    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_FREIGHT: str = "nanhang_air_dingcang_kaidan_queue_freight"  # 南航新增运单-运费队列名称
+    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_FUEL_COSTS: str = "nanhang_air_dingcang_kaidan_queue_fuel_costs"  # 南航新增运单-燃油费队列名称
+    RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_EXTENDED_SERVICE_FEE: str = "nanhang_air_dingcang_kaidan_queue_extended_service_fee"  # 南航新增运单-延伸服务费队列名称
     
     # RPA轮询配置
     RPA_POLL_INTERVAL: int = Field(default=5, ge=1, le=300, description="RPA状态轮询间隔（秒），默认5秒")

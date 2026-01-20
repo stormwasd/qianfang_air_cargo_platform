@@ -1223,13 +1223,14 @@ async def execute_china_southern_air_waybill(
     if missing_params:
         raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
     
-    # 构建队列参数（4个队列，与南航直接开单类似）
+    # 构建队列参数（5个队列：运单号 + 与南航直接开单类似的4个费用队列）
     queue_params = {
         "queue_configs": [
             {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_WAYBILL_NUMBER, "key": "waybill_number"},
             {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_RATE, "key": "freight_rate"},
             {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_FREIGHT, "key": "freight"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_FUEL_COSTS, "key": "delivery_fee"}
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_FUEL_COSTS, "key": "fuel_costs"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_QUEUE_EXTENDED_SERVICE_FEE, "key": "extended_service_fee"}
         ]
     }
     

@@ -1292,7 +1292,8 @@ class RPAWorker:
         waybill_number_data = None
         freight_rate_data = None
         freight_data = None
-        delivery_fee_data = None
+        fuel_costs_data = None
+        extended_service_fee_data = None
         
         try:
             # 获取运单号
@@ -1334,14 +1335,23 @@ class RPAWorker:
                 except Exception as e:
                     print(f"[Worker-{self.worker_id}] 获取运费失败: {str(e)}")
             
-            # 获取派送费
-            if "delivery_fee" in queues_info:
+            # 获取燃油费
+            if "fuel_costs" in queues_info:
                 try:
-                    delivery_fee_data = await rpa_service.get_china_southern_air_waybill_number(
-                        queues_info["delivery_fee"]["queueUUID"]
+                    fuel_costs_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["fuel_costs"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取派送费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取燃油费失败: {str(e)}")
+            
+            # 获取延伸服务费
+            if "extended_service_fee" in queues_info:
+                try:
+                    extended_service_fee_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["extended_service_fee"]["queueUUID"]
+                    )
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 获取延伸服务费失败: {str(e)}")
             
             # 创建结算单
             if waybill_number_data:
@@ -1387,9 +1397,9 @@ class RPAWorker:
                     "sub_remark": "1",
                     "master_rate": freight_rate_data.strip('"').strip("'") if freight_rate_data else "1",
                     "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "1",
-                    "master_fuel_surcharge": "1",
+                    "master_fuel_surcharge": fuel_costs_data.strip('"').strip("'") if fuel_costs_data else "1",
                     "master_transit_weight": "1",
-                    "master_transit_fee": "1",
+                    "master_transit_fee": extended_service_fee_data.strip('"').strip("'") if extended_service_fee_data else "1",
                     "master_cca_cost": "1",
                     "master_packaging_fee": "1",
                     "master_telegraph_fee": "1",
@@ -1397,7 +1407,7 @@ class RPAWorker:
                     "master_pickup_fee": "1",
                     "master_delivery_unit": "1",
                     "master_airport_pickup_fee": "1",
-                    "master_delivery_fee": delivery_fee_data.strip('"').strip("'") if delivery_fee_data else "1",
+                    "master_delivery_fee": "1",
                     "master_other_fee": "1",
                     "master_total_cost": "1",
                     "master_remark": "1"
