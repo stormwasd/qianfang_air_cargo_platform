@@ -842,6 +842,127 @@ class RPAService:
         """
         return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
     
+    async def create_china_southern_air_invoice_with_data(
+        self,
+        system_url: str,
+        system_account: str,
+        login_password: str,
+        waybill_number_8: str,
+        flight_number: str,
+        flight_date: str,
+        booking_remark: str,
+        cargo_code: str,
+        cargo_name: str,
+        weight: str,
+        quantity: str,
+        volume: str,
+        special_cargo_code: str,
+        oversized_cargo: str,
+        shipper: str,
+        shipper_phone: str,
+        address_detail: str,
+        region_province_shipper: str,
+        region_city_shipper: str,
+        region_city_district: str,
+        consignee: str,
+        order_contact_phone: str,
+        order_contact_name: str,
+        settlement_file_number: str
+    ) -> Dict[str, Any]:
+        """
+        调用南航修改数据后开单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
+        
+        此接口用于：用户从订舱回显数据后修改再开单的场景
+        与直接开单不同，此接口允许传入修改后的业务数据
+        
+        Args:
+            system_url: 系统URL（从业务参数配置获取）
+            system_account: 系统账号（从业务参数配置获取）
+            login_password: 登录密码（从业务参数配置获取）
+            waybill_number_8: 运单号后八位（从booking.master_airwaybill_number提取）
+            flight_number: 航班号
+            flight_date: 航班日期
+            booking_remark: 订舱备注
+            cargo_code: 货物代码
+            cargo_name: 货物名称
+            weight: 重量
+            quantity: 件数
+            volume: 体积
+            special_cargo_code: 特货码
+            oversized_cargo: 超规货（0=否，1=是）
+            shipper: 发货人
+            shipper_phone: 发货人电话
+            address_detail: 详细地址
+            region_province_shipper: 发货人省
+            region_city_shipper: 发货人市
+            region_city_district: 发货人区
+            consignee: 收货人
+            order_contact_phone: 订单联系人电话
+            order_contact_name: 订单联系人姓名
+            settlement_file_number: 结算文件号
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "system_url": system_url,
+                "system_account": system_account,
+                "login_password": login_password,
+                "waybill_number_8": waybill_number_8,
+                "flight_number": flight_number,
+                "flight_date": flight_date,
+                "booking_remark": booking_remark,
+                "cargo_code": cargo_code,
+                "cargo_name": cargo_name,
+                "weight": weight,
+                "quantity": quantity,
+                "volume": volume,
+                "special_cargo_code": special_cargo_code,
+                "oversized_cargo": oversized_cargo,
+                "shipper": shipper,
+                "shipper_phone": shipper_phone,
+                "address_detail": address_detail,
+                "region_province_shipper": region_province_shipper,
+                "region_city_shipper": region_city_shipper,
+                "region_city_district": region_city_district,
+                "consignee": consignee,
+                "order_contact_phone": order_contact_phone,
+                "order_contact_name": order_contact_name,
+                "settlement_file_number": settlement_file_number
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                # 检查RPA接口返回的code
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "南航修改数据后开单RPA接口调用失败")
+                    raise BadRequestException(f"南航修改数据后开单RPA接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"南航修改数据后开单RPA接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"南航修改数据后开单RPA接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"南航修改数据后开单RPA接口调用异常: {str(e)}")
+    
+    async def query_china_southern_air_invoice_with_data_status(self, job_uuid: str, start_time: Optional[str] = None, end_time: Optional[str] = None, size: int = 1000000) -> Dict[str, Any]:
+        """
+        查询南航修改数据后开单任务状态接口（仅适用于南方航空，airline="2"或"南方航空"）
+        复用查询深航运单状态的接口，因为RPA状态查询接口是通用的
+        """
+        return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
+    
     async def create_queue(self, queue_name: str, max_queue_number: int = 999, is_expire: bool = False) -> Dict[str, Any]:
         """
         创建队列接口（通用，适用于所有航司）

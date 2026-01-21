@@ -1618,3 +1618,206 @@ async def direct_invoice(
     
     return success_response(data=booking_data, msg="直接开单已加入执行队列，请等待处理")
 
+
+@router.post("/{booking_id}/invoice-with-data", summary="南航修改数据后开单")
+async def invoice_with_data(
+    booking_id: str,
+    form_data: dict,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    南航修改数据后开单接口（队列模式）
+    
+    此接口用于：用户从订舱回显数据后修改再开单的场景
+    与直接开单接口不同，此接口允许用户传入修改后的业务数据
+    
+    使用场景：
+    1. 用户订舱执行成功后，调用回显接口获取数据
+    2. 用户在前端修改数据
+    3. 调用此接口传入修改后的form_data进行开单
+    4. 开单成功后，系统会自动同步创建运单记录到waybills表
+    
+    - **booking_id**: 订舱ID（字符串格式）
+    - **form_data**: 修改后的表单数据（结构与回显接口返回的form_data相同）
+    
+    返回：
+    - task_id: RPA任务ID，可用于查询任务状态
+    """
+    from app.services.rpa_task_service import rpa_task_service
+    from app.models.rpa_task import RPATaskType, RPATargetType
+    
+    # 查询订舱
+    booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+    if not booking:
+        raise NotFoundException("订舱不存在")
+    
+    # 解析订舱的form_data
+    booking_form_data = json.loads(booking.form_data)
+    airline = booking_form_data.get("airline", "")
+    
+    # 判断是否为南方航空
+    is_china_southern_air = airline == "2" or airline == "南方航空"
+    if not is_china_southern_air:
+        raise BadRequestException("当前仅支持南方航空的修改数据后开单")
+    
+    # 检查是否有主单号
+    if not booking.master_airwaybill_number:
+        raise BadRequestException("订舱尚未完成，无法进行开单操作")
+    
+    # 检查是否有正在执行的同类型任务
+    existing_task = rpa_task_service.get_pending_task_for_target(
+        db,
+        target_type=RPATargetType.BOOKING.value,
+        target_id=int(booking_id),
+        task_type=RPATaskType.CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA.value
+    )
+    if existing_task:
+        raise BadRequestException(f"该订舱已有待执行或执行中的开单任务，任务ID: {existing_task.id}")
+    
+    # 同时检查直接开单任务
+    existing_direct_task = rpa_task_service.get_pending_task_for_target(
+        db,
+        target_type=RPATargetType.BOOKING.value,
+        target_id=int(booking_id),
+        task_type=RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_INVOICE.value
+    )
+    if existing_direct_task:
+        raise BadRequestException(f"该订舱已有待执行或执行中的直接开单任务，任务ID: {existing_direct_task.id}")
+    
+    # 获取业务参数配置
+    business_config = _get_business_config(db)
+    if not business_config:
+        raise BadRequestException("业务参数配置不存在，无法调用南航修改数据后开单接口")
+    
+    # 从业务参数配置中获取南航登录信息
+    china_southern_air_config = business_config.get("china_southern_air", {})
+    booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
+    china_southern_air_login = booking_and_create_config.get("china_southern_air_login", {})
+    business_default = booking_and_create_config.get("business_default", {})
+    
+    system_url = china_southern_air_login.get("system_url", "")
+    system_account = china_southern_air_login.get("system_account", "")
+    login_password = china_southern_air_login.get("login_password", "")
+    
+    if not system_url or not system_account or not login_password:
+        raise BadRequestException("业务参数配置中缺少南航登录信息")
+    
+    # 从master_airwaybill_number中提取waybill_number_8（以"-"分割，取最后一部分）
+    waybill_number_8 = booking.master_airwaybill_number.split("-")[-1] if "-" in booking.master_airwaybill_number else booking.master_airwaybill_number
+    
+    # 从传入的form_data中提取参数（优先使用form_data，如果没有则从业务参数配置获取）
+    flight_info = form_data.get("flight_info", {})
+    cargo_info = form_data.get("cargo_info", {})
+    contact_info = form_data.get("contact_info", {})
+    other_info = form_data.get("other_info", {})
+    address = contact_info.get("address", {})
+    
+    # 处理region字段（可能是字符串如"广东省/深圳市/南山区"，也可能是列表）
+    region = address.get("region", "")
+    if isinstance(region, str) and "/" in region:
+        region_parts = region.split("/")
+        region_province = region_parts[0] if len(region_parts) > 0 else ""
+        region_city = region_parts[1] if len(region_parts) > 1 else ""
+        region_district = region_parts[2] if len(region_parts) > 2 else ""
+    elif isinstance(region, list):
+        region_province = region[0] if len(region) > 0 else ""
+        region_city = region[1] if len(region) > 1 else ""
+        region_district = region[2] if len(region) > 2 else ""
+    else:
+        region_province = ""
+        region_city = ""
+        region_district = ""
+    
+    # 构建RPA参数（优先form_data，其次业务参数配置）
+    rpa_params = {
+        "system_url": system_url,
+        "system_account": system_account,
+        "login_password": login_password,
+        "waybill_number_8": waybill_number_8,
+        "flight_number": flight_info.get("flight_number", "") or business_default.get("flight_number", ""),
+        "flight_date": flight_info.get("flight_date", "") or business_default.get("flight_date", ""),
+        "booking_remark": flight_info.get("booking_remark", "") or business_default.get("booking_remark", ""),
+        "cargo_code": cargo_info.get("cargo_code", "") or business_default.get("cargo_code", ""),
+        "cargo_name": cargo_info.get("cargo_name", "") or business_default.get("cargo_name", ""),
+        "weight": str(cargo_info.get("weight", "")) or business_default.get("weight", ""),
+        "quantity": str(cargo_info.get("quantity", "")) or business_default.get("quantity", ""),
+        "volume": str(cargo_info.get("booking_volume", "")) or business_default.get("volume", ""),
+        "special_cargo_code": cargo_info.get("special_cargo_code", "") or business_default.get("special_cargo_code", ""),
+        "oversized_cargo": str(cargo_info.get("oversized_cargo", "0")) or "0",
+        "shipper": contact_info.get("shipper", "") or business_default.get("shipper", ""),
+        "shipper_phone": contact_info.get("shipper_phone", "") or business_default.get("phone", ""),
+        "address_detail": address.get("detail", "") or business_default.get("address_detail", ""),
+        "region_province_shipper": region_province or business_default.get("region_province_shipper", ""),
+        "region_city_shipper": region_city or business_default.get("region_city_shipper", ""),
+        "region_city_district": region_district or business_default.get("region_city_district", ""),
+        "consignee": contact_info.get("consignee", "") or business_default.get("consignee", ""),
+        "order_contact_phone": other_info.get("contact_phone", "") or business_default.get("order_contact_phone", ""),
+        "order_contact_name": other_info.get("order_contact", "") or business_default.get("order_contact_name", ""),
+        "settlement_file_number": other_info.get("settlement_file_number", "") or business_default.get("settlement_file_number", ""),
+        # 保存原始form_data用于创建waybill记录
+        "_original_form_data": form_data
+    }
+    
+    # 验证必填参数
+    required_params = [
+        "waybill_number_8",
+        "flight_number",
+        "flight_date",
+        "cargo_name",
+        "weight",
+        "quantity",
+        "shipper",
+        "shipper_phone",
+        "consignee"
+    ]
+    
+    missing_params = [key for key in required_params if not rpa_params.get(key)]
+    if missing_params:
+        raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
+    
+    # 构建队列参数（使用4个费用队列）
+    queue_params = {
+        "queue_configs": [
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_RATE, "key": "rate"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FREIGHT, "key": "freight"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FUEL_COSTS, "key": "fuel_costs"},
+            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_EXTENDED_SERVICE_FEE, "key": "extended_service_fee"}
+        ]
+    }
+    
+    # 创建RPA任务
+    task = rpa_task_service.create_task(
+        db=db,
+        task_type=RPATaskType.CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA.value,
+        target_type=RPATargetType.BOOKING.value,
+        target_id=int(booking_id),
+        params=rpa_params,
+        queue_params=queue_params,
+        job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID,
+        priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
+        created_by=current_user.id if current_user else None
+    )
+    
+    # 解析form_data JSON
+    booking_form_data_response = json.loads(booking.form_data)
+    
+    booking_data = {
+        "id": str(booking.id),
+        "form_data": booking_form_data_response,
+        "submitted_form_data": form_data,  # 返回用户提交的修改后的form_data
+        "booking_status": booking.booking_status,
+        "invoice_status": booking.invoice_status,
+        "booking_time": format_datetime_china(booking.booking_time),
+        "master_airwaybill_number": booking.master_airwaybill_number,
+        "rpa_work_uuid": booking.rpa_work_uuid,
+        "rpa_queue_uuid": booking.rpa_queue_uuid,
+        "rpa_queue_id": booking.rpa_queue_id,
+        "booking_cancel_status": booking.booking_cancel_status,
+        "created_at": format_datetime_china(booking.created_at),
+        "updated_at": format_datetime_china(booking.updated_at),
+        "task_id": str(task.id)  # 返回任务ID
+    }
+    
+    return success_response(data=booking_data, msg="修改数据后开单已加入执行队列，请等待处理")
+

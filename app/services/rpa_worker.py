@@ -93,6 +93,8 @@ class RPAWorker:
                     await self._execute_china_southern_air_waybill_void(db, task)
                 elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value:
                     await self._execute_china_southern_air_waybill(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA.value:
+                    await self._execute_china_southern_air_invoice_with_data(db, task)
                 else:
                     print(f"[Worker-{self.worker_id}] 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -123,9 +125,6 @@ class RPAWorker:
                         waybill.waybill_void_status = "2"  # 作废失败
                     elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value:
                         waybill.airline_record_status = "2"  # 开单失败
-                        # 如果运单关联了订舱，同步更新订舱的invoice_status为失败
-                        if waybill.booking_id:
-                            self._sync_booking_invoice_status(db, waybill.booking_id, "2")  # 失败
                     db.commit()
             elif task.target_type == RPATargetType.BOOKING.value:
                 booking = db.query(Booking).filter(Booking.id == task.target_id).first()
@@ -135,6 +134,8 @@ class RPAWorker:
                     elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_CANCEL.value:
                         booking.booking_cancel_status = "2"  # 退舱失败
                     elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_INVOICE.value:
+                        booking.invoice_status = "2"  # 开单失败
+                    elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA.value:
                         booking.invoice_status = "2"  # 开单失败
                     db.commit()
         except Exception as e:
@@ -1211,11 +1212,6 @@ class RPAWorker:
             raise Exception("运单不存在")
         
         waybill.airline_record_status = "1"  # 开单中
-        
-        # 如果运单关联了订舱，同步更新订舱的invoice_status
-        if waybill.booking_id:
-            self._sync_booking_invoice_status(db, waybill.booking_id, "1")  # 开单中
-        
         db.commit()
         
         # 创建队列（4个队列：运单号、费率、运费、派送费）
@@ -1333,9 +1329,6 @@ class RPAWorker:
                         dict_value = map_rpa_status_to_dict_value(rpa_status)
                         if dict_value:
                             waybill.airline_record_status = dict_value
-                            # 如果运单关联了订舱，同步更新订舱的invoice_status
-                            if waybill.booking_id:
-                                self._sync_booking_invoice_status(db, waybill.booking_id, dict_value)
                         
                         # 如果成功，获取队列数据
                         if rpa_status == 5:
@@ -1344,9 +1337,6 @@ class RPAWorker:
                             # 检查最终状态，如果运单号获取失败，状态会被设置为失败
                             db.refresh(waybill)
                             is_success = waybill.airline_record_status == "3" and waybill.waybill_number is not None
-                            # 如果获取运单号失败，同步更新订舱状态为失败
-                            if not is_success and waybill.booking_id:
-                                self._sync_booking_invoice_status(db, waybill.booking_id, "2")  # 失败
                             rpa_task_service.complete_task(db, task.id, is_success)
                             return
                         
@@ -1367,9 +1357,6 @@ class RPAWorker:
         await self._cleanup_queues(queues_info)
         waybill.rpa_queue_uuids = None
         waybill.airline_record_status = "2"  # 失败
-        # 如果运单关联了订舱，同步更新订舱的invoice_status为失败
-        if waybill.booking_id:
-            self._sync_booking_invoice_status(db, waybill.booking_id, "2")  # 失败
         db.commit()
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单状态轮询超时")
     
@@ -1513,27 +1500,289 @@ class RPAWorker:
             waybill.rpa_queue_uuids = None
             db.commit()
     
-    def _sync_booking_invoice_status(self, db, booking_id: int, new_status: str):
-        """
-        同步更新订舱的invoice_status字段
+    async def _execute_china_southern_air_invoice_with_data(self, db, task: RPATask):
+        """执行南航修改数据后开单任务"""
+        params = json.loads(task.params)
+        queue_params = json.loads(task.queue_params) if task.queue_params else None
         
-        当通过订舱回显数据创建的运单状态变化时，需要同步更新对应订舱的invoice_status
+        # 更新订舱开单状态为开单中
+        booking = db.query(Booking).filter(Booking.id == task.target_id).first()
+        if not booking:
+            raise Exception("订舱不存在")
         
-        Args:
-            db: 数据库会话
-            booking_id: 订舱ID
-            new_status: 新的状态值（数据字典值："0"=未开单，"1"=开单中，"2"=失败，"3"=成功）
-        """
+        booking.invoice_status = "1"  # 开单中
+        db.commit()
+        
+        # 创建队列（4个费用队列）
+        queues_info = {}
+        if queue_params:
+            queue_configs = queue_params.get("queue_configs", [])
+            for queue_config in queue_configs:
+                try:
+                    queue_data = await asyncio.wait_for(
+                        rpa_service.create_queue(
+                            queue_name=queue_config["name"],
+                            max_queue_number=999,
+                            is_expire=False
+                        ),
+                        timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                    )
+                    queue_uuid = queue_data.get("queueUUID", "")
+                    queue_id = str(queue_data.get("queueID", ""))
+                    
+                    if queue_uuid:
+                        queues_info[queue_config["key"]] = {
+                            "queueUUID": queue_uuid,
+                            "queueID": queue_id,
+                            "queueName": queue_config["name"]
+                        }
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {str(e)}")
+        
+        # 保存队列信息到订舱
+        if queues_info:
+            booking.rpa_queue_uuids = json.dumps(queues_info, ensure_ascii=False)
+            db.commit()
+        
+        # 调用RPA接口
         try:
-            booking = db.query(Booking).filter(Booking.id == booking_id).first()
-            if booking:
-                old_status = booking.invoice_status
-                booking.invoice_status = new_status
-                print(f"[Worker-{self.worker_id}] 同步订舱开单状态: booking_id={booking_id}, {old_status} -> {new_status}")
-            else:
-                print(f"[Worker-{self.worker_id}] 同步订舱开单状态失败: 订舱不存在, booking_id={booking_id}")
+            rpa_response = await asyncio.wait_for(
+                rpa_service.create_china_southern_air_invoice_with_data(
+                    system_url=params.get("system_url", ""),
+                    system_account=params.get("system_account", ""),
+                    login_password=params.get("login_password", ""),
+                    waybill_number_8=params.get("waybill_number_8", ""),
+                    flight_number=params.get("flight_number", ""),
+                    flight_date=params.get("flight_date", ""),
+                    booking_remark=params.get("booking_remark", ""),
+                    cargo_code=params.get("cargo_code", ""),
+                    cargo_name=params.get("cargo_name", ""),
+                    weight=params.get("weight", ""),
+                    quantity=params.get("quantity", ""),
+                    volume=params.get("volume", ""),
+                    special_cargo_code=params.get("special_cargo_code", ""),
+                    oversized_cargo=params.get("oversized_cargo", "0"),
+                    shipper=params.get("shipper", ""),
+                    shipper_phone=params.get("shipper_phone", ""),
+                    address_detail=params.get("address_detail", ""),
+                    region_province_shipper=params.get("region_province_shipper", ""),
+                    region_city_shipper=params.get("region_city_shipper", ""),
+                    region_city_district=params.get("region_city_district", ""),
+                    consignee=params.get("consignee", ""),
+                    order_contact_phone=params.get("order_contact_phone", ""),
+                    order_contact_name=params.get("order_contact_name", ""),
+                    settlement_file_number=params.get("settlement_file_number", "")
+                ),
+                timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+            )
+            
+            # 提取workUuid
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+            if not work_uuid:
+                raise Exception("RPA修改数据后开单接口未返回workUuid")
+            
+            # 保存workUuid
+            booking.rpa_work_uuid = work_uuid
+            db.commit()
+            
+            # 更新任务的workUuid
+            rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
+            
+            # 轮询RPA状态
+            await self._poll_china_southern_air_invoice_with_data_status(db, task, booking, work_uuid, queues_info, params)
+            
         except Exception as e:
-            print(f"[Worker-{self.worker_id}] 同步订舱开单状态异常: booking_id={booking_id}, error={str(e)}")
+            # 清理队列
+            await self._cleanup_queues(queues_info)
+            booking.rpa_queue_uuids = None
+            db.commit()
+            raise e
+    
+    async def _poll_china_southern_air_invoice_with_data_status(self, db, task: RPATask, booking: Booking, work_uuid: str, queues_info: dict, params: dict):
+        """轮询南航修改数据后开单RPA状态"""
+        max_polls = settings.RPA_POLL_MAX_COUNT
+        poll_interval = settings.RPA_POLL_INTERVAL
+        job_uuid = settings.RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID
+        
+        for i in range(max_polls):
+            await asyncio.sleep(poll_interval)
+            
+            try:
+                status_data = await rpa_service.query_china_southern_air_invoice_with_data_status(job_uuid)
+                status_info = rpa_service.extract_status_from_query_response(status_data, work_uuid)
+                
+                if status_info:
+                    rpa_status = status_info.get("status")
+                    if rpa_status is not None:
+                        db.refresh(booking)
+                        
+                        # 更新开单状态
+                        if rpa_status == 1:
+                            booking.invoice_status = "1"  # 开单中
+                        elif rpa_status == 3:
+                            booking.invoice_status = "2"  # 开单失败
+                            await self._cleanup_queues(queues_info)
+                            booking.rpa_queue_uuids = None
+                            db.commit()
+                            rpa_task_service.complete_task(db, task.id, False, error_message="RPA修改数据后开单执行失败")
+                            return
+                        elif rpa_status == 5:
+                            booking.invoice_status = "3"  # 开单成功
+                            # 获取队列数据并创建结算单和运单记录
+                            await self._process_china_southern_air_invoice_with_data_success(db, booking, queues_info, params)
+                            rpa_task_service.complete_task(db, task.id, True)
+                            return
+                        
+                        db.commit()
+            except Exception as e:
+                print(f"[Worker-{self.worker_id}] 轮询修改数据后开单状态失败: {str(e)}")
+                continue
+        
+        # 轮询超时
+        await self._cleanup_queues(queues_info)
+        booking.rpa_queue_uuids = None
+        booking.invoice_status = "2"  # 开单失败
+        db.commit()
+        rpa_task_service.complete_task(db, task.id, False, error_message="RPA修改数据后开单状态轮询超时")
+    
+    async def _process_china_southern_air_invoice_with_data_success(self, db, booking: Booking, queues_info: dict, params: dict):
+        """处理南航修改数据后开单成功后的数据获取、结算单创建和运单记录同步"""
+        rate_data = None
+        freight_data = None
+        fuel_costs_data = None
+        extended_service_fee_data = None
+        
+        try:
+            # 获取费率
+            if "rate" in queues_info:
+                try:
+                    rate_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["rate"]["queueUUID"]
+                    )
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 获取费率失败: {str(e)}")
+            
+            # 获取运费
+            if "freight" in queues_info:
+                try:
+                    freight_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["freight"]["queueUUID"]
+                    )
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 获取运费失败: {str(e)}")
+            
+            # 获取燃油费
+            if "fuel_costs" in queues_info:
+                try:
+                    fuel_costs_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["fuel_costs"]["queueUUID"]
+                    )
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 获取燃油费失败: {str(e)}")
+            
+            # 获取延伸服务费
+            if "extended_service_fee" in queues_info:
+                try:
+                    extended_service_fee_data = await rpa_service.get_china_southern_air_waybill_number(
+                        queues_info["extended_service_fee"]["queueUUID"]
+                    )
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 获取延伸服务费失败: {str(e)}")
+            
+            # 获取原始form_data（用户提交的修改后的数据）
+            original_form_data = params.get("_original_form_data", {})
+            flight_info = original_form_data.get("flight_info", {})
+            cargo_info = original_form_data.get("cargo_info", {})
+            contact_info = original_form_data.get("contact_info", {})
+            
+            rpa_call_time = get_china_now().strftime("%Y-%m-%d")
+            
+            # 创建结算单
+            settlement_data = {
+                "airline_record_time": rpa_call_time,
+                "settlement_method": "1",
+                "settlement_status": "0",
+                "financial_review": "1",
+                "master_airwaybill_number": booking.master_airwaybill_number or "",
+                "transport_method": "0",
+                "airline": "2",  # 南航
+                "origin_station": flight_info.get("origin_station", ""),
+                "destination": flight_info.get("destination", ""),
+                "flight_number": params.get("flight_number", ""),
+                "flight_date": params.get("flight_date", ""),
+                "customer_name": params.get("shipper", ""),
+                "recipient_name": params.get("consignee", ""),
+                "cargo_name": params.get("cargo_name", ""),
+                "quantity": params.get("quantity", ""),
+                "weight": params.get("weight", ""),
+                "chargeable_weight": "1",
+                "sub_rate": "1",
+                "sub_airline_fee": "1",
+                "sub_document_fee": "1",
+                "sub_telegraph_fee": "1",
+                "sub_telegraph_number": "1",
+                "sub_cca_fee": "1",
+                "sub_packaging_fee": "1",
+                "sub_pickup_fee": "1",
+                "sub_airport_pickup_fee": "1",
+                "sub_delivery_fee": "1",
+                "sub_carrier_deduction": "1",
+                "sub_other_fee": "1",
+                "sub_other_fee_remark": "1",
+                "sub_total_amount": "1",
+                "sub_remark": "1",
+                "master_rate": rate_data.strip('"').strip("'") if rate_data else "1",
+                "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "1",
+                "master_fuel_surcharge": fuel_costs_data.strip('"').strip("'") if fuel_costs_data else "1",
+                "master_transit_weight": "1",
+                "master_transit_fee": extended_service_fee_data.strip('"').strip("'") if extended_service_fee_data else "1",
+                "master_cca_cost": "1",
+                "master_packaging_fee": "1",
+                "master_telegraph_fee": "1",
+                "master_pickup_unit": "1",
+                "master_pickup_fee": "1",
+                "master_delivery_unit": "1",
+                "master_airport_pickup_fee": "1",
+                "master_delivery_fee": "1",
+                "master_other_fee": "1",
+                "master_total_cost": "1",
+                "master_remark": "1"
+            }
+            
+            try:
+                settlement = Settlement(
+                    form_data=json.dumps(settlement_data, ensure_ascii=False)
+                )
+                db.add(settlement)
+                print(f"[Worker-{self.worker_id}] 创建结算单成功，订舱ID: {booking.id}")
+            except Exception as e:
+                print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
+            
+            # 同步创建waybills记录（使用用户提交的修改后的form_data）
+            try:
+                # 直接使用用户提交的form_data作为运单的form_data（已经是嵌套结构）
+                waybill_form_data = original_form_data.copy()
+                waybill_form_data["airline"] = "2"  # 确保airline是南航
+                
+                new_waybill = Waybill(
+                    waybill_number=booking.master_airwaybill_number,
+                    form_data=json.dumps(waybill_form_data, ensure_ascii=False),
+                    airline_record_status="3",  # 成功（因为开单已成功）
+                    cargo_station_record_status="0",  # 未执行
+                    document_print_status="0",  # 未执行
+                    waybill_void_status="0",  # 未作废
+                    booking_date=get_china_now().date(),
+                    rpa_work_uuid=booking.rpa_work_uuid  # 同步RPA workUuid
+                )
+                db.add(new_waybill)
+                print(f"[Worker-{self.worker_id}] 同步创建waybill记录成功，订舱ID: {booking.id}, 运单号: {booking.master_airwaybill_number}")
+            except Exception as e:
+                print(f"[Worker-{self.worker_id}] 同步创建waybill记录失败: {str(e)}")
+        finally:
+            # 清理队列
+            await self._cleanup_queues(queues_info)
+            booking.rpa_queue_uuids = None
+            db.commit()
     
     async def _cleanup_queues(self, queues_info: dict):
         """清理队列"""

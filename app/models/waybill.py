@@ -21,7 +21,6 @@ class Waybill(Base):
     __tablename__ = "waybills"
     
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="运单ID")
-    booking_id = Column(BigInteger, nullable=True, index=True, comment="关联的订舱ID（可选，用于从订舱回显数据创建运单时建立关联）")
     waybill_number = Column(String(100), nullable=True, index=True, comment="运单号（RPA执行后写入）")
     form_data = Column(Text, nullable=False, comment="表单数据，JSON格式存储")
     airline_record_status = Column(String(20), nullable=False, default="0", index=True, comment="航司录单执行状态（数据字典值：0=未开单，1=开单中，2=失败，3=成功）")
