@@ -1756,6 +1756,7 @@ async def invoice_with_data(
         "region_city_shipper": region_city or business_default.get("region_city_shipper", ""),
         "region_city_district": region_district or business_default.get("region_city_district", ""),
         "consignee": contact_info.get("consignee", "") or business_default.get("consignee", ""),
+        "consignee_phone": contact_info.get("consignee_phone", "") or business_default.get("consignee_phone", ""),
         "order_contact_phone": other_info.get("contact_phone", "") or business_default.get("order_contact_phone", ""),
         "order_contact_name": other_info.get("order_contact", "") or business_default.get("order_contact_name", ""),
         "settlement_file_number": other_info.get("settlement_file_number", "") or business_default.get("settlement_file_number", ""),

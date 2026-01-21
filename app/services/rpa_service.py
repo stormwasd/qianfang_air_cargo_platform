@@ -865,6 +865,7 @@ class RPAService:
         region_city_shipper: str,
         region_city_district: str,
         consignee: str,
+        consignee_phone: str,
         order_contact_phone: str,
         order_contact_name: str,
         settlement_file_number: str
@@ -897,6 +898,7 @@ class RPAService:
             region_city_shipper: 发货人市
             region_city_district: 发货人区
             consignee: 收货人
+            consignee_phone: 收货人电话
             order_contact_phone: 订单联系人电话
             order_contact_name: 订单联系人姓名
             settlement_file_number: 结算文件号
@@ -931,6 +933,7 @@ class RPAService:
                 "region_city_shipper": region_city_shipper,
                 "region_city_district": region_city_district,
                 "consignee": consignee,
+                "consignee_phone": consignee_phone,
                 "order_contact_phone": order_contact_phone,
                 "order_contact_name": order_contact_name,
                 "settlement_file_number": settlement_file_number

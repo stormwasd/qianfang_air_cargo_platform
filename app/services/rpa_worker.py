@@ -1569,6 +1569,7 @@ class RPAWorker:
                     region_city_shipper=params.get("region_city_shipper", ""),
                     region_city_district=params.get("region_city_district", ""),
                     consignee=params.get("consignee", ""),
+                    consignee_phone=params.get("consignee_phone", ""),
                     order_contact_phone=params.get("order_contact_phone", ""),
                     order_contact_name=params.get("order_contact_name", ""),
                     settlement_file_number=params.get("settlement_file_number", "")
