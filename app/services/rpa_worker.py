@@ -292,25 +292,42 @@ class RPAWorker:
         freight_data = None
         delivery_fee_data = None
         
+        # 队列数据获取重试配置（RPA状态变为成功后，数据写入队列可能有延迟）
+        max_queue_retries = 5  # 最大重试次数
+        queue_retry_interval = 2  # 每次重试间隔（秒）
+        
         try:
-            # 获取运单号
+            # 获取运单号（带重试机制，因为RPA写入队列可能有延迟）
             waybill_number_retrieved = False
             if "waybill_number" in queues_info:
-                try:
-                    waybill_number_data = await rpa_service.get_shenzhen_air_waybill_number(
-                        queues_info["waybill_number"]["queueUUID"]
-                    )
-                    if waybill_number_data:
-                        waybill_number = rpa_service.format_shenzhen_air_waybill_number(waybill_number_data)
-                        waybill.waybill_number = waybill_number
-                        waybill_number_retrieved = True
-                except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取运单号失败: {str(e)}")
+                for retry in range(max_queue_retries):
+                    try:
+                        waybill_number_data = await rpa_service.get_shenzhen_air_waybill_number(
+                            queues_info["waybill_number"]["queueUUID"]
+                        )
+                        if waybill_number_data:
+                            waybill_number = rpa_service.format_shenzhen_air_waybill_number(waybill_number_data)
+                            waybill.waybill_number = waybill_number
+                            waybill_number_retrieved = True
+                            print(f"[Worker-{self.worker_id}] 获取运单号成功: {waybill_number}，重试次数: {retry}")
+                            break
+                        else:
+                            # 返回为空，等待后重试
+                            if retry < max_queue_retries - 1:
+                                print(f"[Worker-{self.worker_id}] 队列数据为空，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）")
+                                await asyncio.sleep(queue_retry_interval)
+                    except Exception as e:
+                        # 发生异常，等待后重试
+                        if retry < max_queue_retries - 1:
+                            print(f"[Worker-{self.worker_id}] 获取运单号失败: {str(e)}，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）")
+                            await asyncio.sleep(queue_retry_interval)
+                        else:
+                            print(f"[Worker-{self.worker_id}] 获取运单号最终失败: {str(e)}")
             
             # 如果获取运单号失败，将状态设置为失败
             if not waybill_number_retrieved:
                 waybill.airline_record_status = "2"  # 失败
-                print(f"[Worker-{self.worker_id}] RPA返回成功但获取运单号失败，将状态设置为失败")
+                print(f"[Worker-{self.worker_id}] RPA返回成功但获取运单号失败（已重试{max_queue_retries}次），将状态设置为失败")
                 db.commit()
                 return
             
@@ -1430,25 +1447,42 @@ class RPAWorker:
         fuel_costs_data = None
         extended_service_fee_data = None
         
+        # 队列数据获取重试配置（RPA状态变为成功后，数据写入队列可能有延迟）
+        max_queue_retries = 5  # 最大重试次数
+        queue_retry_interval = 2  # 每次重试间隔（秒）
+        
         try:
-            # 获取运单号
+            # 获取运单号（带重试机制，因为RPA写入队列可能有延迟）
             waybill_number_retrieved = False
             if "waybill_number" in queues_info:
-                try:
-                    waybill_number_data = await rpa_service.get_china_southern_air_waybill_number(
-                        queues_info["waybill_number"]["queueUUID"]
-                    )
-                    if waybill_number_data:
-                        waybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_number_data)
-                        waybill.waybill_number = waybill_number
-                        waybill_number_retrieved = True
-                except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取南航运单号失败: {str(e)}")
+                for retry in range(max_queue_retries):
+                    try:
+                        waybill_number_data = await rpa_service.get_china_southern_air_waybill_number(
+                            queues_info["waybill_number"]["queueUUID"]
+                        )
+                        if waybill_number_data:
+                            waybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_number_data)
+                            waybill.waybill_number = waybill_number
+                            waybill_number_retrieved = True
+                            print(f"[Worker-{self.worker_id}] 获取南航运单号成功: {waybill_number}，重试次数: {retry}")
+                            break
+                        else:
+                            # 返回为空，等待后重试
+                            if retry < max_queue_retries - 1:
+                                print(f"[Worker-{self.worker_id}] 南航队列数据为空，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）")
+                                await asyncio.sleep(queue_retry_interval)
+                    except Exception as e:
+                        # 发生异常，等待后重试
+                        if retry < max_queue_retries - 1:
+                            print(f"[Worker-{self.worker_id}] 获取南航运单号失败: {str(e)}，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）")
+                            await asyncio.sleep(queue_retry_interval)
+                        else:
+                            print(f"[Worker-{self.worker_id}] 获取南航运单号最终失败: {str(e)}")
             
             # 如果获取运单号失败，将状态设置为失败
             if not waybill_number_retrieved:
                 waybill.airline_record_status = "2"  # 失败
-                print(f"[Worker-{self.worker_id}] RPA返回成功但获取南航运单号失败，将状态设置为失败")
+                print(f"[Worker-{self.worker_id}] RPA返回成功但获取南航运单号失败（已重试{max_queue_retries}次），将状态设置为失败")
                 db.commit()
                 return
             
