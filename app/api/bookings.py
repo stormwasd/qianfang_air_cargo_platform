@@ -1706,6 +1706,10 @@ async def invoice_with_data(
     # 从master_airwaybill_number中提取waybill_number_8（以"-"分割，取最后一部分）
     waybill_number_8 = booking.master_airwaybill_number.split("-")[-1] if "-" in booking.master_airwaybill_number else booking.master_airwaybill_number
     
+    # 兼容处理：如果传入的是 {"form_data": {...}} 格式，则提取内部的form_data
+    if "form_data" in form_data and isinstance(form_data.get("form_data"), dict):
+        form_data = form_data.get("form_data")
+    
     # 从传入的form_data中提取参数（优先使用form_data，如果没有则从业务参数配置获取）
     flight_info = form_data.get("flight_info", {})
     cargo_info = form_data.get("cargo_info", {})
