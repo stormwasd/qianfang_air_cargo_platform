@@ -409,11 +409,73 @@ class RPAWorker:
                     db.add(settlement)
                 except Exception as e:
                     print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
+                
+                # 自动触发货站录单（深航开单成功后自动执行）
+                try:
+                    await self._auto_generate_cargo_station_documents(db, waybill, form_data_dict)
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 自动生成货站录单文档失败: {str(e)}")
         finally:
             # 清理队列
             await self._cleanup_queues(queues_info)
             waybill.rpa_queue_uuids = None
             db.commit()
+    
+    async def _auto_generate_cargo_station_documents(self, db, waybill: Waybill, form_data_dict: dict):
+        """
+        自动生成货站录单文档
+        
+        在深航开单成功后自动触发，生成交接单、航空货物明细表、货物收运检查清单
+        
+        Args:
+            db: 数据库会话
+            waybill: 运单对象
+            form_data_dict: 运单表单数据字典
+        """
+        from app.services.cargo_station_record_service import generate_all_documents
+        from app.models.config import BusinessConfig
+        
+        print(f"[Worker-{self.worker_id}] 开始自动生成货站录单文档，运单ID: {waybill.id}")
+        
+        # 更新货站录单状态为执行中
+        waybill.cargo_station_record_status = "1"
+        db.commit()
+        
+        try:
+            # 获取业务参数配置
+            config = db.query(BusinessConfig).first()
+            business_config = json.loads(config.config_data) if config else {}
+            
+            # 生成所有文档
+            documents_result = generate_all_documents(
+                waybill_id=waybill.id,
+                waybill_number=waybill.waybill_number,
+                form_data=form_data_dict,
+                business_config=business_config
+            )
+            
+            # 检查是否所有文档都生成成功
+            all_success = True
+            for doc_type, doc_info in documents_result.items():
+                if doc_info.get("error") or not doc_info.get("excel"):
+                    all_success = False
+                    print(f"[Worker-{self.worker_id}] 文档生成失败: {doc_type}, 错误: {doc_info.get('error')}")
+                    break
+            
+            # 更新状态
+            if all_success:
+                waybill.cargo_station_record_status = "3"  # 已录单
+                print(f"[Worker-{self.worker_id}] 货站录单文档生成成功，运单ID: {waybill.id}")
+            else:
+                waybill.cargo_station_record_status = "2"  # 失败
+                print(f"[Worker-{self.worker_id}] 货站录单文档生成失败，运单ID: {waybill.id}")
+            
+            db.commit()
+            
+        except Exception as e:
+            waybill.cargo_station_record_status = "2"  # 失败
+            db.commit()
+            raise e
     
     async def _execute_shenzhen_air_waybill_void(self, db, task: RPATask):
         """执行深航作废任务"""
@@ -1711,43 +1773,43 @@ class RPAWorker:
                 "destination": flight_info.get("destination", ""),
                 "flight_number": params.get("flight_number", ""),
                 "flight_date": params.get("flight_date", ""),
-                "customer_name": params.get("shipper", ""),
+                "customer_name": contact_info.get("shipper_unit", ""),
                 "recipient_name": params.get("consignee", ""),
                 "cargo_name": params.get("cargo_name", ""),
                 "quantity": params.get("quantity", ""),
                 "weight": params.get("weight", ""),
-                "chargeable_weight": "1",
-                "sub_rate": "1",
-                "sub_airline_fee": "1",
-                "sub_document_fee": "1",
-                "sub_telegraph_fee": "1",
-                "sub_telegraph_number": "1",
-                "sub_cca_fee": "1",
-                "sub_packaging_fee": "1",
-                "sub_pickup_fee": "1",
-                "sub_airport_pickup_fee": "1",
-                "sub_delivery_fee": "1",
-                "sub_carrier_deduction": "1",
-                "sub_other_fee": "1",
-                "sub_other_fee_remark": "1",
-                "sub_total_amount": "1",
-                "sub_remark": "1",
-                "master_rate": rate_data.strip('"').strip("'") if rate_data else "1",
-                "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "1",
-                "master_fuel_surcharge": fuel_costs_data.strip('"').strip("'") if fuel_costs_data else "1",
-                "master_transit_weight": "1",
-                "master_transit_fee": extended_service_fee_data.strip('"').strip("'") if extended_service_fee_data else "1",
-                "master_cca_cost": "1",
-                "master_packaging_fee": "1",
-                "master_telegraph_fee": "1",
-                "master_pickup_unit": "1",
-                "master_pickup_fee": "1",
-                "master_delivery_unit": "1",
-                "master_airport_pickup_fee": "1",
-                "master_delivery_fee": "1",
-                "master_other_fee": "1",
-                "master_total_cost": "1",
-                "master_remark": "1"
+                "chargeable_weight": "",
+                "sub_rate": "",
+                "sub_airline_fee": "",
+                "sub_document_fee": "",
+                "sub_telegraph_fee": "",
+                "sub_telegraph_number": "",
+                "sub_cca_fee": "",
+                "sub_packaging_fee": "",
+                "sub_pickup_fee": "",
+                "sub_airport_pickup_fee": "",
+                "sub_delivery_fee": "",
+                "sub_carrier_deduction": "",
+                "sub_other_fee": "",
+                "sub_other_fee_remark": "",
+                "sub_total_amount": "",
+                "sub_remark": "",
+                "master_rate": rate_data.strip('"').strip("'") if rate_data else "",
+                "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "",
+                "master_fuel_surcharge": fuel_costs_data.strip('"').strip("'") if fuel_costs_data else "",
+                "master_transit_weight": "",
+                "master_transit_fee": extended_service_fee_data.strip('"').strip("'") if extended_service_fee_data else "",
+                "master_cca_cost": "",
+                "master_packaging_fee": "",
+                "master_telegraph_fee": "",
+                "master_pickup_unit": "",
+                "master_pickup_fee": "",
+                "master_delivery_unit": "",
+                "master_airport_pickup_fee": "",
+                "master_delivery_fee": "",
+                "master_other_fee": "",
+                "master_total_cost": "",
+                "master_remark": ""
             }
             
             try:

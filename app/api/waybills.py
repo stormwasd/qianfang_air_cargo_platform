@@ -1266,3 +1266,214 @@ async def execute_china_southern_air_waybill(
     
     return success_response(data=waybill_data, msg="南航新增运单已加入执行队列，请等待处理")
 
+
+@router.post("/{waybill_id}/cargo-station-record", summary="深航货站录单重新执行")
+async def execute_cargo_station_record(
+    waybill_id: str,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    深航货站录单重新执行接口
+    
+    **说明**：
+    - 正常情况下，货站录单会在航司录单成功后自动执行，无需手动调用此接口
+    - 此接口用于以下场景：
+      1. 货站录单自动执行失败后的重新执行
+      2. 需要重新生成文档的情况（会覆盖之前生成的文档）
+    
+    此接口仅针对深圳航空，用于生成货站录单所需的三个文档：
+    1. 交接单
+    2. 航空货物明细表
+    3. 货物收运检查清单
+    
+    执行流程：
+    1. 验证运单是否为深圳航空且航司录单状态为成功
+    2. 将货站录单状态更新为"执行中"(1)
+    3. 读取运单数据和业务参数配置
+    4. 生成三个Excel文档并填充数据
+    5. 将Excel转换为PDF（使用纯Python实现，无需安装Microsoft Excel）
+    6. 保存文件到指定目录
+    7. 更新货站录单状态为"已录单"(3)或"失败"(2)
+    
+    状态说明：
+    - 0: 未执行
+    - 1: 执行中
+    - 2: 执行失败
+    - 3: 已录单
+    
+    - **waybill_id**: 运单ID（字符串格式）
+    
+    返回：
+    - 运单信息及生成的文档路径
+    """
+    from app.services.cargo_station_record_service import generate_all_documents
+    
+    # 查询运单
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    if not waybill:
+        raise NotFoundException("运单不存在")
+    
+    # 检查运单号是否存在
+    if not waybill.waybill_number:
+        raise BadRequestException("运单号不存在，需要先执行航司录单成功后才能进行货站录单")
+    
+    # 解析form_data
+    form_data_dict = json.loads(waybill.form_data)
+    airline = form_data_dict.get("airline", "")
+    
+    # 判断是否为深圳航空（货站录单仅针对深航）
+    is_shenzhen_air = airline == "1" or airline == "深圳航空"
+    if not is_shenzhen_air:
+        raise BadRequestException("货站录单功能仅支持深圳航空")
+    
+    # 检查航司录单状态，必须为成功(3)才能进行货站录单
+    if waybill.airline_record_status != "3":
+        raise BadRequestException(f"航司录单状态必须为成功才能进行货站录单，当前状态: {waybill.airline_record_status}")
+    
+    # 检查货站录单状态，避免重复执行
+    if waybill.cargo_station_record_status == "1":
+        raise BadRequestException("货站录单正在执行中，请勿重复提交")
+    
+    # 更新状态为执行中
+    waybill.cargo_station_record_status = "1"
+    db.commit()
+    
+    try:
+        # 获取业务参数配置
+        business_config = _get_business_config(db)
+        
+        # 生成所有文档
+        documents_result = generate_all_documents(
+            waybill_id=int(waybill_id),
+            waybill_number=waybill.waybill_number,
+            form_data=form_data_dict,
+            business_config=business_config
+        )
+        
+        # 检查是否所有文档都生成成功
+        all_success = True
+        for doc_type, doc_info in documents_result.items():
+            if doc_info.get("error") or not doc_info.get("excel"):
+                all_success = False
+                break
+        
+        # 更新状态
+        if all_success:
+            waybill.cargo_station_record_status = "3"  # 已录单
+        else:
+            waybill.cargo_station_record_status = "2"  # 失败
+        
+        db.commit()
+        db.refresh(waybill)
+        
+        # 解析form_data JSON
+        form_data_dict = json.loads(waybill.form_data)
+        
+        waybill_data = {
+            "id": str(waybill.id),
+            "waybill_number": waybill.waybill_number,
+            "form_data": form_data_dict,
+            "airline_record_status": waybill.airline_record_status,
+            "cargo_station_record_status": waybill.cargo_station_record_status,
+            "document_print_status": waybill.document_print_status,
+            "waybill_void_status": waybill.waybill_void_status,
+            "departure_time": format_datetime_china(waybill.departure_time),
+            "booking_date": waybill.booking_date.isoformat(),
+            "rpa_work_uuid": waybill.rpa_work_uuid,
+            "created_at": format_datetime_china(waybill.created_at),
+            "updated_at": format_datetime_china(waybill.updated_at),
+            "documents": documents_result  # 返回生成的文档信息
+        }
+        
+        msg = "货站录单执行成功" if all_success else "货站录单执行失败，部分文档生成失败"
+        return success_response(data=waybill_data, msg=msg)
+        
+    except Exception as e:
+        # 发生异常时，将状态更新为失败
+        waybill.cargo_station_record_status = "2"
+        db.commit()
+        import traceback
+        print(f"货站录单执行失败: {str(e)}")
+        print(f"错误详情: {traceback.format_exc()}")
+        raise BadRequestException(f"货站录单执行失败: {str(e)}")
+
+
+@router.get("/{waybill_id}/documents", summary="获取运单相关文档")
+async def get_waybill_documents(
+    waybill_id: str,
+    doc_type: str = None,
+    file_format: str = "pdf",
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取运单相关文档接口
+    
+    此接口用于获取运单关联的货站录单文档信息或下载文档
+    
+    参数说明：
+    - **waybill_id**: 运单ID（字符串格式）
+    - **doc_type**: 文档类型（可选）
+      - handover: 交接单
+      - cargo_detail: 航空货物明细表
+      - cargo_checklist: 货物收运检查清单
+      - 不传：返回所有文档的列表信息
+    - **file_format**: 文件格式（可选，默认pdf）
+      - pdf: PDF格式
+      - excel: Excel格式
+    
+    返回：
+    - 如果不传doc_type：返回所有文档的路径信息
+    - 如果传doc_type：返回指定文档的文件内容（用于下载）
+    """
+    from fastapi.responses import FileResponse
+    from app.services.cargo_station_record_service import list_documents, get_document_path, DOC_TYPE_TO_FILENAME
+    
+    # 查询运单
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    if not waybill:
+        raise NotFoundException("运单不存在")
+    
+    # 如果没有指定文档类型，返回所有文档的列表信息
+    if not doc_type:
+        documents = list_documents(int(waybill_id))
+        return success_response(
+            data={
+                "waybill_id": waybill_id,
+                "waybill_number": waybill.waybill_number,
+                "documents": documents
+            },
+            msg="查询成功"
+        )
+    
+    # 验证文档类型
+    valid_doc_types = ["handover", "cargo_detail", "cargo_checklist"]
+    if doc_type not in valid_doc_types:
+        raise BadRequestException(f"无效的文档类型: {doc_type}，支持的类型: {', '.join(valid_doc_types)}")
+    
+    # 验证文件格式
+    valid_formats = ["pdf", "excel"]
+    if file_format not in valid_formats:
+        raise BadRequestException(f"无效的文件格式: {file_format}，支持的格式: {', '.join(valid_formats)}")
+    
+    # 获取文档路径
+    doc_path = get_document_path(int(waybill_id), doc_type, file_format)
+    if not doc_path or not doc_path.exists():
+        raise NotFoundException(f"文档不存在: {DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)}")
+    
+    # 设置文件名和媒体类型
+    doc_name = DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)
+    if file_format == "pdf":
+        media_type = "application/pdf"
+        filename = f"{doc_name}_{waybill.waybill_number}.pdf"
+    else:
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"{doc_name}_{waybill.waybill_number}.xlsx"
+    
+    # 返回文件下载响应
+    return FileResponse(
+        path=str(doc_path),
+        media_type=media_type,
+        filename=filename
+    )
