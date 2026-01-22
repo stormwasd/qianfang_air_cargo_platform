@@ -628,40 +628,42 @@ async def get_bookings(
     订舱列表接口（支持筛选）
     
     查询参数：
-    - **airline**: 航司（模糊搜索，从form_data JSON中提取，如：南方航空、深圳航空）
-    - **booking_status**: 订舱状态筛选（未执行、执行中、执行失败）
-    - **invoice_status**: 开单状态筛选（未开单、成功）
+    - **airline**: 航司（数据字典值精确匹配：1=深圳航空，2=南方航空）
+    - **booking_status**: 订舱状态筛选（数据字典值：0=未执行，1=执行中，2=失败，3=成功）
+    - **invoice_status**: 开单状态筛选（数据字典值：0=未开单，1=开单中，2=失败，3=成功）
     - **page**: 页码（默认1）
     - **page_size**: 每页数量（默认10，最大100）
     
-    支持多条件组合筛选，航司从form_data JSON中提取进行模糊搜索
+    支持多条件组合筛选
     """
     # 构建查询
     query_obj = db.query(Booking)
     
-    # 订舱状态筛选
+    # 订舱状态筛选（数据字典值精确匹配，如"0"、"1"、"2"、"3"）
     if query.booking_status:
         query_obj = query_obj.filter(
             Booking.booking_status == query.booking_status
         )
     
-    # 开单状态筛选
+    # 开单状态筛选（数据字典值精确匹配，如"0"、"1"、"2"、"3"）
     if query.invoice_status:
         query_obj = query_obj.filter(
             Booking.invoice_status == query.invoice_status
         )
     
-    # 从form_data JSON中提取航司字段进行模糊搜索
+    # 航司筛选（数据字典值精确匹配：1=深圳航空，2=南方航空）
+    # 从form_data JSON中提取航司字段进行精确匹配
     # 使用MySQL的JSON函数进行搜索（MySQL 5.7+支持）
     if query.airline:
+        # airline 存储的是数据字典值（如"1"、"2"），使用精确匹配
+        # JSON_EXTRACT 返回的值会带双引号，所以需要 JSON_UNQUOTE 去除引号后再比较
         query_obj = query_obj.filter(
-            func.cast(
+            func.json_unquote(
                 func.json_extract(
                     func.cast(Booking.form_data, JSON), 
                     "$.airline"
-                ),
-                func.CHAR
-            ).like(f"%{query.airline}%")
+                )
+            ) == query.airline
         )
     
     # 获取总数
