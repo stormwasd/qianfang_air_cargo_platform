@@ -1282,16 +1282,17 @@ async def execute_cargo_station_record(
       1. 货站录单自动执行失败后的重新执行
       2. 需要重新生成文档的情况（会覆盖之前生成的文档）
     
-    此接口仅针对深圳航空，用于生成货站录单所需的三个文档：
-    1. 交接单
-    2. 航空货物明细表
-    3. 货物收运检查清单
+    此接口仅针对深圳航空，用于生成货站录单所需的文档：
+    1. 交接单（必生成）
+    2. 航空货物明细表（必生成）
+    3. 货物收运检查清单（必生成）
+    4. 充氧类水生动物货物收运检查单（仅当 form_data.oxygenated_aquatic_animal_goods_receipt_inspection_form_switch = "0" 时生成）
     
     执行流程：
     1. 验证运单是否为深圳航空且航司录单状态为成功
     2. 将货站录单状态更新为"执行中"(1)
     3. 读取运单数据和业务参数配置
-    4. 生成三个Excel文档并填充数据
+    4. 根据配置生成相应的Excel文档并填充数据
     5. 将Excel转换为PDF（使用纯Python实现，无需安装Microsoft Excel）
     6. 保存文件到指定目录
     7. 更新货站录单状态为"已录单"(3)或"失败"(2)
@@ -1411,65 +1412,112 @@ async def get_waybill_documents(
     获取运单相关文档接口
     
     此接口用于获取运单关联的货站录单文档信息或下载文档
+    支持深圳航空和南方航空的货站录单文档
     
     参数说明：
     - **waybill_id**: 运单ID（字符串格式）
     - **doc_type**: 文档类型（可选）
-      - handover: 交接单
-      - cargo_detail: 航空货物明细表
-      - cargo_checklist: 货物收运检查清单
+      - 深航文档类型：
+        - handover: 交接单
+        - cargo_detail: 航空货物明细表
+        - cargo_checklist: 货物收运检查清单
+        - aquatic_animal_checklist: 充氧类水生动物货物收运检查单（Excel，仅当开关为"0"时生成）
+      - 南航文档类型：
+        - csa_aquatic_animal_checklist: 充氧类水生动物货物收运检查单（docx，仅当开关为"0"时生成）
       - 不传：返回所有文档的列表信息
     - **file_format**: 文件格式（可选，默认pdf）
-      - pdf: PDF格式
-      - excel: Excel格式
+      - pdf: PDF格式（深航文档）
+      - excel: Excel格式（深航文档）
+      - docx: Word格式（南航文档）
     
     返回：
-    - 如果不传doc_type：返回所有文档的路径信息
+    - 如果不传doc_type：返回所有文档的路径信息（根据航司类型返回对应文档）
     - 如果传doc_type：返回指定文档的文件内容（用于下载）
     """
     from fastapi.responses import FileResponse
-    from app.services.cargo_station_record_service import list_documents, get_document_path, DOC_TYPE_TO_FILENAME
+    from app.services.cargo_station_record_service import (
+        list_documents, get_document_path, DOC_TYPE_TO_FILENAME,
+        list_csa_documents, get_csa_document_path, CSA_DOC_TYPE_TO_FILENAME
+    )
     
     # 查询运单
     waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
     if not waybill:
         raise NotFoundException("运单不存在")
     
+    # 解析form_data获取航司类型
+    form_data_dict = json.loads(waybill.form_data)
+    airline = form_data_dict.get("airline", "")
+    is_shenzhen_air = airline == "1" or airline == "深圳航空"
+    is_china_southern_air = airline == "2" or airline == "南方航空"
+    
     # 如果没有指定文档类型，返回所有文档的列表信息
     if not doc_type:
-        documents = list_documents(int(waybill_id))
+        documents = {}
+        if is_shenzhen_air:
+            # 深航返回Excel和PDF文档
+            documents = list_documents(int(waybill_id))
+        elif is_china_southern_air:
+            # 南航返回docx文档
+            documents = list_csa_documents(int(waybill_id))
+        
         return success_response(
             data={
                 "waybill_id": waybill_id,
                 "waybill_number": waybill.waybill_number,
+                "airline": airline,
                 "documents": documents
             },
             msg="查询成功"
         )
     
-    # 验证文档类型
-    valid_doc_types = ["handover", "cargo_detail", "cargo_checklist"]
-    if doc_type not in valid_doc_types:
-        raise BadRequestException(f"无效的文档类型: {doc_type}，支持的类型: {', '.join(valid_doc_types)}")
+    # 深航文档类型
+    shenzhen_air_doc_types = ["handover", "cargo_detail", "cargo_checklist", "aquatic_animal_checklist"]
+    # 南航文档类型
+    china_southern_air_doc_types = ["csa_aquatic_animal_checklist"]
     
-    # 验证文件格式
-    valid_formats = ["pdf", "excel"]
-    if file_format not in valid_formats:
-        raise BadRequestException(f"无效的文件格式: {file_format}，支持的格式: {', '.join(valid_formats)}")
-    
-    # 获取文档路径
-    doc_path = get_document_path(int(waybill_id), doc_type, file_format)
-    if not doc_path or not doc_path.exists():
-        raise NotFoundException(f"文档不存在: {DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)}")
-    
-    # 设置文件名和媒体类型
-    doc_name = DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)
-    if file_format == "pdf":
-        media_type = "application/pdf"
-        filename = f"{doc_name}_{waybill.waybill_number}.pdf"
+    # 判断是哪种航司的文档
+    if doc_type in shenzhen_air_doc_types:
+        # 深航文档
+        # 验证文件格式
+        valid_formats = ["pdf", "excel"]
+        if file_format not in valid_formats:
+            raise BadRequestException(f"深航文档无效的文件格式: {file_format}，支持的格式: {', '.join(valid_formats)}")
+        
+        # 获取文档路径
+        doc_path = get_document_path(int(waybill_id), doc_type, file_format)
+        if not doc_path or not doc_path.exists():
+            raise NotFoundException(f"文档不存在: {DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)}")
+        
+        # 设置文件名和媒体类型
+        doc_name = DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)
+        if file_format == "pdf":
+            media_type = "application/pdf"
+            filename = f"{doc_name}_{waybill.waybill_number}.pdf"
+        else:
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            filename = f"{doc_name}_{waybill.waybill_number}.xlsx"
+        
+    elif doc_type in china_southern_air_doc_types:
+        # 南航文档
+        # 南航只支持docx格式
+        if file_format not in ["docx"]:
+            file_format = "docx"  # 南航默认使用docx
+        
+        # 获取文档路径
+        doc_path = get_csa_document_path(int(waybill_id), doc_type, "docx")
+        if not doc_path or not doc_path.exists():
+            raise NotFoundException(f"文档不存在: {CSA_DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)}")
+        
+        # 设置文件名和媒体类型
+        doc_name = CSA_DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        filename = f"{doc_name}_{waybill.waybill_number}.docx"
+        
     else:
-        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename = f"{doc_name}_{waybill.waybill_number}.xlsx"
+        # 无效的文档类型
+        all_valid_types = shenzhen_air_doc_types + china_southern_air_doc_types
+        raise BadRequestException(f"无效的文档类型: {doc_type}，支持的类型: {', '.join(all_valid_types)}")
     
     # 返回文件下载响应
     return FileResponse(
