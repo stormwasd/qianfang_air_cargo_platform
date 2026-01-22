@@ -108,15 +108,15 @@ class WaybillCreate(BaseModel):
 
 class WaybillQuery(BaseModel):
     """运单查询schema"""
-    airline_record_status: Optional[str] = Field(None, description="航司录单执行状态筛选（数据字典值：0=未开单，1=开单中，2=失败，3=成功）")
-    cargo_station_record_status: Optional[str] = Field(None, description="货站录单执行状态筛选（数据字典值：0=未执行，1=执行中，2=失败，3=已录单）")
-    document_print_status: Optional[str] = Field(None, description="单据打印执行状态筛选（数据字典值：0=未执行，1=执行中，2=失败）")
+    airline_record_status: Optional[str] = Field(None, description="航司录单执行状态筛选（数据字典值精确匹配：0=未开单，1=开单中，2=失败，3=成功）")
+    cargo_station_record_status: Optional[str] = Field(None, description="货站录单执行状态筛选（数据字典值精确匹配：0=未执行，1=执行中，2=失败，3=已录单）")
+    document_print_status: Optional[str] = Field(None, description="单据打印执行状态筛选（数据字典值精确匹配：0=未执行，1=执行中，2=失败）")
     booking_date_start: Optional[date] = Field(None, description="开单日期开始（格式：YYYY-MM-DD）")
     booking_date_end: Optional[date] = Field(None, description="开单日期结束（格式：YYYY-MM-DD）")
-    airline: Optional[str] = Field(None, description="航司（模糊搜索）")
-    destination: Optional[str] = Field(None, description="目的站（模糊搜索）")
+    airline: Optional[str] = Field(None, description="航司（数据字典值精确匹配：1=深圳航空，2=南方航空）")
+    destination: Optional[str] = Field(None, description="目的站（城市名称模糊搜索，如输入'西宁'会匹配到'西宁曹家堡机场'对应的三字码XNN；也可直接输入三字码如'PEK'）")
     flight_number: Optional[str] = Field(None, description="航班号（模糊搜索）")
-    waybill_type: Optional[str] = Field(None, description="运单类型（模糊搜索，从form_data.flight_info.waybill_type中提取，仅深圳航空）")
+    waybill_type: Optional[str] = Field(None, description="运单类型（数据字典值精确匹配，仅深圳航空，如：0=普通运单，1=急件运单，2=鲜活运单等）")
     shipper: Optional[str] = Field(None, description="托运单位（模糊搜索）")
     waybill_number: Optional[str] = Field(None, description="运单号（模糊搜索）")
     page: int = Field(1, ge=1, description="页码")

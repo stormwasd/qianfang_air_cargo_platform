@@ -19,6 +19,7 @@ from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china, get_china_today, get_china_now
 from app.services.rpa_service import rpa_service
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
+from app.utils.airport_code_mapper import search_airport_codes_by_keyword
 
 router = APIRouter()
 
@@ -86,26 +87,26 @@ async def get_waybills(
     查询运单列表接口（支持多条件筛选）
     
     查询参数：
-    - **airline_record_status**: 航司录单执行状态筛选（未执行、执行中、执行失败）
-    - **cargo_station_record_status**: 货站录单执行状态筛选（未执行、执行中、执行失败）
-    - **document_print_status**: 单据打印执行状态筛选（未执行、执行中、执行失败）
+    - **airline_record_status**: 航司录单执行状态筛选（数据字典值：0=未开单，1=开单中，2=失败，3=成功）
+    - **cargo_station_record_status**: 货站录单执行状态筛选（数据字典值：0=未执行，1=执行中，2=失败，3=已录单）
+    - **document_print_status**: 单据打印执行状态筛选（数据字典值：0=未执行，1=执行中，2=失败）
     - **booking_date_start**: 开单日期开始（格式：YYYY-MM-DD）
     - **booking_date_end**: 开单日期结束（格式：YYYY-MM-DD）
-    - **airline**: 航司（模糊搜索，从form_data.airline中提取）
-    - **destination**: 目的站（模糊搜索，从form_data.flight_info.destination中提取）
+    - **airline**: 航司（数据字典值精确匹配：1=深圳航空，2=南方航空）
+    - **destination**: 目的站（城市名称模糊搜索，如"西宁"会转换为三字码"XNN"后精确匹配）
     - **flight_number**: 航班号（模糊搜索，从form_data.flight_info.flight_number中提取）
-    - **waybill_type**: 运单类型（模糊搜索，从form_data.flight_info.waybill_type中提取，仅深圳航空）
+    - **waybill_type**: 运单类型（数据字典值精确匹配，从form_data.flight_info.waybill_type中提取，仅深圳航空）
     - **shipper**: 托运单位（模糊搜索，从form_data中提取，支持深圳航空的shipper_consignee_info.shipper_unit和南方航空的contact_info.shipper_unit）
     - **waybill_number**: 运单号（模糊搜索）
     - **page**: 页码（默认1）
     - **page_size**: 每页数量（默认10，最大100）
     
-    支持多条件组合筛选，航司、目的站、航班号、托运单位从form_data JSON中提取进行模糊搜索
+    支持多条件组合筛选
     """
     # 构建查询
     query_obj = db.query(Waybill)
     
-    # 执行状态筛选
+    # 执行状态筛选（数据字典值精确匹配，如"0"、"1"、"2"、"3"）
     if query.airline_record_status:
         query_obj = query_obj.filter(
             Waybill.airline_record_status == query.airline_record_status
@@ -122,6 +123,8 @@ async def get_waybills(
         )
     
     # 开单日期范围筛选
+    # booking_date 是 Date 类型，query.booking_date_start/end 也是 date 类型
+    # SQLAlchemy 会自动处理日期比较，支持 YYYY-MM-DD 格式
     if query.booking_date_start:
         query_obj = query_obj.filter(
             Waybill.booking_date >= query.booking_date_start
@@ -138,36 +141,65 @@ async def get_waybills(
             Waybill.waybill_number.like(f"%{query.waybill_number}%")
         )
     
-    # 从form_data JSON中提取字段进行模糊搜索
+    # 从form_data JSON中提取字段进行搜索
     # 使用MySQL的JSON函数进行搜索（MySQL 5.7+支持）
     # 对于Text类型存储的JSON，先转换为JSON类型，然后使用JSON_EXTRACT提取字段值
+    
+    # 航司筛选（数据字典值精确匹配：1=深圳航空，2=南方航空）
     if query.airline:
-        # 使用JSON_EXTRACT提取字段值，然后进行LIKE搜索
-        # 如果字段不存在或值为null，JSON_EXTRACT返回null，LIKE不会匹配
+        # airline 存储的是数据字典值（如"1"、"2"），使用精确匹配
+        # JSON_EXTRACT 返回的值会带双引号，如 "1"，所以需要 JSON_UNQUOTE 或直接用带引号的值比较
         query_obj = query_obj.filter(
-            func.cast(
+            func.json_unquote(
                 func.json_extract(
                     func.cast(Waybill.form_data, JSON), 
                     "$.airline"
-                ),
-                func.CHAR
-            ).like(f"%{query.airline}%")
+                )
+            ) == query.airline
         )
     
+    # 目的站筛选
+    # destination 存储的是机场三字码（如"PEK"、"XNN"）
+    # 用户输入城市名称（如"西宁"），需要转换为三字码后进行匹配
     if query.destination:
-        # 新结构：destination在flight_info.destination中
-        query_obj = query_obj.filter(
-            func.cast(
-                func.json_extract(
-                    func.cast(Waybill.form_data, JSON), 
-                    "$.flight_info.destination"
-                ),
-                func.CHAR
-            ).like(f"%{query.destination}%")
-        )
+        # 根据用户输入的城市名称模糊搜索对应的机场三字码
+        matched_codes = search_airport_codes_by_keyword(query.destination)
+        
+        if matched_codes:
+            # 如果匹配到三字码，使用 IN 查询
+            if len(matched_codes) == 1:
+                # 只匹配到一个三字码，使用精确匹配
+                query_obj = query_obj.filter(
+                    func.json_unquote(
+                        func.json_extract(
+                            func.cast(Waybill.form_data, JSON), 
+                            "$.flight_info.destination"
+                        )
+                    ) == matched_codes[0]
+                )
+            else:
+                # 匹配到多个三字码，使用 IN 查询
+                query_obj = query_obj.filter(
+                    func.json_unquote(
+                        func.json_extract(
+                            func.cast(Waybill.form_data, JSON), 
+                            "$.flight_info.destination"
+                        )
+                    ).in_(matched_codes)
+                )
+        else:
+            # 没有匹配到三字码，可能用户直接输入的是三字码，尝试精确匹配
+            query_obj = query_obj.filter(
+                func.json_unquote(
+                    func.json_extract(
+                        func.cast(Waybill.form_data, JSON), 
+                        "$.flight_info.destination"
+                    )
+                ) == query.destination.upper()
+            )
     
+    # 航班号模糊搜索
     if query.flight_number:
-        # 新结构：flight_number在flight_info.flight_number中
         query_obj = query_obj.filter(
             func.cast(
                 func.json_extract(
@@ -178,20 +210,21 @@ async def get_waybills(
             ).like(f"%{query.flight_number}%")
         )
     
+    # 运单类型筛选（数据字典值精确匹配，仅深圳航空）
     if query.waybill_type:
-        # 运单类型在flight_info.waybill_type中（仅深圳航空）
+        # waybill_type 存储的是数据字典值（如"0"、"1"、"2"），使用精确匹配
         query_obj = query_obj.filter(
-            func.cast(
+            func.json_unquote(
                 func.json_extract(
                     func.cast(Waybill.form_data, JSON), 
                     "$.flight_info.waybill_type"
-                ),
-                func.CHAR
-            ).like(f"%{query.waybill_type}%")
+                )
+            ) == query.waybill_type
         )
     
+    # 托运单位模糊搜索
     if query.shipper:
-        # 新结构：shipper_unit在不同位置
+        # shipper_unit 在不同位置，需要 OR 查询
         # 深圳航空：shipper_consignee_info.shipper_unit
         # 南方航空：contact_info.shipper_unit
         shipper_filter = or_(
