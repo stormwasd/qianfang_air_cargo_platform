@@ -997,8 +997,8 @@ async def update_booking(
         raise NotFoundException("订舱不存在")
     
     # 检查订舱状态，只能修改未执行的订舱
-    if existing_booking.booking_status != "0":
-        raise BadRequestException(f"只能修改未执行的订舱，当前状态：{existing_booking.booking_status}")
+    # if existing_booking.booking_status != "0":
+    #     raise BadRequestException(f"只能修改未执行的订舱，当前状态：{existing_booking.booking_status}")
     
     # 验证form_data结构
     form_data_dict = booking.form_data.copy()
