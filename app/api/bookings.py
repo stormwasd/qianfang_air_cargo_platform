@@ -1374,15 +1374,6 @@ def poll_china_southern_air_direct_invoice_status(booking_id: int, work_uuid: st
                                         contact_info = form_data_dict.get("contact_info", {})
                                         cargo_info = form_data_dict.get("cargo_info", {})
                                         
-                                        # 获取业务参数配置中的shipper
-                                        business_config = _get_business_config(db_session)
-                                        customer_name = ""
-                                        if business_config:
-                                            china_southern_air_config = business_config.get("china_southern_air", {})
-                                            booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
-                                            business_default = booking_and_create_config.get("business_default", {})
-                                            customer_name = business_default.get("shipper", "")
-                                        
                                         # 获取RPA调用时间（精确到日）
                                         rpa_call_time = get_china_now().strftime("%Y-%m-%d")
                                         
@@ -1399,43 +1390,43 @@ def poll_china_southern_air_direct_invoice_status(booking_id: int, work_uuid: st
                                             "destination": flight_info.get("destination", ""),
                                             "flight_number": flight_info.get("flight_number", ""),
                                             "flight_date": flight_info.get("flight_date", ""),
-                                            "customer_name": customer_name,
+                                            "customer_name": contact_info.get("shipper_unit", ""),
                                             "recipient_name": contact_info.get("consignee", ""),
                                             "cargo_name": cargo_info.get("cargo_name", ""),
                                             "quantity": cargo_info.get("quantity", ""),
                                             "weight": cargo_info.get("weight", ""),
-                                            "chargeable_weight": "1",
-                                            "sub_rate": "1",
-                                            "sub_airline_fee": "1",
-                                            "sub_document_fee": "1",
-                                            "sub_telegraph_fee": "1",
-                                            "sub_telegraph_number": "1",
-                                            "sub_cca_fee": "1",
-                                            "sub_packaging_fee": "1",
-                                            "sub_pickup_fee": "1",
-                                            "sub_airport_pickup_fee": "1",
-                                            "sub_delivery_fee": "1",
-                                            "sub_carrier_deduction": "1",
-                                            "sub_other_fee": "1",
-                                            "sub_other_fee_remark": "1",
-                                            "sub_total_amount": "1",
-                                            "sub_remark": "1",
-                                            "master_rate": rate_data.strip('"').strip("'") if rate_data else "1",
-                                            "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "1",
-                                            "master_fuel_surcharge": fuel_costs_data.strip('"').strip("'") if fuel_costs_data else "1",
-                                            "master_transit_weight": "1",
-                                            "master_transit_fee": extended_service_fee_data.strip('"').strip("'") if extended_service_fee_data else "1",
-                                            "master_cca_cost": "1",
-                                            "master_packaging_fee": "1",
-                                            "master_telegraph_fee": "1",
-                                            "master_pickup_unit": "1",
-                                            "master_pickup_fee": "1",
-                                            "master_delivery_unit": "1",
-                                            "master_airport_pickup_fee": "1",
-                                            "master_delivery_fee": "1",
-                                            "master_other_fee": "1",
-                                            "master_total_cost": "1",
-                                            "master_remark": "1"
+                                            "chargeable_weight": "",
+                                            "sub_rate": "",
+                                            "sub_airline_fee": "",
+                                            "sub_document_fee": "",
+                                            "sub_telegraph_fee": "",
+                                            "sub_telegraph_number": "",
+                                            "sub_cca_fee": "",
+                                            "sub_packaging_fee": "",
+                                            "sub_pickup_fee": "",
+                                            "sub_airport_pickup_fee": "",
+                                            "sub_delivery_fee": "",
+                                            "sub_carrier_deduction": "",
+                                            "sub_other_fee": "",
+                                            "sub_other_fee_remark": "",
+                                            "sub_total_amount": "",
+                                            "sub_remark": "",
+                                            "master_rate": rate_data.strip('"').strip("'") if rate_data else "",
+                                            "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "",
+                                            "master_fuel_surcharge": fuel_costs_data.strip('"').strip("'") if fuel_costs_data else "",
+                                            "master_transit_weight": "",
+                                            "master_transit_fee": extended_service_fee_data.strip('"').strip("'") if extended_service_fee_data else "",
+                                            "master_cca_cost": "",
+                                            "master_packaging_fee": "",
+                                            "master_telegraph_fee": "",
+                                            "master_pickup_unit": "",
+                                            "master_pickup_fee": "",
+                                            "master_delivery_unit": "",
+                                            "master_airport_pickup_fee": "",
+                                            "master_delivery_fee": "",
+                                            "master_other_fee": "",
+                                            "master_total_cost": "",
+                                            "master_remark": ""
                                         }
                                         
                                         # 创建结算单
