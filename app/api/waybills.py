@@ -565,6 +565,7 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
                                                 flight_info = form_data_dict.get("flight_info", {})
                                                 shipper_consignee_info = form_data_dict.get("shipper_consignee_info", {})
                                                 cargo_info = form_data_dict.get("cargo_info", {})
+                                                other_fees = form_data_dict.get("other_fees", {})
                                                 
                                                 # 获取RPA调用时间（精确到日）
                                                 rpa_call_time = get_china_now().strftime("%Y-%m-%d")
@@ -574,7 +575,7 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
                                                     "airline_record_time": rpa_call_time,
                                                     "settlement_method": "1",
                                                     "settlement_status": "0",
-                                                    "financial_review": "1",
+                                                    "financial_review": "0",
                                                     "master_airwaybill_number": waybill.waybill_number or "",  # 已格式化，包含479-前缀
                                                     "transport_method": "0",
                                                     "airline": "1",  # 深航是1
@@ -594,10 +595,10 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
                                                     "sub_telegraph_fee": "",
                                                     "sub_telegraph_number": "",
                                                     "sub_cca_fee": "",
-                                                    "sub_packaging_fee": "",
-                                                    "sub_pickup_fee": "",
+                                                    "sub_packaging_fee": other_fees.get("packaging_fee", ""),
+                                                    "sub_pickup_fee": other_fees.get("pickup_fee", ""),
                                                     "sub_airport_pickup_fee": "",
-                                                    "sub_delivery_fee": "",
+                                                    "sub_delivery_fee": other_fees.get("delivery_fee", ""),
                                                     "sub_carrier_deduction": "",
                                                     "sub_other_fee": "",
                                                     "sub_other_fee_remark": "",

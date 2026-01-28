@@ -1369,10 +1369,11 @@ def poll_china_southern_air_direct_invoice_status(booking_id: int, work_uuid: st
                                                 print(f"获取延伸服务费失败: {str(e)}")
                                         
                                         # 构建结算单数据
+                                        # 注意：订舱的form_data结构是扁平的 {"airline": "2", "bookings": [...]}
+                                        # 需要从 bookings[0] 中提取数据
                                         form_data_dict = json.loads(booking.form_data)
-                                        flight_info = form_data_dict.get("flight_info", {})
-                                        contact_info = form_data_dict.get("contact_info", {})
-                                        cargo_info = form_data_dict.get("cargo_info", {})
+                                        bookings = form_data_dict.get("bookings", [])
+                                        booking_item = bookings[0] if bookings and len(bookings) > 0 else {}
                                         
                                         # 获取RPA调用时间（精确到日）
                                         rpa_call_time = get_china_now().strftime("%Y-%m-%d")
@@ -1382,19 +1383,19 @@ def poll_china_southern_air_direct_invoice_status(booking_id: int, work_uuid: st
                                             "airline_record_time": rpa_call_time,
                                             "settlement_method": "1",
                                             "settlement_status": "0",
-                                            "financial_review": "1",
+                                            "financial_review": "0",
                                             "master_airwaybill_number": booking.master_airwaybill_number or "",
                                             "transport_method": "0",
                                             "airline": "2",  # 南航是2
-                                            "origin_station": flight_info.get("origin_station", ""),
-                                            "destination": flight_info.get("destination", ""),
-                                            "flight_number": flight_info.get("flight_number", ""),
-                                            "flight_date": flight_info.get("flight_date", ""),
-                                            "customer_name": contact_info.get("shipper_unit", ""),
-                                            "recipient_name": contact_info.get("consignee", ""),
-                                            "cargo_name": cargo_info.get("cargo_name", ""),
-                                            "quantity": cargo_info.get("quantity", ""),
-                                            "weight": cargo_info.get("weight", ""),
+                                            "origin_station": booking_item.get("origin_station", ""),
+                                            "destination": booking_item.get("destination", ""),
+                                            "flight_number": booking_item.get("flight_number", ""),
+                                            "flight_date": booking_item.get("flight_date", ""),
+                                            "customer_name": booking_item.get("shipper_unit", ""),
+                                            "recipient_name": booking_item.get("consignee", ""),
+                                            "cargo_name": booking_item.get("cargo_name", ""),
+                                            "quantity": str(booking_item.get("quantity", "")),
+                                            "weight": str(booking_item.get("weight", "")),
                                             "chargeable_weight": "",
                                             "sub_rate": "",
                                             "sub_airline_fee": "",

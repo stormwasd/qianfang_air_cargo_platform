@@ -364,6 +364,7 @@ class RPAWorker:
                 flight_info = form_data_dict.get("flight_info", {})
                 shipper_consignee_info = form_data_dict.get("shipper_consignee_info", {})
                 cargo_info = form_data_dict.get("cargo_info", {})
+                other_fees = form_data_dict.get("other_fees", {})
                 
                 rpa_call_time = get_china_now().strftime("%Y-%m-%d")
                 
@@ -371,7 +372,7 @@ class RPAWorker:
                     "airline_record_time": rpa_call_time,
                     "settlement_method": "1",
                     "settlement_status": "0",
-                    "financial_review": "1",
+                    "financial_review": "0",
                     "master_airwaybill_number": waybill.waybill_number or "",
                     "transport_method": "0",
                     "airline": "1",
@@ -391,10 +392,10 @@ class RPAWorker:
                     "sub_telegraph_fee": "",
                     "sub_telegraph_number": "",
                     "sub_cca_fee": "",
-                    "sub_packaging_fee": "",
-                    "sub_pickup_fee": "",
+                    "sub_packaging_fee": other_fees.get("packaging_fee", ""),
+                    "sub_pickup_fee": other_fees.get("pickup_fee", ""),
                     "sub_airport_pickup_fee": "",
-                    "sub_delivery_fee": "",
+                    "sub_delivery_fee": other_fees.get("delivery_fee", ""),
                     "sub_carrier_deduction": "",
                     "sub_other_fee": "",
                     "sub_other_fee_remark": "",
@@ -1206,12 +1207,11 @@ class RPAWorker:
                     print(f"[Worker-{self.worker_id}] 获取延伸服务费失败: {str(e)}")
             
             # 创建结算单
+            # 注意：订舱的form_data结构是扁平的 {"airline": "2", "bookings": [...]}
+            # 需要从 bookings[0] 中直接提取数据
             form_data_dict = json.loads(booking.form_data)
-            bookings = form_data_dict.get("bookings", [{}])
-            booking_item = bookings[0] if bookings else {}
-            flight_info = booking_item.get("flight_info", {}) or {}
-            cargo_info = booking_item.get("cargo_info", {}) or {}
-            contact_info = booking_item.get("contact_info", {}) or {}
+            bookings = form_data_dict.get("bookings", [])
+            booking_item = bookings[0] if bookings and len(bookings) > 0 else {}
             
             rpa_call_time = get_china_now().strftime("%Y-%m-%d")
             
@@ -1219,51 +1219,51 @@ class RPAWorker:
                 "airline_record_time": rpa_call_time,
                 "settlement_method": "1",
                 "settlement_status": "0",
-                "financial_review": "1",
+                "financial_review": "0",
                 "master_airwaybill_number": booking.master_airwaybill_number or "",
                 "transport_method": "0",
                 "airline": "2",  # 南航
-                "origin_station": flight_info.get("origin_station", "") or booking_item.get("origin_station", ""),
-                "destination": flight_info.get("destination", "") or booking_item.get("destination", ""),
-                "flight_number": flight_info.get("flight_number", "") or booking_item.get("flight_number", ""),
-                "flight_date": flight_info.get("flight_date", "") or booking_item.get("flight_date", ""),
-                "customer_name": params.get("shipper", ""),
-                "recipient_name": contact_info.get("consignee", "") or booking_item.get("consignee", ""),
-                "cargo_name": cargo_info.get("cargo_name", "") or booking_item.get("cargo_name", ""),
-                "quantity": cargo_info.get("quantity", "") or booking_item.get("quantity", ""),
-                "weight": cargo_info.get("weight", "") or booking_item.get("weight", ""),
-                "chargeable_weight": "1",
-                "sub_rate": "1",
-                "sub_airline_fee": "1",
-                "sub_document_fee": "1",
-                "sub_telegraph_fee": "1",
-                "sub_telegraph_number": "1",
-                "sub_cca_fee": "1",
-                "sub_packaging_fee": "1",
-                "sub_pickup_fee": "1",
-                "sub_airport_pickup_fee": "1",
-                "sub_delivery_fee": "1",
-                "sub_carrier_deduction": "1",
-                "sub_other_fee": "1",
-                "sub_other_fee_remark": "1",
-                "sub_total_amount": "1",
-                "sub_remark": "1",
-                "master_rate": rate_data.strip('"').strip("'") if rate_data else "1",
-                "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "1",
-                "master_fuel_surcharge": fuel_costs_data.strip('"').strip("'") if fuel_costs_data else "1",
-                "master_transit_weight": "1",
-                "master_transit_fee": extended_service_fee_data.strip('"').strip("'") if extended_service_fee_data else "1",
-                "master_cca_cost": "1",
-                "master_packaging_fee": "1",
-                "master_telegraph_fee": "1",
-                "master_pickup_unit": "1",
-                "master_pickup_fee": "1",
-                "master_delivery_unit": "1",
-                "master_airport_pickup_fee": "1",
-                "master_delivery_fee": "1",
-                "master_other_fee": "1",
-                "master_total_cost": "1",
-                "master_remark": "1"
+                "origin_station": booking_item.get("origin_station", ""),
+                "destination": booking_item.get("destination", ""),
+                "flight_number": booking_item.get("flight_number", ""),
+                "flight_date": booking_item.get("flight_date", ""),
+                "customer_name": booking_item.get("shipper_unit", ""),
+                "recipient_name": booking_item.get("consignee", ""),
+                "cargo_name": booking_item.get("cargo_name", ""),
+                "quantity": str(booking_item.get("quantity", "")),
+                "weight": str(booking_item.get("weight", "")),
+                "chargeable_weight": "",
+                "sub_rate": "",
+                "sub_airline_fee": "",
+                "sub_document_fee": "",
+                "sub_telegraph_fee": "",
+                "sub_telegraph_number": "",
+                "sub_cca_fee": "",
+                "sub_packaging_fee": "",
+                "sub_pickup_fee": "",
+                "sub_airport_pickup_fee": "",
+                "sub_delivery_fee": "",
+                "sub_carrier_deduction": "",
+                "sub_other_fee": "",
+                "sub_other_fee_remark": "",
+                "sub_total_amount": "",
+                "sub_remark": "",
+                "master_rate": rate_data.strip('"').strip("'") if rate_data else "",
+                "master_airline_fee": freight_data.strip('"').strip("'") if freight_data else "",
+                "master_fuel_surcharge": fuel_costs_data.strip('"').strip("'") if fuel_costs_data else "",
+                "master_transit_weight": "",
+                "master_transit_fee": extended_service_fee_data.strip('"').strip("'") if extended_service_fee_data else "",
+                "master_cca_cost": "",
+                "master_packaging_fee": "",
+                "master_telegraph_fee": "",
+                "master_pickup_unit": "",
+                "master_pickup_fee": "",
+                "master_delivery_unit": "",
+                "master_airport_pickup_fee": "",
+                "master_delivery_fee": "",
+                "master_other_fee": "",
+                "master_total_cost": "",
+                "master_remark": ""
             }
             
             try:
@@ -1596,6 +1596,7 @@ class RPAWorker:
                 flight_info = form_data_dict.get("flight_info", {})
                 cargo_info = form_data_dict.get("cargo_info", {})
                 contact_info = form_data_dict.get("contact_info", {})
+                other_fees = form_data_dict.get("other_fees", {})
                 
                 rpa_call_time = get_china_now().strftime("%Y-%m-%d")
                 
@@ -1603,7 +1604,7 @@ class RPAWorker:
                     "airline_record_time": rpa_call_time,
                     "settlement_method": "1",
                     "settlement_status": "0",
-                    "financial_review": "1",
+                    "financial_review": "0",
                     "master_airwaybill_number": waybill.waybill_number or "",
                     "transport_method": "0",
                     "airline": "2",  # 南航
@@ -1623,10 +1624,10 @@ class RPAWorker:
                     "sub_telegraph_fee": "",
                     "sub_telegraph_number": "",
                     "sub_cca_fee": "",
-                    "sub_packaging_fee": "",
-                    "sub_pickup_fee": "",
+                    "sub_packaging_fee": other_fees.get("packaging_fee", ""),
+                    "sub_pickup_fee": other_fees.get("pickup_fee", ""),
                     "sub_airport_pickup_fee": "",
-                    "sub_delivery_fee": "",
+                    "sub_delivery_fee": other_fees.get("delivery_fee", ""),
                     "sub_carrier_deduction": "",
                     "sub_other_fee": "",
                     "sub_other_fee_remark": "",
@@ -1865,6 +1866,7 @@ class RPAWorker:
             flight_info = original_form_data.get("flight_info", {})
             cargo_info = original_form_data.get("cargo_info", {})
             contact_info = original_form_data.get("contact_info", {})
+            other_fees = original_form_data.get("other_fees", {})
             
             rpa_call_time = get_china_now().strftime("%Y-%m-%d")
             
@@ -1873,7 +1875,7 @@ class RPAWorker:
                 "airline_record_time": rpa_call_time,
                 "settlement_method": "1",
                 "settlement_status": "0",
-                "financial_review": "1",
+                "financial_review": "0",
                 "master_airwaybill_number": booking.master_airwaybill_number or "",
                 "transport_method": "0",
                 "airline": "2",  # 南航
@@ -1893,10 +1895,10 @@ class RPAWorker:
                 "sub_telegraph_fee": "",
                 "sub_telegraph_number": "",
                 "sub_cca_fee": "",
-                "sub_packaging_fee": "",
-                "sub_pickup_fee": "",
+                "sub_packaging_fee": other_fees.get("packaging_fee", ""),
+                "sub_pickup_fee": other_fees.get("pickup_fee", ""),
                 "sub_airport_pickup_fee": "",
-                "sub_delivery_fee": "",
+                "sub_delivery_fee": other_fees.get("delivery_fee", ""),
                 "sub_carrier_deduction": "",
                 "sub_other_fee": "",
                 "sub_other_fee_remark": "",
