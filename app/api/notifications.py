@@ -2,12 +2,14 @@
 通知管理接口
 """
 import json
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.core.response import success_response
+from app.core.exceptions import BadRequestException, NotFoundException
 from app.database import get_db
 from app.models.waybill import Waybill
 from app.models.booking import Booking
+from app.models.rpa_task import RPATask, RPATaskStatus
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china
 
@@ -287,4 +289,92 @@ async def get_notification_summary(
     }
     
     return success_response(data=response_data, msg="查询成功")
+
+
+@router.delete("/cancel-task", summary="取消等待中的队列任务")
+async def cancel_pending_task(
+    id: str = Query(..., description="任务目标ID（waybill_id 或 booking_id）"),
+    source_table: str = Query(..., description="来源表（waybills 或 bookings）"),
+    current_user=Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    取消等待中的队列任务接口
+    
+    此接口用于取消通知列表中等待执行的任务。
+    
+    **参数说明**：
+    - **id**: 任务目标ID，即通知接口返回的 id 字段（waybill_id 或 booking_id）
+    - **source_table**: 来源表，即通知接口返回的 source_table 字段
+      - "waybills": 运单（开单任务）
+      - "bookings": 订舱（订舱任务）
+    
+    **执行逻辑**：
+    1. 根据 source_table 确定目标类型（waybill/booking）
+    2. 查找 rpa_tasks 表中对应的 pending 状态的任务
+    3. 删除找到的任务
+    
+    **注意事项**：
+    - 只能取消 pending（等待中）状态的任务
+    - running（执行中）状态的任务无法取消
+    - 如果没有找到等待中的任务，会返回提示信息
+    
+    返回：
+    - deleted_count: 删除的任务数量
+    - deleted_task_ids: 删除的任务ID列表
+    """
+    # 验证 source_table 参数
+    if source_table not in ["waybills", "bookings"]:
+        raise BadRequestException("source_table 参数无效，必须是 'waybills' 或 'bookings'")
+    
+    # 根据 source_table 确定 target_type
+    # waybills -> waybill
+    # bookings -> booking
+    target_type = "waybill" if source_table == "waybills" else "booking"
+    
+    # 转换 id 为整数
+    try:
+        target_id = int(id)
+    except ValueError:
+        raise BadRequestException("id 参数无效，必须是数字")
+    
+    # 查找对应的 pending 状态的 RPA 任务
+    pending_tasks = db.query(RPATask).filter(
+        RPATask.target_type == target_type,
+        RPATask.target_id == target_id,
+        RPATask.status == RPATaskStatus.PENDING.value
+    ).all()
+    
+    # 如果没有找到待执行的任务
+    if not pending_tasks:
+        # 检查是否有执行中的任务
+        running_tasks = db.query(RPATask).filter(
+            RPATask.target_type == target_type,
+            RPATask.target_id == target_id,
+            RPATask.status == RPATaskStatus.RUNNING.value
+        ).all()
+        
+        if running_tasks:
+            raise BadRequestException("该任务正在执行中，无法取消")
+        
+        return success_response(
+            data={"deleted_count": 0, "deleted_task_ids": []},
+            msg="没有找到等待中的队列任务"
+        )
+    
+    # 删除找到的任务
+    deleted_task_ids = []
+    for task in pending_tasks:
+        deleted_task_ids.append(str(task.id))
+        db.delete(task)
+    
+    db.commit()
+    
+    return success_response(
+        data={
+            "deleted_count": len(deleted_task_ids),
+            "deleted_task_ids": deleted_task_ids
+        },
+        msg=f"成功取消 {len(deleted_task_ids)} 个等待中的队列任务"
+    )
 
