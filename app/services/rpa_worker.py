@@ -1275,6 +1275,7 @@ class RPAWorker:
                 print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
             
             # 同步创建waybills记录（将bookings的form_data结构转换为waybills的form_data结构）
+            new_waybill = None
             try:
                 waybill_form_data = self._convert_booking_to_waybill_form_data(form_data_dict, booking_item, params)
                 new_waybill = Waybill(
@@ -1288,7 +1289,16 @@ class RPAWorker:
                     rpa_work_uuid=booking.rpa_work_uuid  # 同步RPA workUuid
                 )
                 db.add(new_waybill)
+                db.flush()  # 刷新以获取waybill的id
                 print(f"[Worker-{self.worker_id}] 同步创建waybill记录成功，订舱ID: {booking.id}, 运单号: {booking.master_airwaybill_number}")
+                
+                # 自动触发南航货站录单（仅当开关为"0"时）
+                # 注意：直接开单的form_data中可能不包含oxygenated_aquatic_animal_goods_receipt_inspection_form_switch字段
+                # 该字段主要在"修改数据后开单"时由用户传入
+                try:
+                    await self._auto_generate_csa_cargo_station_documents(db, new_waybill, waybill_form_data)
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 南航直接开单自动生成货站录单文档失败: {str(e)}")
             except Exception as e:
                 print(f"[Worker-{self.worker_id}] 同步创建waybill记录失败: {str(e)}")
         finally:
@@ -1932,6 +1942,7 @@ class RPAWorker:
                 print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
             
             # 同步创建waybills记录（使用用户提交的修改后的form_data）
+            new_waybill = None
             try:
                 # 直接使用用户提交的form_data作为运单的form_data（已经是嵌套结构）
                 waybill_form_data = original_form_data.copy()
@@ -1948,7 +1959,14 @@ class RPAWorker:
                     rpa_work_uuid=booking.rpa_work_uuid  # 同步RPA workUuid
                 )
                 db.add(new_waybill)
+                db.flush()  # 刷新以获取waybill的id
                 print(f"[Worker-{self.worker_id}] 同步创建waybill记录成功，订舱ID: {booking.id}, 运单号: {booking.master_airwaybill_number}")
+                
+                # 自动触发南航货站录单（仅当开关为"0"时）
+                try:
+                    await self._auto_generate_csa_cargo_station_documents(db, new_waybill, waybill_form_data)
+                except Exception as e:
+                    print(f"[Worker-{self.worker_id}] 南航修改数据后开单自动生成货站录单文档失败: {str(e)}")
             except Exception as e:
                 print(f"[Worker-{self.worker_id}] 同步创建waybill记录失败: {str(e)}")
         finally:
