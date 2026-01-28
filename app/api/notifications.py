@@ -47,16 +47,18 @@ def _extract_waybill_notification_data(waybill: Waybill, is_exception: bool = Fa
     cargo_info = form_data.get("cargo_info", {})
     quantity = cargo_info.get("quantity", "")
     weight = cargo_info.get("weight", "")
-    cargo_type = cargo_info.get("cargo_name", "")  # 货物类型就是cargo_name
     
-    # 获取客户名称（仅开单有）
-    # 深航：shipper_consignee_info.shipper_unit
-    # 南航：contact_info.shipper_unit
+    # 获取货物类型和客户名称（根据航空公司不同，字段位置不同）
+    # 深航：货物类型 = cargo_info.cargo_name，客户名称 = shipper_consignee_info.shipper_unit
+    # 南航：货物类型 = cargo_info.cargo_type，客户名称 = contact_info.shipper_unit
+    cargo_type = ""
     customer_name = ""
     if airline == "1":  # 深航
+        cargo_type = cargo_info.get("cargo_name", "")
         shipper_consignee_info = form_data.get("shipper_consignee_info", {})
         customer_name = shipper_consignee_info.get("shipper_unit", "")
     elif airline == "2":  # 南航
+        cargo_type = cargo_info.get("cargo_type", "")
         contact_info = form_data.get("contact_info", {})
         customer_name = contact_info.get("shipper_unit", "")
     
@@ -110,9 +112,10 @@ def _extract_booking_notification_data(booking: Booking, is_exception: bool = Fa
     flight_number = booking_item.get("flight_number", "")
     
     # 获取数量、重量、货物类型
+    # 订舱只有南航，货物类型字段为 cargo_type
     quantity = booking_item.get("quantity", "")
     weight = booking_item.get("weight", "")
-    cargo_type = booking_item.get("cargo_name", "")  # 货物类型就是cargo_name
+    cargo_type = booking_item.get("cargo_type", "")
     
     # 订舱没有客户名称
     customer_name = ""
