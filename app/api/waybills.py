@@ -1320,7 +1320,8 @@ async def execute_cargo_station_record(
     1. 交接单（必生成）
     2. 航空货物明细表（必生成）
     3. 货物收运检查清单（必生成）
-    4. 充氧类水生动物货物收运检查单（仅当 form_data.oxygenated_aquatic_animal_goods_receipt_inspection_form_switch = "0" 时生成）
+    4. 标签单（必生成）
+    5. 充氧类水生动物货物收运检查单（仅当 form_data.oxygenated_aquatic_animal_goods_receipt_inspection_form_switch = "0" 时生成）
     
     执行流程：
     1. 验证运单是否为深圳航空且航司录单状态为成功
@@ -1455,6 +1456,7 @@ async def get_waybill_documents(
         - handover: 交接单
         - cargo_detail: 航空货物明细表
         - cargo_checklist: 货物收运检查清单
+        - label: 标签单
         - aquatic_animal_checklist: 充氧类水生动物货物收运检查单（Excel，仅当开关为"0"时生成）
       - 南航文档类型：
         - csa_aquatic_animal_checklist: 充氧类水生动物货物收运检查单（docx，仅当开关为"0"时生成）
@@ -1506,7 +1508,7 @@ async def get_waybill_documents(
         )
     
     # 深航文档类型
-    shenzhen_air_doc_types = ["handover", "cargo_detail", "cargo_checklist", "aquatic_animal_checklist"]
+    shenzhen_air_doc_types = ["handover", "cargo_detail", "cargo_checklist", "label", "aquatic_animal_checklist"]
     # 南航文档类型
     china_southern_air_doc_types = ["csa_aquatic_animal_checklist"]
     

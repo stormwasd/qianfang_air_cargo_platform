@@ -4,11 +4,12 @@
 用于处理深圳航空和南方航空的货站录单功能：
 
 深圳航空：
-1. 根据waybill数据填充Excel模板（交接单、航空货物明细表、货物收运检查清单、充氧类水生动物货物收运检查单）
+1. 根据waybill数据填充Excel模板（交接单、航空货物明细表、货物收运检查清单、标签单、充氧类水生动物货物收运检查单）
 2. 将Excel转换为PDF（使用纯Python方案：openpyxl + reportlab）
 3. 保存文件到指定目录
 4. 更新waybill的cargo_station_record_status字段
 5. 注意：充氧类水生动物货物收运检查单只有当 form_data.oxygenated_aquatic_animal_goods_receipt_inspection_form_switch 为 "0" 时才需要生成
+6. 注意：标签单为必生成文档
 
 南方航空：
 1. 只有当 form_data.oxygenated_aquatic_animal_goods_receipt_inspection_form_switch 为 "0" 时才需要进行货站录单
@@ -49,6 +50,7 @@ DOC_TYPE_HANDOVER = "handover"  # 交接单
 DOC_TYPE_CARGO_DETAIL = "cargo_detail"  # 航空货物明细表
 DOC_TYPE_CARGO_CHECKLIST = "cargo_checklist"  # 货物收运检查清单
 DOC_TYPE_AQUATIC_ANIMAL_CHECKLIST = "aquatic_animal_checklist"  # 充氧类水生动物货物收运检查单（深航Excel版）
+DOC_TYPE_LABEL = "label"  # 标签单
 
 # ======== 南航文档类型常量 ========
 DOC_TYPE_CSA_AQUATIC_ANIMAL_CHECKLIST = "csa_aquatic_animal_checklist"  # 南航充氧类水生动物货物收运检查单（docx版）
@@ -59,6 +61,7 @@ DOC_TYPE_TO_FILENAME = {
     DOC_TYPE_CARGO_DETAIL: "航空货物明细表",
     DOC_TYPE_CARGO_CHECKLIST: "货物收运检查清单",
     DOC_TYPE_AQUATIC_ANIMAL_CHECKLIST: "充氧类水生动物货物收运检查单",
+    DOC_TYPE_LABEL: "标签单",
 }
 
 # 南航文档类型到文件名的映射
@@ -648,6 +651,89 @@ def generate_aquatic_animal_checklist_document(
     return excel_path, pdf_path
 
 
+def generate_label_document(
+    waybill_id: int,
+    waybill_number: str,
+    form_data: dict,
+    business_config: dict
+) -> Tuple[Path, Path]:
+    """
+    生成标签单文档
+    
+    Args:
+        waybill_id: 运单ID
+        waybill_number: 运单号
+        form_data: 运单表单数据
+        business_config: 业务参数配置
+    
+    Returns:
+        元组 (Excel文件路径, PDF文件路径)
+    """
+    project_root = _get_project_root()
+    template_path = project_root / TEMPLATE_DIR / "标签单.xlsx"
+    
+    # 确保目录存在
+    waybill_dir = _ensure_waybill_dir(waybill_id)
+    
+    # 生成带时间戳的文件名
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    excel_filename = f"标签单_{timestamp}.xlsx"
+    pdf_filename = f"标签单_{timestamp}.pdf"
+    excel_path = waybill_dir / excel_filename
+    pdf_path = waybill_dir / pdf_filename
+    
+    # 复制模板到目标目录
+    shutil.copy2(template_path, excel_path)
+    
+    # 加载Excel文件
+    wb = load_workbook(excel_path)
+    ws = wb.active
+    
+    # 提取数据
+    flight_info = form_data.get("flight_info", {})
+    cargo_info = form_data.get("cargo_info", {})
+    
+    # 航班信息
+    flight_number = flight_info.get("flight_number", "")
+    origin_station_code = flight_info.get("origin_station", "")
+    destination_code = flight_info.get("destination", "")
+    
+    # 将三字码转换为城市名称
+    origin_city = get_city_name_by_code(origin_station_code)
+    destination_city = get_city_name_by_code(destination_code)
+    
+    # 货物信息
+    quantity = str(cargo_info.get("quantity", ""))
+    weight = str(cargo_info.get("weight", ""))
+    
+    # 构建带单位的字符串
+    quantity_with_unit = f"{quantity}件"
+    weight_with_unit = f"{weight}KG"
+    
+    # 执行替换（按照用户指定的替换规则）
+    # 479-58183392 → waybill_number
+    # 6件 → quantity + "件"
+    # 36KG → weight + "KG"
+    # 深圳 → origin_station 对应的城市名称
+    # 合肥 → destination 对应的城市名称
+    # ZH9945 → flight_number
+    _replace_cell_value(ws, "479-58183392", waybill_number)
+    _replace_cell_value(ws, "6件", quantity_with_unit)
+    _replace_cell_value(ws, "36KG", weight_with_unit)
+    _replace_cell_value(ws, "深圳", origin_city)
+    _replace_cell_value(ws, "合肥", destination_city)
+    _replace_cell_value(ws, "ZH9945", flight_number)
+    
+    # 保存Excel文件
+    wb.save(excel_path)
+    wb.close()
+    
+    # 转换为PDF
+    _convert_excel_to_pdf(excel_path, pdf_path)
+    
+    return excel_path, pdf_path
+
+
 def generate_all_documents(
     waybill_id: int,
     waybill_number: str,
@@ -661,6 +747,7 @@ def generate_all_documents(
     - 交接单（必生成）
     - 航空货物明细表（必生成）
     - 货物收运检查清单（必生成）
+    - 标签单（必生成）
     - 充氧类水生动物货物收运检查单（仅当 oxygenated_aquatic_animal_goods_receipt_inspection_form_switch 为 "0" 时生成）
     
     Args:
@@ -675,6 +762,7 @@ def generate_all_documents(
             "handover": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"},
             "cargo_detail": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"},
             "cargo_checklist": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"},
+            "label": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"},
             "aquatic_animal_checklist": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"}  # 仅当开关为"0"时
         }
     """
@@ -719,6 +807,19 @@ def generate_all_documents(
         print(f"生成货物收运检查清单失败: {str(e)}")
         results[DOC_TYPE_CARGO_CHECKLIST] = {"excel": None, "pdf": None, "error": str(e)}
     
+    # 生成标签单
+    try:
+        excel_path, pdf_path = generate_label_document(
+            waybill_id, waybill_number, form_data, business_config
+        )
+        results[DOC_TYPE_LABEL] = {
+            "excel": str(excel_path),
+            "pdf": str(pdf_path) if pdf_path.exists() else None
+        }
+    except Exception as e:
+        print(f"生成标签单失败: {str(e)}")
+        results[DOC_TYPE_LABEL] = {"excel": None, "pdf": None, "error": str(e)}
+    
     # 生成充氧类水生动物货物收运检查单（仅当开关为"0"时生成）
     # 注意：oxygenated_aquatic_animal_goods_receipt_inspection_form_switch 为 "0" 表示需要生成
     aquatic_switch = form_data.get("oxygenated_aquatic_animal_goods_receipt_inspection_form_switch", "1")
@@ -748,7 +849,7 @@ def get_document_path(
     
     Args:
         waybill_id: 运单ID
-        doc_type: 文档类型 (handover, cargo_detail, cargo_checklist, aquatic_animal_checklist)
+        doc_type: 文档类型 (handover, cargo_detail, cargo_checklist, label, aquatic_animal_checklist)
         file_format: 文件格式 (pdf 或 excel)
     
     Returns:
@@ -791,13 +892,14 @@ def list_documents(waybill_id: int) -> Dict[str, Dict[str, Optional[str]]]:
             "handover": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"},
             "cargo_detail": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"},
             "cargo_checklist": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"},
+            "label": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"},
             "aquatic_animal_checklist": {"excel": "/path/to/excel", "pdf": "/path/to/pdf"}
         }
     """
     results = {}
     
     # 遍历所有文档类型
-    for doc_type in [DOC_TYPE_HANDOVER, DOC_TYPE_CARGO_DETAIL, DOC_TYPE_CARGO_CHECKLIST, DOC_TYPE_AQUATIC_ANIMAL_CHECKLIST]:
+    for doc_type in [DOC_TYPE_HANDOVER, DOC_TYPE_CARGO_DETAIL, DOC_TYPE_CARGO_CHECKLIST, DOC_TYPE_LABEL, DOC_TYPE_AQUATIC_ANIMAL_CHECKLIST]:
         excel_path = get_document_path(waybill_id, doc_type, "excel")
         pdf_path = get_document_path(waybill_id, doc_type, "pdf")
         
