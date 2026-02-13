@@ -915,6 +915,7 @@ def _replace_text_in_docx(doc_path: Path, search_text: str, replace_text: str) -
     在docx文件中替换文本
     
     使用python-docx库处理docx文件
+    支持处理文本被分割到多个runs中的情况
     
     Args:
         doc_path: docx文件路径
@@ -929,51 +930,46 @@ def _replace_text_in_docx(doc_path: Path, search_text: str, replace_text: str) -
     except ImportError:
         raise ImportError("需要安装 python-docx 库: pip install python-docx")
     
+    def replace_in_paragraph(para) -> bool:
+        """在段落中替换文本，返回是否成功替换"""
+        if search_text not in para.text:
+            return False
+        
+        # 首先尝试在单个run中替换
+        for run in para.runs:
+            if search_text in run.text:
+                run.text = run.text.replace(search_text, replace_text)
+                return True
+        
+        # 如果单个run中没找到，说明文本被分割到多个runs中
+        # 需要合并所有runs的文本进行替换
+        full_text = para.text
+        new_text = full_text.replace(search_text, replace_text)
+        if full_text != new_text:
+            # 清空所有runs并在第一个run中设置新文本
+            for run in para.runs:
+                run.text = ""
+            if para.runs:
+                para.runs[0].text = new_text
+            return True
+        
+        return False
+    
     doc = Document(doc_path)
     replaced_count = 0
     
     # 遍历所有段落
     for para in doc.paragraphs:
-        if search_text in para.text:
-            # 处理段落中的runs
-            for run in para.runs:
-                if search_text in run.text:
-                    run.text = run.text.replace(search_text, replace_text)
-                    replaced_count += 1
-            # 如果runs中没找到，可能文本被分割了，需要特殊处理
-            if replaced_count == 0 and search_text in para.text:
-                # 合并所有runs的文本，替换后重新设置
-                full_text = para.text
-                new_text = full_text.replace(search_text, replace_text)
-                if full_text != new_text:
-                    # 清空所有runs
-                    for run in para.runs:
-                        run.text = ""
-                    # 在第一个run中设置新文本
-                    if para.runs:
-                        para.runs[0].text = new_text
-                    replaced_count += 1
+        if replace_in_paragraph(para):
+            replaced_count += 1
     
     # 遍历所有表格
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for para in cell.paragraphs:
-                    if search_text in para.text:
-                        for run in para.runs:
-                            if search_text in run.text:
-                                run.text = run.text.replace(search_text, replace_text)
-                                replaced_count += 1
-                        # 如果runs中没找到
-                        if replaced_count == 0 and search_text in para.text:
-                            full_text = para.text
-                            new_text = full_text.replace(search_text, replace_text)
-                            if full_text != new_text:
-                                for run in para.runs:
-                                    run.text = ""
-                                if para.runs:
-                                    para.runs[0].text = new_text
-                                replaced_count += 1
+                    if replace_in_paragraph(para):
+                        replaced_count += 1
     
     doc.save(doc_path)
     return replaced_count
