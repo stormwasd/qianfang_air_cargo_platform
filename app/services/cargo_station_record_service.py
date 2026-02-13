@@ -33,12 +33,8 @@ from app.utils.airport_code_mapper import get_city_name_by_code
 
 
 # 文件存储根目录（相对于项目根目录）
+# 所有航司的货站录单文件统一存放在 generated_files/{waybill_id}/ 下
 GENERATED_FILES_DIR = "generated_files"
-
-# 深航货站录单文件子目录
-SHENZHEN_AIR_CARGO_STATION_DIR = "shenzhen_air_cargo_station"
-# 南航货站录单文件子目录
-CHINA_SOUTHERN_AIR_CARGO_STATION_DIR = "china_southern_air_cargo_station"
 
 # 深航Excel模板目录（相对于项目根目录）
 TEMPLATE_DIR = "documents/shenzhen_air"
@@ -81,6 +77,8 @@ def _ensure_waybill_dir(waybill_id: int) -> Path:
     """
     确保waybill的文件存储目录存在
     
+    所有航司的货站录单文件统一存放在 generated_files/{waybill_id}/ 下
+    
     Args:
         waybill_id: 运单ID
     
@@ -88,7 +86,7 @@ def _ensure_waybill_dir(waybill_id: int) -> Path:
         waybill的文件存储目录路径
     """
     project_root = _get_project_root()
-    waybill_dir = project_root / GENERATED_FILES_DIR / SHENZHEN_AIR_CARGO_STATION_DIR / str(waybill_id)
+    waybill_dir = project_root / GENERATED_FILES_DIR / str(waybill_id)
     waybill_dir.mkdir(parents=True, exist_ok=True)
     return waybill_dir
 
@@ -366,14 +364,13 @@ def generate_handover_document(
     # 确保目录存在
     waybill_dir = _ensure_waybill_dir(waybill_id)
     
-    # 生成带时间戳的文件名
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    excel_filename = f"交接单_{timestamp}.xlsx"
-    pdf_filename = f"交接单_{timestamp}.pdf"
+    # 使用固定文件名（不带时间戳，方便后续拼接路径）
+    excel_filename = "交接单.xlsx"
+    pdf_filename = "交接单.pdf"
     excel_path = waybill_dir / excel_filename
     pdf_path = waybill_dir / pdf_filename
     
-    # 复制模板到目标目录
+    # 复制模板到目标目录（如果文件已存在则覆盖）
     shutil.copy2(template_path, excel_path)
     
     # 加载Excel文件
@@ -450,14 +447,13 @@ def generate_cargo_detail_document(
     # 确保目录存在
     waybill_dir = _ensure_waybill_dir(waybill_id)
     
-    # 生成带时间戳的文件名
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    excel_filename = f"航空货物明细表_{timestamp}.xlsx"
-    pdf_filename = f"航空货物明细表_{timestamp}.pdf"
+    # 使用固定文件名（不带时间戳，方便后续拼接路径）
+    excel_filename = "航空货物明细表.xlsx"
+    pdf_filename = "航空货物明细表.pdf"
     excel_path = waybill_dir / excel_filename
     pdf_path = waybill_dir / pdf_filename
     
-    # 复制模板到目标目录
+    # 复制模板到目标目录（如果文件已存在则覆盖）
     shutil.copy2(template_path, excel_path)
     
     # 加载Excel文件
@@ -518,14 +514,13 @@ def generate_cargo_checklist_document(
     # 确保目录存在
     waybill_dir = _ensure_waybill_dir(waybill_id)
     
-    # 生成带时间戳的文件名
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    excel_filename = f"货物收运检查清单_{timestamp}.xlsx"
-    pdf_filename = f"货物收运检查清单_{timestamp}.pdf"
+    # 使用固定文件名（不带时间戳，方便后续拼接路径）
+    excel_filename = "货物收运检查清单.xlsx"
+    pdf_filename = "货物收运检查清单.pdf"
     excel_path = waybill_dir / excel_filename
     pdf_path = waybill_dir / pdf_filename
     
-    # 复制模板到目标目录
+    # 复制模板到目标目录（如果文件已存在则覆盖）
     shutil.copy2(template_path, excel_path)
     
     # 加载Excel文件
@@ -597,14 +592,13 @@ def generate_aquatic_animal_checklist_document(
     # 确保目录存在
     waybill_dir = _ensure_waybill_dir(waybill_id)
     
-    # 生成带时间戳的文件名
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    excel_filename = f"充氧类水生动物货物收运检查单_{timestamp}.xlsx"
-    pdf_filename = f"充氧类水生动物货物收运检查单_{timestamp}.pdf"
+    # 使用固定文件名（不带时间戳，方便后续拼接路径）
+    excel_filename = "充氧类水生动物货物收运检查单.xlsx"
+    pdf_filename = "充氧类水生动物货物收运检查单.pdf"
     excel_path = waybill_dir / excel_filename
     pdf_path = waybill_dir / pdf_filename
     
-    # 复制模板到目标目录
+    # 复制模板到目标目录（如果文件已存在则覆盖）
     shutil.copy2(template_path, excel_path)
     
     # 加载Excel文件
@@ -675,14 +669,13 @@ def generate_label_document(
     # 确保目录存在
     waybill_dir = _ensure_waybill_dir(waybill_id)
     
-    # 生成带时间戳的文件名
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    excel_filename = f"标签单_{timestamp}.xlsx"
-    pdf_filename = f"标签单_{timestamp}.pdf"
+    # 使用固定文件名（不带时间戳，方便后续拼接路径）
+    excel_filename = "标签单.xlsx"
+    pdf_filename = "标签单.pdf"
     excel_path = waybill_dir / excel_filename
     pdf_path = waybill_dir / pdf_filename
     
-    # 复制模板到目标目录
+    # 复制模板到目标目录（如果文件已存在则覆盖）
     shutil.copy2(template_path, excel_path)
     
     # 加载Excel文件
@@ -856,12 +849,12 @@ def get_document_path(
         文件路径，如果不存在则返回None
     """
     project_root = _get_project_root()
-    waybill_dir = project_root / GENERATED_FILES_DIR / SHENZHEN_AIR_CARGO_STATION_DIR / str(waybill_id)
+    waybill_dir = project_root / GENERATED_FILES_DIR / str(waybill_id)
     
     if not waybill_dir.exists():
         return None
     
-    # 获取文档名称前缀
+    # 获取文档名称
     doc_name = DOC_TYPE_TO_FILENAME.get(doc_type)
     if not doc_name:
         return None
@@ -869,14 +862,13 @@ def get_document_path(
     # 确定文件扩展名
     extension = ".pdf" if file_format == "pdf" else ".xlsx"
     
-    # 查找最新的文件（按时间戳排序）
-    matching_files = list(waybill_dir.glob(f"{doc_name}_*{extension}"))
-    if not matching_files:
-        return None
+    # 使用固定文件名（不带时间戳）
+    file_path = waybill_dir / f"{doc_name}{extension}"
     
-    # 按文件名排序（时间戳在文件名中，所以字典序即时间序）
-    matching_files.sort(reverse=True)
-    return matching_files[0]
+    if file_path.exists():
+        return file_path
+    
+    return None
 
 
 def list_documents(waybill_id: int) -> Dict[str, Dict[str, Optional[str]]]:
@@ -914,21 +906,8 @@ def list_documents(waybill_id: int) -> Dict[str, Dict[str, Optional[str]]]:
 
 
 # ======== 南航货站录单相关函数 ========
-
-def _ensure_csa_waybill_dir(waybill_id: int) -> Path:
-    """
-    确保南航waybill的文件存储目录存在
-    
-    Args:
-        waybill_id: 运单ID
-    
-    Returns:
-        waybill的文件存储目录路径
-    """
-    project_root = _get_project_root()
-    waybill_dir = project_root / GENERATED_FILES_DIR / CHINA_SOUTHERN_AIR_CARGO_STATION_DIR / str(waybill_id)
-    waybill_dir.mkdir(parents=True, exist_ok=True)
-    return waybill_dir
+# 注意：南航和深航的文件统一存放在 generated_files/{waybill_id}/ 下
+# 不再使用单独的子目录
 
 
 def _replace_text_in_docx(doc_path: Path, search_text: str, replace_text: str) -> int:
@@ -1026,20 +1005,20 @@ def generate_csa_aquatic_animal_checklist_document(
     if not template_path.exists():
         raise FileNotFoundError(f"南航模板文件不存在: {template_path}")
     
-    # 确保目录存在
-    waybill_dir = _ensure_csa_waybill_dir(waybill_id)
+    # 确保目录存在（统一使用 generated_files/{waybill_id}/ 目录）
+    waybill_dir = _ensure_waybill_dir(waybill_id)
     
-    # 生成带时间戳的文件名
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    docx_filename = f"充氧类水生动物货物收运检查单_{timestamp}.docx"
+    # 使用固定文件名（不带时间戳，方便后续拼接路径）
+    docx_filename = "充氧类水生动物货物收运检查单.docx"
     docx_path = waybill_dir / docx_filename
     
-    # 复制模板到目标目录
+    # 复制模板到目标目录（如果文件已存在则覆盖）
     shutil.copy2(template_path, docx_path)
     
     # 执行替换（按照用户指定的替换规则）
-    # "784- 44697343" 替换为 waybill_number
-    _replace_text_in_docx(docx_path, "784- 44697343", waybill_number)
+    # 注意：模板中的运单号使用不间断空格（\xa0），需要正确匹配
+    # "784-\xa044697343" 替换为 waybill_number
+    _replace_text_in_docx(docx_path, "784-\xa044697343", waybill_number)
     
     return docx_path
 
@@ -1108,12 +1087,12 @@ def get_csa_document_path(
         文件路径，如果不存在则返回None
     """
     project_root = _get_project_root()
-    waybill_dir = project_root / GENERATED_FILES_DIR / CHINA_SOUTHERN_AIR_CARGO_STATION_DIR / str(waybill_id)
+    waybill_dir = project_root / GENERATED_FILES_DIR / str(waybill_id)
     
     if not waybill_dir.exists():
         return None
     
-    # 获取文档名称前缀
+    # 获取文档名称
     doc_name = CSA_DOC_TYPE_TO_FILENAME.get(doc_type)
     if not doc_name:
         return None
@@ -1121,14 +1100,13 @@ def get_csa_document_path(
     # 确定文件扩展名
     extension = ".docx"
     
-    # 查找最新的文件（按时间戳排序）
-    matching_files = list(waybill_dir.glob(f"{doc_name}_*{extension}"))
-    if not matching_files:
-        return None
+    # 使用固定文件名
+    file_path = waybill_dir / f"{doc_name}{extension}"
     
-    # 按文件名排序（时间戳在文件名中，所以字典序即时间序）
-    matching_files.sort(reverse=True)
-    return matching_files[0]
+    if file_path.exists():
+        return file_path
+    
+    return None
 
 
 def list_csa_documents(waybill_id: int) -> Dict[str, Dict[str, Optional[str]]]:
