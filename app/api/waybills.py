@@ -721,13 +721,23 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
         form_data_dict: 运单表单数据字典
         business_config: 业务参数配置
     """
+    import traceback
     from app.services.document_print_service import prepare_print_tasks, get_print_task_count
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
+    airline = form_data_dict.get("airline", "")
+    print(f"[自动打单] 开始自动触发打单，运单ID: {waybill.id}, 运单号: {waybill.waybill_number}, 航司: {airline}")
+    
     try:
-        # 获取航司类型
-        airline = form_data_dict.get("airline", "")
+        # 检查打印机配置
+        airline_code = ""
+        if airline in ["1", "深圳航空", "shenzhen_air"]:
+            airline_code = "shenzhen_air"
+        elif airline in ["2", "南方航空", "china_southern_air"]:
+            airline_code = "china_southern_air"
+        airline_print_config = business_config.get(airline_code, {}).get("print", {}).get("printer_config", [])
+        print(f"[自动打单] 航司: {airline_code}, 打印机配置数量: {len(airline_print_config)}, 配置内容: {airline_print_config}")
         
         # 准备打印任务
         print_tasks = prepare_print_tasks(
@@ -740,8 +750,12 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
         # 检查是否有打印任务
         task_count = get_print_task_count(print_tasks)
         if task_count == 0:
-            print(f"没有可执行的打印任务，跳过自动打单，运单ID: {waybill.id}")
+            print(f"[自动打单] 没有可执行的打印任务（task_count=0），跳过自动打单，运单ID: {waybill.id}。请检查业务参数中 {airline_code}.print.printer_config 是否已配置打印机")
             return
+        
+        # 打印任务详情
+        for i, t in enumerate(print_tasks.get("tasks", [])):
+            print(f"[自动打单] 打印子任务 {i+1}/{task_count}: {t.get('description')}, 类型: {t.get('type')}")
         
         # 检查是否已有待执行或执行中的打单任务
         existing_task = rpa_task_service.get_pending_task_for_target(
@@ -751,7 +765,7 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
             task_type=RPATaskType.DOCUMENT_PRINT.value
         )
         if existing_task:
-            print(f"已存在打单任务，跳过自动打单，运单ID: {waybill.id}")
+            print(f"[自动打单] 已存在待执行或执行中的打单任务（任务ID: {existing_task.id}），跳过自动打单，运单ID: {waybill.id}")
             return
         
         # 创建打单RPA任务
@@ -764,10 +778,11 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
             created_by=None  # 自动触发，无创建人
         )
         
-        print(f"自动打单任务已创建，任务ID: {task.id}, 共 {task_count} 个打印任务，运单ID: {waybill.id}")
+        print(f"[自动打单] 打单任务已成功创建！任务ID: {task.id}, 共 {task_count} 个打印子任务，运单ID: {waybill.id}")
         
     except Exception as e:
-        print(f"自动触发打单失败，运单ID: {waybill.id}, 错误: {str(e)}")
+        print(f"[自动打单] 自动触发打单失败，运单ID: {waybill.id}, 错误: {str(e)}")
+        print(f"[自动打单] 错误详情: {traceback.format_exc()}")
         # 自动打单失败不影响货站录单的成功状态
 
 

@@ -255,7 +255,7 @@ def prepare_china_southern_air_print_tasks(
     
     # 唐易登录配置
     tangyi_login_config = booking_and_create_config.get("tangi_login", {})
-    tangyi_app_name = tangyi_login_config.get("app_name", "")
+    tangyi_app_path = tangyi_login_config.get("address_of_the_application_executable_file_tangyi", "")
     
     # 1. 制单后打印流程（可选）：如果文件目录存在，遍历所有生成的文件
     waybill_dir = get_waybill_files_dir(waybill_id)
@@ -333,7 +333,7 @@ def prepare_china_southern_air_print_tasks(
             "job_uuid": settings.RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID,
             "description": "南航-标签单打印",
             "params": {
-                "address_of_the_application_executable_file_tangyi": tangyi_app_name,
+                "address_of_the_application_executable_file_tangyi": tangyi_app_path,
                 "system_account": system_account,
                 "login_password": login_password,
                 "waybill_number_8": waybill_number_8,
