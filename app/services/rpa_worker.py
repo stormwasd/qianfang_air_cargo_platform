@@ -2099,6 +2099,9 @@ class RPAWorker:
         打单任务包含多个子任务，按顺序执行：
         - 制单后打印流程（遍历文件夹下的所有文件）
         - 固定打印流程（如货运主单、安检申报单、标签单等）
+        
+        重要：所有子任务都会被执行，不会因为某个子任务失败而中断后续任务。
+        全部执行完成后，只要有一个子任务失败，整体打单状态即为失败。
         """
         params = json.loads(task.params)
         
@@ -2111,29 +2114,28 @@ class RPAWorker:
         db.commit()
         
         # 获取所有打印子任务
-        tasks = params.get("tasks", [])
-        if not tasks:
+        sub_tasks = params.get("tasks", [])
+        if not sub_tasks:
             raise Exception("没有打印任务")
         
         airline = params.get("airline", "")
         waybill_id = params.get("waybill_id")
-        waybill_number = params.get("waybill_number", "")
         
-        print(f"[Worker-{self.worker_id}] 开始执行打单任务，运单ID: {waybill_id}, 航司: {airline}, 共 {len(tasks)} 个子任务")
+        total_count = len(sub_tasks)
+        print(f"[Worker-{self.worker_id}] 开始执行打单任务，运单ID: {waybill_id}, 航司: {airline}, 共 {total_count} 个子任务")
         
-        # 用于记录执行结果
-        completed_tasks = []
-        failed_task = None
+        # 用于记录每个子任务的执行结果
+        task_results = []
         
         try:
-            # 按顺序执行每个打印子任务
-            for i, print_task in enumerate(tasks):
+            # 按顺序执行每个打印子任务（不因某个失败而中断）
+            for i, print_task in enumerate(sub_tasks):
                 task_type = print_task.get("type")
                 task_desc = print_task.get("description", f"打印任务{i+1}")
                 job_uuid = print_task.get("job_uuid")
                 task_params = print_task.get("params", {})
                 
-                print(f"[Worker-{self.worker_id}] 执行打印子任务 ({i+1}/{len(tasks)}): {task_desc}")
+                print(f"[Worker-{self.worker_id}] 执行打印子任务 ({i+1}/{total_count}): {task_desc}")
                 
                 try:
                     # 根据任务类型调用对应的RPA接口
@@ -2142,43 +2144,54 @@ class RPAWorker:
                     )
                     
                     if success:
-                        completed_tasks.append({
+                        task_results.append({
+                            "index": i + 1,
                             "description": task_desc,
                             "status": "success"
                         })
-                        print(f"[Worker-{self.worker_id}] 打印子任务成功: {task_desc}")
+                        print(f"[Worker-{self.worker_id}] 打印子任务成功 ({i+1}/{total_count}): {task_desc}")
                     else:
-                        failed_task = {
+                        task_results.append({
+                            "index": i + 1,
                             "description": task_desc,
                             "status": "failed",
                             "error": "RPA执行失败"
-                        }
-                        print(f"[Worker-{self.worker_id}] 打印子任务失败: {task_desc}")
-                        break
+                        })
+                        print(f"[Worker-{self.worker_id}] 打印子任务失败 ({i+1}/{total_count}): {task_desc}，继续执行后续任务...")
                         
                 except Exception as e:
-                    failed_task = {
+                    task_results.append({
+                        "index": i + 1,
                         "description": task_desc,
                         "status": "failed",
                         "error": str(e)
-                    }
-                    print(f"[Worker-{self.worker_id}] 打印子任务异常: {task_desc}, 错误: {str(e)}")
-                    break
+                    })
+                    print(f"[Worker-{self.worker_id}] 打印子任务异常 ({i+1}/{total_count}): {task_desc}, 错误: {str(e)}，继续执行后续任务...")
+            
+            # 所有子任务执行完毕，统计结果
+            success_count = sum(1 for r in task_results if r["status"] == "success")
+            failed_count = sum(1 for r in task_results if r["status"] == "failed")
+            failed_tasks = [r for r in task_results if r["status"] == "failed"]
+            
+            print(f"[Worker-{self.worker_id}] 打单执行完毕，运单ID: {waybill_id}, 总计: {total_count}, 成功: {success_count}, 失败: {failed_count}")
             
             # 更新状态
             db.refresh(waybill)
             
-            if failed_task:
+            if failed_count > 0:
+                # 只要有一个子任务失败，整体打单状态即为失败
+                failed_descriptions = "; ".join(
+                    f"{r['description']}({r.get('error', '未知错误')})" for r in failed_tasks
+                )
                 waybill.document_print_status = "2"  # 失败
                 db.commit()
-                rpa_task_service.complete_task(
-                    db, task.id, False,
-                    error_message=f"打印任务失败: {failed_task.get('description')} - {failed_task.get('error')}"
-                )
+                error_msg = f"打单部分失败（{failed_count}/{total_count}）: {failed_descriptions}"
+                print(f"[Worker-{self.worker_id}] {error_msg}")
+                rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
             else:
                 waybill.document_print_status = "3"  # 成功
                 db.commit()
-                print(f"[Worker-{self.worker_id}] 所有打印任务完成，运单ID: {waybill_id}")
+                print(f"[Worker-{self.worker_id}] 所有打印任务全部成功，运单ID: {waybill_id}")
                 rpa_task_service.complete_task(db, task.id, True)
                 
         except Exception as e:
