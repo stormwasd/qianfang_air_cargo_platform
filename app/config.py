@@ -75,6 +75,20 @@ class Settings(BaseSettings):
     RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID: str = "cc2bda248c24dbf57fa6cd2534ce5054"  # 南航新增运单任务jobUuid
     RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID: str = "1d8f4e2518e0f2c858853c189873e91d"  # 南航修改数据后开单任务jobUuid（从订舱回显数据后修改再开单）
     RPA_CHINA_SOUTHERN_AIR_QUEUE_UUID: str = "d5933f787b77482aa486da4fd3ffdcfd"  # 南航获取运单号队列UUID（历史遗留，已不使用）
+    
+    # ========== 打单RPA配置 ==========
+    # 通用文件打印jobUuid（深航和南航共用，用于打印制单后生成的文档文件）
+    RPA_FILE_PRINT_JOB_UUID: str = "8aef03178d04720fdbcc7ea66c7cb00d"
+    # 深航货运主单打印jobUuid
+    RPA_SHENZHEN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID: str = "1fa863b38e0e0741239b7bbf51d196ac"
+    # 南航货运主单打印jobUuid
+    RPA_CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID: str = "9b4f2e79cf1107f57f6ea7130552ffe5"
+    # 南航货运安检申报单打印jobUuid
+    RPA_CHINA_SOUTHERN_AIR_SECURITY_PRINT_JOB_UUID: str = "afd7fa28e46cd61cf26707c98176556e"
+    # 南航标签单打印jobUuid
+    RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID: str = "1efafa308b1c7a789117747b56b6e6a2"
+    # 打印文件在RPA机器人上的根目录（固定路径）
+    RPA_PRINT_FILE_ROOT_PATH: str = "D:\\generated_files_of_qianfang_air_cargo_platform"
     # 南航统一队列名称（所有南航功能共用，每次执行时都会创建新队列实例）
     # - 南航订舱：使用运单号队列（1个）
     # - 南航直接开单：使用费率、运费、燃油费、延伸服务费队列（4个）

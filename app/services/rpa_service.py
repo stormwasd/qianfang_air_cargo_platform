@@ -1040,6 +1040,324 @@ class RPAService:
                 raise BadRequestException(f"删除队列请求失败: {str(e)}")
             except Exception as e:
                 raise BadRequestException(f"删除队列异常: {str(e)}")
+    
+    # ========== 打单RPA接口 ==========
+    
+    async def print_file(
+        self,
+        absolute_path_to_the_file: str,
+        printer_name: str
+    ) -> Dict[str, Any]:
+        """
+        调用文件打印RPA接口（深航和南航通用，用于打印制单后生成的文档文件）
+        
+        Args:
+            absolute_path_to_the_file: 文件的绝对路径（如：D:\\generated_files_of_qianfang_air_cargo_platform\\280700936320585728\\交接单.pdf）
+            printer_name: 打印机名称（从业务参数中的print_config获取）
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_FILE_PRINT_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "absolute_path_to_the_file": absolute_path_to_the_file,
+                "printer_name": printer_name
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "文件打印RPA接口调用失败")
+                    raise BadRequestException(f"文件打印RPA接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"文件打印RPA接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"文件打印RPA接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"文件打印RPA接口调用异常: {str(e)}")
+    
+    async def query_file_print_status(
+        self,
+        job_uuid: str,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        size: int = 1000000
+    ) -> Dict[str, Any]:
+        """
+        查询文件打印RPA任务状态（复用通用状态查询接口）
+        """
+        return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
+    
+    async def print_shenzhen_air_main_waybill(
+        self,
+        system_url: str,
+        system_account: str,
+        login_password: str,
+        waybill_number_8: str,
+        printer_name: str
+    ) -> Dict[str, Any]:
+        """
+        调用深航货运主单打印RPA接口
+        
+        Args:
+            system_url: 系统URL（从业务参数配置获取）
+            system_account: 系统账号（从业务参数配置获取）
+            login_password: 登录密码（从业务参数配置获取）
+            waybill_number_8: 运单号后八位
+            printer_name: 打印机名称（从业务参数中的print_config获取"航司货运主单"对应的打印机）
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_SHENZHEN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "system_url": system_url,
+                "system_account": system_account,
+                "login_password": login_password,
+                "waybill_number_8": waybill_number_8,
+                "printer_name": printer_name
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "深航货运主单打印RPA接口调用失败")
+                    raise BadRequestException(f"深航货运主单打印RPA接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"深航货运主单打印RPA接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"深航货运主单打印RPA接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"深航货运主单打印RPA接口调用异常: {str(e)}")
+    
+    async def query_shenzhen_air_main_waybill_print_status(
+        self,
+        job_uuid: str,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        size: int = 1000000
+    ) -> Dict[str, Any]:
+        """
+        查询深航货运主单打印RPA任务状态（复用通用状态查询接口）
+        """
+        return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
+    
+    async def print_china_southern_air_main_waybill(
+        self,
+        system_url: str,
+        system_account: str,
+        login_password: str,
+        waybill_number_8: str,
+        printer_name: str
+    ) -> Dict[str, Any]:
+        """
+        调用南航货运主单打印RPA接口
+        
+        Args:
+            system_url: 系统URL（从业务参数配置获取）
+            system_account: 系统账号（从业务参数配置获取）
+            login_password: 登录密码（从业务参数配置获取）
+            waybill_number_8: 运单号后八位
+            printer_name: 打印机名称（从业务参数中的print_config获取"航司货运主单"对应的打印机）
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "system_url": system_url,
+                "system_account": system_account,
+                "login_password": login_password,
+                "waybill_number_8": waybill_number_8,
+                "printer_name": printer_name
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "南航货运主单打印RPA接口调用失败")
+                    raise BadRequestException(f"南航货运主单打印RPA接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"南航货运主单打印RPA接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"南航货运主单打印RPA接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"南航货运主单打印RPA接口调用异常: {str(e)}")
+    
+    async def query_china_southern_air_main_waybill_print_status(
+        self,
+        job_uuid: str,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        size: int = 1000000
+    ) -> Dict[str, Any]:
+        """
+        查询南航货运主单打印RPA任务状态（复用通用状态查询接口）
+        """
+        return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
+    
+    async def print_china_southern_air_security_declaration(
+        self,
+        system_url: str,
+        system_account: str,
+        login_password: str,
+        waybill_number_8: str,
+        printer_name: str
+    ) -> Dict[str, Any]:
+        """
+        调用南航货运安检申报单打印RPA接口
+        
+        Args:
+            system_url: 系统URL（从业务参数配置获取）
+            system_account: 系统账号（从业务参数配置获取）
+            login_password: 登录密码（从业务参数配置获取）
+            waybill_number_8: 运单号后八位
+            printer_name: 打印机名称（从业务参数中的print_config获取"航空货物安检申报清单"对应的打印机）
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_SECURITY_PRINT_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "system_url": system_url,
+                "system_account": system_account,
+                "login_password": login_password,
+                "waybill_number_8": waybill_number_8,
+                "printer_name": printer_name
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "南航货运安检申报单打印RPA接口调用失败")
+                    raise BadRequestException(f"南航货运安检申报单打印RPA接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"南航货运安检申报单打印RPA接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"南航货运安检申报单打印RPA接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"南航货运安检申报单打印RPA接口调用异常: {str(e)}")
+    
+    async def query_china_southern_air_security_print_status(
+        self,
+        job_uuid: str,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        size: int = 1000000
+    ) -> Dict[str, Any]:
+        """
+        查询南航货运安检申报单打印RPA任务状态（复用通用状态查询接口）
+        """
+        return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
+    
+    async def print_china_southern_air_label(
+        self,
+        address_of_the_application_executable_file_tangyi: str,
+        system_account: str,
+        login_password: str,
+        waybill_number_8: str,
+        printer_name: str
+    ) -> Dict[str, Any]:
+        """
+        调用南航标签单打印RPA接口
+        
+        Args:
+            address_of_the_application_executable_file_tangyi: 唐易应用可执行文件地址
+            system_account: 系统账号（从业务参数配置获取）
+            login_password: 登录密码（从业务参数配置获取）
+            waybill_number_8: 运单号后八位
+            printer_name: 打印机名称（从业务参数中的print_config获取"标签单"对应的打印机）
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        payload = {
+            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID,
+            "operation": 1,
+            "inputParam": {
+                "address_of_the_application_executable_file_tangyi": address_of_the_application_executable_file_tangyi,
+                "system_account": system_account,
+                "login_password": login_password,
+                "waybill_number_8": waybill_number_8,
+                "printer_name": printer_name
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "南航标签单打印RPA接口调用失败")
+                    raise BadRequestException(f"南航标签单打印RPA接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"南航标签单打印RPA接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"南航标签单打印RPA接口请求失败: {str(e)}")
+            except Exception as e:
+                raise BadRequestException(f"南航标签单打印RPA接口调用异常: {str(e)}")
+    
+    async def query_china_southern_air_label_print_status(
+        self,
+        job_uuid: str,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        size: int = 1000000
+    ) -> Dict[str, Any]:
+        """
+        查询南航标签单打印RPA任务状态（复用通用状态查询接口）
+        """
+        return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
 
 
 # 创建全局RPA服务实例

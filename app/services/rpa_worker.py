@@ -95,6 +95,8 @@ class RPAWorker:
                     await self._execute_china_southern_air_waybill(db, task)
                 elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA.value:
                     await self._execute_china_southern_air_invoice_with_data(db, task)
+                elif task.task_type == RPATaskType.DOCUMENT_PRINT.value:
+                    await self._execute_document_print(db, task)
                 else:
                     print(f"[Worker-{self.worker_id}] 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -125,6 +127,8 @@ class RPAWorker:
                         waybill.waybill_void_status = "2"  # 作废失败
                     elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value:
                         waybill.airline_record_status = "2"  # 开单失败
+                    elif task.task_type == RPATaskType.DOCUMENT_PRINT.value:
+                        waybill.document_print_status = "2"  # 打单失败
                     db.commit()
             elif task.target_type == RPATargetType.BOOKING.value:
                 booking = db.query(Booking).filter(Booking.id == task.target_id).first()
@@ -484,11 +488,14 @@ class RPAWorker:
             if all_success:
                 waybill.cargo_station_record_status = "3"  # 已录单
                 print(f"[Worker-{self.worker_id}] 货站录单文档生成成功，运单ID: {waybill.id}")
+                db.commit()
+                
+                # 货站录单成功后自动触发打单
+                await self._auto_trigger_document_print(db, waybill, form_data_dict)
             else:
                 waybill.cargo_station_record_status = "2"  # 失败
                 print(f"[Worker-{self.worker_id}] 货站录单文档生成失败，运单ID: {waybill.id}")
-            
-            db.commit()
+                db.commit()
             
         except Exception as e:
             waybill.cargo_station_record_status = "2"  # 失败
@@ -497,10 +504,13 @@ class RPAWorker:
     
     async def _auto_generate_csa_cargo_station_documents(self, db, waybill: Waybill, form_data_dict: dict):
         """
-        自动生成南航货站录单文档
+        自动生成南航货站录单文档并在完成后自动触发打单
         
-        在南航开单成功后自动触发，只有当 oxygenated_aquatic_animal_goods_receipt_inspection_form_switch 为 "0" 时才执行
-        生成一个docx文件：充氧类水生动物货物收运检查单
+        在南航开单成功后自动触发：
+        - 当 oxygenated_aquatic_animal_goods_receipt_inspection_form_switch 为 "0" 时：
+          先生成文档，再触发打单（包含制单文档打印 + 固定打印流程）
+        - 当开关不为 "0" 时：
+          跳过文档生成，直接触发打单（仅固定打印流程：货运主单、安检申报单、标签单）
         
         Args:
             db: 数据库会话
@@ -515,7 +525,9 @@ class RPAWorker:
         
         # 检查是否需要进行货站录单
         if not is_csa_cargo_station_record_required(form_data_dict):
-            print(f"[Worker-{self.worker_id}] 南航运单ID: {waybill.id} 不需要货站录单（开关不为0）")
+            print(f"[Worker-{self.worker_id}] 南航运单ID: {waybill.id} 不需要货站录单（开关不为0），直接触发固定打单流程")
+            # 不需要制单，但固定打单流程（货运主单、安检申报单、标签单）仍需执行
+            await self._auto_trigger_document_print(db, waybill, form_data_dict)
             return
         
         print(f"[Worker-{self.worker_id}] 开始南航自动生成货站录单文档，运单ID: {waybill.id}")
@@ -549,14 +561,18 @@ class RPAWorker:
             if all_success and documents_result:
                 waybill.cargo_station_record_status = "3"  # 已录单
                 print(f"[Worker-{self.worker_id}] 南航货站录单文档生成成功，运单ID: {waybill.id}")
+                db.commit()
+                
+                # 货站录单成功后自动触发打单
+                await self._auto_trigger_document_print(db, waybill, form_data_dict)
             elif not documents_result:
                 # 没有文档需要生成（理论上不会走到这里，因为前面已经检查过了）
                 print(f"[Worker-{self.worker_id}] 南航无文档需要生成，运单ID: {waybill.id}")
+                db.commit()
             else:
                 waybill.cargo_station_record_status = "2"  # 失败
                 print(f"[Worker-{self.worker_id}] 南航货站录单文档生成失败，运单ID: {waybill.id}")
-            
-            db.commit()
+                db.commit()
             
         except Exception as e:
             waybill.cargo_station_record_status = "2"  # 失败
@@ -1983,6 +1999,318 @@ class RPAWorker:
                     await rpa_service.delete_queue(queue_info["queueID"])
                 except Exception as e:
                     print(f"[Worker] 删除队列失败 ({queue_key}): {str(e)}")
+    
+    # ========== 打单任务相关方法 ==========
+    
+    async def _auto_trigger_document_print(self, db, waybill: Waybill, form_data_dict: dict):
+        """
+        自动触发打单
+        
+        在以下场景调用：
+        1. 货站录单成功后（cargo_station_record_status = "3"），触发完整打单流程（制单文档打印 + 固定打印流程）
+        2. 南航不需要制单时（开关不为"0"），直接触发固定打印流程（货运主单、安检申报单、标签单）
+        
+        创建打单RPA任务到队列中，由Worker异步执行
+        
+        Args:
+            db: 数据库会话
+            waybill: 运单对象
+            form_data_dict: 运单表单数据字典
+        """
+        from app.services.document_print_service import prepare_print_tasks, get_print_task_count
+        from app.models.config import BusinessConfig
+        
+        # 检查运单号是否存在
+        if not waybill.waybill_number:
+            print(f"[Worker-{self.worker_id}] 运单号不存在，跳过自动打单，运单ID: {waybill.id}")
+            return
+        
+        print(f"[Worker-{self.worker_id}] 开始自动触发打单，运单ID: {waybill.id}")
+        
+        try:
+            # 获取航司类型
+            airline = form_data_dict.get("airline", "")
+            
+            # 获取业务参数配置
+            config = db.query(BusinessConfig).first()
+            if not config:
+                print(f"[Worker-{self.worker_id}] 业务参数未配置，跳过自动打单")
+                return
+            business_config = json.loads(config.config_data)
+            
+            # 准备打印任务
+            print_tasks = prepare_print_tasks(
+                waybill_id=waybill.id,
+                waybill_number=waybill.waybill_number,
+                airline=airline,
+                business_config=business_config
+            )
+            
+            # 检查是否有打印任务
+            task_count = get_print_task_count(print_tasks)
+            if task_count == 0:
+                print(f"[Worker-{self.worker_id}] 没有可执行的打印任务，跳过自动打单")
+                return
+            
+            # 检查是否已有待执行或执行中的打单任务
+            existing_task = rpa_task_service.get_pending_task_for_target(
+                db,
+                target_type=RPATargetType.WAYBILL.value,
+                target_id=waybill.id,
+                task_type=RPATaskType.DOCUMENT_PRINT.value
+            )
+            if existing_task:
+                print(f"[Worker-{self.worker_id}] 已存在打单任务，跳过自动打单")
+                return
+            
+            # 创建打单RPA任务
+            task = rpa_task_service.create_task(
+                db=db,
+                task_type=RPATaskType.DOCUMENT_PRINT.value,
+                target_type=RPATargetType.WAYBILL.value,
+                target_id=waybill.id,
+                params=print_tasks,
+                created_by=None  # 自动触发，无创建人
+            )
+            
+            print(f"[Worker-{self.worker_id}] 自动打单任务已创建，任务ID: {task.id}, 共 {task_count} 个打印任务")
+            
+        except Exception as e:
+            print(f"[Worker-{self.worker_id}] 自动触发打单失败: {str(e)}")
+            # 自动打单失败不影响货站录单的成功状态
+    
+    async def _execute_document_print(self, db, task: RPATask):
+        """
+        执行单据打印任务
+        
+        打单任务包含多个子任务，按顺序执行：
+        - 制单后打印流程（遍历文件夹下的所有文件）
+        - 固定打印流程（如货运主单、安检申报单、标签单等）
+        """
+        params = json.loads(task.params)
+        
+        # 更新运单打单状态为执行中
+        waybill = db.query(Waybill).filter(Waybill.id == task.target_id).first()
+        if not waybill:
+            raise Exception("运单不存在")
+        
+        waybill.document_print_status = "1"  # 打单中
+        db.commit()
+        
+        # 获取所有打印子任务
+        tasks = params.get("tasks", [])
+        if not tasks:
+            raise Exception("没有打印任务")
+        
+        airline = params.get("airline", "")
+        waybill_id = params.get("waybill_id")
+        waybill_number = params.get("waybill_number", "")
+        
+        print(f"[Worker-{self.worker_id}] 开始执行打单任务，运单ID: {waybill_id}, 航司: {airline}, 共 {len(tasks)} 个子任务")
+        
+        # 用于记录执行结果
+        completed_tasks = []
+        failed_task = None
+        
+        try:
+            # 按顺序执行每个打印子任务
+            for i, print_task in enumerate(tasks):
+                task_type = print_task.get("type")
+                task_desc = print_task.get("description", f"打印任务{i+1}")
+                job_uuid = print_task.get("job_uuid")
+                task_params = print_task.get("params", {})
+                
+                print(f"[Worker-{self.worker_id}] 执行打印子任务 ({i+1}/{len(tasks)}): {task_desc}")
+                
+                try:
+                    # 根据任务类型调用对应的RPA接口
+                    success = await self._execute_single_print_task(
+                        task_type, job_uuid, task_params
+                    )
+                    
+                    if success:
+                        completed_tasks.append({
+                            "description": task_desc,
+                            "status": "success"
+                        })
+                        print(f"[Worker-{self.worker_id}] 打印子任务成功: {task_desc}")
+                    else:
+                        failed_task = {
+                            "description": task_desc,
+                            "status": "failed",
+                            "error": "RPA执行失败"
+                        }
+                        print(f"[Worker-{self.worker_id}] 打印子任务失败: {task_desc}")
+                        break
+                        
+                except Exception as e:
+                    failed_task = {
+                        "description": task_desc,
+                        "status": "failed",
+                        "error": str(e)
+                    }
+                    print(f"[Worker-{self.worker_id}] 打印子任务异常: {task_desc}, 错误: {str(e)}")
+                    break
+            
+            # 更新状态
+            db.refresh(waybill)
+            
+            if failed_task:
+                waybill.document_print_status = "2"  # 失败
+                db.commit()
+                rpa_task_service.complete_task(
+                    db, task.id, False,
+                    error_message=f"打印任务失败: {failed_task.get('description')} - {failed_task.get('error')}"
+                )
+            else:
+                waybill.document_print_status = "3"  # 成功
+                db.commit()
+                print(f"[Worker-{self.worker_id}] 所有打印任务完成，运单ID: {waybill_id}")
+                rpa_task_service.complete_task(db, task.id, True)
+                
+        except Exception as e:
+            db.refresh(waybill)
+            waybill.document_print_status = "2"  # 失败
+            db.commit()
+            raise e
+    
+    async def _execute_single_print_task(
+        self,
+        task_type: str,
+        job_uuid: str,
+        params: dict
+    ) -> bool:
+        """
+        执行单个打印子任务
+        
+        Args:
+            task_type: 任务类型（file_print, shenzhen_air_main_waybill_print, china_southern_air_main_waybill_print, 等）
+            job_uuid: RPA jobUuid
+            params: 任务参数
+        
+        Returns:
+            是否执行成功
+        """
+        work_uuid = None
+        
+        try:
+            # 根据任务类型调用对应的RPA接口
+            if task_type == "file_print":
+                # 文件打印（深航和南航通用）
+                rpa_response = await asyncio.wait_for(
+                    rpa_service.print_file(
+                        absolute_path_to_the_file=params.get("absolute_path_to_the_file", ""),
+                        printer_name=params.get("printer_name", "")
+                    ),
+                    timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                )
+            elif task_type == "shenzhen_air_main_waybill_print":
+                # 深航货运主单打印
+                rpa_response = await asyncio.wait_for(
+                    rpa_service.print_shenzhen_air_main_waybill(
+                        system_url=params.get("system_url", ""),
+                        system_account=params.get("system_account", ""),
+                        login_password=params.get("login_password", ""),
+                        waybill_number_8=params.get("waybill_number_8", ""),
+                        printer_name=params.get("printer_name", "")
+                    ),
+                    timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                )
+            elif task_type == "china_southern_air_main_waybill_print":
+                # 南航货运主单打印
+                rpa_response = await asyncio.wait_for(
+                    rpa_service.print_china_southern_air_main_waybill(
+                        system_url=params.get("system_url", ""),
+                        system_account=params.get("system_account", ""),
+                        login_password=params.get("login_password", ""),
+                        waybill_number_8=params.get("waybill_number_8", ""),
+                        printer_name=params.get("printer_name", "")
+                    ),
+                    timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                )
+            elif task_type == "china_southern_air_security_print":
+                # 南航货运安检申报单打印
+                rpa_response = await asyncio.wait_for(
+                    rpa_service.print_china_southern_air_security_declaration(
+                        system_url=params.get("system_url", ""),
+                        system_account=params.get("system_account", ""),
+                        login_password=params.get("login_password", ""),
+                        waybill_number_8=params.get("waybill_number_8", ""),
+                        printer_name=params.get("printer_name", "")
+                    ),
+                    timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                )
+            elif task_type == "china_southern_air_label_print":
+                # 南航标签单打印
+                rpa_response = await asyncio.wait_for(
+                    rpa_service.print_china_southern_air_label(
+                        address_of_the_application_executable_file_tangyi=params.get("address_of_the_application_executable_file_tangyi", ""),
+                        system_account=params.get("system_account", ""),
+                        login_password=params.get("login_password", ""),
+                        waybill_number_8=params.get("waybill_number_8", ""),
+                        printer_name=params.get("printer_name", "")
+                    ),
+                    timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                )
+            else:
+                print(f"[Worker-{self.worker_id}] 未知的打印任务类型: {task_type}")
+                return False
+            
+            # 提取workUuid
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+            if not work_uuid:
+                print(f"[Worker-{self.worker_id}] RPA打印接口未返回workUuid")
+                return False
+            
+            # 轮询RPA状态
+            return await self._poll_print_task_status(job_uuid, work_uuid)
+            
+        except asyncio.TimeoutError:
+            print(f"[Worker-{self.worker_id}] 打印RPA接口调用超时")
+            return False
+        except Exception as e:
+            print(f"[Worker-{self.worker_id}] 打印任务执行异常: {str(e)}")
+            return False
+    
+    async def _poll_print_task_status(self, job_uuid: str, work_uuid: str) -> bool:
+        """
+        轮询打印任务RPA状态
+        
+        Args:
+            job_uuid: RPA jobUuid
+            work_uuid: RPA workUuid
+        
+        Returns:
+            是否执行成功
+        """
+        max_polls = settings.RPA_POLL_MAX_COUNT
+        poll_interval = settings.RPA_POLL_INTERVAL
+        
+        for i in range(max_polls):
+            await asyncio.sleep(poll_interval)
+            
+            try:
+                # 复用文件打印状态查询接口
+                status_data = await rpa_service.query_file_print_status(job_uuid)
+                status_info = rpa_service.extract_status_from_query_response(status_data, work_uuid)
+                
+                if status_info:
+                    rpa_status = status_info.get("status")
+                    if rpa_status is not None:
+                        # RPA状态: 1=执行中, 3=失败, 5=成功
+                        if rpa_status == 5:
+                            return True
+                        elif rpa_status == 3:
+                            print(f"[Worker-{self.worker_id}] 打印RPA执行失败")
+                            return False
+                        # 状态为1时继续轮询
+            except Exception as e:
+                print(f"[Worker-{self.worker_id}] 轮询打印状态失败: {str(e)}")
+                continue
+        
+        # 轮询超时
+        print(f"[Worker-{self.worker_id}] 打印RPA状态轮询超时")
+        return False
 
 
 # 全局Worker管理器

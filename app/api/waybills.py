@@ -709,6 +709,68 @@ def _get_business_config(db: Session) -> dict:
     return json.loads(config.config_data)
 
 
+def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, business_config: dict):
+    """
+    货站录单成功后自动触发打单
+    
+    创建打单RPA任务到队列中，由Worker异步执行
+    
+    Args:
+        db: 数据库会话
+        waybill: 运单对象
+        form_data_dict: 运单表单数据字典
+        business_config: 业务参数配置
+    """
+    from app.services.document_print_service import prepare_print_tasks, get_print_task_count
+    from app.services.rpa_task_service import rpa_task_service
+    from app.models.rpa_task import RPATaskType, RPATargetType
+    
+    try:
+        # 获取航司类型
+        airline = form_data_dict.get("airline", "")
+        
+        # 准备打印任务
+        print_tasks = prepare_print_tasks(
+            waybill_id=waybill.id,
+            waybill_number=waybill.waybill_number,
+            airline=airline,
+            business_config=business_config
+        )
+        
+        # 检查是否有打印任务
+        task_count = get_print_task_count(print_tasks)
+        if task_count == 0:
+            print(f"没有可执行的打印任务，跳过自动打单，运单ID: {waybill.id}")
+            return
+        
+        # 检查是否已有待执行或执行中的打单任务
+        existing_task = rpa_task_service.get_pending_task_for_target(
+            db,
+            target_type=RPATargetType.WAYBILL.value,
+            target_id=waybill.id,
+            task_type=RPATaskType.DOCUMENT_PRINT.value
+        )
+        if existing_task:
+            print(f"已存在打单任务，跳过自动打单，运单ID: {waybill.id}")
+            return
+        
+        # 创建打单RPA任务
+        task = rpa_task_service.create_task(
+            db=db,
+            task_type=RPATaskType.DOCUMENT_PRINT.value,
+            target_type=RPATargetType.WAYBILL.value,
+            target_id=waybill.id,
+            params=print_tasks,
+            created_by=None  # 自动触发，无创建人
+        )
+        
+        print(f"自动打单任务已创建，任务ID: {task.id}, 共 {task_count} 个打印任务，运单ID: {waybill.id}")
+        
+    except Exception as e:
+        print(f"自动触发打单失败，运单ID: {waybill.id}, 错误: {str(e)}")
+        # 自动打单失败不影响货站录单的成功状态
+
+
 def _extract_shenzhen_air_params(form_data: dict, business_config: dict) -> dict:
     """
     提取并映射深航开单RPA接口所需的参数
@@ -1403,6 +1465,10 @@ async def execute_cargo_station_record(
         db.commit()
         db.refresh(waybill)
         
+        # 货站录单成功后自动触发打单
+        if all_success and waybill.waybill_number:
+            _auto_trigger_document_print(db, waybill, form_data_dict, business_config)
+        
         # 解析form_data JSON
         form_data_dict = json.loads(waybill.form_data)
         
@@ -1560,4 +1626,283 @@ async def get_waybill_documents(
         path=str(doc_path),
         media_type=media_type,
         filename=filename
+    )
+
+
+@router.post("/{waybill_id}/print-document", summary="单个文档打印")
+async def print_single_document(
+    waybill_id: str,
+    print_type: str,
+    doc_type: str = None,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    单个文档打印接口
+    
+    此接口用于打印单个文档，支持以下打印类型：
+    
+    **文件打印 (print_type="file")**
+    - 打印 generated_files/{waybill_id}/ 目录下的指定文档
+    - 需要指定 doc_type 参数，如 "交接单"、"航空货物明细表" 等
+    - 系统会自动查找对应的文件（支持 .pdf, .xlsx, .docx 格式）
+    
+    **航司货运主单打印 (print_type="main_waybill")**
+    - 调用航司货运主单打印RPA流程
+    - 深航和南航均支持
+    
+    **南航安检申报单打印 (print_type="security_declaration")**
+    - 调用南航货运安检申报单打印RPA流程
+    - 仅南航支持
+    
+    **南航标签单打印 (print_type="label")**
+    - 调用南航标签单打印RPA流程
+    - 仅南航支持
+    
+    前置条件：
+    - 运单必须已成功开单（airline_record_status = "3"）
+    - 运单号必须存在（waybill_number 不为空）
+    
+    参数说明：
+    - **waybill_id**: 运单ID（字符串格式）
+    - **print_type**: 打印类型
+      - "file": 文件打印
+      - "main_waybill": 航司货运主单打印
+      - "security_declaration": 安检申报单打印（南航专用）
+      - "label": 标签单打印（南航专用）
+    - **doc_type**: 文档类型（当 print_type 为 "file" 时必填）
+      - 深航文档类型：交接单、航空货物明细表、货物收运检查清单、标签单、充氧类水生动物货物收运检查单
+      - 南航文档类型：充氧类水生动物货物收运检查单
+    
+    返回：
+    - 成功：返回运单信息和打印任务信息
+    - 失败：返回错误信息
+    """
+    from app.services.document_print_service import (
+        get_printer_name_from_config,
+        build_rpa_file_path,
+        list_waybill_files
+    )
+    from app.models.rpa_task import RPATaskType, RPATargetType
+    from app.services.rpa_task_service import rpa_task_service
+    from app.config import settings
+    
+    # 验证 print_type 参数
+    valid_print_types = ["file", "main_waybill", "security_declaration", "label"]
+    if print_type not in valid_print_types:
+        raise BadRequestException(f"无效的打印类型，有效值：{', '.join(valid_print_types)}")
+    
+    # 如果是文件打印，必须指定 doc_type
+    if print_type == "file" and not doc_type:
+        raise BadRequestException("文件打印类型必须指定 doc_type 参数")
+    
+    # 查询运单
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    if not waybill:
+        raise NotFoundException("运单不存在")
+    
+    # 验证运单状态：必须已成功开单
+    if waybill.airline_record_status != "3":
+        raise BadRequestException("运单尚未完成航司录单，无法执行打印")
+    
+    # 验证运单号存在
+    if not waybill.waybill_number:
+        raise BadRequestException("运单号不存在，无法执行打印")
+    
+    # 解析form_data获取航司类型
+    form_data_dict = json.loads(waybill.form_data)
+    airline = form_data_dict.get("airline", "")
+    
+    # 标准化航司代码
+    airline_code = ""
+    if airline in ["1", "深圳航空", "shenzhen_air"]:
+        airline_code = "shenzhen_air"
+    elif airline in ["2", "南方航空", "china_southern_air"]:
+        airline_code = "china_southern_air"
+    else:
+        raise BadRequestException(f"不支持的航司类型: {airline}")
+    
+    # 验证打印类型与航司的兼容性
+    if print_type == "security_declaration" and airline_code != "china_southern_air":
+        raise BadRequestException("安检申报单打印仅支持南航")
+    if print_type == "label" and airline_code != "china_southern_air":
+        raise BadRequestException("标签单打印仅支持南航")
+    
+    # 获取业务参数配置
+    config = db.query(BusinessConfig).first()
+    if not config:
+        raise BadRequestException("业务参数未配置，请先配置业务参数")
+    business_config = json.loads(config.config_data)
+    
+    # 获取运单号后8位
+    waybill_number_8 = waybill.waybill_number.split("-")[-1] if "-" in waybill.waybill_number else waybill.waybill_number
+    
+    # 构建打印任务参数
+    print_task = None
+    
+    if print_type == "file":
+        # 文件打印：查找并打印指定文档
+        files = list_waybill_files(int(waybill_id))
+        target_file = None
+        for f in files:
+            if f["doc_type"] == doc_type:
+                target_file = f
+                break
+        
+        if not target_file:
+            raise BadRequestException(f"未找到文档：{doc_type}，请确认货站录单已完成")
+        
+        # 获取打印机名称
+        printer_name = get_printer_name_from_config(business_config, airline_code, doc_type)
+        if not printer_name:
+            raise BadRequestException(f"未配置文档 {doc_type} 的打印机，请检查业务参数中的打印机配置")
+        
+        # 构建RPA文件路径
+        rpa_file_path = build_rpa_file_path(int(waybill_id), target_file["filename"])
+        
+        print_task = {
+            "type": "file_print",
+            "job_uuid": settings.RPA_FILE_PRINT_JOB_UUID,
+            "description": f"文档打印-{doc_type}",
+            "params": {
+                "absolute_path_to_the_file": rpa_file_path,
+                "printer_name": printer_name
+            }
+        }
+    
+    elif print_type == "main_waybill":
+        # 航司货运主单打印
+        printer_name = get_printer_name_from_config(business_config, airline_code, "航司货运主单")
+        if not printer_name:
+            raise BadRequestException("未配置航司货运主单的打印机，请检查业务参数中的打印机配置")
+        
+        if airline_code == "shenzhen_air":
+            # 深航货运主单打印
+            shenzhen_air_config = business_config.get("shenzhen_air", {})
+            booking_config = shenzhen_air_config.get("booking", {})
+            login_config = booking_config.get("shenzhen_air_login", {})
+            
+            print_task = {
+                "type": "shenzhen_air_main_waybill_print",
+                "job_uuid": settings.RPA_SHENZHEN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID,
+                "description": "深航-货运主单打印",
+                "params": {
+                    "system_url": login_config.get("system_url", ""),
+                    "system_account": login_config.get("system_account", ""),
+                    "login_password": login_config.get("login_password", ""),
+                    "waybill_number_8": waybill_number_8,
+                    "printer_name": printer_name
+                }
+            }
+        else:
+            # 南航货运主单打印
+            csa_config = business_config.get("china_southern_air", {})
+            booking_and_create_config = csa_config.get("booking_and_create", {})
+            csa_login_config = booking_and_create_config.get("china_southern_air_login", {})
+            
+            print_task = {
+                "type": "china_southern_air_main_waybill_print",
+                "job_uuid": settings.RPA_CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID,
+                "description": "南航-货运主单打印",
+                "params": {
+                    "system_url": csa_login_config.get("system_url", ""),
+                    "system_account": csa_login_config.get("system_account", ""),
+                    "login_password": csa_login_config.get("login_password", ""),
+                    "waybill_number_8": waybill_number_8,
+                    "printer_name": printer_name
+                }
+            }
+    
+    elif print_type == "security_declaration":
+        # 南航安检申报单打印
+        printer_name = get_printer_name_from_config(business_config, "china_southern_air", "航空货物安检申报清单")
+        if not printer_name:
+            raise BadRequestException("未配置安检申报单的打印机，请检查业务参数中的打印机配置")
+        
+        csa_config = business_config.get("china_southern_air", {})
+        booking_and_create_config = csa_config.get("booking_and_create", {})
+        csa_login_config = booking_and_create_config.get("china_southern_air_login", {})
+        
+        print_task = {
+            "type": "china_southern_air_security_print",
+            "job_uuid": settings.RPA_CHINA_SOUTHERN_AIR_SECURITY_PRINT_JOB_UUID,
+            "description": "南航-货运安检申报单打印",
+            "params": {
+                "system_url": csa_login_config.get("system_url", ""),
+                "system_account": csa_login_config.get("system_account", ""),
+                "login_password": csa_login_config.get("login_password", ""),
+                "waybill_number_8": waybill_number_8,
+                "printer_name": printer_name
+            }
+        }
+    
+    elif print_type == "label":
+        # 南航标签单打印
+        printer_name = get_printer_name_from_config(business_config, "china_southern_air", "标签单")
+        if not printer_name:
+            raise BadRequestException("未配置标签单的打印机，请检查业务参数中的打印机配置")
+        
+        csa_config = business_config.get("china_southern_air", {})
+        booking_and_create_config = csa_config.get("booking_and_create", {})
+        csa_login_config = booking_and_create_config.get("china_southern_air_login", {})
+        tangyi_login_config = booking_and_create_config.get("tangi_login", {})
+        
+        print_task = {
+            "type": "china_southern_air_label_print",
+            "job_uuid": settings.RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID,
+            "description": "南航-标签单打印",
+            "params": {
+                "address_of_the_application_executable_file_tangyi": tangyi_login_config.get("app_name", ""),
+                "system_account": csa_login_config.get("system_account", ""),
+                "login_password": csa_login_config.get("login_password", ""),
+                "waybill_number_8": waybill_number_8,
+                "printer_name": printer_name
+            }
+        }
+    
+    # 构建任务参数
+    print_tasks = {
+        "airline": airline_code,
+        "waybill_id": int(waybill_id),
+        "waybill_number": waybill.waybill_number,
+        "tasks": [print_task]
+    }
+    
+    # 创建打印RPA任务（单个文档打印不检查是否存在其他任务，允许重复打印）
+    task = rpa_task_service.create_task(
+        db=db,
+        task_type=RPATaskType.DOCUMENT_PRINT.value,
+        target_type=RPATargetType.WAYBILL.value,
+        target_id=int(waybill_id),
+        params=print_tasks,
+        created_by=current_user.id if hasattr(current_user, 'id') else None
+    )
+    
+    # 刷新运单数据
+    db.refresh(waybill)
+    
+    # 返回数据
+    waybill_data = {
+        "id": str(waybill.id),
+        "waybill_number": waybill.waybill_number,
+        "form_data": form_data_dict,
+        "airline_record_status": waybill.airline_record_status,
+        "cargo_station_record_status": waybill.cargo_station_record_status,
+        "document_print_status": waybill.document_print_status,
+        "waybill_void_status": waybill.waybill_void_status,
+        "booking_date": waybill.booking_date.isoformat() if waybill.booking_date else None,
+        "created_at": format_datetime_china(waybill.created_at),
+        "updated_at": format_datetime_china(waybill.updated_at),
+        "print_task": {
+            "task_id": str(task.id),
+            "print_type": print_type,
+            "doc_type": doc_type,
+            "description": print_task.get("description"),
+            "airline": airline_code
+        }
+    }
+    
+    return success_response(
+        data=waybill_data,
+        msg=f"打印任务已提交：{print_task.get('description')}"
     )

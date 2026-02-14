@@ -21,6 +21,8 @@ class RPATaskType(str, enum.Enum):
     CHINA_SOUTHERN_AIR_WAYBILL_VOID = "CHINA_SOUTHERN_AIR_WAYBILL_VOID"  # 南航作废
     CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE = "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE"  # 南航新增运单
     CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA = "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA"  # 南航修改数据后开单（从订舱回显数据后修改再开单）
+    # 打单任务（通用）
+    DOCUMENT_PRINT = "DOCUMENT_PRINT"  # 单据打印（深航和南航通用，一个任务包含多个打印流程）
 
 
 class RPATaskStatus(str, enum.Enum):
