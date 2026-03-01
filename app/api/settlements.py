@@ -128,16 +128,14 @@ async def get_settlements(
     - **master_airwaybill_number**: 主单号（模糊搜索，从form_data JSON中提取）
     - **settlement_status**: 结算状态（精确匹配，从form_data JSON中提取，可选值：未结算、已结算）
     - **financial_review**: 财务审核状态（精确匹配，从form_data JSON中提取，可选值：未审核、已审核）
-    - **airline_record_time_start**: 航司录单时间开始（格式：YYYY-MM-DD，从form_data JSON中的airline_record_time字段筛选）
-    - **airline_record_time_end**: 航司录单时间结束（格式：YYYY-MM-DD，从form_data JSON中的airline_record_time字段筛选）
+    - **airline_record_time_start**: 航司录单时间开始（格式：YYYY-MM-DD；筛选逻辑与列表展示一致：优先按关联运单的 booking_date，无则按 form_data.airline_record_time）
+    - **airline_record_time_end**: 航司录单时间结束（格式：YYYY-MM-DD；同上）
     - **page**: 页码（默认1）
     - **page_size**: 每页数量（默认10，最大100）
     
     支持多条件组合筛选，航司录单时间从form_data JSON中提取进行日期范围筛选
     """
-    # 构建基础查询
-    # 注意：虽然查询筛选不需要关联运单表，但列表返回时可能需要从运单表获取航司录单时间作为fallback
-    # 所以保留outerjoin，但查询筛选时只使用form_data中的airline_record_time
+    # 构建基础查询：outerjoin 运单表，列表返回与时间筛选都需用到（航司录单时间优先取运单 booking_date，无则取 form_data.airline_record_time）
     query_obj = db.query(Settlement).outerjoin(
         Waybill,
         func.cast(
@@ -246,31 +244,42 @@ async def get_settlements(
             ) == query.financial_review
         )
     
-    # 航司录单时间范围筛选（从存储的结算单form_data JSON中的airline_record_time字段提取）
-    # 注意：筛选时只考虑存储在结算单form_data中的值，不考虑通过主单号关联运单表获取的值
+    # 航司录单时间范围筛选：与列表展示逻辑一致，优先用关联运单的 booking_date，否则用 form_data.airline_record_time
+    # 这样用户按“航司录单时间”搜索时，能命中列表里展示的同一套数据
     if query.airline_record_time_start or query.airline_record_time_end:
-        # 提取airline_record_time字段（格式：YYYY-MM-DD字符串）
-        # 由于airline_record_time是YYYY-MM-DD格式的字符串，可以直接进行字符串比较
-        airline_record_time_expr = func.cast(
+        start_date = query.airline_record_time_start
+        end_date = query.airline_record_time_end
+        # form_data 中的 airline_record_time（JSON 字符串 YYYY-MM-DD），MySQL CAST(JSON_EXTRACT(...) AS CHAR) 得到无引号字符串
+        form_data_airline_time_expr = func.cast(
             func.json_extract(
                 func.cast(Settlement.form_data, JSON),
                 "$.airline_record_time"
             ),
             String(100)
         )
-        
-        if query.airline_record_time_start:
-            # 将查询参数转换为字符串格式进行比较（YYYY-MM-DD格式可以直接字符串比较）
-            start_date_str = query.airline_record_time_start.isoformat()
-            query_obj = query_obj.filter(
-                airline_record_time_expr >= start_date_str
+        # 条件：有效航司录单时间在 [start, end] 内
+        # 有效时间 = 有关联运单且运单有 booking_date 则用 Waybill.booking_date，否则用 form_data.airline_record_time
+        time_conds = []
+        if start_date:
+            # 运单有 booking_date 时：Waybill.booking_date >= start
+            # 运单无 booking_date 时：form_data.airline_record_time >= start_str
+            start_str = start_date.isoformat()
+            time_conds.append(
+                or_(
+                    (Waybill.booking_date.isnot(None)) & (Waybill.booking_date >= start_date),
+                    (Waybill.booking_date.is_(None)) & (form_data_airline_time_expr >= start_str)
+                )
             )
-        if query.airline_record_time_end:
-            # 将查询参数转换为字符串格式进行比较
-            end_date_str = query.airline_record_time_end.isoformat()
-            query_obj = query_obj.filter(
-                airline_record_time_expr <= end_date_str
+        if end_date:
+            end_str = end_date.isoformat()
+            time_conds.append(
+                or_(
+                    (Waybill.booking_date.isnot(None)) & (Waybill.booking_date <= end_date),
+                    (Waybill.booking_date.is_(None)) & (form_data_airline_time_expr <= end_str)
+                )
             )
+        for c in time_conds:
+            query_obj = query_obj.filter(c)
     
     # 获取总数（需要去重，因为JOIN可能产生重复）
     total = query_obj.distinct().count()
