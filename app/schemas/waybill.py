@@ -106,6 +106,17 @@ class WaybillCreate(BaseModel):
     form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），根据航司类型包含不同的字段结构")
 
 
+class WaybillUpdate(BaseModel):
+    """
+    修改运单 schema
+
+    仅当运单处于「未开单」（airline_record_status="0"）或「开单失败」（airline_record_status="2"）时可修改，修改后可重新开单。
+    form_data 结构与 WaybillCreate 一致；booking_date 可选，不传则保持原值。
+    """
+    form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），与新增运单结构一致，整体替换")
+    booking_date: Optional[date] = Field(None, description="开单日期（格式：YYYY-MM-DD），可选，不传则不修改")
+
+
 class WaybillQuery(BaseModel):
     """运单查询schema"""
     airline_record_status: Optional[str] = Field(None, description="航司录单执行状态筛选（数据字典值精确匹配：0=未开单，1=开单中，2=失败，3=成功）")

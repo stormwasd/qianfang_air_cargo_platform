@@ -13,7 +13,7 @@ from app.models.waybill import Waybill
 from app.models.settlement import Settlement
 from app.models.config import BusinessConfig
 from app.schemas.waybill import (
-    WaybillCreate, WaybillQuery
+    WaybillCreate, WaybillUpdate, WaybillQuery
 )
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china, get_china_today, get_china_now
@@ -314,6 +314,56 @@ async def get_waybill(
     }
     
     return success_response(data=waybill_data, msg="查询成功")
+
+
+@router.put("/{waybill_id}", summary="修改运单信息")
+async def update_waybill(
+    waybill_id: str,
+    payload: WaybillUpdate,
+    current_user=Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    修改运单信息接口
+
+    - 仅当运单处于「未开单」（airline_record_status="0"）或「开单失败」（airline_record_status="2"）时允许修改，修改后可重新开单
+    - 可更新 form_data（整体替换）与可选的 booking_date
+    - waybill_number、departure_time、各执行状态等由系统/RPA 维护，不可通过本接口修改
+    """
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    if not waybill:
+        raise NotFoundException("运单不存在")
+
+    # 未开单(0)或开单失败(2)可修改并重新开单；开单中(1)、成功(3)不可修改
+    if waybill.airline_record_status not in ("0", "2"):
+        raise BadRequestException(
+            "仅未开单或开单失败状态的运单可修改；当前运单正在开单中或已开单成功，无法修改"
+        )
+
+    form_data_json = json.dumps(payload.form_data, ensure_ascii=False)
+    waybill.form_data = form_data_json
+    if payload.booking_date is not None:
+        waybill.booking_date = payload.booking_date
+
+    db.commit()
+    db.refresh(waybill)
+
+    form_data_dict = json.loads(waybill.form_data)
+    waybill_data = {
+        "id": str(waybill.id),
+        "waybill_number": waybill.waybill_number,
+        "form_data": form_data_dict,
+        "airline_record_status": waybill.airline_record_status,
+        "cargo_station_record_status": waybill.cargo_station_record_status,
+        "document_print_status": waybill.document_print_status,
+        "waybill_void_status": waybill.waybill_void_status,
+        "departure_time": format_datetime_china(waybill.departure_time),
+        "booking_date": waybill.booking_date.isoformat(),
+        "rpa_work_uuid": waybill.rpa_work_uuid,
+        "created_at": format_datetime_china(waybill.created_at),
+        "updated_at": format_datetime_china(waybill.updated_at)
+    }
+    return success_response(data=waybill_data, msg="运单修改成功")
 
 
 def poll_rpa_void_status(waybill_id: int, work_uuid: str, job_uuid: str):
