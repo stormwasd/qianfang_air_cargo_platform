@@ -133,7 +133,7 @@ async def get_settlements(
     - **page**: 页码（默认1）
     - **page_size**: 每页数量（默认10，最大100）
     
-    支持多条件组合筛选，航司录单时间从form_data JSON中提取进行日期范围筛选
+    支持多条件组合筛选，航司录单时间从form_data JSON中提取进行日期范围筛选。列表不包含 waybill_void_status='3'（作废成功）的结算单。
     """
     # 构建基础查询：outerjoin 运单表，列表返回与时间筛选都需用到（航司录单时间优先取运单 booking_date，无则取 form_data.airline_record_time）
     query_obj = db.query(Settlement).outerjoin(
@@ -146,7 +146,9 @@ async def get_settlements(
             String(100)
         ) == Waybill.waybill_number
     )
-    
+    # 列表不展示运单已作废成功的结算单（waybill_void_status='3' 表示作废成功）
+    query_obj = query_obj.filter(Settlement.waybill_void_status != "3")
+
     # 从form_data JSON中提取字段进行模糊搜索
     if query.airline:
         query_obj = query_obj.filter(
