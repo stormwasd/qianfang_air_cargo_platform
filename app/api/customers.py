@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.customer import Customer
 from app.schemas.customer import (
-    CustomerCreate, CustomerQuery
+    CustomerCreate, CustomerQuery, CustomerUpdate
 )
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china
@@ -56,6 +56,53 @@ async def create_customer(
     }
     
     return success_response(data=customer_data, msg="客户创建成功")
+
+
+@router.put("/{customer_id}", summary="编辑客户信息")
+async def update_customer(
+    customer_id: str,
+    payload: CustomerUpdate,
+    current_user=Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    编辑客户信息接口（部分更新，仅更新传入的字段）
+
+    - **customer_id**: 客户ID（字符串格式）
+    - **company_name**: 承运单位/公司名称（可选）
+    - **settlement_method**: 结算方式（可选）
+    - **rate**: 费率(元/公斤)（可选）
+    - **contact_person**: 联系人（可选）
+    - **contact_phone**: 联系电话（可选）
+    """
+    customer = db.query(Customer).filter(Customer.id == int(customer_id)).first()
+    if not customer:
+        raise NotFoundException("客户不存在")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        if value is not None:
+            setattr(customer, key, value)
+        else:
+            if key == "rate":
+                setattr(customer, key, Decimal("0"))
+            else:
+                setattr(customer, key, "")
+
+    db.commit()
+    db.refresh(customer)
+
+    customer_data = {
+        "id": str(customer.id),
+        "company_name": customer.company_name,
+        "settlement_method": customer.settlement_method,
+        "rate": float(customer.rate),
+        "contact_person": customer.contact_person,
+        "contact_phone": customer.contact_phone,
+        "created_at": format_datetime_china(customer.created_at),
+        "updated_at": format_datetime_china(customer.updated_at)
+    }
+    return success_response(data=customer_data, msg="客户信息更新成功")
 
 
 @router.get("", summary="客户信息查询")
