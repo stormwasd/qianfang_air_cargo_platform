@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.settlement import Settlement
 from app.models.waybill import Waybill
 from app.schemas.settlement import (
-    SettlementCreate, SettlementQuery
+    SettlementCreate, SettlementQuery, SettlementUpdate
 )
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china
@@ -365,4 +365,37 @@ async def get_settlement(
     }
     
     return success_response(data=settlement_data, msg="查询成功")
+
+
+@router.put("/{settlement_id}", summary="修改结算单")
+async def update_settlement(
+    settlement_id: str,
+    payload: SettlementUpdate,
+    current_user=Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    修改结算单接口
+
+    - **settlement_id**: 结算单ID（字符串格式）
+    - **form_data**: 与新增接口结构一致，传入完整的表单数据会整体替换原结算单的 form_data（基础信息、分单信息、主单信息）。不修改 waybill_void_status（由系统根据运单作废状态同步）。
+    """
+    settlement = db.query(Settlement).filter(Settlement.id == int(settlement_id)).first()
+    if not settlement:
+        raise NotFoundException("结算单不存在")
+
+    form_data_json = json.dumps(payload.form_data, ensure_ascii=False)
+    settlement.form_data = form_data_json
+    db.commit()
+    db.refresh(settlement)
+
+    form_data_dict = json.loads(settlement.form_data)
+    settlement_data = {
+        "id": str(settlement.id),
+        "form_data": form_data_dict,
+        "waybill_void_status": settlement.waybill_void_status,
+        "created_at": format_datetime_china(settlement.created_at),
+        "updated_at": format_datetime_china(settlement.updated_at),
+    }
+    return success_response(data=settlement_data, msg="结算单修改成功")
 

@@ -11,6 +11,11 @@ class SettlementCreate(BaseModel):
     form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式）")
 
 
+class SettlementUpdate(BaseModel):
+    """修改结算单schema"""
+    form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），与新增接口结构一致，整体替换原form_data")
+
+
 class SettlementQuery(BaseModel):
     """结算单查询schema"""
     airline: Optional[str] = Field(None, description="所属航司（模糊搜索，从form_data JSON中提取）")
