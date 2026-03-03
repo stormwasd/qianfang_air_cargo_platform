@@ -8,12 +8,12 @@ from datetime import datetime
 
 
 class CustomerCreate(BaseModel):
-    """创建客户schema"""
+    """创建客户schema（仅 company_name 必填，其余可选）"""
     company_name: str = Field(..., description="承运单位/公司名称", min_length=1, max_length=200)
-    settlement_method: str = Field(..., description="结算方式", min_length=1, max_length=50)
-    rate: Decimal = Field(..., description="费率(元/公斤)", ge=0)
-    contact_person: str = Field(..., description="联系人", min_length=1, max_length=50)
-    contact_phone: str = Field(..., description="联系电话", min_length=1, max_length=20)
+    settlement_method: Optional[str] = Field(None, description="结算方式", min_length=1, max_length=50)
+    rate: Optional[Decimal] = Field(None, description="费率(元/公斤)", ge=0)
+    contact_person: Optional[str] = Field(None, description="联系人", min_length=1, max_length=50)
+    contact_phone: Optional[str] = Field(None, description="联系电话", min_length=1, max_length=20)
 
 
 class CustomerUpdate(BaseModel):

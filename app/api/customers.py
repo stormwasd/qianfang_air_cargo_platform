@@ -1,6 +1,8 @@
 """
 客户管理接口
 """
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends
 from app.core.exceptions import NotFoundException
 from app.core.response import success_response
@@ -23,20 +25,20 @@ async def create_customer(
     db: Session = Depends(get_db)
 ):
     """
-    新增客户信息接口
-    
-    - **company_name**: 承运单位/公司名称
-    - **settlement_method**: 结算方式
-    - **rate**: 费率(元/公斤)
-    - **contact_person**: 联系人
-    - **contact_phone**: 联系电话
+    新增客户信息接口（仅 company_name 必填，其余字段可选）
+
+    - **company_name**: 承运单位/公司名称（必填）
+    - **settlement_method**: 结算方式（可选）
+    - **rate**: 费率(元/公斤)（可选，未传默认 0）
+    - **contact_person**: 联系人（可选）
+    - **contact_phone**: 联系电话（可选）
     """
     new_customer = Customer(
         company_name=customer.company_name,
-        settlement_method=customer.settlement_method,
-        rate=customer.rate,
-        contact_person=customer.contact_person,
-        contact_phone=customer.contact_phone
+        settlement_method=customer.settlement_method or "",
+        rate=customer.rate if customer.rate is not None else Decimal("0"),
+        contact_person=customer.contact_person or "",
+        contact_phone=customer.contact_phone or ""
     )
     db.add(new_customer)
     db.commit()
