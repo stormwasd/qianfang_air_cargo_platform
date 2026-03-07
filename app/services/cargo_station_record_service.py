@@ -123,6 +123,45 @@ def _parse_flight_date(flight_date: str) -> Tuple[str, str, str]:
     return "", "", ""
 
 
+def _safe_str(value) -> str:
+    """
+    安全地将值转换为适合写入Excel单元格的字符串。
+    
+    处理业务参数配置或form_data中可能出现的非标量类型（如list、None、dict），
+    避免openpyxl抛出 'Cannot convert ... to Excel' 异常。
+    """
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return str(value[0]) if value else ""
+    if isinstance(value, dict):
+        return ""
+    return str(value)
+
+
+def _cleanup_generated_documents(waybill_id: int, doc_filenames: List[str]):
+    """
+    清理指定运单目录下的旧生成文件，避免条件变化后遗留过期文件。
+    
+    Args:
+        waybill_id: 运单ID
+        doc_filenames: 要清理的文件基础名称列表（不含扩展名）
+    """
+    project_root = _get_project_root()
+    waybill_dir = project_root / GENERATED_FILES_DIR / str(waybill_id)
+    if not waybill_dir.exists():
+        return
+    
+    for doc_name in doc_filenames:
+        for ext in [".xlsx", ".pdf"]:
+            old_file = waybill_dir / f"{doc_name}{ext}"
+            if old_file.exists():
+                try:
+                    old_file.unlink()
+                except Exception as e:
+                    print(f"[货站录单] 清理旧文件失败 {old_file.name}: {e}")
+
+
 def _replace_cell_value(ws: Worksheet, search_value: str, replace_value: str) -> int:
     """
     在工作表中查找并替换单元格值
@@ -378,27 +417,30 @@ def generate_handover_document(
     wb = load_workbook(excel_path)
     ws = wb.active
     
-    # 提取数据
-    flight_info = form_data.get("flight_info", {})
-    cargo_info = form_data.get("cargo_info", {})
+    # 提取数据（使用 _safe_str 防止 list/None 等非标量类型导致 openpyxl 崩溃）
+    flight_info = form_data.get("flight_info") or {}
+    cargo_info = form_data.get("cargo_info") or {}
     
-    flight_number = flight_info.get("flight_number", "")
-    destination_code = flight_info.get("destination", "")
+    flight_number = _safe_str(flight_info.get("flight_number", ""))
+    destination_code = _safe_str(flight_info.get("destination", ""))
     destination_city = get_city_name_by_code(destination_code)
-    flight_date = flight_info.get("flight_date", "")
+    flight_date = _safe_str(flight_info.get("flight_date", ""))
     year, month, day = _parse_flight_date(flight_date)
     
-    quantity = str(cargo_info.get("quantity", ""))
-    weight = str(cargo_info.get("weight", ""))
-    chargeable_weight = str(cargo_info.get("chargeable_weight", ""))
-    cargo_name = str(cargo_info.get("cargo_name", ""))
-    package = str(cargo_info.get("package", ""))
+    quantity = _safe_str(cargo_info.get("quantity", ""))
+    weight = _safe_str(cargo_info.get("weight", ""))
+    chargeable_weight = _safe_str(cargo_info.get("chargeable_weight", weight))
+    cargo_name = _safe_str(cargo_info.get("cargo_name", ""))
+    package = _safe_str(cargo_info.get("package", ""))
     
     # 从业务参数配置中获取shipper_or_agent
-    shenzhen_air_config = business_config.get("shenzhen_air", {})
-    document_config = shenzhen_air_config.get("document", {})
-    domestic_cargo_checklist = document_config.get("domestic_cargo_checklist", {})
-    shipper_or_agent = domestic_cargo_checklist.get("shipper_or_agent", "")
+    shenzhen_air_config = business_config.get("shenzhen_air") or {}
+    document_config = shenzhen_air_config.get("document") or {}
+    domestic_cargo_checklist = document_config.get("domestic_cargo_checklist") or {}
+    shipper_or_agent = _safe_str(domestic_cargo_checklist.get("shipper_or_agent", ""))
+    
+    print(f"[交接单] 运单ID={waybill_id}, 航班号={flight_number}, 目的地={destination_city}, "
+          f"运单号={waybill_number}, 件数={quantity}, 重量={weight}, 代理人={shipper_or_agent}")
     
     # 使用直接单元格赋值（模板中短值如"1","2"等不适合用字符串搜索替换）
     ws['D4'] = flight_number        # ZH9505 → 航班号
@@ -415,7 +457,7 @@ def generate_handover_document(
     ws['B47'] = shipper_or_agent    # 唐文旭 → 托运人代理人
     
     # airline_consent_certificate 条件替换：非空时替换 H30 单元格
-    airline_consent_certificate = form_data.get("airline_consent_certificate", "")
+    airline_consent_certificate = _safe_str(form_data.get("airline_consent_certificate", ""))
     if airline_consent_certificate and len(airline_consent_certificate.strip()) > 0:
         ws['H30'] = airline_consent_certificate
     
@@ -463,13 +505,13 @@ def generate_cargo_detail_document(
     ws = wb.active
     
     # 提取数据
-    flight_info = form_data.get("flight_info", {})
-    cargo_info = form_data.get("cargo_info", {})
+    flight_info = form_data.get("flight_info") or {}
+    cargo_info = form_data.get("cargo_info") or {}
     
-    flight_number = flight_info.get("flight_number", "")
-    flight_date = flight_info.get("flight_date", "")
-    quantity = str(cargo_info.get("quantity", ""))
-    weight = str(cargo_info.get("weight", ""))
+    flight_number = _safe_str(flight_info.get("flight_number", ""))
+    flight_date = _safe_str(flight_info.get("flight_date", ""))
+    quantity = _safe_str(cargo_info.get("quantity", ""))
+    weight = _safe_str(cargo_info.get("weight", ""))
     
     # 使用直接单元格赋值（避免短值"18"/"296"的误匹配风险）
     ws['B3'] = flight_number              # ZH9949 → 航班号
@@ -527,17 +569,17 @@ def generate_cargo_checklist_document(
     ws = wb.active
     
     # 提取数据
-    flight_info = form_data.get("flight_info", {})
-    cargo_info = form_data.get("cargo_info", {})
+    flight_info = form_data.get("flight_info") or {}
+    cargo_info = form_data.get("cargo_info") or {}
     
-    flight_number = flight_info.get("flight_number", "")
-    destination_code = flight_info.get("destination", "")
+    flight_number = _safe_str(flight_info.get("flight_number", ""))
+    destination_code = _safe_str(flight_info.get("destination", ""))
     destination_city = get_city_name_by_code(destination_code)
-    quantity = str(cargo_info.get("quantity", ""))
-    weight = str(cargo_info.get("weight", ""))
-    chargeable_weight = str(cargo_info.get("chargeable_weight", ""))
-    cargo_name = str(cargo_info.get("cargo_name", ""))
-    package = str(cargo_info.get("package", ""))
+    quantity = _safe_str(cargo_info.get("quantity", ""))
+    weight = _safe_str(cargo_info.get("weight", ""))
+    chargeable_weight = _safe_str(cargo_info.get("chargeable_weight", ""))
+    cargo_name = _safe_str(cargo_info.get("cargo_name", ""))
+    package = _safe_str(cargo_info.get("package", ""))
     
     # 使用直接单元格赋值（避免短值如"110","400"的误匹配风险）
     ws['E4'] = flight_number          # ZH9929 → 航班号
@@ -564,16 +606,17 @@ def _fill_aquatic_animal_checklist_xlsx(ws: Worksheet, waybill_number: str,
     
     使用直接单元格赋值确保精确替换，避免短值误匹配。
     """
-    flight_info = form_data.get("flight_info", {})
-    cargo_info = form_data.get("cargo_info", {})
+    flight_info = form_data.get("flight_info") or {}
+    cargo_info = form_data.get("cargo_info") or {}
     
-    flight_number = flight_info.get("flight_number", "")
-    destination_code = flight_info.get("destination", "")
+    flight_number = _safe_str(flight_info.get("flight_number", ""))
+    destination_code = _safe_str(flight_info.get("destination", ""))
     destination_city = get_city_name_by_code(destination_code)
-    flight_date = flight_info.get("flight_date", "")
-    quantity = str(cargo_info.get("quantity", ""))
-    weight = str(cargo_info.get("weight", ""))
-    oxygen_supply_test_results = form_data.get("oxygen_supply_test_results", "")
+    flight_date = _safe_str(flight_info.get("flight_date", ""))
+    quantity = _safe_str(cargo_info.get("quantity", ""))
+    weight = _safe_str(cargo_info.get("weight", ""))
+    oxygen_supply_test_results = _safe_str(form_data.get("oxygen_supply_test_results", ""))
+    shipper_unit = _safe_str(shipper_unit)
     
     # 基本信息（直接单元格赋值）
     ws['D3'] = shipper_unit                  # 深圳丰德航空物流有限公司 → 托运代理人
@@ -631,8 +674,8 @@ def generate_aquatic_animal_checklist_document(
     ws = wb.active
     
     # 深航托运单位来源于 shipper_consignee_info
-    shipper_consignee_info = form_data.get("shipper_consignee_info", {})
-    shipper_unit = shipper_consignee_info.get("shipper_unit", "")
+    shipper_consignee_info = form_data.get("shipper_consignee_info") or {}
+    shipper_unit = _safe_str(shipper_consignee_info.get("shipper_unit", ""))
     
     _fill_aquatic_animal_checklist_xlsx(ws, waybill_number, form_data, shipper_unit)
     
@@ -681,16 +724,16 @@ def generate_label_document(
     ws = wb.active
     
     # 提取数据
-    flight_info = form_data.get("flight_info", {})
-    cargo_info = form_data.get("cargo_info", {})
+    flight_info = form_data.get("flight_info") or {}
+    cargo_info = form_data.get("cargo_info") or {}
     
-    flight_number = flight_info.get("flight_number", "")
-    origin_station_code = flight_info.get("origin_station", "")
-    destination_code = flight_info.get("destination", "")
+    flight_number = _safe_str(flight_info.get("flight_number", ""))
+    origin_station_code = _safe_str(flight_info.get("origin_station", ""))
+    destination_code = _safe_str(flight_info.get("destination", ""))
     origin_city = get_city_name_by_code(origin_station_code)
     destination_city = get_city_name_by_code(destination_code)
-    quantity = str(cargo_info.get("quantity", ""))
-    weight = str(cargo_info.get("weight", ""))
+    quantity = _safe_str(cargo_info.get("quantity", ""))
+    weight = _safe_str(cargo_info.get("weight", ""))
     
     # 只需修改第一个标签区域，后续标签通过公式自动同步
     ws['C2'] = waybill_number    # 479-58183392 → 航班运单号
@@ -734,10 +777,21 @@ def generate_all_documents(
         生成结果字典
     """
     results = {}
-    cargo_info = form_data.get("cargo_info", {})
-    cargo_code = str(cargo_info.get("cargo_code", ""))
-    declaration_list = str(form_data.get("declaration_list", ""))
-    aquatic_switch = form_data.get("oxygenated_aquatic_animal_goods_receipt_inspection_form_switch", "1")
+    cargo_info = form_data.get("cargo_info") or {}
+    cargo_code = _safe_str(cargo_info.get("cargo_code", ""))
+    declaration_list = _safe_str(form_data.get("declaration_list", ""))
+    aquatic_switch = _safe_str(form_data.get("oxygenated_aquatic_animal_goods_receipt_inspection_form_switch", "1"))
+    
+    # 先清理所有深航旧生成文件，避免条件变化后遗留过期文件
+    _cleanup_generated_documents(waybill_id, list(DOC_TYPE_TO_FILENAME.values()))
+    
+    print(f"[深航货站录单] 运单ID={waybill_id}, cargo_code={repr(cargo_code)}, "
+          f"declaration_list={repr(declaration_list)}, aquatic_switch={repr(aquatic_switch)}")
+    print(f"[深航货站录单] 条件判断: 交接单={'生成' if cargo_code == '044' else '跳过'}, "
+          f"明细表={'生成' if declaration_list == '0' else '跳过'}, "
+          f"收运检查单={'生成' if cargo_code == '044' else '跳过'}, "
+          f"标签=生成, "
+          f"充氧类={'生成' if aquatic_switch == '0' else '跳过'}")
     
     # 生成交接单（仅当 cargo_code == "044"）
     if cargo_code == "044":
@@ -928,8 +982,8 @@ def generate_csa_aquatic_animal_checklist_document(
     ws = wb.active
     
     # 南航托运单位来源于 contact_info
-    contact_info = form_data.get("contact_info", {})
-    shipper_unit = contact_info.get("shipper_unit", "")
+    contact_info = form_data.get("contact_info") or {}
+    shipper_unit = _safe_str(contact_info.get("shipper_unit", ""))
     
     _fill_aquatic_animal_checklist_xlsx(ws, waybill_number, form_data, shipper_unit)
     
@@ -964,7 +1018,14 @@ def generate_csa_all_documents(
     """
     results = {}
     
-    aquatic_switch = form_data.get("oxygenated_aquatic_animal_goods_receipt_inspection_form_switch", "1")
+    aquatic_switch = _safe_str(form_data.get("oxygenated_aquatic_animal_goods_receipt_inspection_form_switch", "1"))
+    
+    # 先清理南航旧生成文件，避免条件变化后遗留过期文件
+    _cleanup_generated_documents(waybill_id, list(CSA_DOC_TYPE_TO_FILENAME.values()))
+    
+    print(f"[南航货站录单] 运单ID={waybill_id}, aquatic_switch={repr(aquatic_switch)}, "
+          f"充氧类={'生成' if aquatic_switch == '0' else '跳过'}")
+    
     if aquatic_switch != "0":
         return results
     
@@ -1055,5 +1116,5 @@ def is_csa_cargo_station_record_required(form_data: dict) -> bool:
     Returns:
         是否需要进行货站录单
     """
-    aquatic_switch = form_data.get("oxygenated_aquatic_animal_goods_receipt_inspection_form_switch", "1")
+    aquatic_switch = _safe_str(form_data.get("oxygenated_aquatic_animal_goods_receipt_inspection_form_switch", "1"))
     return aquatic_switch == "0"
