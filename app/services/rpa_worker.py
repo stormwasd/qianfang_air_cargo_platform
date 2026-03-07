@@ -447,7 +447,7 @@ class RPAWorker:
         """
         自动生成货站录单文档
         
-        在深航开单成功后自动触发，生成交接单、航空货物明细表、货物收运检查清单
+        在深航开单成功后自动触发，根据条件生成交接单、航空货物明细表、货物收运检查单、标签等
         
         Args:
             db: 数据库会话
@@ -510,7 +510,7 @@ class RPAWorker:
         - 当 oxygenated_aquatic_animal_goods_receipt_inspection_form_switch 为 "0" 时：
           先生成文档，再触发打单（包含制单文档打印 + 固定打印流程）
         - 当开关不为 "0" 时：
-          跳过文档生成，直接触发打单（仅固定打印流程：货运主单、安检申报单、标签单）
+          跳过文档生成，直接触发打单（仅固定打印流程：货运主单、安检申报单、标签）
         
         Args:
             db: 数据库会话
@@ -526,7 +526,7 @@ class RPAWorker:
         # 检查是否需要进行货站录单
         if not is_csa_cargo_station_record_required(form_data_dict):
             print(f"[Worker-{self.worker_id}] 南航运单ID: {waybill.id} 不需要货站录单（开关不为0），直接触发固定打单流程")
-            # 不需要制单，但固定打单流程（货运主单、安检申报单、标签单）仍需执行
+            # 不需要制单，但固定打单流程（货运主单、安检申报单、标签）仍需执行
             await self._auto_trigger_document_print(db, waybill, form_data_dict)
             return
         
@@ -541,7 +541,7 @@ class RPAWorker:
             config = db.query(BusinessConfig).first()
             business_config = json.loads(config.config_data) if config else {}
             
-            # 生成所有文档（南航只有一个docx文件）
+            # 生成所有文档（南航充氧类水生动物货物收运检查单，xlsx格式）
             documents_result = generate_csa_all_documents(
                 waybill_id=waybill.id,
                 waybill_number=waybill.waybill_number,
@@ -552,7 +552,7 @@ class RPAWorker:
             # 检查是否所有文档都生成成功
             all_success = True
             for doc_type, doc_info in documents_result.items():
-                if doc_info.get("error") or not doc_info.get("docx"):
+                if doc_info.get("error") or not doc_info.get("excel"):
                     all_success = False
                     print(f"[Worker-{self.worker_id}] 南航文档生成失败: {doc_type}, 错误: {doc_info.get('error')}")
                     break
@@ -2008,7 +2008,7 @@ class RPAWorker:
         
         在以下场景调用：
         1. 货站录单成功后（cargo_station_record_status = "3"），触发完整打单流程（制单文档打印 + 固定打印流程）
-        2. 南航不需要制单时（开关不为"0"），直接触发固定打印流程（货运主单、安检申报单、标签单）
+        2. 南航不需要制单时（开关不为"0"），直接触发固定打印流程（货运主单、安检申报单、标签）
         
         创建打单RPA任务到队列中，由Worker异步执行
         
@@ -2098,7 +2098,7 @@ class RPAWorker:
         
         打单任务包含多个子任务，按顺序执行：
         - 制单后打印流程（遍历文件夹下的所有文件）
-        - 固定打印流程（如货运主单、安检申报单、标签单等）
+        - 固定打印流程（如货运主单、安检申报单、标签等）
         
         重要：所有子任务都会被执行，不会因为某个子任务失败而中断后续任务。
         全部执行完成后，只要有一个子任务失败，整体打单状态即为失败。
@@ -2267,7 +2267,7 @@ class RPAWorker:
                     timeout=settings.RPA_QUEUE_TASK_TIMEOUT
                 )
             elif task_type == "china_southern_air_label_print":
-                # 南航标签单打印
+                # 南航标签打印
                 rpa_response = await asyncio.wait_for(
                     rpa_service.print_china_southern_air_label(
                         address_of_the_application_executable_file_tangyi=params.get("address_of_the_application_executable_file_tangyi", ""),

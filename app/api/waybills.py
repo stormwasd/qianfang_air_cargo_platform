@@ -1444,11 +1444,11 @@ async def execute_cargo_station_record(
       2. 需要重新生成文档的情况（会覆盖之前生成的文档）
     
     此接口仅针对深圳航空，用于生成货站录单所需的文档：
-    1. 交接单（必生成）
-    2. 航空货物明细表（必生成）
-    3. 货物收运检查清单（必生成）
-    4. 标签单（必生成）
-    5. 充氧类水生动物货物收运检查单（仅当 form_data.oxygenated_aquatic_animal_goods_receipt_inspection_form_switch = "0" 时生成）
+    1. 交接单（仅当 cargo_info.cargo_code == "044" 时生成）
+    2. 航空货物明细表（仅当 form_data.declaration_list == "0" 时生成）
+    3. 货物收运检查单（仅当 cargo_info.cargo_code == "044" 时生成）
+    4. 标签（必生成）
+    5. 充氧类水生动物货物收运检查单（仅当 oxygenated_aquatic_animal_goods_receipt_inspection_form_switch == "0" 时生成）
     
     执行流程：
     1. 验证运单是否为深圳航空且航司录单状态为成功
@@ -1584,18 +1584,17 @@ async def get_waybill_documents(
     - **waybill_id**: 运单ID（字符串格式）
     - **doc_type**: 文档类型（可选）
       - 深航文档类型：
-        - handover: 交接单
-        - cargo_detail: 航空货物明细表
-        - cargo_checklist: 货物收运检查清单
-        - label: 标签单
-        - aquatic_animal_checklist: 充氧类水生动物货物收运检查单（Excel，仅当开关为"0"时生成）
+        - handover: 交接单（仅当 cargo_code == "044" 时生成）
+        - cargo_detail: 航空货物明细表（仅当 declaration_list == "0" 时生成）
+        - cargo_checklist: 货物收运检查单（仅当 cargo_code == "044" 时生成）
+        - label: 标签（必生成）
+        - aquatic_animal_checklist: 充氧类水生动物货物收运检查单（仅当开关为"0"时生成）
       - 南航文档类型：
-        - csa_aquatic_animal_checklist: 充氧类水生动物货物收运检查单（docx，仅当开关为"0"时生成）
+        - csa_aquatic_animal_checklist: 充氧类水生动物货物收运检查单（xlsx，仅当开关为"0"时生成）
       - 不传：返回所有文档的列表信息
     - **file_format**: 文件格式（可选，默认pdf）
-      - pdf: PDF格式（深航文档）
-      - excel: Excel格式（深航文档）
-      - docx: Word格式（南航文档）
+      - pdf: PDF格式
+      - excel: Excel格式
     
     返回：
     - 如果不传doc_type：返回所有文档的路径信息（根据航司类型返回对应文档）
@@ -1625,7 +1624,7 @@ async def get_waybill_documents(
             # 深航返回Excel和PDF文档
             documents = list_documents(int(waybill_id))
         elif is_china_southern_air:
-            # 南航返回docx文档
+            # 南航返回xlsx和pdf文档
             documents = list_csa_documents(int(waybill_id))
         
         return success_response(
@@ -1666,20 +1665,22 @@ async def get_waybill_documents(
             filename = f"{doc_name}_{waybill.waybill_number}.xlsx"
         
     elif doc_type in china_southern_air_doc_types:
-        # 南航文档
-        # 南航只支持docx格式
-        if file_format not in ["docx"]:
-            file_format = "docx"  # 南航默认使用docx
+        # 南航文档（现在也是xlsx格式）
+        valid_formats = ["pdf", "excel"]
+        if file_format not in valid_formats:
+            file_format = "pdf"
         
-        # 获取文档路径
-        doc_path = get_csa_document_path(int(waybill_id), doc_type, "docx")
+        doc_path = get_csa_document_path(int(waybill_id), doc_type, file_format)
         if not doc_path or not doc_path.exists():
             raise NotFoundException(f"文档不存在: {CSA_DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)}")
         
-        # 设置文件名和媒体类型
         doc_name = CSA_DOC_TYPE_TO_FILENAME.get(doc_type, doc_type)
-        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        filename = f"{doc_name}_{waybill.waybill_number}.docx"
+        if file_format == "pdf":
+            media_type = "application/pdf"
+            filename = f"{doc_name}_{waybill.waybill_number}.pdf"
+        else:
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            filename = f"{doc_name}_{waybill.waybill_number}.xlsx"
         
     else:
         # 无效的文档类型
@@ -1710,7 +1711,7 @@ async def print_single_document(
     **文件打印 (print_type="file")**
     - 打印 generated_files/{waybill_id}/ 目录下的指定文档
     - 需要指定 doc_type 参数，如 "交接单"、"航空货物明细表" 等
-    - 系统会自动查找对应的文件（支持 .pdf, .xlsx, .docx 格式）
+    - 系统会自动查找对应的文件（支持 .xlsx 格式，跳过 .pdf 文件）
     
     **航司货运主单打印 (print_type="main_waybill")**
     - 调用航司货运主单打印RPA流程
@@ -1720,8 +1721,8 @@ async def print_single_document(
     - 调用南航货运安检申报单打印RPA流程
     - 仅南航支持
     
-    **南航标签单打印 (print_type="label")**
-    - 调用南航标签单打印RPA流程
+    **南航标签打印 (print_type="label")**
+    - 调用南航标签打印RPA流程
     - 仅南航支持
     
     前置条件：
@@ -1734,9 +1735,9 @@ async def print_single_document(
       - "file": 文件打印
       - "main_waybill": 航司货运主单打印
       - "security_declaration": 安检申报单打印（南航专用）
-      - "label": 标签单打印（南航专用）
+      - "label": 标签打印（南航专用）
     - **doc_type**: 文档类型（当 print_type 为 "file" 时必填）
-      - 深航文档类型：交接单、航空货物明细表、货物收运检查清单、标签单、充氧类水生动物货物收运检查单
+      - 深航文档类型：交接单、航空货物明细表、货物收运检查单、标签、充氧类水生动物货物收运检查单
       - 南航文档类型：充氧类水生动物货物收运检查单
     
     返回：
@@ -1791,7 +1792,7 @@ async def print_single_document(
     if print_type == "security_declaration" and airline_code != "china_southern_air":
         raise BadRequestException("安检申报单打印仅支持南航")
     if print_type == "label" and airline_code != "china_southern_air":
-        raise BadRequestException("标签单打印仅支持南航")
+        raise BadRequestException("标签打印仅支持南航")
     
     # 获取业务参数配置
     config = db.query(BusinessConfig).first()
@@ -1902,10 +1903,10 @@ async def print_single_document(
         }
     
     elif print_type == "label":
-        # 南航标签单打印
-        printer_name = get_printer_name_from_config(business_config, "china_southern_air", "标签单")
+        # 南航标签打印
+        printer_name = get_printer_name_from_config(business_config, "china_southern_air", "标签")
         if not printer_name:
-            raise BadRequestException("未配置标签单的打印机，请检查业务参数中的打印机配置")
+            raise BadRequestException("未配置标签的打印机，请检查业务参数中的打印机配置")
         
         csa_config = business_config.get("china_southern_air", {})
         booking_and_create_config = csa_config.get("booking_and_create", {})
@@ -1915,9 +1916,9 @@ async def print_single_document(
         print_task = {
             "type": "china_southern_air_label_print",
             "job_uuid": settings.RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID,
-            "description": "南航-标签单打印",
+            "description": "南航-标签打印",
             "params": {
-                "address_of_the_application_executable_file_tangyi": tangyi_login_config.get("app_name", ""),
+                "address_of_the_application_executable_file_tangyi": tangyi_login_config.get("address_of_the_application_executable_file_tangyi", ""),
                 "system_account": csa_login_config.get("system_account", ""),
                 "login_password": csa_login_config.get("login_password", ""),
                 "waybill_number_8": waybill_number_8,

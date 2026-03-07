@@ -13,7 +13,7 @@
    遍历目录下的所有文件，对每个文件调用文件打印RPA接口
 2. 货运主单打印流程（固定）：调用南航货运主单打印RPA接口
 3. 货运安检申报单打印流程（固定）：调用南航货运安检申报单打印RPA接口
-4. 标签单打印流程（固定）：调用南航标签单打印RPA接口
+4. 标签打印流程（固定）：调用南航标签打印RPA接口
 """
 import os
 import json
@@ -96,7 +96,7 @@ def get_printer_name_from_config(
     Args:
         business_config: 业务参数配置
         airline: 航司代码 ("shenzhen_air" 或 "china_southern_air")
-        document_type: 文档类型（如：交接单、航司货运主单、航空货物安检申报清单、标签单）
+        document_type: 文档类型（如：交接单、航司货运主单、航空货物安检申报清单、标签）
     
     Returns:
         打印机名称，如果未找到则返回None
@@ -228,7 +228,7 @@ def prepare_china_southern_air_print_tasks(
     1. 制单后打印流程（可选）：如果文件目录存在，遍历所有生成的文件
     2. 货运主单打印流程（固定）
     3. 货运安检申报单打印流程（固定）
-    4. 标签单打印流程（固定）
+    4. 标签打印流程（固定）
     
     Args:
         waybill_id: 运单ID
@@ -322,16 +322,16 @@ def prepare_china_southern_air_print_tasks(
             }
         })
     
-    # 4. 标签单打印流程（固定）
+    # 4. 标签打印流程（固定）
     label_printer = get_printer_name_from_config(
-        business_config, "china_southern_air", "标签单"
+        business_config, "china_southern_air", "标签"
     )
     
     if label_printer:
         tasks.append({
             "type": "china_southern_air_label_print",
             "job_uuid": settings.RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID,
-            "description": "南航-标签单打印",
+            "description": "南航-标签打印",
             "params": {
                 "address_of_the_application_executable_file_tangyi": tangyi_app_path,
                 "system_account": system_account,
