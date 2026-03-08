@@ -38,7 +38,14 @@ class BusinessConfigCreate(BaseModel):
         "document": {
           "domestic_cargo_checklist": {
             "shipper_or_agent": "",
-            "shipper_or_agent_seal": ""
+            "shipper_or_agent_seal": "",
+            "shipper_or_inspector": ""
+          },
+          "inspection_form_for_the_receipt_and_transport_of_oxygenated_aquatic_animal_cargo": {
+            "shipper_or_agent": ""
+          },
+          "shenzhen_airport_air_cargo_security_inspection_declaration_list": {
+            "delivery_person": ""
           },
           "domestic_cargo_detail": {},
           "emergency_lithium_battery": {
@@ -70,7 +77,7 @@ class BusinessConfigCreate(BaseModel):
             "login_password": ""
           },
           "tangi_login": {
-            "app_name": "",
+            "address_of_the_application_executable_file_tangyi": "",
             "system_account": "",
             "login_password": ""
           },
@@ -92,6 +99,11 @@ class BusinessConfigCreate(BaseModel):
               "region": "",
               "detail": ""
             }
+          }
+        },
+        "document": {
+          "inspection_form_for_the_receipt_and_transport_of_oxygenated_aquatic_animal_cargo": {
+            "shipper_or_agent": ""
           }
         },
         "print": {

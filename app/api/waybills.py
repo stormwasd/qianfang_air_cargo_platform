@@ -1446,8 +1446,8 @@ async def execute_cargo_station_record(
     此接口仅针对深圳航空，用于生成货站录单所需的文档：
     1. 交接单（仅当 cargo_info.cargo_code == "044" 时生成）
     2. 航空货物明细表（仅当 form_data.declaration_list == "0" 时生成）
-    3. 货物收运检查单（仅当 cargo_info.cargo_code == "044" 时生成）
-    4. 标签（必生成）
+    3. 货物收运检查清单（仅当 cargo_info.cargo_code == "044" 时生成）
+    4. 标签单（必生成）
     5. 充氧类水生动物货物收运检查单（仅当 oxygenated_aquatic_animal_goods_receipt_inspection_form_switch == "0" 时生成）
     
     执行流程：
@@ -1586,8 +1586,8 @@ async def get_waybill_documents(
       - 深航文档类型：
         - handover: 交接单（仅当 cargo_code == "044" 时生成）
         - cargo_detail: 航空货物明细表（仅当 declaration_list == "0" 时生成）
-        - cargo_checklist: 货物收运检查单（仅当 cargo_code == "044" 时生成）
-        - label: 标签（必生成）
+        - cargo_checklist: 货物收运检查清单（仅当 cargo_code == "044" 时生成）
+        - label: 标签单（必生成）
         - aquatic_animal_checklist: 充氧类水生动物货物收运检查单（仅当开关为"0"时生成）
       - 南航文档类型：
         - csa_aquatic_animal_checklist: 充氧类水生动物货物收运检查单（xlsx，仅当开关为"0"时生成）
@@ -1737,7 +1737,7 @@ async def print_single_document(
       - "security_declaration": 安检申报单打印（南航专用）
       - "label": 标签打印（南航专用）
     - **doc_type**: 文档类型（当 print_type 为 "file" 时必填）
-      - 深航文档类型：交接单、航空货物明细表、货物收运检查单、标签、充氧类水生动物货物收运检查单
+      - 深航文档类型：交接单、航空货物明细表、货物收运检查清单、标签单、充氧类水生动物货物收运检查单
       - 南航文档类型：充氧类水生动物货物收运检查单
     
     返回：
@@ -1904,9 +1904,9 @@ async def print_single_document(
     
     elif print_type == "label":
         # 南航标签打印
-        printer_name = get_printer_name_from_config(business_config, "china_southern_air", "标签")
+        printer_name = get_printer_name_from_config(business_config, "china_southern_air", "标签单")
         if not printer_name:
-            raise BadRequestException("未配置标签的打印机，请检查业务参数中的打印机配置")
+            raise BadRequestException("未配置标签单的打印机，请检查业务参数中的打印机配置")
         
         csa_config = business_config.get("china_southern_air", {})
         booking_and_create_config = csa_config.get("booking_and_create", {})

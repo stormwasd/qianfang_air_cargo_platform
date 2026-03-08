@@ -7,8 +7,8 @@
 1. 根据waybill数据填充Excel模板，条件如下：
    - 交接单（仅当 cargo_info.cargo_code == "044" 时生成）
    - 航空货物明细表（仅当 form_data.declaration_list == "0" 时生成）
-   - 货物收运检查单（仅当 cargo_info.cargo_code == "044" 时生成）
-   - 标签（必生成）
+   - 货物收运检查清单（仅当 cargo_info.cargo_code == "044" 时生成）
+   - 标签单（必生成）
    - 充氧类水生动物货物收运检查单（仅当 oxygenated_aquatic_animal_goods_receipt_inspection_form_switch == "0" 时生成）
 2. 将Excel转换为PDF（使用纯Python方案：openpyxl + reportlab）
 3. 保存文件到指定目录
@@ -47,9 +47,9 @@ CHINA_SOUTHERN_AIR_TEMPLATE_DIR = "documents/china_southern_air"
 # ======== 深航文档类型常量 ========
 DOC_TYPE_HANDOVER = "handover"  # 交接单
 DOC_TYPE_CARGO_DETAIL = "cargo_detail"  # 航空货物明细表
-DOC_TYPE_CARGO_CHECKLIST = "cargo_checklist"  # 货物收运检查单
+DOC_TYPE_CARGO_CHECKLIST = "cargo_checklist"  # 货物收运检查清单
 DOC_TYPE_AQUATIC_ANIMAL_CHECKLIST = "aquatic_animal_checklist"  # 充氧类水生动物货物收运检查单
-DOC_TYPE_LABEL = "label"  # 标签
+DOC_TYPE_LABEL = "label"  # 标签单
 
 # ======== 南航文档类型常量 ========
 DOC_TYPE_CSA_AQUATIC_ANIMAL_CHECKLIST = "csa_aquatic_animal_checklist"  # 南航充氧类水生动物货物收运检查单（xlsx版）
@@ -58,9 +58,9 @@ DOC_TYPE_CSA_AQUATIC_ANIMAL_CHECKLIST = "csa_aquatic_animal_checklist"  # 南航
 DOC_TYPE_TO_FILENAME = {
     DOC_TYPE_HANDOVER: "交接单",
     DOC_TYPE_CARGO_DETAIL: "航空货物明细表",
-    DOC_TYPE_CARGO_CHECKLIST: "货物收运检查单",
+    DOC_TYPE_CARGO_CHECKLIST: "货物收运检查清单",
     DOC_TYPE_AQUATIC_ANIMAL_CHECKLIST: "充氧类水生动物货物收运检查单",
-    DOC_TYPE_LABEL: "标签",
+    DOC_TYPE_LABEL: "标签单",
 }
 
 # 南航文档类型到文件名的映射
@@ -433,14 +433,14 @@ def generate_handover_document(
     cargo_name = _safe_str(cargo_info.get("cargo_name", ""))
     package = _safe_str(cargo_info.get("package", ""))
     
-    # 从业务参数配置中获取shipper_or_agent
+    # 从业务参数配置中获取交运人(delivery_person)
     shenzhen_air_config = business_config.get("shenzhen_air") or {}
     document_config = shenzhen_air_config.get("document") or {}
-    domestic_cargo_checklist = document_config.get("domestic_cargo_checklist") or {}
-    shipper_or_agent = _safe_str(domestic_cargo_checklist.get("shipper_or_agent", ""))
+    declaration_config = document_config.get("shenzhen_airport_air_cargo_security_inspection_declaration_list") or {}
+    delivery_person = _safe_str(declaration_config.get("delivery_person", ""))
     
     print(f"[交接单] 运单ID={waybill_id}, 航班号={flight_number}, 目的地={destination_city}, "
-          f"运单号={waybill_number}, 件数={quantity}, 重量={weight}, 代理人={shipper_or_agent}")
+          f"运单号={waybill_number}, 件数={quantity}, 重量={weight}, 交运人={delivery_person}")
     
     # 使用直接单元格赋值（模板中短值如"1","2"等不适合用字符串搜索替换）
     ws['D4'] = flight_number        # ZH9505 → 航班号
@@ -454,7 +454,7 @@ def generate_handover_document(
     ws['E12'] = chargeable_weight   # 5 → 计费重量
     ws['J12'] = package             # 纸箱 → 包装
     ws['F13'] = cargo_name          # NK细胞 → 货物品名
-    ws['B47'] = shipper_or_agent    # 唐文旭 → 托运人代理人
+    ws['B47'] = delivery_person     # 唐文旭 → 交运人
     
     # airline_consent_certificate 条件替换：非空时替换 H30 单元格
     airline_consent_certificate = _safe_str(form_data.get("airline_consent_certificate", ""))
@@ -540,7 +540,7 @@ def generate_cargo_checklist_document(
     business_config: dict
 ) -> Tuple[Path, Path]:
     """
-    生成货物收运检查单文档
+    生成货物收运检查清单文档
     
     生成条件：仅当 cargo_info.cargo_code == "044" 时生成
     
@@ -554,12 +554,12 @@ def generate_cargo_checklist_document(
         元组 (Excel文件路径, PDF文件路径)
     """
     project_root = _get_project_root()
-    template_path = project_root / TEMPLATE_DIR / "货物收运检查单.xlsx"
+    template_path = project_root / TEMPLATE_DIR / "货物收运检查清单.xlsx"
     
     waybill_dir = _ensure_waybill_dir(waybill_id)
     
-    excel_filename = "货物收运检查单.xlsx"
-    pdf_filename = "货物收运检查单.pdf"
+    excel_filename = "货物收运检查清单.xlsx"
+    pdf_filename = "货物收运检查清单.pdf"
     excel_path = waybill_dir / excel_filename
     pdf_path = waybill_dir / pdf_filename
     
@@ -581,7 +581,15 @@ def generate_cargo_checklist_document(
     cargo_name = _safe_str(cargo_info.get("cargo_name", ""))
     package = _safe_str(cargo_info.get("package", ""))
     
-    # 使用直接单元格赋值（避免短值如"110","400"的误匹配风险）
+    # 从业务参数配置中获取托运人/签章/检查人
+    shenzhen_air_config = business_config.get("shenzhen_air") or {}
+    document_config = shenzhen_air_config.get("document") or {}
+    checklist_config = document_config.get("domestic_cargo_checklist") or {}
+    shipper_or_agent = _safe_str(checklist_config.get("shipper_or_agent", ""))
+    shipper_or_agent_seal = _safe_str(checklist_config.get("shipper_or_agent_seal", ""))
+    shipper_or_inspector = _safe_str(checklist_config.get("shipper_or_inspector", ""))
+    
+    # 使用直接单元格赋值
     ws['E4'] = flight_number          # ZH9929 → 航班号
     ws['M4'] = destination_city       # 济南 → 目的地
     ws['A8'] = waybill_number         # 479-57515651 → 运单号
@@ -590,6 +598,15 @@ def generate_cargo_checklist_document(
     ws['I8'] = chargeable_weight      # 400 → 计费重量
     ws['K8'] = cargo_name             # 货物品名
     ws['P8'] = package                # 纸箱 → 包装
+    
+    # E3: "航空货运托运人或托运人代理人"右侧 → shipper_or_agent
+    ws['E3'] = shipper_or_agent
+    # E15: "航空货运托运人或托运人代理人签章"右侧 → shipper_or_agent_seal
+    ws['E15'] = shipper_or_agent_seal
+    # A25 含"检查人：陈晶晶"，替换检查人名称
+    a25_value = ws['A25'].value
+    if a25_value and isinstance(a25_value, str) and shipper_or_inspector:
+        ws['A25'] = a25_value.replace("陈晶晶", shipper_or_inspector)
     
     wb.save(excel_path)
     wb.close()
@@ -673,9 +690,11 @@ def generate_aquatic_animal_checklist_document(
     wb = load_workbook(excel_path)
     ws = wb.active
     
-    # 深航托运单位来源于 shipper_consignee_info
-    shipper_consignee_info = form_data.get("shipper_consignee_info") or {}
-    shipper_unit = _safe_str(shipper_consignee_info.get("shipper_unit", ""))
+    # 深航托运代理人来源于业务参数配置
+    shenzhen_air_config = business_config.get("shenzhen_air") or {}
+    document_config = shenzhen_air_config.get("document") or {}
+    aquatic_config = document_config.get("inspection_form_for_the_receipt_and_transport_of_oxygenated_aquatic_animal_cargo") or {}
+    shipper_unit = _safe_str(aquatic_config.get("shipper_or_agent", ""))
     
     _fill_aquatic_animal_checklist_xlsx(ws, waybill_number, form_data, shipper_unit)
     
@@ -694,7 +713,7 @@ def generate_label_document(
     business_config: dict
 ) -> Tuple[Path, Path]:
     """
-    生成标签文档（必生成）
+    生成标签单文档（必生成）
     
     模板中第一个标签区域的数据为源数据，后续标签通过公式引用自动同步。
     只需修改第一个标签区域（前5行数据行）即可。
@@ -709,12 +728,12 @@ def generate_label_document(
         元组 (Excel文件路径, PDF文件路径)
     """
     project_root = _get_project_root()
-    template_path = project_root / TEMPLATE_DIR / "标签.xlsx"
+    template_path = project_root / TEMPLATE_DIR / "标签单.xlsx"
     
     waybill_dir = _ensure_waybill_dir(waybill_id)
     
-    excel_filename = "标签.xlsx"
-    pdf_filename = "标签.pdf"
+    excel_filename = "标签单.xlsx"
+    pdf_filename = "标签单.pdf"
     excel_path = waybill_dir / excel_filename
     pdf_path = waybill_dir / pdf_filename
     
@@ -763,8 +782,8 @@ def generate_all_documents(
     根据 form_data 中的配置决定生成哪些文档：
     - 交接单（仅当 cargo_info.cargo_code == "044" 时生成）
     - 航空货物明细表（仅当 form_data.declaration_list == "0" 时生成）
-    - 货物收运检查单（仅当 cargo_info.cargo_code == "044" 时生成）
-    - 标签（必生成）
+    - 货物收运检查清单（仅当 cargo_info.cargo_code == "044" 时生成）
+    - 标签单（必生成）
     - 充氧类水生动物货物收运检查单（仅当 oxygenated_aquatic_animal_goods_receipt_inspection_form_switch == "0" 时生成）
     
     Args:
@@ -789,8 +808,8 @@ def generate_all_documents(
           f"declaration_list={repr(declaration_list)}, aquatic_switch={repr(aquatic_switch)}")
     print(f"[深航货站录单] 条件判断: 交接单={'生成' if cargo_code == '044' else '跳过'}, "
           f"明细表={'生成' if declaration_list == '0' else '跳过'}, "
-          f"收运检查单={'生成' if cargo_code == '044' else '跳过'}, "
-          f"标签=生成, "
+          f"收运检查清单={'生成' if cargo_code == '044' else '跳过'}, "
+          f"标签单=生成, "
           f"充氧类={'生成' if aquatic_switch == '0' else '跳过'}")
     
     # 生成交接单（仅当 cargo_code == "044"）
@@ -821,7 +840,7 @@ def generate_all_documents(
             print(f"生成航空货物明细表失败: {str(e)}")
             results[DOC_TYPE_CARGO_DETAIL] = {"excel": None, "pdf": None, "error": str(e)}
     
-    # 生成货物收运检查单（仅当 cargo_code == "044"）
+    # 生成货物收运检查清单（仅当 cargo_code == "044"）
     if cargo_code == "044":
         try:
             excel_path, pdf_path = generate_cargo_checklist_document(
@@ -832,10 +851,10 @@ def generate_all_documents(
                 "pdf": str(pdf_path) if pdf_path.exists() else None
             }
         except Exception as e:
-            print(f"生成货物收运检查单失败: {str(e)}")
+            print(f"生成货物收运检查清单失败: {str(e)}")
             results[DOC_TYPE_CARGO_CHECKLIST] = {"excel": None, "pdf": None, "error": str(e)}
     
-    # 生成标签（必生成）
+    # 生成标签单（必生成）
     try:
         excel_path, pdf_path = generate_label_document(
             waybill_id, waybill_number, form_data, business_config
@@ -845,7 +864,7 @@ def generate_all_documents(
             "pdf": str(pdf_path) if pdf_path.exists() else None
         }
     except Exception as e:
-        print(f"生成标签失败: {str(e)}")
+        print(f"生成标签单失败: {str(e)}")
         results[DOC_TYPE_LABEL] = {"excel": None, "pdf": None, "error": str(e)}
     
     # 生成充氧类水生动物货物收运检查单（仅当开关为"0"时生成）
@@ -981,9 +1000,11 @@ def generate_csa_aquatic_animal_checklist_document(
     wb = load_workbook(excel_path)
     ws = wb.active
     
-    # 南航托运单位来源于 contact_info
-    contact_info = form_data.get("contact_info") or {}
-    shipper_unit = _safe_str(contact_info.get("shipper_unit", ""))
+    # 南航托运代理人来源于业务参数配置
+    csa_config = business_config.get("china_southern_air") or {}
+    csa_document_config = csa_config.get("document") or {}
+    csa_aquatic_config = csa_document_config.get("inspection_form_for_the_receipt_and_transport_of_oxygenated_aquatic_animal_cargo") or {}
+    shipper_unit = _safe_str(csa_aquatic_config.get("shipper_or_agent", ""))
     
     _fill_aquatic_animal_checklist_xlsx(ws, waybill_number, form_data, shipper_unit)
     

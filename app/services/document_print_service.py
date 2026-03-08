@@ -96,7 +96,7 @@ def get_printer_name_from_config(
     Args:
         business_config: 业务参数配置
         airline: 航司代码 ("shenzhen_air" 或 "china_southern_air")
-        document_type: 文档类型（如：交接单、航司货运主单、航空货物安检申报清单、标签）
+        document_type: 文档类型（如：交接单、航司货运主单、航空货物安检申报清单、标签单）
     
     Returns:
         打印机名称，如果未找到则返回None
@@ -322,9 +322,9 @@ def prepare_china_southern_air_print_tasks(
             }
         })
     
-    # 4. 标签打印流程（固定）
+    # 4. 标签单打印流程（固定）
     label_printer = get_printer_name_from_config(
-        business_config, "china_southern_air", "标签"
+        business_config, "china_southern_air", "标签单"
     )
     
     if label_printer:
