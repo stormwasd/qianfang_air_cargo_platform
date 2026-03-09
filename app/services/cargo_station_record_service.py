@@ -590,8 +590,11 @@ def generate_cargo_checklist_document(
     shipper_or_inspector = _safe_str(checklist_config.get("shipper_or_inspector", ""))
     
     # 使用直接单元格赋值
+    flight_date = _safe_str(flight_info.get("flight_date", ""))
+    
     ws['E4'] = flight_number          # ZH9929 → 航班号
     ws['M4'] = destination_city       # 济南 → 目的地
+    ws['U4'] = flight_date            # 日期右侧 → 航班日期
     ws['A8'] = waybill_number         # 479-57515651 → 运单号
     ws['E8'] = quantity               # 110 → 件数
     ws['G8'] = weight                 # 400 → 毛重

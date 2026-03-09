@@ -490,8 +490,8 @@ class RPAWorker:
                 print(f"[Worker-{self.worker_id}] 货站录单文档生成成功，运单ID: {waybill.id}")
                 db.commit()
                 
-                # 货站录单成功后自动触发打单
-                await self._auto_trigger_document_print(db, waybill, form_data_dict)
+                # 货站录单成功后自动触发打单（延迟等待文件传输）
+                await self._auto_trigger_document_print(db, waybill, form_data_dict, delay_for_file_transfer=True)
             else:
                 waybill.cargo_station_record_status = "2"  # 失败
                 print(f"[Worker-{self.worker_id}] 货站录单文档生成失败，运单ID: {waybill.id}")
@@ -563,8 +563,8 @@ class RPAWorker:
                 print(f"[Worker-{self.worker_id}] 南航货站录单文档生成成功，运单ID: {waybill.id}")
                 db.commit()
                 
-                # 货站录单成功后自动触发打单
-                await self._auto_trigger_document_print(db, waybill, form_data_dict)
+                # 货站录单成功后自动触发打单（延迟等待文件传输）
+                await self._auto_trigger_document_print(db, waybill, form_data_dict, delay_for_file_transfer=True)
             elif not documents_result:
                 # 没有文档需要生成（理论上不会走到这里，因为前面已经检查过了）
                 print(f"[Worker-{self.worker_id}] 南航无文档需要生成，运单ID: {waybill.id}")
@@ -2002,7 +2002,7 @@ class RPAWorker:
     
     # ========== 打单任务相关方法 ==========
     
-    async def _auto_trigger_document_print(self, db, waybill: Waybill, form_data_dict: dict):
+    async def _auto_trigger_document_print(self, db, waybill: Waybill, form_data_dict: dict, delay_for_file_transfer: bool = False):
         """
         自动触发打单
         
@@ -2016,10 +2016,20 @@ class RPAWorker:
             db: 数据库会话
             waybill: 运单对象
             form_data_dict: 运单表单数据字典
+            delay_for_file_transfer: 是否需要等待文件传输完成后再执行打单（货站录单生成文件后需要等待）
         """
         import traceback
         from app.services.document_print_service import prepare_print_tasks, get_print_task_count
         from app.models.config import BusinessConfig
+        from app.config import settings
+        
+        # 货站录单生成的文件需要传输到打印机所在的机器，等待一段时间再执行打单
+        if delay_for_file_transfer:
+            delay_seconds = settings.PRINT_DELAY_AFTER_CARGO_STATION_RECORD
+            if delay_seconds > 0:
+                print(f"[Worker-{self.worker_id}] [自动打单] 等待文件传输完成，延迟 {delay_seconds} 秒后执行打单...")
+                await asyncio.sleep(delay_seconds)
+                print(f"[Worker-{self.worker_id}] [自动打单] 延迟等待结束，开始执行打单")
         
         # 检查运单号是否存在
         if not waybill.waybill_number:
