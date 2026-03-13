@@ -113,9 +113,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"RPA接口调用异常: {repr(e)}")
     
     async def query_shenzhen_air_waybill_status(
         self,
@@ -166,9 +166,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"RPA状态查询HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"RPA状态查询请求失败: {str(e)}")
+                raise BadRequestException(f"RPA状态查询请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"RPA状态查询异常: {str(e)}")
+                raise BadRequestException(f"RPA状态查询异常: {repr(e)}")
     
     def extract_work_uuid_from_create_response(self, response_data: Dict[str, Any]) -> Optional[str]:
         """
@@ -246,9 +246,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"获取运单号HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"获取运单号请求失败: {str(e)}")
+                raise BadRequestException(f"获取运单号请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"获取运单号异常: {str(e)}")
+                raise BadRequestException(f"获取运单号异常: {repr(e)}")
     
     def format_shenzhen_air_waybill_number(self, waybill_suffix: str) -> str:
         """
@@ -310,9 +310,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"获取运单号HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"获取运单号请求失败: {str(e)}")
+                raise BadRequestException(f"获取运单号请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"获取运单号异常: {str(e)}")
+                raise BadRequestException(f"获取运单号异常: {repr(e)}")
     
     def format_china_southern_air_waybill_number(self, waybill_suffix: str) -> str:
         """
@@ -361,9 +361,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"RPA作废接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"RPA作废接口请求失败: {str(e)}")
+                raise BadRequestException(f"RPA作废接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"RPA作废接口调用异常: {str(e)}")
+                raise BadRequestException(f"RPA作废接口调用异常: {repr(e)}")
     
     async def create_china_southern_air_booking(
         self,
@@ -490,9 +490,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"RPA订舱接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"RPA订舱接口请求失败: {str(e)}")
+                raise BadRequestException(f"RPA订舱接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"RPA订舱接口调用异常: {str(e)}")
+                raise BadRequestException(f"RPA订舱接口调用异常: {repr(e)}")
     
     async def query_china_southern_air_booking_status(
         self,
@@ -589,9 +589,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"南航退舱RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"南航退舱RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"南航退舱RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"南航退舱RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"南航退舱RPA接口调用异常: {repr(e)}")
     
     async def query_china_southern_air_cancel_status(self, job_uuid: str, start_time: Optional[str] = None, end_time: Optional[str] = None, size: int = 1000000) -> Dict[str, Any]:
         """
@@ -654,9 +654,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"南航直接开单RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"南航直接开单RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"南航直接开单RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"南航直接开单RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"南航直接开单RPA接口调用异常: {repr(e)}")
     
     async def cancel_china_southern_air_waybill(self, waybill_number_8: str) -> Dict[str, Any]:
         """
@@ -693,9 +693,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"RPA作废接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"RPA作废接口请求失败: {str(e)}")
+                raise BadRequestException(f"RPA作废接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"RPA作废接口调用异常: {str(e)}")
+                raise BadRequestException(f"RPA作废接口调用异常: {repr(e)}")
     
     async def query_china_southern_air_waybill_void_status(self, job_uuid: str, start_time: Optional[str] = None, end_time: Optional[str] = None, size: int = 1000000) -> Dict[str, Any]:
         """
@@ -831,9 +831,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"南航新增运单RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"南航新增运单RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"南航新增运单RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"南航新增运单RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"南航新增运单RPA接口调用异常: {repr(e)}")
     
     async def query_china_southern_air_waybill_status(self, job_uuid: str, start_time: Optional[str] = None, end_time: Optional[str] = None, size: int = 1000000) -> Dict[str, Any]:
         """
@@ -955,9 +955,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"南航修改数据后开单RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"南航修改数据后开单RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"南航修改数据后开单RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"南航修改数据后开单RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"南航修改数据后开单RPA接口调用异常: {repr(e)}")
     
     async def query_china_southern_air_invoice_with_data_status(self, job_uuid: str, start_time: Optional[str] = None, end_time: Optional[str] = None, size: int = 1000000) -> Dict[str, Any]:
         """
@@ -1001,9 +1001,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"创建队列HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"创建队列请求失败: {str(e)}")
+                raise BadRequestException(f"创建队列请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"创建队列异常: {str(e)}")
+                raise BadRequestException(f"创建队列异常: {repr(e)}")
     
     async def delete_queue(self, queue_id: str) -> bool:
         """
@@ -1037,9 +1037,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"删除队列HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"删除队列请求失败: {str(e)}")
+                raise BadRequestException(f"删除队列请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"删除队列异常: {str(e)}")
+                raise BadRequestException(f"删除队列异常: {repr(e)}")
     
     # ========== 打单RPA接口 ==========
     
@@ -1083,9 +1083,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"文件打印RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"文件打印RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"文件打印RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"文件打印RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"文件打印RPA接口调用异常: {repr(e)}")
     
     async def query_file_print_status(
         self,
@@ -1148,9 +1148,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"深航货运主单打印RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"深航货运主单打印RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"深航货运主单打印RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"深航货运主单打印RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"深航货运主单打印RPA接口调用异常: {repr(e)}")
     
     async def query_shenzhen_air_main_waybill_print_status(
         self,
@@ -1213,9 +1213,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"南航货运主单打印RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"南航货运主单打印RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"南航货运主单打印RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"南航货运主单打印RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"南航货运主单打印RPA接口调用异常: {repr(e)}")
     
     async def query_china_southern_air_main_waybill_print_status(
         self,
@@ -1278,9 +1278,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"南航货运安检申报单打印RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"南航货运安检申报单打印RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"南航货运安检申报单打印RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"南航货运安检申报单打印RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"南航货运安检申报单打印RPA接口调用异常: {repr(e)}")
     
     async def query_china_southern_air_security_print_status(
         self,
@@ -1343,9 +1343,9 @@ class RPAService:
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"南航标签单打印RPA接口HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
-                raise BadRequestException(f"南航标签单打印RPA接口请求失败: {str(e)}")
+                raise BadRequestException(f"南航标签单打印RPA接口请求失败: {repr(e)}")
             except Exception as e:
-                raise BadRequestException(f"南航标签单打印RPA接口调用异常: {str(e)}")
+                raise BadRequestException(f"南航标签单打印RPA接口调用异常: {repr(e)}")
     
     async def query_china_southern_air_label_print_status(
         self,

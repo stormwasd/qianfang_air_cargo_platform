@@ -5,6 +5,7 @@ RPA Worker模块
 import json
 import asyncio
 import threading
+import traceback
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -18,6 +19,20 @@ from app.services.rpa_service import rpa_service
 from app.services.rpa_task_service import rpa_task_service
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.helpers import get_china_now
+
+
+def _get_error_detail(e: Exception) -> str:
+    """从异常中提取完整的错误描述信息。
+    
+    兼容 FastAPI/Starlette HTTPException 子类（如 BadRequestException），
+    其错误信息存储在 .detail 属性而非 str() 中。
+    当 str(e) 为空时回退到 repr(e) 确保始终有可读信息。
+    """
+    detail = getattr(e, "detail", None)
+    if detail is not None:
+        return str(detail)
+    msg = str(e)
+    return msg if msg else repr(e)
 
 
 class RPAWorker:
@@ -54,7 +69,7 @@ class RPAWorker:
                 try:
                     loop.run_until_complete(self._process_one_task())
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 处理任务异常: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 处理任务异常: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 
                 # 等待一段时间再查询下一个任务
                 loop.run_until_complete(asyncio.sleep(settings.RPA_QUEUE_POLL_INTERVAL))
@@ -106,10 +121,11 @@ class RPAWorker:
                 await self._update_target_status_failed(db, task, "RPA接口调用超时")
                 rpa_task_service.timeout_task(db, task.id, "RPA接口调用超时")
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 任务 {task.id} 执行失败: {str(e)}")
+                error_msg = _get_error_detail(e)
+                print(f"[Worker-{self.worker_id}] 任务 {task.id} 执行失败: {error_msg}\n{traceback.format_exc()}")
                 # 更新目标状态为失败
-                await self._update_target_status_failed(db, task, str(e))
-                rpa_task_service.complete_task(db, task.id, False, error_message=str(e))
+                await self._update_target_status_failed(db, task, error_msg)
+                rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
         finally:
             db.close()
     
@@ -143,7 +159,7 @@ class RPAWorker:
                         booking.invoice_status = "2"  # 开单失败
                     db.commit()
         except Exception as e:
-            print(f"[Worker-{self.worker_id}] 更新目标状态失败: {str(e)}")
+            print(f"[Worker-{self.worker_id}] 更新目标状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
     
     async def _execute_shenzhen_air_waybill(self, db, task: RPATask):
         """执行深航开单任务"""
@@ -182,7 +198,7 @@ class RPAWorker:
                             "queueName": queue_config["name"]
                         }
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {_get_error_detail(e)}\n{traceback.format_exc()}")
         
         # 保存队列信息到运单
         if queues_info:
@@ -279,7 +295,7 @@ class RPAWorker:
                         
                         db.commit()
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 轮询状态失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 轮询状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
         # 轮询超时
@@ -323,10 +339,10 @@ class RPAWorker:
                     except Exception as e:
                         # 发生异常，等待后重试
                         if retry < max_queue_retries - 1:
-                            print(f"[Worker-{self.worker_id}] 获取运单号失败: {str(e)}，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）")
+                            print(f"[Worker-{self.worker_id}] 获取运单号失败: {_get_error_detail(e)}，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）\n{traceback.format_exc()}")
                             await asyncio.sleep(queue_retry_interval)
                         else:
-                            print(f"[Worker-{self.worker_id}] 获取运单号最终失败: {str(e)}")
+                            print(f"[Worker-{self.worker_id}] 获取运单号最终失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 如果获取运单号失败，将状态设置为失败
             if not waybill_number_retrieved:
@@ -342,7 +358,7 @@ class RPAWorker:
                         queues_info["freight_rate"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取费率失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取费率失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取运费
             if "freight" in queues_info:
@@ -351,7 +367,7 @@ class RPAWorker:
                         queues_info["freight"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取运费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取运费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取派送费
             if "delivery_fee" in queues_info:
@@ -360,7 +376,7 @@ class RPAWorker:
                         queues_info["delivery_fee"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取派送费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取派送费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 创建结算单
             if waybill_number_data:
@@ -430,13 +446,13 @@ class RPAWorker:
                     )
                     db.add(settlement)
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 创建结算单失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 
                 # 自动触发货站录单（深航开单成功后自动执行）
                 try:
                     await self._auto_generate_cargo_station_documents(db, waybill, form_data_dict)
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 自动生成货站录单文档失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 自动生成货站录单文档失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
         finally:
             # 清理队列
             await self._cleanup_queues(queues_info)
@@ -680,9 +696,7 @@ class RPAWorker:
                                     else:
                                         print(f"[Worker-{self.worker_id}] 警告：未找到对应的结算单，waybill_number={waybill.waybill_number}")
                                 except Exception as e:
-                                    import traceback
-                                    print(f"[Worker-{self.worker_id}] 同步运单作废状态到结算单失败: {str(e)}")
-                                    print(f"[Worker-{self.worker_id}] 错误详情: {traceback.format_exc()}")
+                                    print(f"[Worker-{self.worker_id}] 同步运单作废状态到结算单失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                             
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, True)
@@ -690,7 +704,7 @@ class RPAWorker:
                         
                         db.commit()
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 轮询作废状态失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 轮询作废状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
         # 轮询超时
@@ -799,9 +813,7 @@ class RPAWorker:
                                     else:
                                         print(f"[Worker-{self.worker_id}] 警告：未找到对应的结算单，waybill_number={waybill.waybill_number}")
                                 except Exception as e:
-                                    import traceback
-                                    print(f"[Worker-{self.worker_id}] 同步运单作废状态到结算单失败: {str(e)}")
-                                    print(f"[Worker-{self.worker_id}] 错误详情: {traceback.format_exc()}")
+                                    print(f"[Worker-{self.worker_id}] 同步运单作废状态到结算单失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                             
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, True)
@@ -809,7 +821,7 @@ class RPAWorker:
                         
                         db.commit()
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 轮询作废状态失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 轮询作废状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
         # 轮询超时
@@ -849,7 +861,7 @@ class RPAWorker:
                     booking.rpa_queue_id = queue_id
                     db.commit()
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 创建队列失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 创建队列失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
         
         # 调用RPA接口
         try:
@@ -921,7 +933,7 @@ class RPAWorker:
                                         booking.master_airwaybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_suffix)
                                         waybill_number_retrieved = True
                                 except Exception as e:
-                                    print(f"[Worker-{self.worker_id}] 获取南航运单号失败: {str(e)}")
+                                    print(f"[Worker-{self.worker_id}] 获取南航运单号失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                             else:
                                 print(f"[Worker-{self.worker_id}] 订舱 {booking.id} 没有queue_uuid，无法获取运单号")
                             
@@ -959,7 +971,7 @@ class RPAWorker:
                         
                         db.commit()
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 轮询订舱状态失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 轮询订舱状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
         # 轮询超时
@@ -1045,7 +1057,7 @@ class RPAWorker:
                         
                         db.commit()
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 轮询退舱状态失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 轮询退舱状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
         # 轮询超时
@@ -1090,7 +1102,7 @@ class RPAWorker:
                             "queueName": queue_config["name"]
                         }
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {_get_error_detail(e)}\n{traceback.format_exc()}")
         
         # 保存队列信息到订舱
         if queues_info:
@@ -1168,7 +1180,7 @@ class RPAWorker:
                         
                         db.commit()
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 轮询直接开单状态失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 轮询直接开单状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
         # 轮询超时
@@ -1193,7 +1205,7 @@ class RPAWorker:
                         queues_info["rate"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取费率失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取费率失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取运费
             if "freight" in queues_info:
@@ -1202,7 +1214,7 @@ class RPAWorker:
                         queues_info["freight"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取运费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取运费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取燃油费
             if "fuel_costs" in queues_info:
@@ -1211,7 +1223,7 @@ class RPAWorker:
                         queues_info["fuel_costs"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取燃油费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取燃油费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取延伸服务费
             if "extended_service_fee" in queues_info:
@@ -1220,7 +1232,7 @@ class RPAWorker:
                         queues_info["extended_service_fee"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取延伸服务费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取延伸服务费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 创建结算单
             # 注意：订舱的form_data结构是扁平的 {"airline": "2", "bookings": [...]}
@@ -1288,7 +1300,7 @@ class RPAWorker:
                 )
                 db.add(settlement)
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 创建结算单失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 同步创建waybills记录（将bookings的form_data结构转换为waybills的form_data结构）
             new_waybill = None
@@ -1314,9 +1326,9 @@ class RPAWorker:
                 try:
                     await self._auto_generate_csa_cargo_station_documents(db, new_waybill, waybill_form_data)
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 南航直接开单自动生成货站录单文档失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 南航直接开单自动生成货站录单文档失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 同步创建waybill记录失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 同步创建waybill记录失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
         finally:
             # 清理队列
             await self._cleanup_queues(queues_info)
@@ -1411,7 +1423,7 @@ class RPAWorker:
                             "queueName": queue_config["name"]
                         }
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {_get_error_detail(e)}\n{traceback.format_exc()}")
         
         # 保存队列信息到运单
         if queues_info:
@@ -1523,7 +1535,7 @@ class RPAWorker:
                         
                         db.commit()
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 轮询南航新增运单状态失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 轮询南航新增运单状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
         # 轮询超时
@@ -1568,10 +1580,10 @@ class RPAWorker:
                     except Exception as e:
                         # 发生异常，等待后重试
                         if retry < max_queue_retries - 1:
-                            print(f"[Worker-{self.worker_id}] 获取南航运单号失败: {str(e)}，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）")
+                            print(f"[Worker-{self.worker_id}] 获取南航运单号失败: {_get_error_detail(e)}，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）\n{traceback.format_exc()}")
                             await asyncio.sleep(queue_retry_interval)
                         else:
-                            print(f"[Worker-{self.worker_id}] 获取南航运单号最终失败: {str(e)}")
+                            print(f"[Worker-{self.worker_id}] 获取南航运单号最终失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 如果获取运单号失败，将状态设置为失败
             if not waybill_number_retrieved:
@@ -1587,7 +1599,7 @@ class RPAWorker:
                         queues_info["freight_rate"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取费率失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取费率失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取运费
             if "freight" in queues_info:
@@ -1596,7 +1608,7 @@ class RPAWorker:
                         queues_info["freight"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取运费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取运费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取燃油费
             if "fuel_costs" in queues_info:
@@ -1605,7 +1617,7 @@ class RPAWorker:
                         queues_info["fuel_costs"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取燃油费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取燃油费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取延伸服务费
             if "extended_service_fee" in queues_info:
@@ -1614,7 +1626,7 @@ class RPAWorker:
                         queues_info["extended_service_fee"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取延伸服务费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取延伸服务费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 创建结算单
             if waybill_number_data:
@@ -1684,13 +1696,13 @@ class RPAWorker:
                     )
                     db.add(settlement)
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 创建结算单失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 
                 # 自动触发货站录单（南航开单成功后自动执行，仅当开关为"0"时）
                 try:
                     await self._auto_generate_csa_cargo_station_documents(db, waybill, form_data_dict)
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 南航自动生成货站录单文档失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 南航自动生成货站录单文档失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
         finally:
             # 清理队列
             await self._cleanup_queues(queues_info)
@@ -1734,7 +1746,7 @@ class RPAWorker:
                             "queueName": queue_config["name"]
                         }
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 创建队列失败: {queue_config['name']}, 错误: {_get_error_detail(e)}\n{traceback.format_exc()}")
         
         # 保存队列信息到订舱
         if queues_info:
@@ -1833,7 +1845,7 @@ class RPAWorker:
                         
                         db.commit()
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 轮询修改数据后开单状态失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 轮询修改数据后开单状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
         # 轮询超时
@@ -1858,7 +1870,7 @@ class RPAWorker:
                         queues_info["rate"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取费率失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取费率失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取运费
             if "freight" in queues_info:
@@ -1867,7 +1879,7 @@ class RPAWorker:
                         queues_info["freight"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取运费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取运费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取燃油费
             if "fuel_costs" in queues_info:
@@ -1876,7 +1888,7 @@ class RPAWorker:
                         queues_info["fuel_costs"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取燃油费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取燃油费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取延伸服务费
             if "extended_service_fee" in queues_info:
@@ -1885,7 +1897,7 @@ class RPAWorker:
                         queues_info["extended_service_fee"]["queueUUID"]
                     )
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 获取延伸服务费失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 获取延伸服务费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 获取原始form_data（用户提交的修改后的数据）
             original_form_data = params.get("_original_form_data", {})
@@ -1955,7 +1967,7 @@ class RPAWorker:
                 db.add(settlement)
                 print(f"[Worker-{self.worker_id}] 创建结算单成功，订舱ID: {booking.id}")
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 创建结算单失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 创建结算单失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
             # 同步创建waybills记录（使用用户提交的修改后的form_data）
             new_waybill = None
@@ -1982,9 +1994,9 @@ class RPAWorker:
                 try:
                     await self._auto_generate_csa_cargo_station_documents(db, new_waybill, waybill_form_data)
                 except Exception as e:
-                    print(f"[Worker-{self.worker_id}] 南航修改数据后开单自动生成货站录单文档失败: {str(e)}")
+                    print(f"[Worker-{self.worker_id}] 南航修改数据后开单自动生成货站录单文档失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 同步创建waybill记录失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 同步创建waybill记录失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
         finally:
             # 清理队列
             await self._cleanup_queues(queues_info)
@@ -1998,7 +2010,7 @@ class RPAWorker:
                 try:
                     await rpa_service.delete_queue(queue_info["queueID"])
                 except Exception as e:
-                    print(f"[Worker] 删除队列失败 ({queue_key}): {str(e)}")
+                    print(f"[Worker] 删除队列失败 ({queue_key}): {_get_error_detail(e)}\n{traceback.format_exc()}")
     
     # ========== 打单任务相关方法 ==========
     
@@ -2018,7 +2030,6 @@ class RPAWorker:
             form_data_dict: 运单表单数据字典
             delay_for_file_transfer: 是否需要等待文件传输完成后再执行打单（货站录单生成文件后需要等待）
         """
-        import traceback
         from app.services.document_print_service import prepare_print_tasks, get_print_task_count
         from app.models.config import BusinessConfig
         from app.config import settings
@@ -2098,8 +2109,7 @@ class RPAWorker:
             print(f"[Worker-{self.worker_id}] [自动打单] 打单任务已成功创建！任务ID: {task.id}, 共 {task_count} 个打印子任务，运单ID: {waybill.id}")
             
         except Exception as e:
-            print(f"[Worker-{self.worker_id}] [自动打单] 自动触发打单失败: {str(e)}")
-            print(f"[Worker-{self.worker_id}] [自动打单] 错误详情: {traceback.format_exc()}")
+            print(f"[Worker-{self.worker_id}] [自动打单] 自动触发打单失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             # 自动打单失败不影响货站录单的成功状态
     
     async def _execute_document_print(self, db, task: RPATask):
@@ -2174,9 +2184,9 @@ class RPAWorker:
                         "index": i + 1,
                         "description": task_desc,
                         "status": "failed",
-                        "error": str(e)
+                        "error": _get_error_detail(e)
                     })
-                    print(f"[Worker-{self.worker_id}] 打印子任务异常 ({i+1}/{total_count}): {task_desc}, 错误: {str(e)}，继续执行后续任务...")
+                    print(f"[Worker-{self.worker_id}] 打印子任务异常 ({i+1}/{total_count}): {task_desc}, 错误: {_get_error_detail(e)}，继续执行后续任务...\n{traceback.format_exc()}")
             
             # 所有子任务执行完毕，统计结果
             success_count = sum(1 for r in task_results if r["status"] == "success")
@@ -2305,7 +2315,7 @@ class RPAWorker:
             print(f"[Worker-{self.worker_id}] 打印RPA接口调用超时")
             return False
         except Exception as e:
-            print(f"[Worker-{self.worker_id}] 打印任务执行异常: {str(e)}")
+            print(f"[Worker-{self.worker_id}] 打印任务执行异常: {_get_error_detail(e)}\n{traceback.format_exc()}")
             return False
     
     async def _poll_print_task_status(self, job_uuid: str, work_uuid: str) -> bool:
@@ -2341,7 +2351,7 @@ class RPAWorker:
                             return False
                         # 状态为1时继续轮询
             except Exception as e:
-                print(f"[Worker-{self.worker_id}] 轮询打印状态失败: {str(e)}")
+                print(f"[Worker-{self.worker_id}] 轮询打印状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
         # 轮询超时
