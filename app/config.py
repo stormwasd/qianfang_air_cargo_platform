@@ -103,9 +103,6 @@ class Settings(BaseSettings):
     RPA_POLL_INTERVAL: int = Field(default=5, ge=1, le=300, description="RPA状态轮询间隔（秒），默认5秒")
     RPA_POLL_MAX_COUNT: int = Field(default=60, ge=1, le=1000, description="RPA状态最大轮询次数，默认60次（即最多轮询5分钟）")
     
-    # 打单延迟配置（货站录单成功后，等待文件生成/传输完成再执行打单）
-    PRINT_DELAY_AFTER_CARGO_STATION_RECORD: int = Field(default=30, ge=0, le=600, description="货站录单成功后延迟打单的时间（秒），默认30秒，0表示不延迟")
-    
     # RPA任务队列配置
     RPA_QUEUE_ENABLED: bool = Field(default=True, description="是否启用RPA任务队列模式")
     RPA_QUEUE_POLL_INTERVAL: int = Field(default=2, ge=1, le=60, description="Worker轮询队列间隔（秒），默认2秒")

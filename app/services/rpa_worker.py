@@ -2032,11 +2032,21 @@ class RPAWorker:
         """
         from app.services.document_print_service import prepare_print_tasks, get_print_task_count
         from app.models.config import BusinessConfig
-        from app.config import settings
         
         # 货站录单生成的文件需要传输到打印机所在的机器，等待一段时间再执行打单
         if delay_for_file_transfer:
-            delay_seconds = settings.PRINT_DELAY_AFTER_CARGO_STATION_RECORD
+            # 从业务参数配置中获取延迟时间（config_data.{航司}.document.print_delay_after_cargo_station_record）
+            config = db.query(BusinessConfig).first()
+            business_config = json.loads(config.config_data) if config else {}
+            airline = form_data_dict.get("airline", "")
+            airline_code = "shenzhen_air" if airline in ["1", "深圳航空", "shenzhen_air"] else ("china_southern_air" if airline in ["2", "南方航空", "china_southern_air"] else "")
+            doc_config = business_config.get(airline_code, {}).get("document", {}) if airline_code else {}
+            delay_val = doc_config.get("print_delay_after_cargo_station_record")
+            try:
+                delay_seconds = int(delay_val) if isinstance(delay_val, (int, float)) else int(str(delay_val)) if delay_val is not None else 30
+            except (ValueError, TypeError):
+                delay_seconds = 30
+            delay_seconds = max(0, min(600, delay_seconds))  # 限制在 0-600 秒
             if delay_seconds > 0:
                 print(f"[Worker-{self.worker_id}] [自动打单] 等待文件传输完成，延迟 {delay_seconds} 秒后执行打单...")
                 await asyncio.sleep(delay_seconds)

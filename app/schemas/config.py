@@ -36,6 +36,7 @@ class BusinessConfigCreate(BaseModel):
           }
         },
         "document": {
+          "print_delay_after_cargo_station_record": 30,
           "domestic_cargo_checklist": {
             "shipper_or_agent": "",
             "shipper_or_agent_seal": "",
@@ -102,6 +103,7 @@ class BusinessConfigCreate(BaseModel):
           }
         },
         "document": {
+          "print_delay_after_cargo_station_record": 30,
           "inspection_form_for_the_receipt_and_transport_of_oxygenated_aquatic_animal_cargo": {
             "shipper_or_agent": ""
           }
