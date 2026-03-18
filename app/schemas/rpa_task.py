@@ -2,7 +2,7 @@
 RPA任务Schema
 """
 from typing import Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 
 
@@ -36,10 +36,12 @@ class RPATaskResponse(BaseModel):
 
 class RPATaskQuery(BaseModel):
     """查询RPA任务的Schema"""
+    model_config = ConfigDict(populate_by_name=True)
+
     task_type: Optional[str] = None
     target_type: Optional[str] = None
     target_id: Optional[str] = None
     status: Optional[str] = None
-    page: int = 1
-    page_size: int = 10
+    page: int = Field(1, ge=1)
+    page_size: int = Field(10, ge=1, le=100, alias="pageSize")
 

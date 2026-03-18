@@ -1,7 +1,7 @@
 """
 字典类型相关的Pydantic schemas
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
 from datetime import datetime
 
@@ -41,7 +41,9 @@ class DictTypeListResponse(BaseModel):
 
 class DictTypeQuery(BaseModel):
     """字典类型查询schema"""
+    model_config = ConfigDict(populate_by_name=True)
+
     type: Optional[str] = Field(None, description="类型标识筛选（唯一标识，如：freight_code）")
     status: Optional[int] = Field(None, description="状态筛选（0=禁用，1=开启）", ge=0, le=1)
     page: Optional[int] = Field(None, ge=1, description="页码（不传则不分页，返回全部）")
-    page_size: Optional[int] = Field(None, ge=1, le=100, description="每页数量（不传则不分页，返回全部）")
+    page_size: Optional[int] = Field(None, ge=1, le=100, alias="pageSize", description="每页数量（不传则不分页，返回全部）")

@@ -156,7 +156,7 @@ async def get_dict_types(
     - **type**: 类型标识筛选（可选，唯一标识，如：freight_code）
     - **status**: 状态筛选（可选，0=禁用，1=开启）
     - **page**: 页码（可选，不传则不分页，返回全部）
-    - **page_size**: 每页数量（可选，不传则不分页，返回全部）
+    - **pageSize**: 每页数量（可选，不传则不分页，返回全部）
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
@@ -177,7 +177,7 @@ async def get_dict_types(
     # 排序
     query_obj = query_obj.order_by(DictType.created_at.desc())
     
-    # 分页（只有同时传了page和page_size才分页）
+    # 分页（只有同时传了page和pageSize才分页）
     if query.page is not None and query.page_size is not None:
         offset = (query.page - 1) * query.page_size
         dict_types = query_obj.offset(offset).limit(query.page_size).all()
@@ -407,7 +407,7 @@ async def get_dict_options(
     - **dict_type**: 字典类型（唯一标识，如：freight_code）（可选）
     - **status**: 状态筛选（可选，0=禁用，1=开启）
     - **page**: 页码（可选，不传则不分页，返回全部）
-    - **page_size**: 每页数量（可选，不传则不分页，返回全部）
+    - **pageSize**: 每页数量（可选，不传则不分页，返回全部）
     - **order**: 排序方式（可选，asc=从小到大，desc=从大到小），仅当所有选项的value全为数字时生效，不传则默认从小到大排序
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
@@ -462,7 +462,7 @@ async def get_dict_options(
             reverse=True
         )
     
-    # 分页（只有同时传了page和page_size才分页）
+    # 分页（只有同时传了page和pageSize才分页）
     if query.page is not None and query.page_size is not None:
         offset = (query.page - 1) * query.page_size
         dict_options = dict_options[offset:offset + query.page_size]

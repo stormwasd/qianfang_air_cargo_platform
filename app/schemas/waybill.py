@@ -1,7 +1,7 @@
 """
 运单相关的Pydantic schemas
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 
@@ -119,6 +119,8 @@ class WaybillUpdate(BaseModel):
 
 class WaybillQuery(BaseModel):
     """运单查询schema"""
+    model_config = ConfigDict(populate_by_name=True)
+
     airline_record_status: Optional[str] = Field(None, description="航司录单执行状态筛选（数据字典值精确匹配：0=未开单，1=开单中，2=失败，3=成功）")
     cargo_station_record_status: Optional[str] = Field(None, description="货站录单执行状态筛选（数据字典值精确匹配：0=未执行，1=执行中，2=失败，3=已录单）")
     document_print_status: Optional[str] = Field(None, description="单据打印执行状态筛选（数据字典值精确匹配：0=未执行，1=执行中，2=失败）")
@@ -131,7 +133,7 @@ class WaybillQuery(BaseModel):
     shipper: Optional[str] = Field(None, description="托运单位（模糊搜索）")
     waybill_number: Optional[str] = Field(None, description="运单号（模糊搜索）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=100, description="每页数量")
+    page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
 
 
 class WaybillResponse(BaseModel):

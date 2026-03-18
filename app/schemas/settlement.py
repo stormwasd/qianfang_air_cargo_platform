@@ -1,7 +1,7 @@
 """
 结算单相关的Pydantic schemas
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 
@@ -18,6 +18,8 @@ class SettlementUpdate(BaseModel):
 
 class SettlementQuery(BaseModel):
     """结算单查询schema"""
+    model_config = ConfigDict(populate_by_name=True)
+
     airline: Optional[str] = Field(None, description="所属航司（模糊搜索，从form_data JSON中提取）")
     destination: Optional[str] = Field(None, description="目的站（模糊搜索，从form_data JSON中提取）")
     customer_name: Optional[str] = Field(None, description="客户名称/发货人名称（模糊搜索，从form_data JSON中提取）")
@@ -28,7 +30,7 @@ class SettlementQuery(BaseModel):
     airline_record_time_start: Optional[date] = Field(None, description="航司录单时间开始（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）")
     airline_record_time_end: Optional[date] = Field(None, description="航司录单时间结束（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=100, description="每页数量")
+    page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
 
 
 class SettlementResponse(BaseModel):

@@ -1,7 +1,7 @@
 """
 客户相关的Pydantic schemas
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
 from decimal import Decimal
 from datetime import datetime
@@ -48,8 +48,10 @@ class CustomerListResponse(BaseModel):
 
 class CustomerQuery(BaseModel):
     """客户查询schema"""
+    model_config = ConfigDict(populate_by_name=True)
+
     company_name: Optional[str] = Field(None, description="公司名称（模糊搜索）")
     contact_person: Optional[str] = Field(None, description="联系人（模糊搜索）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=100, description="每页数量")
+    page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
 

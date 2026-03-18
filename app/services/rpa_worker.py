@@ -394,7 +394,7 @@ class RPAWorker:
                     "settlement_status": "0",
                     "financial_review": "0",
                     "master_airwaybill_number": waybill.waybill_number or "",
-                    "transport_method": "0",
+                    "transport_method": "2",
                     "airline": "1",
                     "origin_station": flight_info.get("origin_station", ""),
                     "destination": flight_info.get("destination", ""),
@@ -1249,7 +1249,7 @@ class RPAWorker:
                 "settlement_status": "0",
                 "financial_review": "0",
                 "master_airwaybill_number": booking.master_airwaybill_number or "",
-                "transport_method": "0",
+                "transport_method": "2",
                 "airline": "2",  # 南航
                 "origin_station": booking_item.get("origin_station", ""),
                 "destination": booking_item.get("destination", ""),
@@ -1644,7 +1644,7 @@ class RPAWorker:
                     "settlement_status": "0",
                     "financial_review": "0",
                     "master_airwaybill_number": waybill.waybill_number or "",
-                    "transport_method": "0",
+                    "transport_method": "2",
                     "airline": "2",  # 南航
                     "origin_station": flight_info.get("origin_station", ""),
                     "destination": flight_info.get("destination", ""),
@@ -1915,7 +1915,7 @@ class RPAWorker:
                 "settlement_status": "0",
                 "financial_review": "0",
                 "master_airwaybill_number": booking.master_airwaybill_number or "",
-                "transport_method": "0",
+                "transport_method": "2",
                 "airline": "2",  # 南航
                 "origin_station": flight_info.get("origin_station", ""),
                 "destination": flight_info.get("destination", ""),

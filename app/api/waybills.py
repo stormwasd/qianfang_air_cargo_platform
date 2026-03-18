@@ -102,7 +102,7 @@ async def get_waybills(
     - **shipper**: 托运单位（模糊搜索，从form_data中提取，支持深圳航空的shipper_consignee_info.shipper_unit和南方航空的contact_info.shipper_unit）
     - **waybill_number**: 运单号（模糊搜索）
     - **page**: 页码（默认1）
-    - **page_size**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大100）
     
     支持多条件组合筛选
     """
@@ -639,7 +639,7 @@ def poll_rpa_status(waybill_id: int, work_uuid: str, job_uuid: str):
                                                     "settlement_status": "0",
                                                     "financial_review": "0",
                                                     "master_airwaybill_number": waybill.waybill_number or "",  # 已格式化，包含479-前缀
-                                                    "transport_method": "0",
+                                                    "transport_method": "2",
                                                     "airline": "1",  # 深航是1
                                                     "origin_station": flight_info.get("origin_station", ""),
                                                     "destination": flight_info.get("destination", ""),

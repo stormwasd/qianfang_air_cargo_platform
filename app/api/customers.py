@@ -118,7 +118,7 @@ async def get_customers(
     - **company_name**: 公司名称（模糊搜索）
     - **contact_person**: 联系人（模糊搜索）
     - **page**: 页码（默认1）
-    - **page_size**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大100）
     
     支持按公司名称和联系人进行模糊搜索
     """

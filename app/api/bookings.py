@@ -632,7 +632,7 @@ async def get_bookings(
     - **booking_status**: 订舱状态筛选（数据字典值：0=未执行，1=执行中，2=失败，3=成功）
     - **invoice_status**: 开单状态筛选（数据字典值：0=未开单，1=开单中，2=失败，3=成功）
     - **page**: 页码（默认1）
-    - **page_size**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大100）
     
     支持多条件组合筛选
     """
@@ -1385,7 +1385,7 @@ def poll_china_southern_air_direct_invoice_status(booking_id: int, work_uuid: st
                                             "settlement_status": "0",
                                             "financial_review": "0",
                                             "master_airwaybill_number": booking.master_airwaybill_number or "",
-                                            "transport_method": "0",
+                                            "transport_method": "2",
                                             "airline": "2",  # 南航是2
                                             "origin_station": booking_item.get("origin_station", ""),
                                             "destination": booking_item.get("destination", ""),

@@ -1,7 +1,7 @@
 """
 订舱相关的Pydantic schemas
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -68,11 +68,13 @@ class BookingUpdate(BaseModel):
 
 class BookingQuery(BaseModel):
     """订舱查询schema"""
+    model_config = ConfigDict(populate_by_name=True)
+
     airline: Optional[str] = Field(None, description="航司（数据字典值精确匹配：1=深圳航空，2=南方航空）")
     booking_status: Optional[str] = Field(None, description="订舱状态筛选（数据字典值精确匹配：0=未执行，1=执行中，2=失败，3=成功）")
     invoice_status: Optional[str] = Field(None, description="开单状态筛选（数据字典值精确匹配：0=未开单，1=开单中，2=失败，3=成功）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=100, description="每页数量")
+    page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
 
 
 class BookingResponse(BaseModel):
