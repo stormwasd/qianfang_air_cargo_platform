@@ -2,7 +2,9 @@
 订舱管理接口
 """
 import json
+from pathlib import Path
 from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy.dialects.mysql import JSON
@@ -22,6 +24,12 @@ from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.config import settings
 
 router = APIRouter()
+CHINA_SOUTHERN_AIR_TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "documents"
+    / "china_southern_air"
+    / "南航订舱模板.xlsx"
+)
 
 
 def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_uuid: str):
@@ -731,6 +739,26 @@ async def get_bookings(
     return success_response(
         data={"total": total, "items": booking_list},
         msg="查询成功"
+    )
+
+
+@router.get("/china-southern-air/template", summary="下载南航订舱模板")
+async def download_china_southern_air_template(
+    current_user = Depends(get_current_active_user),
+):
+    """
+    下载南航订舱Excel模板文件
+
+    返回：
+    - xlsx文件流（attachment）
+    """
+    if not CHINA_SOUTHERN_AIR_TEMPLATE_PATH.exists():
+        raise NotFoundException("南航订舱模板不存在，请联系管理员上传模板文件")
+
+    return FileResponse(
+        path=str(CHINA_SOUTHERN_AIR_TEMPLATE_PATH),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="南航订舱模板.xlsx",
     )
 
 
