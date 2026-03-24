@@ -3,6 +3,7 @@
 """
 import json
 from pathlib import Path
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -639,6 +640,8 @@ async def get_bookings(
     - **airline**: 航司（数据字典值精确匹配：1=深圳航空，2=南方航空）
     - **booking_status**: 订舱状态筛选（数据字典值：0=未执行，1=执行中，2=失败，3=成功）
     - **invoice_status**: 开单状态筛选（数据字典值：0=未开单，1=开单中，2=失败，3=成功）
+    - **booking_date_start**: 订舱日期开始（格式：YYYY-MM-DD，作用于booking_time）
+    - **booking_date_end**: 订舱日期结束（格式：YYYY-MM-DD，作用于booking_time）
     - **page**: 页码（默认1）
     - **pageSize**: 每页数量（默认10，最大100）
     
@@ -657,6 +660,23 @@ async def get_bookings(
     if query.invoice_status:
         query_obj = query_obj.filter(
             Booking.invoice_status == query.invoice_status
+        )
+
+    # 订舱日期范围筛选（作用于booking_time，DateTime类型）
+    # start 按当天00:00:00起算，end 按次日00:00:00做左闭右开，确保结束日期当天数据被完整包含
+    if query.booking_date_start:
+        start_datetime = datetime.combine(query.booking_date_start, datetime.min.time())
+        query_obj = query_obj.filter(
+            Booking.booking_time >= start_datetime
+        )
+
+    if query.booking_date_end:
+        end_exclusive_datetime = datetime.combine(
+            query.booking_date_end + timedelta(days=1),
+            datetime.min.time()
+        )
+        query_obj = query_obj.filter(
+            Booking.booking_time < end_exclusive_datetime
         )
     
     # 航司筛选（数据字典值精确匹配：1=深圳航空，2=南方航空）

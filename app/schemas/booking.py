@@ -3,7 +3,7 @@
 """
 from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, date
 
 
 class BookingCreate(BaseModel):
@@ -73,6 +73,8 @@ class BookingQuery(BaseModel):
     airline: Optional[str] = Field(None, description="航司（数据字典值精确匹配：1=深圳航空，2=南方航空）")
     booking_status: Optional[str] = Field(None, description="订舱状态筛选（数据字典值精确匹配：0=未执行，1=执行中，2=失败，3=成功）")
     invoice_status: Optional[str] = Field(None, description="开单状态筛选（数据字典值精确匹配：0=未开单，1=开单中，2=失败，3=成功）")
+    booking_date_start: Optional[date] = Field(None, description="订舱日期开始（格式：YYYY-MM-DD，作用于booking_time）")
+    booking_date_end: Optional[date] = Field(None, description="订舱日期结束（格式：YYYY-MM-DD，作用于booking_time）")
     page: int = Field(1, ge=1, description="页码")
     page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
 
