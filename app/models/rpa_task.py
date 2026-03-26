@@ -24,6 +24,11 @@ class RPATaskType(str, enum.Enum):
     # 打单任务（通用）
     DOCUMENT_PRINT = "DOCUMENT_PRINT"  # 单据打印（深航和南航通用，一个任务包含多个打印流程）
 
+    # 保持登录任务（不涉及机器人端队列数据存取）
+    SHENZHEN_AIR_KEEP_LOGIN = "SHENZHEN_AIR_KEEP_LOGIN"  # 深航保持登录
+    CHINA_SOUTHERN_AIR_KEEP_LOGIN = "CHINA_SOUTHERN_AIR_KEEP_LOGIN"  # 南航保持登录
+    TANGYI_KEEP_LOGIN = "TANGYI_KEEP_LOGIN"  # 唐翼保持登录
+
 
 class RPATaskStatus(str, enum.Enum):
     """RPA任务状态枚举"""

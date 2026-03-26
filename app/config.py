@@ -2,7 +2,7 @@
 项目配置文件
 使用Pydantic Settings进行配置管理，提供类型验证和更好的配置管理
 """
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -98,6 +98,31 @@ class Settings(BaseSettings):
     RPA_CHINA_SOUTHERN_AIR_QUEUE_FREIGHT: str = "nanhang_air_dingcang_kaidan_queue_freight"  # 南航运费队列名称
     RPA_CHINA_SOUTHERN_AIR_QUEUE_FUEL_COSTS: str = "nanhang_air_dingcang_kaidan_queue_fuel_costs"  # 南航燃油费队列名称
     RPA_CHINA_SOUTHERN_AIR_QUEUE_EXTENDED_SERVICE_FEE: str = "nanhang_air_dingcang_kaidan_queue_extended_service_fee"  # 南航延伸服务费队列名称
+
+    # ========== 保持登录RPA配置 ==========
+    RPA_KEEP_LOGIN_ENABLED: bool = Field(
+        default=True,
+        description="是否启用保持登录定时入队（会创建RPATask，由Worker消费）"
+    )
+
+    # jobUuid（产品下发的jobUuid）
+    RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_JOB_UUID: str = "946f2c29111a8d6e023ff0a75afb0029"
+    RPA_SHENZHEN_AIR_KEEP_LOGIN_JOB_UUID: str = "6d24e496bf1b39af5b77740960d51ca4"
+    RPA_TANGYI_KEEP_LOGIN_JOB_UUID: str = "137a3c17c14505dfaac006eab08f16e6"
+
+    # 定时入队间隔（秒）：不填/填None则不入队
+    RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_INTERVAL_SECONDS: Optional[int] = Field(
+        default=600, ge=1, le=86400,
+        description="南航保持登录执行间隔（秒），默认不启用"
+    )
+    RPA_SHENZHEN_AIR_KEEP_LOGIN_INTERVAL_SECONDS: Optional[int] = Field(
+        default=600, ge=1, le=86400,
+        description="深航保持登录执行间隔（秒），默认不启用"
+    )
+    RPA_TANGYI_KEEP_LOGIN_INTERVAL_SECONDS: Optional[int] = Field(
+        default=600, ge=1, le=86400,
+        description="唐翼保持登录执行间隔（秒），默认不启用"
+    )
     
     # RPA轮询配置
     RPA_POLL_INTERVAL: int = Field(default=5, ge=1, le=300, description="RPA状态轮询间隔（秒），默认5秒")

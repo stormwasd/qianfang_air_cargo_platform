@@ -112,6 +112,12 @@ class RPAWorker:
                     await self._execute_china_southern_air_invoice_with_data(db, task)
                 elif task.task_type == RPATaskType.DOCUMENT_PRINT.value:
                     await self._execute_document_print(db, task)
+                elif task.task_type == RPATaskType.SHENZHEN_AIR_KEEP_LOGIN.value:
+                    await self._execute_shenzhen_air_keep_login(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_KEEP_LOGIN.value:
+                    await self._execute_china_southern_air_keep_login(db, task)
+                elif task.task_type == RPATaskType.TANGYI_KEEP_LOGIN.value:
+                    await self._execute_tangyi_keep_login(db, task)
                 else:
                     print(f"[Worker-{self.worker_id}] 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -160,6 +166,78 @@ class RPAWorker:
                     db.commit()
         except Exception as e:
             print(f"[Worker-{self.worker_id}] 更新目标状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
+
+    async def _execute_keep_login_job(self, db, task: RPATask, job_uuid: str):
+        """
+        执行“保持登录”任务（仅传入 system_account/login_password）
+
+        该任务不涉及机器人端队列数据的创建/读取/删除。
+        """
+        params = json.loads(task.params) if task.params else {}
+
+        system_account = params.get("system_account", "")
+        login_password = params.get("login_password", "")
+
+        if not system_account or not login_password:
+            raise Exception("保持登录任务参数缺失：system_account/login_password")
+
+        # 调用RPA保持登录接口并获取workUuid
+        rpa_response = await asyncio.wait_for(
+            rpa_service.create_keep_login_job(
+                job_uuid=job_uuid,
+                system_account=system_account,
+                login_password=login_password
+            ),
+            timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+        )
+
+        work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+        if not work_uuid:
+            raise Exception("RPA保持登录接口未返回workUuid")
+
+        success = await self._poll_keep_login_job_status(job_uuid=job_uuid, work_uuid=work_uuid)
+        if success:
+            rpa_task_service.complete_task(db, task.id, True)
+        else:
+            rpa_task_service.complete_task(db, task.id, False, error_message="RPA保持登录执行失败")
+
+    async def _poll_keep_login_job_status(self, job_uuid: str, work_uuid: str) -> bool:
+        """轮询保持登录RPA任务状态（status=5成功，status=3失败）"""
+        max_polls = settings.RPA_POLL_MAX_COUNT
+        poll_interval = settings.RPA_POLL_INTERVAL
+
+        for _ in range(max_polls):
+            await asyncio.sleep(poll_interval)
+
+            try:
+                status_data = await rpa_service.query_shenzhen_air_waybill_status(job_uuid)
+                status_info = rpa_service.extract_status_from_query_response(status_data, work_uuid)
+
+                if status_info:
+                    rpa_status = status_info.get("status")
+                    if rpa_status == 5:
+                        return True
+                    if rpa_status == 3:
+                        return False
+            except Exception as e:
+                print(
+                    f"[Worker-{self.worker_id}] 轮询保持登录状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}"
+                )
+                continue
+
+        return False
+
+    async def _execute_shenzhen_air_keep_login(self, db, task: RPATask):
+        job_uuid = task.job_uuid or settings.RPA_SHENZHEN_AIR_KEEP_LOGIN_JOB_UUID
+        await self._execute_keep_login_job(db, task, job_uuid=job_uuid)
+
+    async def _execute_china_southern_air_keep_login(self, db, task: RPATask):
+        job_uuid = task.job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_JOB_UUID
+        await self._execute_keep_login_job(db, task, job_uuid=job_uuid)
+
+    async def _execute_tangyi_keep_login(self, db, task: RPATask):
+        job_uuid = task.job_uuid or settings.RPA_TANGYI_KEEP_LOGIN_JOB_UUID
+        await self._execute_keep_login_job(db, task, job_uuid=job_uuid)
     
     async def _execute_shenzhen_air_waybill(self, db, task: RPATask):
         """执行深航开单任务"""

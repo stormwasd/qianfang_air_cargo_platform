@@ -29,6 +29,46 @@ class RPAService:
             "Content-Type": "application/json",
             "Cookie": self.cookie
         }
+
+    async def create_keep_login_job(
+        self,
+        job_uuid: str,
+        system_account: str,
+        login_password: str
+    ) -> Dict[str, Any]:
+        """
+        调用“保持登录”RPA任务（仅使用 system_account/login_password）
+
+        注意：该流程不涉及机器人端队列数据的创建/读取/删除。
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+
+        payload = {
+            "jobUuid": job_uuid,
+            "operation": 1,
+            "inputParam": {
+                "system_account": system_account,
+                "login_password": login_password
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "RPA保持登录接口调用失败")
+                    raise BadRequestException(f"RPA保持登录接口调用失败: {error_msg}")
+
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"RPA保持登录接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"RPA保持登录接口请求失败: {repr(e)}")
+            except Exception as e:
+                raise BadRequestException(f"RPA保持登录接口调用异常: {repr(e)}")
     
     async def create_shenzhen_air_waybill(
         self,
