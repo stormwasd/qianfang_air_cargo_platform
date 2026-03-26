@@ -195,17 +195,26 @@ class RPAWorker:
         if not work_uuid:
             raise Exception("RPA保持登录接口未返回workUuid")
 
-        success = await self._poll_keep_login_job_status(job_uuid=job_uuid, work_uuid=work_uuid)
+        success, poll_error_detail = await self._poll_keep_login_job_status(
+            job_uuid=job_uuid, work_uuid=work_uuid
+        )
         if success:
             rpa_task_service.complete_task(db, task.id, True)
         else:
-            rpa_task_service.complete_task(db, task.id, False, error_message="RPA保持登录执行失败")
+            rpa_task_service.complete_task(
+                db,
+                task.id,
+                False,
+                error_message=poll_error_detail or "RPA保持登录执行失败"
+            )
 
-    async def _poll_keep_login_job_status(self, job_uuid: str, work_uuid: str) -> bool:
+    async def _poll_keep_login_job_status(self, job_uuid: str, work_uuid: str) -> tuple[bool, str]:
         """轮询保持登录RPA任务状态（status=5成功，status=3失败）"""
         max_polls = settings.RPA_POLL_MAX_COUNT
         poll_interval = settings.RPA_POLL_INTERVAL
 
+        last_status = None
+        last_status_desc = None
         for _ in range(max_polls):
             await asyncio.sleep(poll_interval)
 
@@ -215,17 +224,21 @@ class RPAWorker:
 
                 if status_info:
                     rpa_status = status_info.get("status")
+                    last_status = rpa_status
+                    last_status_desc = status_info.get("statusDesc")
                     if rpa_status == 5:
-                        return True
+                        return True, "保持登录成功"
                     if rpa_status == 3:
-                        return False
+                        return False, f"保持登录失败: status=3 statusDesc={last_status_desc}"
             except Exception as e:
                 print(
                     f"[Worker-{self.worker_id}] 轮询保持登录状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}"
                 )
                 continue
 
-        return False
+        if last_status is not None:
+            return False, f"保持登录超时: 最后状态 status={last_status} statusDesc={last_status_desc}"
+        return False, "保持登录超时: 未获取到对应workUuid的状态记录"
 
     async def _execute_shenzhen_air_keep_login(self, db, task: RPATask):
         job_uuid = task.job_uuid or settings.RPA_SHENZHEN_AIR_KEEP_LOGIN_JOB_UUID

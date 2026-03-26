@@ -43,7 +43,7 @@ class RPAService:
         """
         url = f"{self.base_url}/openAPI/v2/job/operation"
 
-        payload = {
+        payload_with_input_param = {
             "jobUuid": job_uuid,
             "operation": 1,
             "inputParam": {
@@ -54,12 +54,36 @@ class RPAService:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response = await client.post(
+                    url, headers=self._get_headers(), json=payload_with_input_param
+                )
                 response.raise_for_status()
                 result = response.json()
 
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "RPA保持登录接口调用失败")
+                    # 兼容：部分RPA jobUuid在RPA侧为“非引用类型”，
+                    # 不允许通过API覆盖/修改任务入参。此时应重试一次：不传inputParam，
+                    # 让job使用其预置的参数/默认配置。
+                    if "非引用类型" in error_msg or "不允许修改任务入参" in error_msg:
+                        payload_without_input_param = {
+                            "jobUuid": job_uuid,
+                            "operation": 1,
+                        }
+                        retry_response = await client.post(
+                            url,
+                            headers=self._get_headers(),
+                            json=payload_without_input_param,
+                        )
+                        retry_response.raise_for_status()
+                        retry_result = retry_response.json()
+                        if retry_result.get("code") != 0:
+                            retry_error_msg = retry_result.get("msg", "RPA保持登录接口重试失败")
+                            raise BadRequestException(
+                                f"RPA保持登录接口重试失败: {retry_error_msg}"
+                            )
+                        return retry_result.get("data", {})
+
                     raise BadRequestException(f"RPA保持登录接口调用失败: {error_msg}")
 
                 return result.get("data", {})
