@@ -562,9 +562,7 @@ async def execute_booking(
                 "weight",
                 "special_cargo_code",
                 "shipper",
-                "shipper_phone",
-                "consignee",
-                "consignee_phone"
+                "shipper_phone"
             ]
             
             missing_params = [key for key in required_params if not rpa_params.get(key)]
