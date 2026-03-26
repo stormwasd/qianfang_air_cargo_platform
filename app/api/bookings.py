@@ -25,12 +25,26 @@ from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.config import settings
 
 router = APIRouter()
-CHINA_SOUTHERN_AIR_TEMPLATE_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "documents"
-    / "china_southern_air"
-    / "南航订舱模板.xlsx"
+CHINA_SOUTHERN_AIR_TEMPLATE_DIR = (
+    Path(__file__).resolve().parents[2] / "documents" / "china_southern_air"
 )
+
+
+def _get_china_southern_air_template_path() -> Path:
+    """
+    获取南航订舱模板路径（兼容历史文件名）
+
+    兼容原因：历史上模板文件名可能使用“模板/模版”两种写法。
+    """
+    candidates = [
+        CHINA_SOUTHERN_AIR_TEMPLATE_DIR / "南航订舱模板.xlsx",
+        CHINA_SOUTHERN_AIR_TEMPLATE_DIR / "南航订舱模版.xlsx",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    # 默认返回主路径（用于报错提示/运维排查）
+    return candidates[0]
 
 
 def poll_china_southern_air_booking_status(booking_id: int, work_uuid: str, job_uuid: str):
@@ -772,11 +786,12 @@ async def download_china_southern_air_template(
     返回：
     - xlsx文件流（attachment）
     """
-    if not CHINA_SOUTHERN_AIR_TEMPLATE_PATH.exists():
+    template_path = _get_china_southern_air_template_path()
+    if not template_path.exists():
         raise NotFoundException("南航订舱模板不存在，请联系管理员上传模板文件")
 
     return FileResponse(
-        path=str(CHINA_SOUTHERN_AIR_TEMPLATE_PATH),
+        path=str(template_path),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename="南航订舱模板.xlsx",
     )
