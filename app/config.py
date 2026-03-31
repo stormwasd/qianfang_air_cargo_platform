@@ -112,15 +112,15 @@ class Settings(BaseSettings):
 
     # 定时入队间隔（秒）：不填/填None则不入队
     RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_INTERVAL_SECONDS: Optional[int] = Field(
-        default=600, ge=1, le=86400,
+        default=6600, ge=1, le=86400,
         description="南航保持登录执行间隔（秒），默认不启用"
     )
     RPA_SHENZHEN_AIR_KEEP_LOGIN_INTERVAL_SECONDS: Optional[int] = Field(
-        default=600, ge=1, le=86400,
+        default=6600, ge=1, le=86400,
         description="深航保持登录执行间隔（秒），默认不启用"
     )
     RPA_TANGYI_KEEP_LOGIN_INTERVAL_SECONDS: Optional[int] = Field(
-        default=600, ge=1, le=86400,
+        default=1200, ge=1, le=86400,
         description="唐翼保持登录执行间隔（秒），默认不启用"
     )
     
