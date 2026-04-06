@@ -460,7 +460,11 @@ class RPAService:
         no_dangerous_goods: str,
         shipper: str,
         shipper_phone: str,
-        consignee: str
+        consignee: str,
+        booking_remark_wide: str = "",
+        booking_remark_narrow: str = "",
+        wide_body_aircraft_rules: list = None,
+        narrow_body_aircraft_rules: list = None
     ) -> Dict[str, Any]:
         """
         调用南航订舱任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -535,7 +539,11 @@ class RPAService:
                 "no_dangerous_goods": no_dangerous_goods,
                 "shipper": shipper,
                 "shipper_phone": shipper_phone,
-                "consignee": consignee
+                "consignee": consignee,
+                "booking_remark_wide": booking_remark_wide,
+                "booking_remark_narrow": booking_remark_narrow,
+                "wide_body_aircraft_rules": wide_body_aircraft_rules or [],
+                "narrow_body_aircraft_rules": narrow_body_aircraft_rules or []
             }
         }
         
@@ -858,6 +866,10 @@ class RPAService:
                 "cargo_code": cargo_code,
                 "flight_number": flight_number,
                 "booking_remark": booking_remark,
+                "booking_remark_wide": booking_remark_wide,
+                "booking_remark_narrow": booking_remark_narrow,
+                "wide_body_aircraft_rules": wide_body_aircraft_rules or [],
+                "narrow_body_aircraft_rules": narrow_body_aircraft_rules or [],
                 "cargo_name": cargo_name,
                 "quantity": quantity,
                 "weight": weight,
