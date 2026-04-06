@@ -208,22 +208,20 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
       "airline": "南方航空",
       "bookings": [
         {
-          "origin_station": "CAN",
-          "destination": "PEK",
-          "flight_date": "2025-01-15",
-          "shipper_unit": "XX物流公司",
-          "flight_number": "CZ1234",
-          "booking_remark": "备注信息",
-          "cargo_type": "普通货物",
-          "cargo_code": "0001",
-          "cargo_name": "货物名称",
-          "quantity": "10",
-          "weight": "100.5",
-          "oversized_cargo": "否",
-          "special_cargo_code": "",
-          "no_dangerous_goods": "是",
-          "consignee": "收货人",
-          "consignee_phone": "13800138000"
+          "origin_station": "SZX",
+          "destination": "TAO",
+          "flight_date": "2026-04-25",
+          "flight_number": "CZ8735",
+          "booking_remark_wide": "宽体备注（非必填）",
+          "booking_remark_narrow": "窄体备注（非必填）",
+          "cargo_type": "普货",
+          "cargo_code": "9000",
+          "cargo_name": "衣物",
+          "quantity": "1",
+          "weight": "5",
+          "oversized_cargo": "0",
+          "special_cargo_code": "ACO",
+          "no_dangerous_goods": "0"
         }
       ]
     }
@@ -243,40 +241,14 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
     tangi_login = booking_and_create_config.get("tangi_login", {})
     china_southern_air_login = booking_and_create_config.get("china_southern_air_login", {})
     business_default = booking_and_create_config.get("business_default", {})
-    address = business_default.get("address", {})
+    
+    # 获取机型配置参数组
+    booking_config_raw = china_southern_air_config.get("booking", {})
+    booking_config = booking_config_raw.get("booking_config", {})
     
     # 从form_data.bookings数组中获取第一个订舱记录（新数据结构）
     bookings = form_data.get("bookings", [])
     booking_item = bookings[0] if bookings and len(bookings) > 0 else {}
-    
-    # 处理region（省/市/区）- 优先从form_data获取，如果没有则从业务参数配置获取
-    # 先尝试从form_data中获取address信息
-    form_address = form_data.get("address", {})
-    form_region = form_address.get("region", "")
-    
-    # 如果form_data中没有region，则从业务参数配置获取
-    if not form_region:
-        form_region = address.get("region", "")
-    
-    # 处理region格式（可能是数组或字符串）
-    if isinstance(form_region, list):
-        # 数组格式，直接取三个元素
-        region_province = form_region[0] if len(form_region) > 0 else ""
-        region_city = form_region[1] if len(form_region) > 1 else ""
-        region_district = form_region[2] if len(form_region) > 2 else ""
-    elif isinstance(form_region, str):
-        # 字符串格式，按"/"分割
-        region_parts = form_region.split("/") if form_region else []
-        region_province = region_parts[0] if len(region_parts) > 0 else ""
-        region_city = region_parts[1] if len(region_parts) > 1 else ""
-        region_district = region_parts[2] if len(region_parts) > 2 else ""
-    else:
-        region_province = ""
-        region_city = ""
-        region_district = ""
-    
-    # address_detail：优先从form_data获取，如果没有则从业务参数配置获取
-    address_detail = form_address.get("detail", "") or address.get("detail", "")
     
     # address_of_the_application_executable_file_tangyi：从业务参数配置获取（这个参数通常不在form_data中）
     address_of_app = tangi_login.get("address_of_the_application_executable_file_tangyi", "")
@@ -302,12 +274,6 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         "login_password": china_southern_air_login.get("login_password", ""),
         "system_url": china_southern_air_login.get("system_url", ""),
         
-        # 地址信息：优先使用form_data，如果没有则使用业务参数配置
-        "region_province_shipper": region_province,
-        "region_city_shipper": region_city,
-        "region_city_district": region_district,
-        "address_detail": address_detail,
-        
         # 联系人信息：优先使用form_data，如果没有则使用业务参数配置
         "order_contact_name": order_contact_name_raw,
         "order_contact_phone": order_contact_phone_raw,
@@ -316,12 +282,7 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         "agent_checker_name": form_data.get("agent_checker_name", "") or business_default.get("agent_checker_name", ""),
         "agent_consignor_name": form_data.get("agent_consignor_name", "") or business_default.get("agent_consignor_name", ""),
         
-        # 发货人信息：优先使用form_data.bookings[0].shipper_unit，如果没有则使用业务参数配置
-        "shipper": booking_item.get("shipper_unit", "") or form_data.get("shipper", "") or business_default.get("shipper", ""),
-        "shipper_phone": form_data.get("shipper_phone", "") or business_default.get("phone", ""),
-        
-        # 备注和结算文件号：优先使用form_data.bookings[0]，如果没有则使用业务参数配置
-        "booking_remark": booking_item.get("booking_remark", "") or form_data.get("booking_remark", "") or business_default.get("booking_remark", ""),
+        # 结算文件号：优先使用form_data，如果没有则使用业务参数配置
         "settlement_file_number": form_data.get("settlement_file_number", "") or business_default.get("settlement_file_number", ""),
         
         # 航班信息：优先使用form_data.bookings[0]，如果没有则使用业务参数配置
@@ -329,6 +290,10 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         "destination": booking_item.get("destination", ""),
         "flight_date": booking_item.get("flight_date", ""),
         "flight_number": booking_item.get("flight_number", ""),
+        
+        # 订舱备注：非必填，优先使用form_data.bookings[0]，如果没有则使用业务参数配置
+        "booking_remark_wide": booking_item.get("booking_remark_wide", "") or business_default.get("booking_remark_wide", ""),
+        "booking_remark_narrow": booking_item.get("booking_remark_narrow", "") or business_default.get("booking_remark_narrow", ""),
         
         # 货物信息：优先使用form_data.bookings[0]，如果没有则使用业务参数配置
         "cargo_type": booking_item.get("cargo_type", "") or business_default.get("cargo_type", ""),
@@ -338,13 +303,13 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         "weight": booking_item.get("weight", ""),
         "special_cargo_code": booking_item.get("special_cargo_code", "") or business_default.get("special_cargo_code", ""),
         
-        # 收货人信息：优先使用form_data.bookings[0]
-        "consignee_phone": booking_item.get("consignee_phone", ""),
-        "consignee": booking_item.get("consignee", ""),
-        
         # 其他信息：优先使用form_data.bookings[0]，如果没有则使用默认值
         "oversized_cargo": booking_item.get("oversized_cargo", "0"),
         "no_dangerous_goods": booking_item.get("no_dangerous_goods", "0"),
+        
+        # 机型配置：从系统业务参数中获取
+        "wide_body_aircraft_rules": booking_config.get("wide", []),
+        "narrow_body_aircraft_rules": booking_config.get("narrow", []),
     }
     
     return params
@@ -574,11 +539,7 @@ async def execute_booking(
                 "cargo_name",
                 "quantity",
                 "weight",
-                "special_cargo_code",
-                "shipper",
-                "shipper_phone",
-                "consignee",
-                "consignee_phone"
+                "special_cargo_code"
             ]
             
             missing_params = [key for key in required_params if not rpa_params.get(key)]
@@ -851,7 +812,8 @@ def _convert_booking_to_waybill_form_data(booking_form_data: dict, business_conf
           "flight_date": "2025-01-15",
           "shipper_unit": "XX物流公司",
           "flight_number": "CZ1234",
-          "booking_remark": "备注信息",
+          "booking_remark_wide": "宽体备注（非必填）",
+          "booking_remark_narrow": "窄体备注（非必填）",
           "cargo_type": "普通货物",
           "cargo_code": "0001",
           "cargo_name": "货物名称",
@@ -920,7 +882,9 @@ def _convert_booking_to_waybill_form_data(booking_form_data: dict, business_conf
             "destination": booking_item.get("destination", ""),
             "flight_date": booking_item.get("flight_date", ""),
             "flight_number": booking_item.get("flight_number", ""),
-            "booking_remark": booking_item.get("booking_remark", "") or business_default.get("booking_remark", "")
+            "booking_remark": booking_item.get("booking_remark", "") or booking_item.get("booking_remark_wide", "") or business_default.get("booking_remark", ""),
+            "booking_remark_wide": booking_item.get("booking_remark_wide", "") or business_default.get("booking_remark_wide", ""),
+            "booking_remark_narrow": booking_item.get("booking_remark_narrow", "") or business_default.get("booking_remark_narrow", "")
         },
         
         # 货物信息 cargo_info

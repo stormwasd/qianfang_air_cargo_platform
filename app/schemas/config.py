@@ -71,6 +71,12 @@ class BusinessConfigCreate(BaseModel):
         }
       },
       "china_southern_air": {
+        "booking": {
+          "booking_config": {
+            "wide": ["4", "5", "6"],
+            "narrow": ["1", "2", "3"]
+          }
+        },
         "booking_and_create": {
           "china_southern_air_login": {
             "system_url": "",
@@ -85,6 +91,8 @@ class BusinessConfigCreate(BaseModel):
           "business_default": {
             "origin_station": "",
             "booking_remark": "",
+            "booking_remark_wide": "",
+            "booking_remark_narrow": "",
             "cargo_code": "",
             "cargo_type": "",
             "package": "",
