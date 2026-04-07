@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.department import Department
 from app.schemas.department import DepartmentCreate, DepartmentUpdate
-from app.api.deps import require_admin
+from app.api.deps import require_admin, get_current_active_user
 from app.utils.helpers import format_datetime_china
 
 router = APIRouter()
@@ -49,13 +49,13 @@ async def create_department(
     return success_response(data=department_data, msg="部门创建成功")
 
 
-@router.get("", summary="查看已创建部门")
+@router.get("", summary="查看已创建部门列表")
 async def get_departments(
-    current_user = Depends(require_admin),
+    current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    查看已创建部门接口（需要管理员权限）
+    查看已创建部门列表接口
     
     返回所有部门的列表
     """
@@ -80,11 +80,11 @@ async def get_departments(
 @router.get("/{department_id}", summary="获取部门详情")
 async def get_department(
     department_id: str,
-    current_user = Depends(require_admin),
+    current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    获取部门详情接口（需要管理员权限）
+    获取部门详情接口
     
     - **department_id**: 部门ID（字符串格式）
     """
