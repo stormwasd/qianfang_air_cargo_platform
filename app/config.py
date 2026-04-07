@@ -41,6 +41,7 @@ class Settings(BaseSettings):
         "waybill": "运单管理",
         "booking": "订舱管理",
         "settlement": "结算单管理",
+        "customer": "客户管理",
         "admin": "管理员"
     }
     

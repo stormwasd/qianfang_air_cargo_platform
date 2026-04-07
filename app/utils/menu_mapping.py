@@ -186,6 +186,36 @@ PERMISSION_MENU_MAP: Dict[str, List[MenuType]] = {
             ]
         },
     ],
+    
+    # 客户管理权限（支持代码和名称）
+    "customer": [
+        {
+            "name": "客户管理",
+            "children": [
+                {"name": "客户管理"}
+            ]
+        },
+        {
+            "name": "用户中心",
+            "children": [
+                {"name": "用户中心"}
+            ]
+        },
+    ],
+    "客户管理": [  # 向后兼容：保留权限名称作为key
+        {
+            "name": "客户管理",
+            "children": [
+                {"name": "客户管理"}
+            ]
+        },
+        {
+            "name": "用户中心",
+            "children": [
+                {"name": "用户中心"}
+            ]
+        },
+    ],
 }
 
 
