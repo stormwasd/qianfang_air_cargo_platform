@@ -727,6 +727,7 @@ async def get_bookings(
             "rpa_queue_uuid": booking.rpa_queue_uuid,
             "rpa_queue_id": booking.rpa_queue_id,
             "booking_cancel_status": booking.booking_cancel_status,
+            "booking_feedback": booking.booking_feedback,
             "created_at": format_datetime_china(booking.created_at),
             "updated_at": format_datetime_china(booking.updated_at)
         })
