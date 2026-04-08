@@ -308,8 +308,8 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         "no_dangerous_goods": booking_item.get("no_dangerous_goods", "0"),
         
         # 机型配置：从系统业务参数中获取
-        "wide_body_aircraft_rules": booking_config.get("wide") if isinstance(booking_config.get("wide"), list) else [],
-        "narrow_body_aircraft_rules": booking_config.get("narrow") if isinstance(booking_config.get("narrow"), list) else [],
+        "wide_body_aircraft_rules": booking_config.get("wide", "[\"35\",\"33\",\"74\",\"77\",\"78\"]"),
+        "narrow_body_aircraft_rules": booking_config.get("narrow", "[\"31\",\"32\",\"73\",\"38\",\"21\"]"),
     }
     
     return params
