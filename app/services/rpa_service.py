@@ -1426,6 +1426,24 @@ class RPAService:
         """
         return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
 
+    async def get_rpa_work_details(self, work_uuids: list) -> Dict[str, Any]:
+        """
+        获取RPA详细执行详情（含failDescription）
+        """
+        url = f"{self.base_url}/openAPI/v1/work-list"
+        payload = {"workUuids": work_uuids}
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(
+                    url, headers=self._get_headers(), json=payload
+                )
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                print(f"查询RPA详情异常: {repr(e)}")
+                return {"code": -1, "msg": str(e), "data": []}
+
 
 # 创建全局RPA服务实例
 rpa_service = RPAService()

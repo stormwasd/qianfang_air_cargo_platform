@@ -1056,6 +1056,10 @@ class RPAWorker:
                                     pass
                                 booking.rpa_queue_uuid = None
                                 booking.rpa_queue_id = None
+                            
+                            # 识别具体的异常信息（如：机型识别失败）
+                            await self._check_csa_booking_feedback(db, booking, work_uuid)
+                            
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, False, error_message="RPA订舱执行失败")
                             return
@@ -2458,6 +2462,26 @@ class RPAWorker:
         # 轮询超时
         print(f"[Worker-{self.worker_id}] 打印RPA状态轮询超时")
         return False
+
+    async def _check_csa_booking_feedback(self, db, booking: Booking, work_uuid: str):
+        """
+        检查南航订舱反馈信息（在任务失败时调用）
+        """
+        try:
+            # 获取RPA工作详情
+            details = await rpa_service.get_rpa_work_details([work_uuid])
+            if details.get("code") == 0 and details.get("data"):
+                # 获取第一条记录的失败描述
+                work_item = details["data"][0]
+                fail_desc = work_item.get("failDescription", "")
+                
+                # 匹配特定的错误模式
+                if "异常信息为：【1】" in fail_desc:
+                    booking.booking_feedback = "机型识别失败"
+                    db.commit()
+                    print(f"[Worker-{self.worker_id}] 识别到南航异常: 机型识别失败 (workUuid: {work_uuid})")
+        except Exception as e:
+            print(f"[Worker-{self.worker_id}] 检查南航反馈详情失败: {str(e)}")
 
 
 # 全局Worker管理器

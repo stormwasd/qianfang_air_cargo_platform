@@ -91,6 +91,7 @@ class BookingResponse(BaseModel):
     rpa_queue_uuid: Optional[str]
     rpa_queue_id: Optional[str]
     booking_cancel_status: str
+    booking_feedback: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
