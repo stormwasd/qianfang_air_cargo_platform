@@ -6,7 +6,7 @@ RPA服务模块
 后续如需支持其他航司（如南方航空），需要添加对应的接口方法
 """
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.config import settings
 from app.core.exceptions import BadRequestException
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value, get_rpa_status_description
