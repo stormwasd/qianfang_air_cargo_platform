@@ -976,17 +976,23 @@ class RPAWorker:
             # 轮询RPA状态
             await self._poll_china_southern_air_booking_status(db, task, booking, work_uuid, queue_uuid, queue_id)
             
-        except Exception as e:
-            # 清理队列
-            if queue_id:
-                try:
-                    await rpa_service.delete_queue(queue_id)
-                except:
-                    pass
-                booking.rpa_queue_uuid = None
-                booking.rpa_queue_id = None
-                db.commit()
-            raise e
+        finally:
+            # 清理队列（统一在finally处理兜底，包含正常结束和各类异常）
+            db.refresh(booking)
+            actual_queue_id = booking.rpa_queue_id or queue_id
+            if actual_queue_id:
+                for retry in range(3):
+                    try:
+                        await rpa_service.delete_queue(actual_queue_id)
+                        booking.rpa_queue_uuid = None
+                        booking.rpa_queue_id = None
+                        db.commit()
+                        break
+                    except Exception as clean_err:
+                        if retry == 2:
+                            print(f"[Worker-{self.worker_id}] 最终清理此队列失败 {actual_queue_id}: {repr(clean_err)}")
+                        else:
+                            await asyncio.sleep(1)
     
     async def _poll_china_southern_air_booking_status(self, db, task: RPATask, booking: Booking, work_uuid: str, queue_uuid: str, queue_id: str):
         """轮询南航订舱RPA状态"""
@@ -1033,15 +1039,6 @@ class RPAWorker:
                                 booking.booking_status = "2"  # 失败
                                 print(f"[Worker-{self.worker_id}] RPA返回成功但获取主单号失败，将状态设置为失败")
                             
-                            # 清理队列
-                            if actual_queue_id:
-                                try:
-                                    await rpa_service.delete_queue(actual_queue_id)
-                                except:
-                                    pass
-                                booking.rpa_queue_uuid = None
-                                booking.rpa_queue_id = None
-                            
                             db.commit()
                             # 只有成功获取运单号时才标记任务为成功
                             rpa_task_service.complete_task(db, task.id, waybill_number_retrieved)
@@ -1049,14 +1046,6 @@ class RPAWorker:
                         
                         # 如果失败，清理队列
                         elif rpa_status == 3:
-                            if queue_id:
-                                try:
-                                    await rpa_service.delete_queue(queue_id)
-                                except:
-                                    pass
-                                booking.rpa_queue_uuid = None
-                                booking.rpa_queue_id = None
-                            
                             # 识别具体的异常信息（如：机型识别失败）
                             await self._check_csa_booking_feedback(db, booking, work_uuid)
                             
@@ -1070,13 +1059,6 @@ class RPAWorker:
                 continue
         
         # 轮询超时
-        if queue_id:
-            try:
-                await rpa_service.delete_queue(queue_id)
-            except:
-                pass
-            booking.rpa_queue_uuid = None
-            booking.rpa_queue_id = None
         booking.booking_status = "2"  # 失败
         db.commit()
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA订舱状态轮询超时")
@@ -1896,12 +1878,11 @@ class RPAWorker:
             # 轮询RPA状态
             await self._poll_china_southern_air_invoice_with_data_status(db, task, booking, work_uuid, queues_info, params)
             
-        except Exception as e:
+        finally:
             # 清理队列
             await self._cleanup_queues(queues_info)
             booking.rpa_queue_uuids = None
             db.commit()
-            raise e
     
     async def _poll_china_southern_air_invoice_with_data_status(self, db, task: RPATask, booking: Booking, work_uuid: str, queues_info: dict, params: dict):
         """轮询南航修改数据后开单RPA状态"""
@@ -1926,8 +1907,6 @@ class RPAWorker:
                             booking.invoice_status = "1"  # 开单中
                         elif rpa_status == 3:
                             booking.invoice_status = "2"  # 开单失败
-                            await self._cleanup_queues(queues_info)
-                            booking.rpa_queue_uuids = None
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, False, error_message="RPA修改数据后开单执行失败")
                             return
@@ -1944,8 +1923,6 @@ class RPAWorker:
                 continue
         
         # 轮询超时
-        await self._cleanup_queues(queues_info)
-        booking.rpa_queue_uuids = None
         booking.invoice_status = "2"  # 开单失败
         db.commit()
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA修改数据后开单状态轮询超时")
@@ -2102,10 +2079,16 @@ class RPAWorker:
         """清理队列"""
         for queue_key, queue_info in queues_info.items():
             if "queueID" in queue_info:
-                try:
-                    await rpa_service.delete_queue(queue_info["queueID"])
-                except Exception as e:
-                    print(f"[Worker] 删除队列失败 ({queue_key}): {_get_error_detail(e)}\n{traceback.format_exc()}")
+                queue_id = queue_info["queueID"]
+                for retry in range(3):
+                    try:
+                        await rpa_service.delete_queue(queue_id)
+                        break
+                    except Exception as e:
+                        if retry == 2:
+                            print(f"[Worker] 最终删除队列失败 ({queue_key}, ID: {queue_id}): {_get_error_detail(e)}\n{traceback.format_exc()}")
+                        else:
+                            await asyncio.sleep(1)
     
     # ========== 打单任务相关方法 ==========
     

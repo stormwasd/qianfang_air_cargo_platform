@@ -1033,6 +1033,35 @@ class RPAService:
         """
         return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
     
+    async def query_queues_by_name(self, queue_name: str) -> List[Dict[str, Any]]:
+        """
+        根据队列名称查询队列列表
+        
+        Args:
+            queue_name: 队列名称
+            
+        Returns:
+            查询到的队列列表（包含 queueID 等信息）
+        """
+        url = f"{self.base_url}/openAPI/v1/queue/select-queue-list"
+        
+        payload = {
+            "queueName": queue_name
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") == 0:
+                    return result.get("data", [])
+                return []
+            except Exception as e:
+                print(f"查询队列列表异常: {repr(e)}")
+                return []
+    
     async def create_queue(self, queue_name: str, max_queue_number: int = 999, is_expire: bool = False) -> Dict[str, Any]:
         """
         创建队列接口（通用，适用于所有航司）
@@ -1062,6 +1091,27 @@ class RPAService:
                 # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "创建队列失败")
+                    # 预防机制：如果队列已存在，主动调用查询接口找到旧队列并删除，然后重试创建
+                    if "已存在" in error_msg or "already exist" in error_msg.lower():
+                        existing_queues = await self.query_queues_by_name(queue_name)
+                        if existing_queues:
+                            for q in existing_queues:
+                                q_id = q.get("queueID")
+                                if q_id:
+                                    try:
+                                        await self.delete_queue(str(q_id))
+                                    except Exception as del_err:
+                                        print(f"清理已存在的队列 {q_id} 失败: {repr(del_err)}")
+                            
+                            # 删除后重试创建（仅重试一次）
+                            retry_response = await client.post(url, headers=self._get_headers(), json=payload)
+                            retry_response.raise_for_status()
+                            retry_result = retry_response.json()
+                            if retry_result.get("code") == 0:
+                                return retry_result.get("data", {})
+                            else:
+                                raise BadRequestException(f"重试创建队列失败: {retry_result.get('msg', '未知错误')}")
+                    
                     raise BadRequestException(f"创建队列失败: {error_msg}")
                 
                 return result.get("data", {})
@@ -1069,6 +1119,8 @@ class RPAService:
                 raise BadRequestException(f"创建队列HTTP错误: {e.response.status_code}")
             except httpx.RequestError as e:
                 raise BadRequestException(f"创建队列请求失败: {repr(e)}")
+            except BadRequestException:
+                raise
             except Exception as e:
                 raise BadRequestException(f"创建队列异常: {repr(e)}")
     
