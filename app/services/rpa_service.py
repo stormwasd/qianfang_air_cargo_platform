@@ -111,7 +111,8 @@ class RPAService:
         cargo_code: str,
         cargo_name: str,
         waybill_type: str,
-        package: str
+        package: str,
+        storage_and_transportation_precautions: str = ""
     ) -> Dict[str, Any]:
         """
         调用深航新增运单任务RPA接口（仅适用于深圳航空，airline="1"或"深圳航空"）
@@ -464,7 +465,10 @@ class RPAService:
         booking_remark_wide: str = "",
         booking_remark_narrow: str = "",
         wide_body_aircraft_rules: list = None,
-        narrow_body_aircraft_rules: list = None
+        narrow_body_aircraft_rules: list = None,
+        storage_and_transportation_precautions: str = "",
+        product_name: str = "",
+        booking_volume: str = ""
     ) -> Dict[str, Any]:
         """
         调用南航订舱任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -534,7 +538,10 @@ class RPAService:
                 "oversized_cargo": oversized_cargo,
                 "no_dangerous_goods": no_dangerous_goods,
                 "wide_body_aircraft_rules": wide_body_aircraft_rules or [],
-                "narrow_body_aircraft_rules": narrow_body_aircraft_rules or []
+                "narrow_body_aircraft_rules": narrow_body_aircraft_rules or [],
+                "storage_and_transportation_precautions": storage_and_transportation_precautions,
+                "product_name": product_name,
+                "booking_volume": booking_volume
             }
         }
         
@@ -802,7 +809,10 @@ class RPAService:
         booking_remark_wide: str = "",
         booking_remark_narrow: str = "",
         wide_body_aircraft_rules: list = None,
-        narrow_body_aircraft_rules: list = None
+        narrow_body_aircraft_rules: list = None,
+        storage_and_transportation_precautions: str = "",
+        product_name: str = "",
+        booking_volume: str = ""
     ) -> Dict[str, Any]:
         """
         调用南航新增运单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -879,7 +889,10 @@ class RPAService:
                 "no_dangerous_goods": no_dangerous_goods,
                 "shipper": shipper,
                 "shipper_phone": shipper_phone,
-                "consignee": consignee
+                "consignee": consignee,
+                "storage_and_transportation_precautions": storage_and_transportation_precautions,
+                "product_name": product_name,
+                "booking_volume": booking_volume
             }
         }
         

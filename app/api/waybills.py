@@ -898,7 +898,8 @@ def _extract_shenzhen_air_params(form_data: dict, business_config: dict) -> dict
         "cargo_code": cargo_info.get("cargo_code") or business_default.get("cargo_code", ""),
         "cargo_name": cargo_info.get("cargo_name") or business_default.get("cargo_name", ""),
         "waybill_type": flight_info.get("waybill_type", ""),  # 运单类型，从form_data获取，可能为空
-        "package": cargo_info.get("package") or business_default.get("package", "")
+        "package": cargo_info.get("package") or business_default.get("package", ""),
+        "storage_and_transportation_precautions": cargo_info.get("storage_and_transportation_precautions", "")
     }
     
     return params
@@ -1073,6 +1074,11 @@ def _extract_china_southern_air_waybill_params(form_data: dict, business_config:
         # 其他信息：优先使用form_data，如果没有则使用默认值
         "oversized_cargo": cargo_info.get("oversized_cargo", "0"),
         "no_dangerous_goods": dangerous_goods_declaration.get("no_hidden_dangerous_goods", "0"),
+        
+        # 储运和产品信息
+        "storage_and_transportation_precautions": cargo_info.get("storage_and_transportation_precautions", ""),
+        "product_name": cargo_info.get("product_name", ""),
+        "booking_volume": cargo_info.get("booking_volume", "")
     }
     
     return params

@@ -33,11 +33,13 @@ class BookingCreate(BaseModel):
           "quantity": "",  // 件数
           "weight": "",  // 重量
           "product_name": "",  // 产品名称
+          "booking_volume": "",  // 订舱体积（可选）
           "oversized_cargo": "",  // 超规货
           "special_cargo_code": "",  // 特货码
           "no_dangerous_goods": "",  // 无危险品
           "consignee": "",  // 收货人
-          "consignee_phone": ""  // 收货人手机号
+          "consignee_phone": "",  // 收货人手机号
+          "storage_and_transportation_precautions": ""  // 储运注意事项（可选）
         }
       ]
     }

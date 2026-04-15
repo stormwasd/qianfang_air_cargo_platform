@@ -307,6 +307,11 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         "oversized_cargo": booking_item.get("oversized_cargo", "0"),
         "no_dangerous_goods": booking_item.get("no_dangerous_goods", "0"),
         
+        # 储运和产品信息
+        "storage_and_transportation_precautions": booking_item.get("storage_and_transportation_precautions", ""),
+        "product_name": booking_item.get("product_name", ""),
+        "booking_volume": booking_item.get("booking_volume", ""),
+        
         # 机型配置：从系统业务参数中获取
         "wide_body_aircraft_rules": booking_config.get("wide", "[\"35\",\"33\",\"74\",\"77\",\"78\"]"),
         "narrow_body_aircraft_rules": booking_config.get("narrow", "[\"31\",\"32\",\"73\",\"38\",\"21\"]"),

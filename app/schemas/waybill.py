@@ -37,7 +37,8 @@ class WaybillCreate(BaseModel):
         "freight_code": "",  // 运价代码
         "cargo_code": "",  // 货物代码
         "cargo_name": "",  // 货物名称
-        "package": ""  // 包装
+        "package": "",  // 包装
+        "storage_and_transportation_precautions": ""  // 储运注意事项（可选）
       },
       "other_fees": {
         "packaging_fee": "",  // 包装费
@@ -63,10 +64,11 @@ class WaybillCreate(BaseModel):
         "cargo_name": "",  // 货物名称
         "quantity": "",  // 件数
         "weight": "",  // 重量
-        "booking_volume": "",  // 订舱体积
+        "booking_volume": "",  // 订舱体积（可选）
         "product_name": "",  // 产品名称
         "oversized_cargo": "",  // 超规货
-        "special_cargo_code": ""  // 特货码
+        "special_cargo_code": "",  // 特货码
+        "storage_and_transportation_precautions": ""  // 储运注意事项（可选）
       },
       "contact_info": {
         "consignee": "",  // 收货人
