@@ -892,12 +892,13 @@ def _extract_shenzhen_air_params(form_data: dict, business_config: dict) -> dict
         "consignee_info": shipper_consignee_info.get("consignee_info", ""),
         
         # 货物信息：优先使用form_data，如果没有则使用业务参数配置
-        "quantity": cargo_info.get("quantity", ""),
-        "weight": cargo_info.get("weight", ""),
+        "quantity": str(cargo_info.get("quantity", "")),
+        "weight": str(cargo_info.get("weight", "")),
+        "chargeable_weight": str(cargo_info.get("chargeable_weight", "")),
         "freight_code": cargo_info.get("freight_code") or business_default.get("freight_code", ""),
         "cargo_code": cargo_info.get("cargo_code") or business_default.get("cargo_code", ""),
         "cargo_name": cargo_info.get("cargo_name") or business_default.get("cargo_name", ""),
-        "waybill_type": flight_info.get("waybill_type", ""),  # 运单类型，从form_data获取，可能为空
+        "waybill_type": flight_info.get("waybill_type") or business_default.get("waybill_type", ""),
         "package": cargo_info.get("package") or business_default.get("package", ""),
         "storage_and_transportation_precautions": cargo_info.get("storage_and_transportation_precautions", "")
     }
@@ -1065,7 +1066,6 @@ def _extract_china_southern_air_waybill_params(form_data: dict, business_config:
         "cargo_name": cargo_info.get("cargo_name", ""),
         "quantity": cargo_info.get("quantity", ""),
         "weight": cargo_info.get("weight", ""),
-        "chargeable_weight": cargo_info.get("chargeable_weight", ""),
         "special_cargo_code": cargo_info.get("special_cargo_code", "") or business_default.get("special_cargo_code", ""),
         
         # 收货人信息：优先使用form_data.contact_info
