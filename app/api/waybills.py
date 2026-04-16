@@ -1077,7 +1077,7 @@ def _extract_china_southern_air_waybill_params(form_data: dict, business_config:
         
         # 储运和产品信息
         "storage_and_transportation_precautions": cargo_info.get("storage_and_transportation_precautions", ""),
-        "product_name": cargo_info.get("product_name", ""),
+        "product_name": cargo_info.get("product_name", "")[0] if isinstance(cargo_info.get("product_name", ""), list) and len(cargo_info.get("product_name", "")) > 0 else (cargo_info.get("product_name", "") if not isinstance(cargo_info.get("product_name", ""), list) else ""),
         "booking_volume": cargo_info.get("booking_volume", "")
     }
     

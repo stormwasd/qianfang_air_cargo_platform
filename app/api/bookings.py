@@ -309,7 +309,7 @@ def _extract_china_southern_air_params(form_data: dict, business_config: dict) -
         
         # 储运和产品信息
         "storage_and_transportation_precautions": booking_item.get("storage_and_transportation_precautions", ""),
-        "product_name": booking_item.get("product_name", ""),
+        "product_name": booking_item.get("product_name", "")[0] if isinstance(booking_item.get("product_name", ""), list) and len(booking_item.get("product_name", "")) > 0 else (booking_item.get("product_name", "") if not isinstance(booking_item.get("product_name", ""), list) else ""),
         "booking_volume": booking_item.get("booking_volume", ""),
         
         # 机型配置：从系统业务参数中获取
