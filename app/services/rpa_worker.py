@@ -1539,6 +1539,7 @@ class RPAWorker:
                     agent_consignor_name=params.get("agent_consignor_name", ""),
                     oversized_cargo=params.get("oversized_cargo", "0"),
                     no_dangerous_goods=params.get("no_dangerous_goods", "0"),
+                    shipper=params.get("shipper", ""),
                     shipper_phone=params.get("shipper_phone", ""),
                     consignee=params.get("consignee", ""),
                     storage_and_transportation_precautions=params.get("storage_and_transportation_precautions", ""),
