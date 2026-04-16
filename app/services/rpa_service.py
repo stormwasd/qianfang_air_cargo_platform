@@ -112,7 +112,8 @@ class RPAService:
         cargo_name: str,
         waybill_type: str,
         package: str,
-        storage_and_transportation_precautions: str = ""
+        storage_and_transportation_precautions: str = "",
+        chargeable_weight: str = ""
     ) -> Dict[str, Any]:
         """
         调用深航新增运单任务RPA接口（仅适用于深圳航空，airline="1"或"深圳航空"）
@@ -129,11 +130,13 @@ class RPAService:
             consignee_info: 收货人信息
             quantity: 件数
             weight: 重量
+            chargeable_weight: 计费重量
             freight_code: 运价代码（如：GEN）
             cargo_code: 货物代码（如：044）
             cargo_name: 货物名称（如：衣物）
             waybill_type: 运单类型（可选，可能为空）
             package: 包装（如：麻袋）
+            storage_and_transportation_precautions: 储运注意事项（可选）
         
         Returns:
             RPA接口返回的数据，包含workUuid等信息
@@ -155,11 +158,13 @@ class RPAService:
                 "consignee_info": consignee_info,
                 "quantity": quantity,
                 "weight": weight,
+                "chargeable_weight": chargeable_weight,
                 "freight_code": freight_code,
                 "cargo_code": cargo_code,
                 "cargo_name": cargo_name,
                 "waybill_type": waybill_type,
-                "package": package
+                "package": package,
+                "storage_and_transportation_precautions": storage_and_transportation_precautions
             }
         }
         

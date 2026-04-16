@@ -1065,6 +1065,7 @@ def _extract_china_southern_air_waybill_params(form_data: dict, business_config:
         "cargo_name": cargo_info.get("cargo_name", ""),
         "quantity": cargo_info.get("quantity", ""),
         "weight": cargo_info.get("weight", ""),
+        "chargeable_weight": cargo_info.get("chargeable_weight", ""),
         "special_cargo_code": cargo_info.get("special_cargo_code", "") or business_default.get("special_cargo_code", ""),
         
         # 收货人信息：优先使用form_data.contact_info

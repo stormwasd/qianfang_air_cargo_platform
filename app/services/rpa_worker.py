@@ -316,7 +316,8 @@ class RPAWorker:
                     cargo_name=params.get("cargo_name", ""),
                     waybill_type=params.get("waybill_type", ""),
                     package=params.get("package", ""),
-                    storage_and_transportation_precautions=params.get("storage_and_transportation_precautions", "")
+                    storage_and_transportation_precautions=params.get("storage_and_transportation_precautions", ""),
+                    chargeable_weight=params.get("chargeable_weight", "")
                 ),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
