@@ -16,22 +16,22 @@
             "status": 1
         },
         {
-            "label": "天津滨海",
+            "label": "天津",
             "value": "TSN",
             "status": 1
         },
         {
-            "label": "石家庄正定",
+            "label": "石家庄",
             "value": "SJW",
             "status": 1
         },
         {
-            "label": "唐山三女河",
+            "label": "唐山",
             "value": "TVS",
             "status": 1
         },
         {
-            "label": "秦皇岛北戴河",
+            "label": "秦皇岛",
             "value": "BPE",
             "status": 1
         },
@@ -41,37 +41,37 @@
             "status": 1
         },
         {
-            "label": "张家口宁远",
+            "label": "张家口",
             "value": "ZQZ",
             "status": 1
         },
         {
-            "label": "承德普宁",
+            "label": "承德",
             "value": "CDE",
             "status": 1
         },
         {
-            "label": "济南遥墙",
+            "label": "济南",
             "value": "TNA",
             "status": 1
         },
         {
-            "label": "日照山字河",
+            "label": "日照",
             "value": "RIZ",
             "status": 1
         },
         {
-            "label": "青岛胶东",
+            "label": "青岛",
             "value": "TAO",
             "status": 1
         },
         {
-            "label": "烟台蓬莱",
+            "label": "烟台",
             "value": "YNT",
             "status": 1
         },
         {
-            "label": "东营胜利",
+            "label": "东营",
             "value": "DOY",
             "status": 1
         },
@@ -81,52 +81,52 @@
             "status": 1
         },
         {
-            "label": "济宁曲阜",
+            "label": "济宁",
             "value": "JNG",
             "status": 1
         },
         {
-            "label": "威海大水泊",
+            "label": "威海",
             "value": "WEH",
             "status": 1
         },
         {
-            "label": "太原武宿",
+            "label": "太原",
             "value": "TYN",
             "status": 1
         },
         {
-            "label": "大同云冈",
+            "label": "大同",
             "value": "DAT",
             "status": 1
         },
         {
-            "label": "长治王村",
+            "label": "长治",
             "value": "CIH",
             "status": 1
         },
         {
-            "label": "运城张孝",
+            "label": "运城",
             "value": "YCU",
             "status": 1
         },
         {
-            "label": "临汾乔李",
+            "label": "临汾",
             "value": "LFQ",
             "status": 1
         },
         {
-            "label": "吕梁大武",
+            "label": "吕梁",
             "value": "LLV",
             "status": 1
         },
         {
-            "label": "忻州五台山",
+            "label": "忻州",
             "value": "WUT",
             "status": 1
         },
         {
-            "label": "呼和浩特白塔",
+            "label": "呼和浩特",
             "value": "HET",
             "status": 1
         },
@@ -141,12 +141,12 @@
             "status": 1
         },
         {
-            "label": "包头东河",
+            "label": "包头",
             "value": "BAV",
             "status": 1
         },
         {
-            "label": "呼伦贝尔海拉尔",
+            "label": "呼伦贝尔",
             "value": "HLD",
             "status": 1
         },
@@ -171,12 +171,12 @@
             "status": 1
         },
         {
-            "label": "赤峰玉龙",
+            "label": "赤峰",
             "value": "CIF",
             "status": 1
         },
         {
-            "label": "满洲里西郊",
+            "label": "满洲里",
             "value": "NHZ",
             "status": 1
         },
@@ -211,7 +211,7 @@
             "status": 1
         },
         {
-            "label": "鄂尔多斯伊金霍洛",
+            "label": "鄂尔多斯",
             "value": "DSN",
             "status": 1
         },
@@ -221,22 +221,22 @@
             "status": 1
         },
         {
-            "label": "沈阳桃仙",
+            "label": "沈阳",
             "value": "SHE",
             "status": 1
         },
         {
-            "label": "大连周水子",
+            "label": "大连",
             "value": "DLC",
             "status": 1
         },
         {
-            "label": "鞍山腾鳌",
+            "label": "鞍山",
             "value": "AOG",
             "status": 1
         },
         {
-            "label": "丹东浪头",
+            "label": "丹东",
             "value": "DDG",
             "status": 1
         },
@@ -246,7 +246,7 @@
             "status": 1
         },
         {
-            "label": "营口兰旗",
+            "label": "营口",
             "value": "YKH",
             "status": 1
         },
@@ -256,12 +256,12 @@
             "status": 1
         },
         {
-            "label": "长春龙嘉",
+            "label": "长春",
             "value": "CGQ",
             "status": 1
         },
         {
-            "label": "延吉朝阳川",
+            "label": "延吉",
             "value": "YNJ",
             "status": 1
         },
@@ -271,7 +271,7 @@
             "status": 1
         },
         {
-            "label": "通化三源浦",
+            "label": "通化",
             "value": "TNH",
             "status": 1
         },
@@ -286,37 +286,37 @@
             "status": 1
         },
         {
-            "label": "哈尔滨太平",
+            "label": "哈尔滨",
             "value": "HRB",
             "status": 1
         },
         {
-            "label": "鸡西兴凯湖",
+            "label": "鸡西",
             "value": "JXA",
             "status": 1
         },
         {
-            "label": "齐齐哈尔三家子",
+            "label": "齐齐哈尔",
             "value": "NDG",
             "status": 1
         },
         {
-            "label": "漠河古莲",
+            "label": "漠河",
             "value": "OHE",
             "status": 1
         },
         {
-            "label": "牡丹江海浪",
+            "label": "牡丹江",
             "value": "MDG",
             "status": 1
         },
         {
-            "label": "抚远东极",
+            "label": "抚远",
             "value": "FYJ",
             "status": 1
         },
         {
-            "label": "佳木斯东郊",
+            "label": "佳木斯",
             "value": "JMU",
             "status": 1
         },
@@ -326,7 +326,7 @@
             "status": 1
         },
         {
-            "label": "大庆萨尔图",
+            "label": "大庆",
             "value": "DQA",
             "status": 1
         },
@@ -336,12 +336,12 @@
             "status": 1
         },
         {
-            "label": "伊春林都",
+            "label": "伊春",
             "value": "LDS",
             "status": 1
         },
         {
-            "label": "黑河瑷珲",
+            "label": "黑河",
             "value": "HEK",
             "status": 1
         },
@@ -356,57 +356,57 @@
             "status": 1
         },
         {
-            "label": "南京禄口",
+            "label": "南京",
             "value": "NKG",
             "status": 1
         },
         {
-            "label": "连云港花果山",
+            "label": "连云港",
             "value": "LYG",
             "status": 1
         },
         {
-            "label": "无锡苏南硕放",
+            "label": "无锡",
             "value": "WUX",
             "status": 1
         },
         {
-            "label": "淮安涟水",
+            "label": "淮安",
             "value": "HIA",
             "status": 1
         },
         {
-            "label": "常州奔牛",
+            "label": "常州",
             "value": "CZX",
             "status": 1
         },
         {
-            "label": "镇江大路",
+            "label": "镇江",
             "value": "AZJ",
             "status": 1
         },
         {
-            "label": "扬州泰州",
+            "label": "扬州",
             "value": "YTY",
             "status": 1
         },
         {
-            "label": "徐州观音",
+            "label": "徐州",
             "value": "XUZ",
             "status": 1
         },
         {
-            "label": "盐城南阳",
+            "label": "盐城",
             "value": "YNZ",
             "status": 1
         },
         {
-            "label": "南通兴东",
+            "label": "南通",
             "value": "NTG",
             "status": 1
         },
         {
-            "label": "杭州萧山",
+            "label": "杭州",
             "value": "HGH",
             "status": 1
         },
@@ -416,12 +416,12 @@
             "status": 1
         },
         {
-            "label": "温州龙湾",
+            "label": "温州",
             "value": "WNZ",
             "status": 1
         },
         {
-            "label": "宁波栎社",
+            "label": "宁波",
             "value": "NGB",
             "status": 1
         },
@@ -431,12 +431,12 @@
             "status": 1
         },
         {
-            "label": "舟山普陀山",
+            "label": "舟山",
             "value": "HSN",
             "status": 1
         },
         {
-            "label": "台州路桥",
+            "label": "台州",
             "value": "HYN",
             "status": 1
         },
@@ -446,267 +446,267 @@
             "status": 1
         },
         {
-            "label": "合肥新桥",
+            "label": "合肥",
             "value": "HFE",
             "status": 1
         },
         {
-            "label": "阜阳西关",
+            "label": "阜阳",
             "value": "FUG",
             "status": 1
         },
         {
-            "label": "黄山屯溪",
+            "label": "黄山",
             "value": "TXN",
             "status": 1
         },
         {
-            "label": "安庆天柱山",
+            "label": "安庆",
             "value": "AQG",
             "status": 1
         },
         {
-            "label": "芜湖宣城",
+            "label": "芜湖",
             "value": "WHA",
             "status": 1
         },
         {
-            "label": "池州九华山",
+            "label": "池州",
             "value": "JUH",
             "status": 1
         },
         {
-            "label": "南昌昌北",
+            "label": "南昌",
             "value": "KHN",
             "status": 1
         },
         {
-            "label": "赣州黄金",
+            "label": "赣州",
             "value": "KOW",
             "status": 1
         },
         {
-            "label": "吉安井冈山",
+            "label": "井冈山",
             "value": "JGS",
             "status": 1
         },
         {
-            "label": "景德镇罗家",
+            "label": "景德镇",
             "value": "JDZ",
             "status": 1
         },
         {
-            "label": "上饶三清山",
+            "label": "上饶",
             "value": "SQD",
             "status": 1
         },
         {
-            "label": "宜春明月山",
+            "label": "宜春",
             "value": "YIC",
             "status": 1
         },
         {
-            "label": "九江庐山",
+            "label": "九江",
             "value": "JIU",
             "status": 1
         },
         {
-            "label": "福州长乐",
+            "label": "福州",
             "value": "FOC",
             "status": 1
         },
         {
-            "label": "厦门高崎",
+            "label": "厦门",
             "value": "XMN",
             "status": 1
         },
         {
-            "label": "泉州晋江",
+            "label": "泉州",
             "value": "JJN",
             "status": 1
         },
         {
-            "label": "南平武夷山",
+            "label": "武夷山",
             "value": "WUS",
             "status": 1
         },
         {
-            "label": "龙岩冠豸山",
+            "label": "龙岩",
             "value": "LCX",
             "status": 1
         },
         {
-            "label": "三明沙县",
+            "label": "三明",
             "value": "SQJ",
             "status": 1
         },
         {
-            "label": "广州白云",
+            "label": "广州",
             "value": "CAN",
             "status": 1
         },
         {
-            "label": "惠州平潭",
+            "label": "惠州",
             "value": "HUZ",
             "status": 1
         },
         {
-            "label": "深圳宝安",
+            "label": "深圳",
             "value": "SZX",
             "status": 1
         },
         {
-            "label": "佛山沙堤",
+            "label": "佛山",
             "value": "FUO",
             "status": 1
         },
         {
-            "label": "珠海金湾",
+            "label": "珠海",
             "value": "ZUH",
             "status": 1
         },
         {
-            "label": "揭阳潮汕",
+            "label": "揭阳",
             "value": "SWA",
             "status": 1
         },
         {
-            "label": "湛江吴川",
+            "label": "湛江",
             "value": "ZHA",
             "status": 1
         },
         {
-            "label": "韶关丹霞",
+            "label": "韶关",
             "value": "HSC",
             "status": 1
         },
         {
-            "label": "梅州梅县",
+            "label": "梅州",
             "value": "MXZ",
             "status": 1
         },
         {
-            "label": "南宁吴圩",
+            "label": "南宁",
             "value": "NNG",
             "status": 1
         },
         {
-            "label": "河池金城江",
+            "label": "河池",
             "value": "HCJ",
             "status": 1
         },
         {
-            "label": "桂林两江",
+            "label": "桂林",
             "value": "KWL",
             "status": 1
         },
         {
-            "label": "柳州白莲",
+            "label": "柳州",
             "value": "LZH",
             "status": 1
         },
         {
-            "label": "北海福成",
+            "label": "北海",
             "value": "BHY",
             "status": 1
         },
         {
-            "label": "梧州西江",
+            "label": "梧州",
             "value": "WUZ",
             "status": 1
         },
         {
-            "label": "百色巴马",
+            "label": "百色",
             "value": "AEB",
             "status": 1
         },
         {
-            "label": "玉林福绵",
+            "label": "玉林",
             "value": "YLX",
             "status": 1
         },
         {
-            "label": "海口美兰",
+            "label": "海口",
             "value": "HAK",
             "status": 1
         },
         {
-            "label": "三亚凤凰",
+            "label": "三亚",
             "value": "SYX",
             "status": 1
         },
         {
-            "label": "琼海博鳌",
+            "label": "琼海",
             "value": "BAR",
             "status": 1
         },
         {
-            "label": "郑州新郑",
+            "label": "郑州",
             "value": "CGO",
             "status": 1
         },
         {
-            "label": "洛阳北郊",
+            "label": "洛阳",
             "value": "LYA",
             "status": 1
         },
         {
-            "label": "南阳姜营",
+            "label": "南阳",
             "value": "NNY",
             "status": 1
         },
         {
-            "label": "信阳明港",
+            "label": "信阳",
             "value": "XAI",
             "status": 1
         },
         {
-            "label": "长沙黄花",
+            "label": "长沙",
             "value": "CSX",
             "status": 1
         },
         {
-            "label": "永州零陵",
+            "label": "永州",
             "value": "LLF",
             "status": 1
         },
         {
-            "label": "张家界荷花",
+            "label": "张家界",
             "value": "DYG",
             "status": 1
         },
         {
-            "label": "郴州北湖",
+            "label": "郴州",
             "value": "HCZ",
             "status": 1
         },
         {
-            "label": "常德桃花源",
+            "label": "常德",
             "value": "CGD",
             "status": 1
         },
         {
-            "label": "衡阳南岳",
+            "label": "衡阳",
             "value": "HNY",
             "status": 1
         },
         {
-            "label": "岳阳三荷",
+            "label": "岳阳",
             "value": "YYA",
             "status": 1
         },
         {
-            "label": "怀化芷江",
+            "label": "怀化",
             "value": "HJJ",
             "status": 1
         },
         {
-            "label": "邵阳武冈",
+            "label": "邵阳",
             "value": "WGN",
             "status": 1
         },
         {
-            "label": "武汉天河",
+            "label": "武汉",
             "value": "WUH",
             "status": 1
         },
@@ -716,37 +716,37 @@
             "status": 1
         },
         {
-            "label": "宜昌三峡",
+            "label": "宜昌",
             "value": "YIH",
             "status": 1
         },
         {
-            "label": "襄阳刘集",
+            "label": "襄阳",
             "value": "XFN",
             "status": 1
         },
         {
-            "label": "恩施许家坪",
+            "label": "恩施",
             "value": "ENH",
             "status": 1
         },
         {
-            "label": "十堰武当山",
+            "label": "十堰",
             "value": "WDS",
             "status": 1
         },
         {
-            "label": "荆州沙市",
+            "label": "荆州",
             "value": "SHS",
             "status": 1
         },
         {
-            "label": "鄂州花湖",
+            "label": "鄂州",
             "value": "EHU",
             "status": 1
         },
         {
-            "label": "重庆江北",
+            "label": "重庆",
             "value": "CKG",
             "status": 1
         },
@@ -756,17 +756,17 @@
             "status": 1
         },
         {
-            "label": "武隆仙女山",
+            "label": "武隆",
             "value": "CQW",
             "status": 1
         },
         {
-            "label": "黔江武陵山",
+            "label": "黔江",
             "value": "JIQ",
             "status": 1
         },
         {
-            "label": "万州五桥",
+            "label": "万州",
             "value": "WXN",
             "status": 1
         },
@@ -776,12 +776,12 @@
             "status": 1
         },
         {
-            "label": "攀枝花保安营",
+            "label": "攀枝花",
             "value": "PZI",
             "status": 1
         },
         {
-            "label": "甘孜格萨尔",
+            "label": "甘孜",
             "value": "GZG",
             "status": 1
         },
@@ -791,57 +791,57 @@
             "status": 1
         },
         {
-            "label": "稻城西丁",
+            "label": "稻城",
             "value": "DCY",
             "status": 1
         },
         {
-            "label": "泸州云龙",
+            "label": "泸州",
             "value": "LZO",
             "status": 1
         },
         {
-            "label": "绵阳南郊",
+            "label": "绵阳",
             "value": "MIG",
             "status": 1
         },
         {
-            "label": "广元盘龙",
+            "label": "广元",
             "value": "GYS",
             "status": 1
         },
         {
-            "label": "南充高坪",
+            "label": "南充",
             "value": "NAO",
             "status": 1
         },
         {
-            "label": "九寨沟黄龙",
+            "label": "九寨沟",
             "value": "JZH",
             "status": 1
         },
         {
-            "label": "西昌青山",
+            "label": "西昌",
             "value": "XIC",
             "status": 1
         },
         {
-            "label": "巴中恩阳",
+            "label": "巴中",
             "value": "BZX",
             "status": 1
         },
         {
-            "label": "宜宾五粮液",
+            "label": "宜宾",
             "value": "YBP",
             "status": 1
         },
         {
-            "label": "甘孜康定",
+            "label": "康定",
             "value": "KGT",
             "status": 1
         },
         {
-            "label": "达州金垭",
+            "label": "达州",
             "value": "DZH",
             "status": 1
         },
@@ -851,32 +851,32 @@
             "status": 1
         },
         {
-            "label": "昆明长水",
+            "label": "昆明",
             "value": "KMG",
             "status": 1
         },
         {
-            "label": "迪庆香格里拉",
+            "label": "迪庆",
             "value": "DIG",
             "status": 1
         },
         {
-            "label": "丽江三义",
+            "label": "丽江",
             "value": "LJG",
             "status": 1
         },
         {
-            "label": "普洱思茅",
+            "label": "普洱",
             "value": "SYM",
             "status": 1
         },
         {
-            "label": "西双版纳嘎洒",
+            "label": "西双版纳",
             "value": "JHG",
             "status": 1
         },
         {
-            "label": "临沧博尚",
+            "label": "临沧",
             "value": "LNJ",
             "status": 1
         },
@@ -891,22 +891,22 @@
             "status": 1
         },
         {
-            "label": "大理荒草坝",
+            "label": "大理",
             "value": "DLU",
             "status": 1
         },
         {
-            "label": "文山普者黑",
+            "label": "文山",
             "value": "WNH",
             "status": 1
         },
         {
-            "label": "腾冲驼峰",
+            "label": "腾冲",
             "value": "TCZ",
             "status": 1
         },
         {
-            "label": "宁蒗泸沽湖",
+            "label": "宁蒗",
             "value": "NLH",
             "status": 1
         },
@@ -921,7 +921,7 @@
             "status": 1
         },
         {
-            "label": "贵阳龙洞堡",
+            "label": "贵阳",
             "value": "KWE",
             "status": 1
         },
@@ -931,12 +931,12 @@
             "status": 1
         },
         {
-            "label": "遵义新舟",
+            "label": "遵义",
             "value": "ZYI",
             "status": 1
         },
         {
-            "label": "凯里黄平",
+            "label": "凯里",
             "value": "KJH",
             "status": 1
         },
@@ -951,57 +951,57 @@
             "status": 1
         },
         {
-            "label": "铜仁凤凰",
+            "label": "铜仁",
             "value": "TEN",
             "status": 1
         },
         {
-            "label": "毕节飞雄",
+            "label": "毕节",
             "value": "BFJ",
             "status": 1
         },
         {
-            "label": "六盘水月照",
+            "label": "六盘水",
             "value": "LPF",
             "status": 1
         },
         {
-            "label": "安顺黄果树",
+            "label": "安顺",
             "value": "AVA",
             "status": 1
         },
         {
-            "label": "拉萨贡嘎",
+            "label": "拉萨",
             "value": "LXA",
             "status": 1
         },
         {
-            "label": "林芝米林",
+            "label": "林芝",
             "value": "LZY",
             "status": 1
         },
         {
-            "label": "昌都邦达",
+            "label": "昌都",
             "value": "BPX",
             "status": 1
         },
         {
-            "label": "日喀则和平",
+            "label": "日喀则",
             "value": "RKZ",
             "status": 1
         },
         {
-            "label": "阿里昆莎",
+            "label": "阿里",
             "value": "NGQ",
             "status": 1
         },
         {
-            "label": "乌鲁木齐地窝堡",
+            "label": "乌鲁木齐",
             "value": "URC",
             "status": 1
         },
         {
-            "label": "吐鲁番交河",
+            "label": "吐鲁番",
             "value": "TLQ",
             "status": 1
         },
@@ -1011,7 +1011,7 @@
             "status": 1
         },
         {
-            "label": "昭苏天马",
+            "label": "昭苏",
             "value": "ZFL",
             "status": 1
         },
@@ -1021,7 +1021,7 @@
             "status": 1
         },
         {
-            "label": "阿勒泰雪都",
+            "label": "阿勒泰",
             "value": "AAT",
             "status": 1
         },
@@ -1031,17 +1031,17 @@
             "status": 1
         },
         {
-            "label": "阿拉尔塔里木",
+            "label": "阿拉尔",
             "value": "ACF",
             "status": 1
         },
         {
-            "label": "库尔勒梨城",
+            "label": "库尔勒",
             "value": "KRL",
             "status": 1
         },
         {
-            "label": "哈密伊州",
+            "label": "哈密",
             "value": "HMI",
             "status": 1
         },
@@ -1056,17 +1056,17 @@
             "status": 1
         },
         {
-            "label": "库车龟兹",
+            "label": "库车",
             "value": "KCA",
             "status": 1
         },
         {
-            "label": "富蕴可可托海",
+            "label": "富蕴",
             "value": "FYN",
             "status": 1
         },
         {
-            "label": "阿克苏红旗坡",
+            "label": "阿克苏",
             "value": "AKU",
             "status": 1
         },
@@ -1086,17 +1086,17 @@
             "status": 1
         },
         {
-            "label": "塔城千泉",
+            "label": "塔城",
             "value": "TCG",
             "status": 1
         },
         {
-            "label": "于田万方",
+            "label": "于田",
             "value": "YTW",
             "status": 1
         },
         {
-            "label": "克拉玛依古海",
+            "label": "克拉玛依",
             "value": "KRY",
             "status": 1
         },
@@ -1106,27 +1106,27 @@
             "status": 1
         },
         {
-            "label": "西安咸阳",
+            "label": "西安",
             "value": "XIY",
             "status": 1
         },
         {
-            "label": "榆林西沙",
+            "label": "榆林",
             "value": "UYN",
             "status": 1
         },
         {
-            "label": "汉中城固",
+            "label": "汉中",
             "value": "HZG",
             "status": 1
         },
         {
-            "label": "延安南泥湾",
+            "label": "延安",
             "value": "ENY",
             "status": 1
         },
         {
-            "label": "安康富强",
+            "label": "安康",
             "value": "AKA",
             "status": 1
         },
@@ -1136,22 +1136,22 @@
             "status": 1
         },
         {
-            "label": "兰州中川",
+            "label": "兰州",
             "value": "LHW",
             "status": 1
         },
         {
-            "label": "庆阳西峰",
+            "label": "庆阳",
             "value": "IQN",
             "status": 1
         },
         {
-            "label": "敦煌莫高",
+            "label": "敦煌",
             "value": "DNH",
             "status": 1
         },
         {
-            "label": "天水麦积山",
+            "label": "天水",
             "value": "THQ",
             "status": 1
         },
@@ -1161,12 +1161,12 @@
             "status": 1
         },
         {
-            "label": "张掖甘州",
+            "label": "张掖",
             "value": "YZY",
             "status": 1
         },
         {
-            "label": "陇南成县",
+            "label": "陇南",
             "value": "LNL",
             "status": 1
         },
@@ -1176,27 +1176,27 @@
             "status": 1
         },
         {
-            "label": "甘南夏河",
+            "label": "甘南",
             "value": "GXH",
             "status": 1
         },
         {
-            "label": "银川河东",
+            "label": "银川",
             "value": "INC",
             "status": 1
         },
         {
-            "label": "中卫香山",
+            "label": "中卫",
             "value": "ZHY",
             "status": 1
         },
         {
-            "label": "固原六盘山",
+            "label": "固原",
             "value": "GYU",
             "status": 1
         },
         {
-            "label": "西宁曹家堡",
+            "label": "西宁",
             "value": "XNN",
             "status": 1
         },
@@ -1206,7 +1206,7 @@
             "status": 1
         },
         {
-            "label": "玉树巴塘",
+            "label": "玉树",
             "value": "YUS",
             "status": 1
         },
