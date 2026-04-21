@@ -6,422 +6,522 @@
     },
     "options": [
         {
-            "label": "北京首都机场",
+            "label": "北京首都",
             "value": "PEK",
             "status": 1
         },
         {
-            "label": "北京大兴机场",
+            "label": "北京大兴",
             "value": "PKX",
             "status": 1
         },
         {
-            "label": "天津滨海机场",
+            "label": "天津滨海",
             "value": "TSN",
             "status": 1
         },
         {
-            "label": "石家庄正定机场",
+            "label": "石家庄正定",
             "value": "SJW",
             "status": 1
         },
         {
-            "label": "唐山三女河机场",
+            "label": "唐山三女河",
             "value": "TVS",
             "status": 1
         },
         {
-            "label": "秦皇岛北戴河机场",
+            "label": "秦皇岛北戴河",
             "value": "BPE",
             "status": 1
         },
         {
-            "label": "邯郸机场",
+            "label": "邯郸",
             "value": "HDG",
             "status": 1
         },
         {
-            "label": "张家口宁远机场",
+            "label": "张家口宁远",
             "value": "ZQZ",
             "status": 1
         },
         {
-            "label": "承德普宁机场",
+            "label": "承德普宁",
             "value": "CDE",
             "status": 1
         },
         {
-            "label": "太原武宿机场",
-            "value": "TYN",
-            "status": 1
-        },
-        {
-            "label": "长治王村机场",
-            "value": "CIH",
-            "status": 1
-        },
-        {
-            "label": "大同云冈机场",
-            "value": "DAT",
-            "status": 1
-        },
-        {
-            "label": "临汾乔李机场",
-            "value": "LFQ",
-            "status": 1
-        },
-        {
-            "label": "运城张孝机场",
-            "value": "YCU",
-            "status": 1
-        },
-        {
-            "label": "忻州五台山机场",
-            "value": "WUT",
-            "status": 1
-        },
-        {
-            "label": "吕梁大武机场",
-            "value": "LLV",
-            "status": 1
-        },
-        {
-            "label": "呼和浩特白塔机场",
-            "value": "HET",
-            "status": 1
-        },
-        {
-            "label": "锡林浩特机场",
-            "value": "XIL",
-            "status": 1
-        },
-        {
-            "label": "包头东河机场",
-            "value": "BAV",
-            "status": 1
-        },
-        {
-            "label": "呼伦贝尔海拉尔机场",
-            "value": "HLD",
-            "status": 1
-        },
-        {
-            "label": "乌海机场",
-            "value": "WUA",
-            "status": 1
-        },
-        {
-            "label": "赤峰玉龙机场",
-            "value": "CIF",
-            "status": 1
-        },
-        {
-            "label": "满洲里西郊机场",
-            "value": "NHZ",
-            "status": 1
-        },
-        {
-            "label": "通辽机场",
-            "value": "TGO",
-            "status": 1
-        },
-        {
-            "label": "鄂尔多斯伊金霍洛机场",
-            "value": "DSN",
-            "status": 1
-        },
-        {
-            "label": "沈阳桃仙机场",
-            "value": "SHE",
-            "status": 1
-        },
-        {
-            "label": "丹东浪头机场",
-            "value": "DDG",
-            "status": 1
-        },
-        {
-            "label": "营口兰旗机场",
-            "value": "YKH",
-            "status": 1
-        },
-        {
-            "label": "鞍山腾鳌机场",
-            "value": "AOG",
-            "status": 1
-        },
-        {
-            "label": "大连周水子机场",
-            "value": "DLC",
-            "status": 1
-        },
-        {
-            "label": "长春龙嘉机场",
-            "value": "CGQ",
-            "status": 1
-        },
-        {
-            "label": "长白山机场",
-            "value": "NBS",
-            "status": 1
-        },
-        {
-            "label": "延吉朝阳川机场",
-            "value": "YNJ",
-            "status": 1
-        },
-        {
-            "label": "通化三源浦机场",
-            "value": "TNH",
-            "status": 1
-        },
-        {
-            "label": "哈尔滨太平机场",
-            "value": "HRB",
-            "status": 1
-        },
-        {
-            "label": "黑河瑷珲机场",
-            "value": "HEK",
-            "status": 1
-        },
-        {
-            "label": "齐齐哈尔三家子机场",
-            "value": "NDG",
-            "status": 1
-        },
-        {
-            "label": "鸡西兴凯湖机场",
-            "value": "JXA",
-            "status": 1
-        },
-        {
-            "label": "牡丹江海浪机场",
-            "value": "MDG",
-            "status": 1
-        },
-        {
-            "label": "漠河古莲机场",
-            "value": "OHE",
-            "status": 1
-        },
-        {
-            "label": "佳木斯东郊机场",
-            "value": "JMU",
-            "status": 1
-        },
-        {
-            "label": "大庆萨尔图机场",
-            "value": "DQA",
-            "status": 1
-        },
-        {
-            "label": "上海虹桥机场",
-            "value": "SHA",
-            "status": 1
-        },
-        {
-            "label": "上海浦东机场",
-            "value": "PVG",
-            "status": 1
-        },
-        {
-            "label": "南京禄口机场",
-            "value": "NKG",
-            "status": 1
-        },
-        {
-            "label": "连云港花果山机场",
-            "value": "LYG",
-            "status": 1
-        },
-        {
-            "label": "无锡苏南硕放机场",
-            "value": "WUX",
-            "status": 1
-        },
-        {
-            "label": "淮安涟水机场",
-            "value": "HIA",
-            "status": 1
-        },
-        {
-            "label": "常州奔牛机场",
-            "value": "CZX",
-            "status": 1
-        },
-        {
-            "label": "镇江大路机场",
-            "value": "AZJ",
-            "status": 1
-        },
-        {
-            "label": "南通兴东机场",
-            "value": "NTG",
-            "status": 1
-        },
-        {
-            "label": "盐城南阳机场",
-            "value": "YNZ",
-            "status": 1
-        },
-        {
-            "label": "扬州泰州机场",
-            "value": "YTY",
-            "status": 1
-        },
-        {
-            "label": "徐州观音机场",
-            "value": "XUZ",
-            "status": 1
-        },
-        {
-            "label": "杭州萧山机场",
-            "value": "HGH",
-            "status": 1
-        },
-        {
-            "label": "温州龙湾机场",
-            "value": "WNZ",
-            "status": 1
-        },
-        {
-            "label": "宁波栎社机场",
-            "value": "NGB",
-            "status": 1
-        },
-        {
-            "label": "义乌机场",
-            "value": "YIW",
-            "status": 1
-        },
-        {
-            "label": "舟山普陀山机场",
-            "value": "HSN",
-            "status": 1
-        },
-        {
-            "label": "台州路桥机场",
-            "value": "HYN",
-            "status": 1
-        },
-        {
-            "label": "衢州机场",
-            "value": "JUZ",
-            "status": 1
-        },
-        {
-            "label": "合肥新桥机场",
-            "value": "HFE",
-            "status": 1
-        },
-        {
-            "label": "阜阳西关机场",
-            "value": "FUG",
-            "status": 1
-        },
-        {
-            "label": "黄山屯溪机场",
-            "value": "TXN",
-            "status": 1
-        },
-        {
-            "label": "安庆天柱山机场",
-            "value": "AQG",
-            "status": 1
-        },
-        {
-            "label": "芜湖宣城机场",
-            "value": "WHA",
-            "status": 1
-        },
-        {
-            "label": "池州九华山机场",
-            "value": "JUH",
-            "status": 1
-        },
-        {
-            "label": "济南遥墙机场",
+            "label": "济南遥墙",
             "value": "TNA",
             "status": 1
         },
         {
-            "label": "青岛胶东机场",
-            "value": "TAO",
-            "status": 1
-        },
-        {
-            "label": "烟台蓬莱机场",
-            "value": "YNT",
-            "status": 1
-        },
-        {
-            "label": "东营胜利机场",
-            "value": "DOY",
-            "status": 1
-        },
-        {
-            "label": "潍坊机场",
-            "value": "WEF",
-            "status": 1
-        },
-        {
-            "label": "济宁曲阜机场",
-            "value": "JNG",
-            "status": 1
-        },
-        {
-            "label": "威海大水泊机场",
-            "value": "WEH",
-            "status": 1
-        },
-        {
-            "label": "日照山字河机场",
+            "label": "日照山字河",
             "value": "RIZ",
             "status": 1
         },
         {
-            "label": "南昌昌北机场",
+            "label": "青岛胶东",
+            "value": "TAO",
+            "status": 1
+        },
+        {
+            "label": "烟台蓬莱",
+            "value": "YNT",
+            "status": 1
+        },
+        {
+            "label": "东营胜利",
+            "value": "DOY",
+            "status": 1
+        },
+        {
+            "label": "潍坊",
+            "value": "WEF",
+            "status": 1
+        },
+        {
+            "label": "济宁曲阜",
+            "value": "JNG",
+            "status": 1
+        },
+        {
+            "label": "威海大水泊",
+            "value": "WEH",
+            "status": 1
+        },
+        {
+            "label": "太原武宿",
+            "value": "TYN",
+            "status": 1
+        },
+        {
+            "label": "大同云冈",
+            "value": "DAT",
+            "status": 1
+        },
+        {
+            "label": "长治王村",
+            "value": "CIH",
+            "status": 1
+        },
+        {
+            "label": "运城张孝",
+            "value": "YCU",
+            "status": 1
+        },
+        {
+            "label": "临汾乔李",
+            "value": "LFQ",
+            "status": 1
+        },
+        {
+            "label": "吕梁大武",
+            "value": "LLV",
+            "status": 1
+        },
+        {
+            "label": "忻州五台山",
+            "value": "WUT",
+            "status": 1
+        },
+        {
+            "label": "呼和浩特白塔",
+            "value": "HET",
+            "status": 1
+        },
+        {
+            "label": "锡林浩特",
+            "value": "XIL",
+            "status": 1
+        },
+        {
+            "label": "扎兰屯",
+            "value": "NZL",
+            "status": 1
+        },
+        {
+            "label": "包头东河",
+            "value": "BAV",
+            "status": 1
+        },
+        {
+            "label": "呼伦贝尔海拉尔",
+            "value": "HLD",
+            "status": 1
+        },
+        {
+            "label": "阿拉善右旗",
+            "value": "RHT",
+            "status": 1
+        },
+        {
+            "label": "乌海",
+            "value": "WUA",
+            "status": 1
+        },
+        {
+            "label": "巴彦淖尔",
+            "value": "RLK",
+            "status": 1
+        },
+        {
+            "label": "阿拉善左旗",
+            "value": "AXF",
+            "status": 1
+        },
+        {
+            "label": "赤峰玉龙",
+            "value": "CIF",
+            "status": 1
+        },
+        {
+            "label": "满洲里西郊",
+            "value": "NHZ",
+            "status": 1
+        },
+        {
+            "label": "额济纳旗",
+            "value": "EJN",
+            "status": 1
+        },
+        {
+            "label": "通辽",
+            "value": "TGO",
+            "status": 1
+        },
+        {
+            "label": "二连浩特",
+            "value": "ERL",
+            "status": 1
+        },
+        {
+            "label": "乌拉特中旗",
+            "value": "WZQ",
+            "status": 1
+        },
+        {
+            "label": "乌兰察布",
+            "value": "UCB",
+            "status": 1
+        },
+        {
+            "label": "乌兰浩特",
+            "value": "HLH",
+            "status": 1
+        },
+        {
+            "label": "鄂尔多斯伊金霍洛",
+            "value": "DSN",
+            "status": 1
+        },
+        {
+            "label": "阿尔山",
+            "value": "YIE",
+            "status": 1
+        },
+        {
+            "label": "沈阳桃仙",
+            "value": "SHE",
+            "status": 1
+        },
+        {
+            "label": "大连周水子",
+            "value": "DLC",
+            "status": 1
+        },
+        {
+            "label": "鞍山腾鳌",
+            "value": "AOG",
+            "status": 1
+        },
+        {
+            "label": "丹东浪头",
+            "value": "DDG",
+            "status": 1
+        },
+        {
+            "label": "锦州湾",
+            "value": "JNZ",
+            "status": 1
+        },
+        {
+            "label": "营口兰旗",
+            "value": "YKH",
+            "status": 1
+        },
+        {
+            "label": "朝阳",
+            "value": "CHG",
+            "status": 1
+        },
+        {
+            "label": "长春龙嘉",
+            "value": "CGQ",
+            "status": 1
+        },
+        {
+            "label": "延吉朝阳川",
+            "value": "YNJ",
+            "status": 1
+        },
+        {
+            "label": "长白山",
+            "value": "NBS",
+            "status": 1
+        },
+        {
+            "label": "通化三源浦",
+            "value": "TNH",
+            "status": 1
+        },
+        {
+            "label": "白城",
+            "value": "DBC",
+            "status": 1
+        },
+        {
+            "label": "松原",
+            "value": "YSQ",
+            "status": 1
+        },
+        {
+            "label": "哈尔滨太平",
+            "value": "HRB",
+            "status": 1
+        },
+        {
+            "label": "鸡西兴凯湖",
+            "value": "JXA",
+            "status": 1
+        },
+        {
+            "label": "齐齐哈尔三家子",
+            "value": "NDG",
+            "status": 1
+        },
+        {
+            "label": "漠河古莲",
+            "value": "OHE",
+            "status": 1
+        },
+        {
+            "label": "牡丹江海浪",
+            "value": "MDG",
+            "status": 1
+        },
+        {
+            "label": "抚远东极",
+            "value": "FYJ",
+            "status": 1
+        },
+        {
+            "label": "佳木斯东郊",
+            "value": "JMU",
+            "status": 1
+        },
+        {
+            "label": "建三江",
+            "value": "JSJ",
+            "status": 1
+        },
+        {
+            "label": "大庆萨尔图",
+            "value": "DQA",
+            "status": 1
+        },
+        {
+            "label": "五大连池",
+            "value": "DTU",
+            "status": 1
+        },
+        {
+            "label": "伊春林都",
+            "value": "LDS",
+            "status": 1
+        },
+        {
+            "label": "黑河瑷珲",
+            "value": "HEK",
+            "status": 1
+        },
+        {
+            "label": "上海虹桥",
+            "value": "SHA",
+            "status": 1
+        },
+        {
+            "label": "上海浦东",
+            "value": "PVG",
+            "status": 1
+        },
+        {
+            "label": "南京禄口",
+            "value": "NKG",
+            "status": 1
+        },
+        {
+            "label": "连云港花果山",
+            "value": "LYG",
+            "status": 1
+        },
+        {
+            "label": "无锡苏南硕放",
+            "value": "WUX",
+            "status": 1
+        },
+        {
+            "label": "淮安涟水",
+            "value": "HIA",
+            "status": 1
+        },
+        {
+            "label": "常州奔牛",
+            "value": "CZX",
+            "status": 1
+        },
+        {
+            "label": "镇江大路",
+            "value": "AZJ",
+            "status": 1
+        },
+        {
+            "label": "扬州泰州",
+            "value": "YTY",
+            "status": 1
+        },
+        {
+            "label": "徐州观音",
+            "value": "XUZ",
+            "status": 1
+        },
+        {
+            "label": "盐城南阳",
+            "value": "YNZ",
+            "status": 1
+        },
+        {
+            "label": "南通兴东",
+            "value": "NTG",
+            "status": 1
+        },
+        {
+            "label": "杭州萧山",
+            "value": "HGH",
+            "status": 1
+        },
+        {
+            "label": "横店",
+            "value": "HEW",
+            "status": 1
+        },
+        {
+            "label": "温州龙湾",
+            "value": "WNZ",
+            "status": 1
+        },
+        {
+            "label": "宁波栎社",
+            "value": "NGB",
+            "status": 1
+        },
+        {
+            "label": "义乌",
+            "value": "YIW",
+            "status": 1
+        },
+        {
+            "label": "舟山普陀山",
+            "value": "HSN",
+            "status": 1
+        },
+        {
+            "label": "台州路桥",
+            "value": "HYN",
+            "status": 1
+        },
+        {
+            "label": "衢州",
+            "value": "JUZ",
+            "status": 1
+        },
+        {
+            "label": "合肥新桥",
+            "value": "HFE",
+            "status": 1
+        },
+        {
+            "label": "阜阳西关",
+            "value": "FUG",
+            "status": 1
+        },
+        {
+            "label": "黄山屯溪",
+            "value": "TXN",
+            "status": 1
+        },
+        {
+            "label": "安庆天柱山",
+            "value": "AQG",
+            "status": 1
+        },
+        {
+            "label": "芜湖宣城",
+            "value": "WHA",
+            "status": 1
+        },
+        {
+            "label": "池州九华山",
+            "value": "JUH",
+            "status": 1
+        },
+        {
+            "label": "南昌昌北",
             "value": "KHN",
             "status": 1
         },
         {
-            "label": "吉安井冈山机场",
+            "label": "赣州黄金",
+            "value": "KOW",
+            "status": 1
+        },
+        {
+            "label": "吉安井冈山",
             "value": "JGS",
             "status": 1
         },
         {
-            "label": "景德镇罗家机场",
+            "label": "景德镇罗家",
             "value": "JDZ",
             "status": 1
         },
         {
-            "label": "上饶三清山机场",
+            "label": "上饶三清山",
             "value": "SQD",
             "status": 1
         },
         {
-            "label": "宜春明月山机场",
+            "label": "宜春明月山",
             "value": "YIC",
             "status": 1
         },
         {
-            "label": "九江庐山机场",
+            "label": "九江庐山",
             "value": "JIU",
             "status": 1
         },
         {
-            "label": "福州长乐机场",
+            "label": "福州长乐",
             "value": "FOC",
             "status": 1
         },
         {
-            "label": "厦门高崎机场",
+            "label": "厦门高崎",
             "value": "XMN",
             "status": 1
         },
         {
-            "label": "泉州晋江机场",
+            "label": "泉州晋江",
             "value": "JJN",
             "status": 1
         },
@@ -431,493 +531,703 @@
             "status": 1
         },
         {
-            "label": "龙岩冠豸山机场",
+            "label": "龙岩冠豸山",
             "value": "LCX",
             "status": 1
         },
         {
-            "label": "广州白云机场",
+            "label": "三明沙县",
+            "value": "SQJ",
+            "status": 1
+        },
+        {
+            "label": "广州白云",
             "value": "CAN",
             "status": 1
         },
         {
-            "label": "深圳宝安机场",
-            "value": "SZX",
-            "status": 1
-        },
-        {
-            "label": "珠海金湾机场",
-            "value": "ZUH",
-            "status": 1
-        },
-        {
-            "label": "揭阳潮汕机场",
-            "value": "SWA",
-            "status": 1
-        },
-        {
-            "label": "湛江吴川机场",
-            "value": "ZHA",
-            "status": 1
-        },
-        {
-            "label": "韶关丹霞机场",
-            "value": "HSC",
-            "status": 1
-        },
-        {
-            "label": "梅州梅县机场",
-            "value": "MXZ",
-            "status": 1
-        },
-        {
-            "label": "惠州平潭机场",
+            "label": "惠州平潭",
             "value": "HUZ",
             "status": 1
         },
         {
-            "label": "佛山沙堤机场",
+            "label": "深圳宝安",
+            "value": "SZX",
+            "status": 1
+        },
+        {
+            "label": "佛山沙堤",
             "value": "FUO",
             "status": 1
         },
         {
-            "label": "南宁吴圩机场",
+            "label": "珠海金湾",
+            "value": "ZUH",
+            "status": 1
+        },
+        {
+            "label": "揭阳潮汕",
+            "value": "SWA",
+            "status": 1
+        },
+        {
+            "label": "湛江吴川",
+            "value": "ZHA",
+            "status": 1
+        },
+        {
+            "label": "韶关丹霞",
+            "value": "HSC",
+            "status": 1
+        },
+        {
+            "label": "梅州梅县",
+            "value": "MXZ",
+            "status": 1
+        },
+        {
+            "label": "南宁吴圩",
             "value": "NNG",
             "status": 1
         },
         {
-            "label": "桂林两江机场",
-            "value": "KWL",
-            "status": 1
-        },
-        {
-            "label": "柳州白莲机场",
-            "value": "LZH",
-            "status": 1
-        },
-        {
-            "label": "北海福成机场",
-            "value": "BHY",
-            "status": 1
-        },
-        {
-            "label": "梧州西江机场",
-            "value": "WUZ",
-            "status": 1
-        },
-        {
-            "label": "百色巴马机场",
-            "value": "AEB",
-            "status": 1
-        },
-        {
-            "label": "玉林福绵机场",
-            "value": "YLX",
-            "status": 1
-        },
-        {
-            "label": "河池金城江机场",
+            "label": "河池金城江",
             "value": "HCJ",
             "status": 1
         },
         {
-            "label": "海口美兰机场",
+            "label": "桂林两江",
+            "value": "KWL",
+            "status": 1
+        },
+        {
+            "label": "柳州白莲",
+            "value": "LZH",
+            "status": 1
+        },
+        {
+            "label": "北海福成",
+            "value": "BHY",
+            "status": 1
+        },
+        {
+            "label": "梧州西江",
+            "value": "WUZ",
+            "status": 1
+        },
+        {
+            "label": "百色巴马",
+            "value": "AEB",
+            "status": 1
+        },
+        {
+            "label": "玉林福绵",
+            "value": "YLX",
+            "status": 1
+        },
+        {
+            "label": "海口美兰",
             "value": "HAK",
             "status": 1
         },
         {
-            "label": "三亚凤凰机场",
+            "label": "三亚凤凰",
             "value": "SYX",
             "status": 1
         },
         {
-            "label": "郑州新郑机场",
+            "label": "琼海博鳌",
+            "value": "BAR",
+            "status": 1
+        },
+        {
+            "label": "郑州新郑",
             "value": "CGO",
             "status": 1
         },
         {
-            "label": "洛阳北郊机场",
+            "label": "洛阳北郊",
             "value": "LYA",
             "status": 1
         },
         {
-            "label": "南阳姜营机场",
+            "label": "南阳姜营",
             "value": "NNY",
             "status": 1
         },
         {
-            "label": "信阳明港机场",
+            "label": "信阳明港",
             "value": "XAI",
             "status": 1
         },
         {
-            "label": "长沙黄花机场",
+            "label": "长沙黄花",
             "value": "CSX",
             "status": 1
         },
         {
-            "label": "张家界荷花机场",
-            "value": "DYG",
-            "status": 1
-        },
-        {
-            "label": "常德桃花源机场",
-            "value": "CGD",
-            "status": 1
-        },
-        {
-            "label": "衡阳南岳机场",
-            "value": "HNY",
-            "status": 1
-        },
-        {
-            "label": "岳阳三荷机场",
-            "value": "YYA",
-            "status": 1
-        },
-        {
-            "label": "怀化芷江机场",
-            "value": "HJJ",
-            "status": 1
-        },
-        {
-            "label": "邵阳武冈市机场",
-            "value": "WGN",
-            "status": 1
-        },
-        {
-            "label": "永州零陵机场",
+            "label": "永州零陵",
             "value": "LLF",
             "status": 1
         },
         {
-            "label": "郴州北湖机场",
+            "label": "张家界荷花",
+            "value": "DYG",
+            "status": 1
+        },
+        {
+            "label": "郴州北湖",
             "value": "HCZ",
             "status": 1
         },
         {
-            "label": "武汉天河机场",
+            "label": "常德桃花源",
+            "value": "CGD",
+            "status": 1
+        },
+        {
+            "label": "衡阳南岳",
+            "value": "HNY",
+            "status": 1
+        },
+        {
+            "label": "岳阳三荷",
+            "value": "YYA",
+            "status": 1
+        },
+        {
+            "label": "怀化芷江",
+            "value": "HJJ",
+            "status": 1
+        },
+        {
+            "label": "邵阳武冈",
+            "value": "WGN",
+            "status": 1
+        },
+        {
+            "label": "武汉天河",
             "value": "WUH",
             "status": 1
         },
         {
-            "label": "宜昌三峡机场",
+            "label": "神农架",
+            "value": "HPG",
+            "status": 1
+        },
+        {
+            "label": "宜昌三峡",
             "value": "YIH",
             "status": 1
         },
         {
-            "label": "襄阳刘集机场",
+            "label": "襄阳刘集",
             "value": "XFN",
             "status": 1
         },
         {
-            "label": "恩施许家坪机场",
+            "label": "恩施许家坪",
             "value": "ENH",
             "status": 1
         },
         {
-            "label": "十堰武当山机场",
+            "label": "十堰武当山",
             "value": "WDS",
             "status": 1
         },
         {
-            "label": "荆州沙市机场",
+            "label": "荆州沙市",
             "value": "SHS",
             "status": 1
         },
         {
-            "label": "鄂州花湖机场",
+            "label": "鄂州花湖",
             "value": "EHU",
             "status": 1
         },
         {
-            "label": "重庆江北机场",
+            "label": "重庆江北",
             "value": "CKG",
             "status": 1
         },
         {
-            "label": "成都双流机场",
+            "label": "巫山",
+            "value": "WSK",
+            "status": 1
+        },
+        {
+            "label": "武隆仙女山",
+            "value": "CQW",
+            "status": 1
+        },
+        {
+            "label": "黔江武陵山",
+            "value": "JIQ",
+            "status": 1
+        },
+        {
+            "label": "万州五桥",
+            "value": "WXN",
+            "status": 1
+        },
+        {
+            "label": "成都双流",
             "value": "CTU",
             "status": 1
         },
         {
-            "label": "成都天府机场",
-            "value": "TFU",
-            "status": 1
-        },
-        {
-            "label": "绵阳南郊机场",
-            "value": "MIG",
-            "status": 1
-        },
-        {
-            "label": "南充高坪机场",
-            "value": "NAO",
-            "status": 1
-        },
-        {
-            "label": "宜宾五粮液机场",
-            "value": "YBP",
-            "status": 1
-        },
-        {
-            "label": "达州金垭机场",
-            "value": "DZH",
-            "status": 1
-        },
-        {
-            "label": "攀枝花保安营机场",
+            "label": "攀枝花保安营",
             "value": "PZI",
             "status": 1
         },
         {
-            "label": "稻城西丁机场",
+            "label": "甘孜格萨尔",
+            "value": "GZG",
+            "status": 1
+        },
+        {
+            "label": "成都天府",
+            "value": "TFU",
+            "status": 1
+        },
+        {
+            "label": "稻城西丁",
             "value": "DCY",
             "status": 1
         },
         {
-            "label": "广元盘龙机场",
-            "value": "GYS",
-            "status": 1
-        },
-        {
-            "label": "巴中恩阳机场",
-            "value": "BZX",
-            "status": 1
-        },
-        {
-            "label": "甘孜康定机场",
-            "value": "KGT",
-            "status": 1
-        },
-        {
-            "label": "泸州云龙机场",
+            "label": "泸州云龙",
             "value": "LZO",
             "status": 1
         },
         {
-            "label": "昆明长水机场",
+            "label": "绵阳南郊",
+            "value": "MIG",
+            "status": 1
+        },
+        {
+            "label": "广元盘龙",
+            "value": "GYS",
+            "status": 1
+        },
+        {
+            "label": "南充高坪",
+            "value": "NAO",
+            "status": 1
+        },
+        {
+            "label": "九寨沟黄龙",
+            "value": "JZH",
+            "status": 1
+        },
+        {
+            "label": "西昌青山",
+            "value": "XIC",
+            "status": 1
+        },
+        {
+            "label": "巴中恩阳",
+            "value": "BZX",
+            "status": 1
+        },
+        {
+            "label": "宜宾五粮液",
+            "value": "YBP",
+            "status": 1
+        },
+        {
+            "label": "甘孜康定",
+            "value": "KGT",
+            "status": 1
+        },
+        {
+            "label": "达州金垭",
+            "value": "DZH",
+            "status": 1
+        },
+        {
+            "label": "红原",
+            "value": "AHJ",
+            "status": 1
+        },
+        {
+            "label": "昆明长水",
             "value": "KMG",
             "status": 1
         },
         {
-            "label": "丽江三义机场",
-            "value": "LJG",
-            "status": 1
-        },
-        {
-            "label": "西双版纳嘎洒机场",
-            "value": "JHG",
-            "status": 1
-        },
-        {
-            "label": "大理荒草坝机场",
-            "value": "DLU",
-            "status": 1
-        },
-        {
-            "label": "腾冲驼峰机场",
-            "value": "TCZ",
-            "status": 1
-        },
-        {
-            "label": "迪庆香格里拉机场",
+            "label": "迪庆香格里拉",
             "value": "DIG",
             "status": 1
         },
         {
-            "label": "普洱思茅机场",
+            "label": "丽江三义",
+            "value": "LJG",
+            "status": 1
+        },
+        {
+            "label": "普洱思茅",
             "value": "SYM",
             "status": 1
         },
         {
-            "label": "临沧博尚机场",
+            "label": "西双版纳嘎洒",
+            "value": "JHG",
+            "status": 1
+        },
+        {
+            "label": "临沧博尚",
             "value": "LNJ",
             "status": 1
         },
         {
-            "label": "昭通机场",
+            "label": "芒市",
+            "value": "LUM",
+            "status": 1
+        },
+        {
+            "label": "昭通",
             "value": "ZAT",
             "status": 1
         },
         {
-            "label": "贵阳龙洞堡机场",
+            "label": "大理荒草坝",
+            "value": "DLU",
+            "status": 1
+        },
+        {
+            "label": "文山普者黑",
+            "value": "WNH",
+            "status": 1
+        },
+        {
+            "label": "腾冲驼峰",
+            "value": "TCZ",
+            "status": 1
+        },
+        {
+            "label": "宁蒗泸沽湖",
+            "value": "NLH",
+            "status": 1
+        },
+        {
+            "label": "保山",
+            "value": "BSD",
+            "status": 1
+        },
+        {
+            "label": "怒江",
+            "value": "LFH",
+            "status": 1
+        },
+        {
+            "label": "贵阳龙洞堡",
             "value": "KWE",
             "status": 1
         },
         {
-            "label": "遵义新舟机场",
+            "label": "荔波",
+            "value": "LLB",
+            "status": 1
+        },
+        {
+            "label": "遵义新舟",
             "value": "ZYI",
             "status": 1
         },
         {
-            "label": "铜仁凤凰机场",
+            "label": "凯里黄平",
+            "value": "KJH",
+            "status": 1
+        },
+        {
+            "label": "兴义",
+            "value": "ACX",
+            "status": 1
+        },
+        {
+            "label": "黎平",
+            "value": "HZH",
+            "status": 1
+        },
+        {
+            "label": "铜仁凤凰",
             "value": "TEN",
             "status": 1
         },
         {
-            "label": "毕节飞雄机场",
+            "label": "毕节飞雄",
             "value": "BFJ",
             "status": 1
         },
         {
-            "label": "六盘水月照机场",
+            "label": "六盘水月照",
             "value": "LPF",
             "status": 1
         },
         {
-            "label": "安顺黄果树机场",
+            "label": "安顺黄果树",
             "value": "AVA",
             "status": 1
         },
         {
-            "label": "拉萨贡嘎机场",
+            "label": "拉萨贡嘎",
             "value": "LXA",
             "status": 1
         },
         {
-            "label": "林芝米林机场",
+            "label": "林芝米林",
             "value": "LZY",
             "status": 1
         },
         {
-            "label": "日喀则和平机场",
+            "label": "昌都邦达",
+            "value": "BPX",
+            "status": 1
+        },
+        {
+            "label": "日喀则和平",
             "value": "RKZ",
             "status": 1
         },
         {
-            "label": "乌鲁木齐地窝堡机场",
+            "label": "阿里昆莎",
+            "value": "NGQ",
+            "status": 1
+        },
+        {
+            "label": "乌鲁木齐地窝堡",
             "value": "URC",
             "status": 1
         },
         {
-            "label": "喀什机场",
-            "value": "KHG",
-            "status": 1
-        },
-        {
-            "label": "库尔勒梨城机场",
-            "value": "KRL",
-            "status": 1
-        },
-        {
-            "label": "伊宁机场",
-            "value": "YIN",
-            "status": 1
-        },
-        {
-            "label": "阿克苏红旗坡机场",
-            "value": "AKU",
-            "status": 1
-        },
-        {
-            "label": "和田机场",
-            "value": "HTN",
-            "status": 1
-        },
-        {
-            "label": "克拉玛依古海机场",
-            "value": "KRY",
-            "status": 1
-        },
-        {
-            "label": "吐鲁番交河机场",
+            "label": "吐鲁番交河",
             "value": "TLQ",
             "status": 1
         },
         {
-            "label": "阿勒泰雪都机场",
+            "label": "那拉提",
+            "value": "NLT",
+            "status": 1
+        },
+        {
+            "label": "昭苏天马",
+            "value": "ZFL",
+            "status": 1
+        },
+        {
+            "label": "喀什",
+            "value": "KHG",
+            "status": 1
+        },
+        {
+            "label": "阿勒泰雪都",
             "value": "AAT",
             "status": 1
         },
         {
-            "label": "哈密伊州机场",
-            "value": "HMI",
+            "label": "图木舒克",
+            "value": "TWC",
             "status": 1
         },
         {
-            "label": "库车龟兹机场",
-            "value": "KCA",
-            "status": 1
-        },
-        {
-            "label": "塔城千泉机场",
-            "value": "TCG",
-            "status": 1
-        },
-        {
-            "label": "于田万方机场",
-            "value": "YTW",
-            "status": 1
-        },
-        {
-            "label": "阿拉尔塔里木机场",
+            "label": "阿拉尔塔里木",
             "value": "ACF",
             "status": 1
         },
         {
-            "label": "西安咸阳机场",
+            "label": "库尔勒梨城",
+            "value": "KRL",
+            "status": 1
+        },
+        {
+            "label": "哈密伊州",
+            "value": "HMI",
+            "status": 1
+        },
+        {
+            "label": "莎车",
+            "value": "QSZ",
+            "status": 1
+        },
+        {
+            "label": "伊宁",
+            "value": "YIN",
+            "status": 1
+        },
+        {
+            "label": "库车龟兹",
+            "value": "KCA",
+            "status": 1
+        },
+        {
+            "label": "富蕴可可托海",
+            "value": "FYN",
+            "status": 1
+        },
+        {
+            "label": "阿克苏红旗坡",
+            "value": "AKU",
+            "status": 1
+        },
+        {
+            "label": "博乐",
+            "value": "BPL",
+            "status": 1
+        },
+        {
+            "label": "石河子",
+            "value": "SHF",
+            "status": 1
+        },
+        {
+            "label": "和田",
+            "value": "HTN",
+            "status": 1
+        },
+        {
+            "label": "塔城千泉",
+            "value": "TCG",
+            "status": 1
+        },
+        {
+            "label": "于田万方",
+            "value": "YTW",
+            "status": 1
+        },
+        {
+            "label": "克拉玛依古海",
+            "value": "KRY",
+            "status": 1
+        },
+        {
+            "label": "且末",
+            "value": "IQM",
+            "status": 1
+        },
+        {
+            "label": "西安咸阳",
             "value": "XIY",
             "status": 1
         },
         {
-            "label": "榆林西沙机场",
+            "label": "榆林西沙",
             "value": "UYN",
             "status": 1
         },
         {
-            "label": "汉中城固机场",
+            "label": "汉中城固",
             "value": "HZG",
             "status": 1
         },
         {
-            "label": "延安南泥湾机场",
+            "label": "延安南泥湾",
             "value": "ENY",
             "status": 1
         },
         {
-            "label": "安康富强机场",
+            "label": "安康富强",
             "value": "AKA",
             "status": 1
         },
         {
-            "label": "兰州中川机场",
+            "label": "商洛",
+            "value": "DFA",
+            "status": 1
+        },
+        {
+            "label": "兰州中川",
             "value": "LHW",
             "status": 1
         },
         {
-            "label": "敦煌莫高机场",
-            "value": "DNH",
-            "status": 1
-        },
-        {
-            "label": "嘉峪关机场",
-            "value": "JGN",
-            "status": 1
-        },
-        {
-            "label": "陇南成县机场",
-            "value": "LNL",
-            "status": 1
-        },
-        {
-            "label": "庆阳西峰机场",
+            "label": "庆阳西峰",
             "value": "IQN",
             "status": 1
         },
         {
-            "label": "天水麦积山机场",
+            "label": "敦煌莫高",
+            "value": "DNH",
+            "status": 1
+        },
+        {
+            "label": "天水麦积山",
             "value": "THQ",
             "status": 1
         },
         {
-            "label": "银川河东机场",
+            "label": "嘉峪关",
+            "value": "JGN",
+            "status": 1
+        },
+        {
+            "label": "张掖甘州",
+            "value": "YZY",
+            "status": 1
+        },
+        {
+            "label": "陇南成县",
+            "value": "LNL",
+            "status": 1
+        },
+        {
+            "label": "金昌",
+            "value": "JIC",
+            "status": 1
+        },
+        {
+            "label": "甘南夏河",
+            "value": "GXH",
+            "status": 1
+        },
+        {
+            "label": "银川河东",
             "value": "INC",
             "status": 1
         },
         {
-            "label": "西宁曹家堡机场",
+            "label": "中卫香山",
+            "value": "ZHY",
+            "status": 1
+        },
+        {
+            "label": "固原六盘山",
+            "value": "GYU",
+            "status": 1
+        },
+        {
+            "label": "西宁曹家堡",
             "value": "XNN",
+            "status": 1
+        },
+        {
+            "label": "格尔木",
+            "value": "COQ",
+            "status": 1
+        },
+        {
+            "label": "玉树巴塘",
+            "value": "YUS",
+            "status": 1
+        },
+        {
+            "label": "德令哈",
+            "value": "HXD",
+            "status": 1
+        },
+        {
+            "label": "果洛",
+            "value": "GMQ",
+            "status": 1
+        },
+        {
+            "label": "花土沟",
+            "value": "HTT",
+            "status": 1
+        },
+        {
+            "label": "祁连",
+            "value": "HBQ",
             "status": 1
         }
     ]
