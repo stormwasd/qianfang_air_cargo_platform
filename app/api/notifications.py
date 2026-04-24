@@ -321,20 +321,22 @@ async def cancel_pending_task(
     1. 根据 source_table 确定目标类型（waybill/booking）和源数据模型
     2. 遍历每个 ID：
        - 检查是否有 running 状态的 RPA 任务，如有则跳过该 ID
-       - 删除 rpa_tasks 表中对应的 pending 状态的任务
-       - 删除 waybills 或 bookings 表中对应的源数据记录
-    3. 返回操作结果（已删除、被跳过的 ID）
+       - 查找 rpa_tasks 表中对应的 pending 状态的任务
+       - 如果未找到 pending 任务，说明该条数据不可取消（可能已执行成功等），跳过该 ID 并计入 not_found_ids
+       - 仅在有 pending 任务的情况下：删除 pending 任务，并删除 waybills 或 bookings 表中对应的源数据记录
+    3. 返回操作结果（已删除、异常跳过、未查找到的 ID 列表）
     
     **注意事项**：
-    - 只能取消没有正在执行中 RPA 任务的目标
-    - 如果某个 ID 有 running 状态的 RPA 任务，该 ID 会被跳过
-    - 同时会删除 rpa_tasks 中的 pending 任务和 waybills/bookings 中的源数据
+    - 只能取消真正等待中（有 pending RPA任务）的目标
+    - 如果某个 ID 有 running 状态的 RPA 任务，该 ID 会被无损跳过并记录
+    - 如果某个 ID 没有 pending（等待中）的 RPA 任务（例如已经成功的数据），也会被自动保护并记录跳过
     
     返回：
     - deleted_count: 成功删除的目标数量
     - deleted_ids: 成功删除的目标ID列表
     - deleted_rpa_task_ids: 删除的 RPA 任务ID列表
     - skipped_ids: 因任务正在执行中而被跳过的目标ID列表
+    - not_found_ids: 因为不存在 pending 任务（非等待中）而被保护免删的目标ID列表
     """
     # 验证 source_table 参数
     if request.source_table not in ["waybills", "bookings"]:
@@ -363,6 +365,7 @@ async def cancel_pending_task(
     deleted_ids = []              # 成功删除的目标ID
     deleted_rpa_task_ids = []     # 删除的RPA任务ID
     skipped_ids = []              # 因running而跳过的ID
+    not_found_ids = []            # 因无pending任务而跳过的ID
     
     for target_id in target_ids:
         # 检查是否有执行中的 RPA 任务
@@ -377,13 +380,19 @@ async def cancel_pending_task(
             skipped_ids.append(str(target_id))
             continue
         
-        # 删除 rpa_tasks 表中对应的 pending 状态的任务
+        # 查找 rpa_tasks 表中对应的 pending 状态的任务
         pending_tasks = db.query(RPATask).filter(
             RPATask.target_type == target_type,
             RPATask.target_id == target_id,
             RPATask.status == RPATaskStatus.PENDING.value
         ).all()
         
+        # 严重安全校验：如果没有任何等待中（pending）任务存在，说明这不是待执行列，绝对不可清理源表。予以剔除！
+        if not pending_tasks:
+            not_found_ids.append(str(target_id))
+            continue
+        
+        # 验证通过（存在pending）：删除 rpa_tasks 表中对应的 pending 任务
         for task in pending_tasks:
             deleted_rpa_task_ids.append(str(task.id))
             db.delete(task)
@@ -407,15 +416,18 @@ async def cancel_pending_task(
         msg_parts.append(f"成功删除 {len(deleted_ids)} 个任务及其源数据")
     if skipped_ids:
         msg_parts.append(f"{len(skipped_ids)} 个任务正在执行中已跳过")
-    if not deleted_ids and not skipped_ids:
-        msg_parts.append("没有找到需要删除的任务")
+    if not_found_ids:
+        msg_parts.append(f"{len(not_found_ids)} 个目标未处于等待中状态以保护免删")
+    if not msg_parts:
+        msg_parts.append("没有找到需要处理的数据")
     
     return success_response(
         data={
             "deleted_count": len(deleted_ids),
             "deleted_ids": deleted_ids,
             "deleted_rpa_task_ids": deleted_rpa_task_ids,
-            "skipped_ids": skipped_ids
+            "skipped_ids": skipped_ids,
+            "not_found_ids": not_found_ids
         },
         msg="，".join(msg_parts)
     )
