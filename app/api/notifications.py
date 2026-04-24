@@ -410,16 +410,23 @@ async def cancel_pending_task(
     # 统一提交事务
     db.commit()
     
-    # 构建响应消息
-    msg_parts = []
-    if deleted_ids:
-        msg_parts.append(f"成功删除 {len(deleted_ids)} 个任务及其源数据")
-    if skipped_ids:
-        msg_parts.append(f"{len(skipped_ids)} 个任务正在执行中已跳过")
-    if not_found_ids:
-        msg_parts.append(f"{len(not_found_ids)} 个目标未处于等待中状态以保护免删")
-    if not msg_parts:
-        msg_parts.append("没有找到需要处理的数据")
+    # 构建友好响应消息（可直接用于前端弹窗提示）
+    total = len(target_ids)
+    if len(deleted_ids) == total:
+        if total == 1:
+            msg = "取消成功"
+        else:
+            msg = f"成功取消全部 {total} 个任务"
+    elif len(deleted_ids) == 0:
+        if total == 1:
+            if skipped_ids:
+                msg = "任务正在执行中，无法取消"
+            else:
+                msg = "任务状态已刷新或不在等待队列中，无法取消"
+        else:
+            msg = "所选任务均正在执行或状态已刷新，无法取消"
+    else:
+        msg = f"成功取消 {len(deleted_ids)} 个任务，跳过 {total - len(deleted_ids)} 个不可取消的任务"
     
     return success_response(
         data={
@@ -429,6 +436,6 @@ async def cancel_pending_task(
             "skipped_ids": skipped_ids,
             "not_found_ids": not_found_ids
         },
-        msg="，".join(msg_parts)
+        msg=msg
     )
 
