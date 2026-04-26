@@ -1,0 +1,64 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.egg-info
+.eggs
+*.egg
+.venv
+venv/
+env/
+
+# IDE
+.vscode
+.idea
+.cursor
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Database (local dev)
+*.db
+*.sqlite
+*.sqlite3
+dev.db
+
+# Docker
+docker-compose.yml
+docker-compose.override.yml
+Dockerfile
+.dockerignore
+
+# Documentation
+API_DOCS.md
+README.md
+*.md
+
+# Logs
+*.log
+logs/
+
+# Temporary
+*.tmp
+*.temp
+*.bak
+
+# SQL migrations (not needed at runtime)
+sql/
+
+# Local config
+.env
+.env.local
+.env.*.local
+config.local.py
+
+# Generated files (mounted as volume, not baked into image)
+generated_files/

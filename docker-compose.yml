@@ -1,0 +1,76 @@
+# ============================================================
+# 千方航空物流平台 - Docker Compose 编排文件
+#
+# 使用方式：
+#   1. 复制 .env.example 为 .env 并修改配置
+#   2. docker-compose up -d
+#   3. 首次启动后初始化数据库：
+#      docker-compose exec app python init_db.py
+#
+# 挂载说明：
+#   - ./documents      → 模板文件目录，修改后立即生效
+#   - ./generated_files → 制单生成的文件，可通过文件共享服务共享
+#   - ./.env            → 项目配置文件，修改后需重启服务
+# ============================================================
+
+services:
+  # ========== MySQL 数据库 ==========
+  mysql:
+    image: mysql:8.0
+    container_name: qianfang-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-QianFang@2026}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-qianfang_air_cargo}
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+      TZ: Asia/Shanghai
+    ports:
+      - "${MYSQL_EXTERNAL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=500
+      - --innodb-buffer-pool-size=256M
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-QianFang@2026}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - qianfang-network
+
+  # ========== 千方航空物流平台 API 服务 ==========
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qianfang-app
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      # 模板文件挂载：修改模板后立即生效，无需重建镜像
+      - ./documents:/app/documents
+      # 生成文件挂载：制单后生成的文件会写入此目录，可通过文件共享服务访问
+      - ./generated_files:/app/generated_files
+      # 配置文件挂载：修改 .env 后需重启服务
+      - ./.env:/app/.env:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - qianfang-network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  qianfang-network:
+    driver: bridge

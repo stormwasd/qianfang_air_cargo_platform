@@ -142,7 +142,9 @@ class Settings(BaseSettings):
     
     class Config:
         case_sensitive = True
-        env_file = None  # 不使用环境变量文件，按用户要求
+        env_file = ".env"  # 支持从 .env 文件加载配置（Docker 部署需要，本地无 .env 文件时自动忽略）
+        env_file_encoding = "utf-8"
+        extra = "ignore"  # 忽略 .env 中未在 Settings 中定义的字段，避免报错
     
     @property
     def DATABASE_URL(self) -> str:
