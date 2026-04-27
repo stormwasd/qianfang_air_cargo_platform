@@ -145,7 +145,7 @@ class KeepLoginRunner:
                 target_id=self.target_id,
                 params=params,
                 job_uuid=self.job_uuid,
-                priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
+                priority=2,  # 保持登录任务优先级高于普通业务任务（默认1），确保登录态优先维持
                 created_by=None,
             )
 
