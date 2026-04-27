@@ -10,6 +10,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai
 
+# 替换 apt 源为阿里云镜像（国内服务器加速）
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources
+
 # 安装系统依赖
 # - gcc + default-libmysqlclient-dev: MySQL 客户端编译依赖
 # - fonts-wqy-zenhei: 中文字体（reportlab 生成 PDF 时需要）
@@ -28,7 +31,7 @@ WORKDIR /app
 
 # 先复制依赖文件，利用 Docker 层缓存
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
 
 # 复制项目代码
 COPY . .

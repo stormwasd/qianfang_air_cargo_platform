@@ -16,7 +16,7 @@
 services:
   # ========== MySQL 数据库 ==========
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.39
     container_name: qianfang-mysql
     restart: always
     environment:
