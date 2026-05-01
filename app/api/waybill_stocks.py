@@ -6,6 +6,7 @@ import logging
 from typing import List
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -277,6 +278,57 @@ async def update_waybill_stock_item(
     return success_response(data=item_data, msg="单号编辑成功")
 
 
+@router.delete("/items/{item_id}", summary="删除单号")
+async def delete_waybill_stock_item(
+    item_id: str,
+    current_user=Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    删除单号详情
+
+    注意：
+    - 只能删除未使用、异常或失效的单号。
+    - 已使用的单号不允许删除。
+    - 删除单号后，所属领单批次的领单数量将自动减1。
+    
+    参数说明：
+    - **item_id**: 单号详情ID（字符串格式）
+    """
+    # 1. 查找单号详情
+    item = db.query(WaybillStockItem).filter(
+        WaybillStockItem.id == int(item_id)
+    ).first()
+    if not item:
+        raise NotFoundException("单号详情不存在")
+    
+    # 2. 校验状态：已使用的单号不允许删除
+    if item.usage_status == "1":
+        raise BadRequestException("已使用的单号不允许删除")
+    
+    batch_id = item.batch_id
+    full_number = item.full_number
+    
+    # 3. 删除记录
+    db.delete(item)
+    
+    # 4. 同步更新领单批次的领单数量
+    batch = db.query(WaybillStockBatch).filter(
+        WaybillStockBatch.id == batch_id
+    ).first()
+    if batch and batch.claim_quantity > 0:
+        batch.claim_quantity -= 1
+        
+    db.commit()
+    
+    logger.info(
+        "删除单号详情成功: item_id=%s, full_number=%s",
+        item_id, full_number,
+    )
+    
+    return success_response(data=None, msg="删除单号成功")
+
+
 @router.get("", summary="领单统计（领单列表）")
 async def get_waybill_stock_batches(
     query: WaybillStockBatchQuery = Depends(),
@@ -307,7 +359,36 @@ async def get_waybill_stock_batches(
         WaybillStockBatch.created_at.desc()
     ).offset(offset).limit(query.page_size).all()
     
-    batch_list = [_format_batch_response(b) for b in batches]
+    # 统计单号使用情况
+    batch_ids = [b.id for b in batches]
+    stats_dict = {}
+    if batch_ids:
+        stats_query = db.query(
+            WaybillStockItem.batch_id,
+            func.sum(case([(WaybillStockItem.usage_status == '0', 1)], else_=0)).label('unused_count'),
+            func.sum(case([(WaybillStockItem.usage_status == '1', 1)], else_=0)).label('used_count'),
+            func.sum(case([(WaybillStockItem.usage_status == '2', 1)], else_=0)).label('abnormal_count'),
+            func.sum(case([(WaybillStockItem.usage_status == '3', 1)], else_=0)).label('invalid_count')
+        ).filter(
+            WaybillStockItem.batch_id.in_(batch_ids)
+        ).group_by(
+            WaybillStockItem.batch_id
+        ).all()
+        
+        for stat in stats_query:
+            stats_dict[stat.batch_id] = {
+                "unused_count": int(stat.unused_count or 0),
+                "used_count": int(stat.used_count or 0),
+                "abnormal_count": int(stat.abnormal_count or 0),
+                "invalid_count": int(stat.invalid_count or 0),
+            }
+    
+    batch_list = []
+    for b in batches:
+        b_stats = stats_dict.get(b.id, {
+            "unused_count": 0, "used_count": 0, "abnormal_count": 0, "invalid_count": 0
+        })
+        batch_list.append(_format_batch_response(b, b_stats))
     
     return success_response(
         data={"total": total, "items": batch_list},
@@ -317,9 +398,9 @@ async def get_waybill_stock_batches(
 
 # ======================== 响应格式化工具 ========================
 
-def _format_batch_response(batch: WaybillStockBatch) -> dict:
+def _format_batch_response(batch: WaybillStockBatch, stats: dict = None) -> dict:
     """格式化领单批次响应数据"""
-    return {
+    result = {
         "id": str(batch.id),
         "claim_date": batch.claim_date.isoformat() if batch.claim_date else None,
         "first_number": batch.first_number,
@@ -330,6 +411,16 @@ def _format_batch_response(batch: WaybillStockBatch) -> dict:
         "created_at": format_datetime_china(batch.created_at),
         "updated_at": format_datetime_china(batch.updated_at),
     }
+    if stats:
+        result.update(stats)
+    else:
+        result.update({
+            "unused_count": 0,
+            "used_count": 0,
+            "abnormal_count": 0,
+            "invalid_count": 0,
+        })
+    return result
 
 
 def _format_item_response(item: WaybillStockItem) -> dict:
