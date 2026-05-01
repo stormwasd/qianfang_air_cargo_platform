@@ -137,6 +137,12 @@ class Settings(BaseSettings):
     RPA_QUEUE_TASK_TIMEOUT: int = Field(default=30, ge=10, le=300, description="RPA接口调用超时时间（秒），默认30秒，超时则任务失败")
     RPA_QUEUE_CLEANUP_DAYS: int = Field(default=7, ge=1, le=365, description="已完成任务保留天数，默认7天")
     
+    
+    # 航司单号前缀映射（航司名称 -> 单号前缀）
+    AIRLINE_NUMBER_PREFIX: Dict[str, str] = {
+        "china_southern_air": "784-",
+    }
+    
     # 应用配置
     DEBUG: bool = Field(default=False, description="调试模式")
     
