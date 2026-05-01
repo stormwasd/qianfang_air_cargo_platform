@@ -389,10 +389,10 @@ async def get_waybill_stock_batches(
     if batch_ids:
         stats_query = db.query(
             WaybillStockItem.batch_id,
-            func.sum(case([(WaybillStockItem.usage_status == '0', 1)], else_=0)).label('unused_count'),
-            func.sum(case([(WaybillStockItem.usage_status == '1', 1)], else_=0)).label('used_count'),
-            func.sum(case([(WaybillStockItem.usage_status == '2', 1)], else_=0)).label('abnormal_count'),
-            func.sum(case([(WaybillStockItem.usage_status == '3', 1)], else_=0)).label('invalid_count')
+            func.sum(case((WaybillStockItem.usage_status == '0', 1), else_=0)).label('unused_count'),
+            func.sum(case((WaybillStockItem.usage_status == '1', 1), else_=0)).label('used_count'),
+            func.sum(case((WaybillStockItem.usage_status == '2', 1), else_=0)).label('abnormal_count'),
+            func.sum(case((WaybillStockItem.usage_status == '3', 1), else_=0)).label('invalid_count')
         ).filter(
             WaybillStockItem.batch_id.in_(batch_ids)
         ).group_by(
