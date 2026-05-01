@@ -17,6 +17,7 @@ from app.models.waybill_stock import WaybillStockBatch, WaybillStockItem
 from app.schemas.waybill_stock import (
     WaybillStockBatchCreate,
     WaybillStockItemUpdate,
+    WaybillStockItemBatchDelete,
     WaybillStockBatchQuery,
     WaybillStockItemQuery,
 )
@@ -278,55 +279,78 @@ async def update_waybill_stock_item(
     return success_response(data=item_data, msg="单号编辑成功")
 
 
-@router.delete("/items/{item_id}", summary="删除单号")
-async def delete_waybill_stock_item(
-    item_id: str,
+@router.delete("/items", summary="批量删除单号")
+async def delete_waybill_stock_items(
+    payload: WaybillStockItemBatchDelete,
     current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
-    删除单号详情
+    批量删除单号详情
 
     注意：
     - 只能删除未使用、异常或失效的单号。
-    - 已使用的单号不允许删除。
-    - 删除单号后，所属领单批次的领单数量将自动减1。
+    - 包含任何已使用的单号都不允许删除。
+    - 删除单号后，所属领单批次的领单数量将自动减去删除的数量。
     
     参数说明：
-    - **item_id**: 单号详情ID（字符串格式）
+    - **item_ids**: 要删除的单号详情ID列表
     """
-    # 1. 查找单号详情
-    item = db.query(WaybillStockItem).filter(
-        WaybillStockItem.id == int(item_id)
-    ).first()
-    if not item:
-        raise NotFoundException("单号详情不存在")
+    if not payload.item_ids:
+        raise BadRequestException("未选择要删除的单号")
+        
+    try:
+        item_ids = [int(i) for i in payload.item_ids]
+    except ValueError:
+        raise BadRequestException("单号ID必须为有效的数字字符串")
+
+    # 1. 查找所有单号详情
+    items = db.query(WaybillStockItem).filter(
+        WaybillStockItem.id.in_(item_ids)
+    ).all()
+    
+    if not items:
+        return success_response(data=None, msg="无匹配的单号被删除")
     
     # 2. 校验状态：已使用的单号不允许删除
-    if item.usage_status == "1":
-        raise BadRequestException("已使用的单号不允许删除")
+    for item in items:
+        if item.usage_status == "1":
+            raise BadRequestException(f"单号 {item.full_number} 已使用，不允许删除")
     
-    batch_id = item.batch_id
-    full_number = item.full_number
+    # 记录每个批次需要扣减的数量
+    batch_deducts = {}
+    deleted_ids = []
     
-    # 3. 删除记录
-    db.delete(item)
-    
-    # 4. 同步更新领单批次的领单数量
-    batch = db.query(WaybillStockBatch).filter(
-        WaybillStockBatch.id == batch_id
-    ).first()
-    if batch and batch.claim_quantity > 0:
-        batch.claim_quantity -= 1
+    # 3. 统计并删除记录
+    for item in items:
+        batch_id = item.batch_id
+        if batch_id not in batch_deducts:
+            batch_deducts[batch_id] = 0
+        batch_deducts[batch_id] += 1
+        deleted_ids.append(item.id)
         
+        db.delete(item)
+    
+    # 4. 同步更新相关领单批次的领单数量
+    batches = db.query(WaybillStockBatch).filter(
+        WaybillStockBatch.id.in_(list(batch_deducts.keys()))
+    ).all()
+    
+    for batch in batches:
+        deduct_amount = batch_deducts.get(batch.id, 0)
+        if batch.claim_quantity >= deduct_amount:
+            batch.claim_quantity -= deduct_amount
+        else:
+            batch.claim_quantity = 0
+            
     db.commit()
     
     logger.info(
-        "删除单号详情成功: item_id=%s, full_number=%s",
-        item_id, full_number,
+        "批量删除单号详情成功: count=%d, item_ids=%s",
+        len(deleted_ids), deleted_ids,
     )
     
-    return success_response(data=None, msg="删除单号成功")
+    return success_response(data=None, msg=f"成功删除 {len(deleted_ids)} 个单号")
 
 
 @router.get("", summary="领单统计（领单列表）")

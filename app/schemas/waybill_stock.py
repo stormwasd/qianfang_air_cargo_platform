@@ -34,6 +34,11 @@ class WaybillStockItemUpdate(BaseModel):
         return v
 
 
+class WaybillStockItemBatchDelete(BaseModel):
+    """批量删除单号详情schema"""
+    item_ids: list[str] = Field(default_factory=list, description="要删除的单号详情ID列表")
+
+
 class WaybillStockBatchQuery(BaseModel):
     """领单批次查询schema"""
     model_config = ConfigDict(populate_by_name=True)
