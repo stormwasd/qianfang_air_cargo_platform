@@ -35,6 +35,18 @@ ALL_MENUS: List[MenuType] = [
         ]
     },
     {
+        "name": "单号管理",
+        "children": [
+            {"name": "单号管理"}
+        ]
+    },
+    {
+        "name": "机器人管理",
+        "children": [
+            {"name": "机器人管理"}
+        ]
+    },
+    {
         "name": "系统管理",
         "children": [
             {"name": "业务参数管理"}
@@ -207,6 +219,66 @@ PERMISSION_MENU_MAP: Dict[str, List[MenuType]] = {
             "name": "客户管理",
             "children": [
                 {"name": "客户管理"}
+            ]
+        },
+        {
+            "name": "用户中心",
+            "children": [
+                {"name": "用户中心"}
+            ]
+        },
+    ],
+    
+    # 单号管理权限（支持代码和名称）
+    "bill": [
+        {
+            "name": "单号管理",
+            "children": [
+                {"name": "单号管理"}
+            ]
+        },
+        {
+            "name": "用户中心",
+            "children": [
+                {"name": "用户中心"}
+            ]
+        },
+    ],
+    "单号管理": [  # 向后兼容：保留权限名称作为key
+        {
+            "name": "单号管理",
+            "children": [
+                {"name": "单号管理"}
+            ]
+        },
+        {
+            "name": "用户中心",
+            "children": [
+                {"name": "用户中心"}
+            ]
+        },
+    ],
+    
+    # 机器人管理权限（支持代码和名称）
+    "robot": [
+        {
+            "name": "机器人管理",
+            "children": [
+                {"name": "机器人管理"}
+            ]
+        },
+        {
+            "name": "用户中心",
+            "children": [
+                {"name": "用户中心"}
+            ]
+        },
+    ],
+    "机器人管理": [  # 向后兼容：保留权限名称作为key
+        {
+            "name": "机器人管理",
+            "children": [
+                {"name": "机器人管理"}
             ]
         },
         {

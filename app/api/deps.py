@@ -54,3 +54,31 @@ def require_admin(current_user: User = Depends(get_current_active_user)) -> User
         raise ForbiddenException("需要管理员权限")
     return current_user
 
+
+def require_permission(permission_code: str):
+    """
+    权限校验工厂函数
+    
+    生成一个 FastAPI 依赖项，校验当前用户是否拥有指定权限代码或管理员权限。
+    
+    Args:
+        permission_code: 权限代码（如 "bill", "robot"）
+    
+    Returns:
+        FastAPI依赖函数
+    
+    Usage:
+        @router.get("", dependencies=[Depends(require_permission("robot"))])
+        或
+        current_user = Depends(require_permission("robot"))
+    """
+    from app.core.permissions import has_permission
+    
+    def _check_permission(current_user: User = Depends(get_current_active_user)) -> User:
+        user_permissions = parse_json_permissions(current_user.permissions)
+        if not has_permission(user_permissions, permission_code):
+            raise ForbiddenException(f"需要「{permission_code}」权限或管理员权限")
+        return current_user
+    
+    return _check_permission
+

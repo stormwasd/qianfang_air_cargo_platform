@@ -21,7 +21,7 @@ from app.schemas.waybill_stock import (
     WaybillStockBatchQuery,
     WaybillStockItemQuery,
 )
-from app.api.deps import get_current_active_user
+from app.api.deps import require_permission
 from app.utils.helpers import format_datetime_china
 
 logger = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ def generate_waybill_numbers(first_number: str, last_number: str, quantity: int)
 @router.post("", summary="新增单号（领单）")
 async def create_waybill_stock_batch(
     payload: WaybillStockBatchCreate,
-    current_user=Depends(get_current_active_user),
+    current_user=Depends(require_permission("bill")),
     db: Session = Depends(get_db),
 ):
     """
@@ -184,7 +184,7 @@ async def create_waybill_stock_batch(
 async def get_waybill_stock_items(
     batch_id: str,
     query: WaybillStockItemQuery = Depends(),
-    current_user=Depends(get_current_active_user),
+    current_user=Depends(require_permission("bill")),
     db: Session = Depends(get_db),
 ):
     """
@@ -235,7 +235,7 @@ async def get_waybill_stock_items(
 async def update_waybill_stock_item(
     item_id: str,
     payload: WaybillStockItemUpdate,
-    current_user=Depends(get_current_active_user),
+    current_user=Depends(require_permission("bill")),
     db: Session = Depends(get_db),
 ):
     """
@@ -282,7 +282,7 @@ async def update_waybill_stock_item(
 @router.delete("/items", summary="批量删除单号")
 async def delete_waybill_stock_items(
     payload: WaybillStockItemBatchDelete,
-    current_user=Depends(get_current_active_user),
+    current_user=Depends(require_permission("bill")),
     db: Session = Depends(get_db),
 ):
     """
@@ -356,7 +356,7 @@ async def delete_waybill_stock_items(
 @router.get("", summary="领单统计（领单列表）")
 async def get_waybill_stock_batches(
     query: WaybillStockBatchQuery = Depends(),
-    current_user=Depends(get_current_active_user),
+    current_user=Depends(require_permission("bill")),
     db: Session = Depends(get_db),
 ):
     """

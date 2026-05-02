@@ -42,6 +42,8 @@ class Settings(BaseSettings):
         "booking": "订舱管理",
         "settlement": "结算单管理",
         "customer": "客户管理",
+        "bill": "单号管理",
+        "robot": "机器人管理",
         "admin": "管理员"
     }
     

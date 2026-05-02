@@ -9,7 +9,8 @@ from app.models.booking import Booking
 from app.models.settlement import Settlement
 from app.models.rpa_task import RPATask
 from app.models.waybill_stock import WaybillStockBatch, WaybillStockItem
+from app.models.robot import Robot
 from app.models.user_department import user_department  # 确保关联表被导入
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStockBatch", "WaybillStockItem"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStockBatch", "WaybillStockItem", "Robot"]
 

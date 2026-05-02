@@ -36,7 +36,7 @@ async def create_user(
     - **password**: 密码
     - **name**: 用户姓名
     - **department_ids**: 所属部门ID列表（支持多个部门）
-    - **permissions**: 权限列表（权限代码：waybill-运单管理、booking-订舱管理、settlement-结算单管理、admin-管理员）
+    - **permissions**: 权限列表（权限代码：waybill-运单管理、booking-订舱管理、settlement-结算单管理、bill-单号管理、robot-机器人管理、admin-管理员）
     
     新增账号默认启用
     """
