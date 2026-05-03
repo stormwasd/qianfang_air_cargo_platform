@@ -6,14 +6,19 @@ from typing import Optional
 from datetime import date
 
 
+class WaybillStockCreate(BaseModel):
+    """创建单号库schema"""
+    airline_name: str = Field(..., description="航司名称（如china_southern_air）", min_length=1, max_length=100)
+    total_authorized_count: Optional[int] = Field(None, description="核定单号总数", ge=0)
+
+
 class WaybillStockBatchCreate(BaseModel):
     """创建领单批次schema"""
     claim_date: date = Field(..., description="领单日期（格式：YYYY-MM-DD）")
     first_number: str = Field(..., description="首单号（数字后缀部分，如13349851）", min_length=1, max_length=50)
     last_number: str = Field(..., description="尾单号（数字后缀部分，如13353126）", min_length=1, max_length=50)
     claim_quantity: int = Field(..., description="领单数量", ge=1, le=10000)
-    airline_name: str = Field(..., description="航司名称（如china_southern_air）", min_length=1, max_length=100)
-    total_authorized_count: Optional[int] = Field(None, description="核定单号总数")
+    stock_id: str = Field(..., description="关联单号库ID（字符串格式）")
 
 
 class WaybillStockItemUpdate(BaseModel):
@@ -62,7 +67,7 @@ class WaybillStockBatchQuery(BaseModel):
     """领单批次查询schema"""
     model_config = ConfigDict(populate_by_name=True)
 
-    airline_name: Optional[str] = Field(None, description="航司名称精确筛选（如china_southern_air）")
+    stock_id: Optional[str] = Field(None, description="单号库ID精确筛选")
     page: int = Field(1, ge=1, description="页码")
     page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
 

@@ -13,8 +13,9 @@ from app.config import settings
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.core.response import success_response
 from app.database import get_db
-from app.models.waybill_stock import WaybillStockBatch, WaybillStockItem
+from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
 from app.schemas.waybill_stock import (
+    WaybillStockCreate,
     WaybillStockBatchCreate,
     WaybillStockItemUpdate,
     WaybillStockItemBatchDelete,
@@ -133,7 +134,31 @@ def calculate_max_capacity(first_number: str, last_number: str) -> int:
     return get_index(last) - get_index(first) + 1
 
 
+
+# ======================== 单号库管理 ========================
+
+@router.post("/pools", summary="创建单号库")
+async def create_waybill_stock_pool(
+    payload: WaybillStockCreate,
+    current_user=Depends(require_permission("bill")),
+    db: Session = Depends(get_db),
+):
+    """创建顶级单号库"""
+    existing = db.query(WaybillStock).filter(WaybillStock.airline_name == payload.airline_name).first()
+    if existing:
+        raise BadRequestException(f"航司 '{payload.airline_name}' 的单号库已存在")
+        
+    stock = WaybillStock(
+        airline_name=payload.airline_name,
+        total_authorized_count=payload.total_authorized_count
+    )
+    db.add(stock)
+    db.commit()
+    db.refresh(stock)
+    return success_response(data={"id": str(stock.id)}, msg="创建单号库成功")
+
 # ======================== 接口实现 ========================
+
 
 @router.post("", summary="新增单号（领单）")
 async def create_waybill_stock_batch(
@@ -158,11 +183,15 @@ async def create_waybill_stock_batch(
     - **claim_quantity**: 领单数量
     - **airline_name**: 航司名称（如 china_southern_air）
     """
+    stock = db.query(WaybillStock).filter(WaybillStock.id == int(payload.stock_id)).first()
+    if not stock:
+        raise NotFoundException("指定的单号库不存在")
+
     # 1. 根据航司名称获取单号前缀
-    number_prefix = settings.AIRLINE_NUMBER_PREFIX.get(payload.airline_name)
+    number_prefix = settings.AIRLINE_NUMBER_PREFIX.get(stock.airline_name)
     if not number_prefix:
         raise BadRequestException(
-            f"未找到航司'{payload.airline_name}'对应的单号前缀，"
+            f"未找到航司'{stock.airline_name}'对应的单号前缀，"
             f"当前支持的航司：{', '.join(settings.AIRLINE_NUMBER_PREFIX.keys())}"
         )
     
@@ -179,9 +208,8 @@ async def create_waybill_stock_batch(
         first_number=payload.first_number,
         last_number=payload.last_number,
         claim_quantity=payload.claim_quantity,
-        airline_name=payload.airline_name,
+        stock_id=stock.id,
         number_prefix=number_prefix,
-        total_authorized_count=payload.total_authorized_count,
     )
     db.add(batch)
     db.flush()  # 获取 batch.id
@@ -207,16 +235,16 @@ async def create_waybill_stock_batch(
     
     logger.info(
         "新增领单批次成功: batch_id=%s, airline=%s, quantity=%d",
-        batch.id, payload.airline_name, payload.claim_quantity,
+        batch.id, stock.airline_name, payload.claim_quantity,
     )
     
     batch_data = _format_batch_response(batch)
     return success_response(data=batch_data, msg="新增单号成功")
 
 
-@router.get("/{batch_id}/items", summary="单号详情列表")
+@router.get("/{stock_id}/items", summary="单号详情列表")
 async def get_waybill_stock_items(
-    batch_id: str,
+    stock_id: str,
     query: WaybillStockItemQuery = Depends(),
     current_user=Depends(require_permission("bill")),
     db: Session = Depends(get_db),
@@ -225,21 +253,23 @@ async def get_waybill_stock_items(
     根据领单批次ID查询单号详情列表
 
     参数说明：
-    - **batch_id**: 领单批次ID（字符串格式）
+    - **stock_id**: 关联单号库ID（字符串格式）
     - **usage_status**: 使用状态筛选（可选，0=未使用，1=已使用，2=异常，3=失效）
     - **page**: 页码（默认1）
     - **pageSize**: 每页数量（默认10，最大100）
     """
-    # 验证批次是否存在
-    batch = db.query(WaybillStockBatch).filter(
-        WaybillStockBatch.id == int(batch_id)
+    # 验证单号库是否存在
+    stock = db.query(WaybillStock).filter(
+        WaybillStock.id == int(stock_id)
     ).first()
-    if not batch:
-        raise NotFoundException("领单批次不存在")
+    if not stock:
+        raise NotFoundException("单号库不存在")
     
     # 构建查询
-    query_obj = db.query(WaybillStockItem).filter(
-        WaybillStockItem.batch_id == int(batch_id)
+    query_obj = db.query(WaybillStockItem).join(
+        WaybillStockBatch, WaybillStockItem.batch_id == WaybillStockBatch.id
+    ).filter(
+        WaybillStockBatch.stock_id == int(stock_id)
     )
     
     if query.claim_date_range:
@@ -446,7 +476,7 @@ async def get_waybill_stock_batches(
     领单统计接口：查询领单批次列表
 
     参数说明：
-    - **airline_name**: 航司名称精确筛选（可选，如 china_southern_air）
+    - **stock_id**: 单号库ID精确筛选（可选）
     - **page**: 页码（默认1）
     - **pageSize**: 每页数量（默认10，最大100）
     """
@@ -454,8 +484,8 @@ async def get_waybill_stock_batches(
     query_obj = db.query(WaybillStockBatch)
     
     # 航司名称筛选
-    if query.airline_name:
-        query_obj = query_obj.filter(WaybillStockBatch.airline_name == query.airline_name)
+    if query.stock_id:
+        query_obj = query_obj.filter(WaybillStockBatch.stock_id == int(query.stock_id))
     
     # 总数
     total = query_obj.count()
@@ -514,9 +544,9 @@ def _format_batch_response(batch: WaybillStockBatch, stats: dict = None) -> dict
         "first_number": batch.first_number,
         "last_number": batch.last_number,
         "claim_quantity": batch.claim_quantity,
-        "airline_name": batch.airline_name,
+        "airline_name": batch.stock.airline_name if batch.stock else None,
         "number_prefix": batch.number_prefix,
-        "total_authorized_count": batch.total_authorized_count,
+        
         "created_at": format_datetime_china(batch.created_at),
         "updated_at": format_datetime_china(batch.updated_at),
     }
@@ -558,34 +588,21 @@ async def get_waybill_stock_overview(
 ):
     """
     单号库总览接口
-    
-    返回包括航司名称、核定单号总数、已领用单号数、可领用单号数、未使用单号数、已使用单号数。
-    返回结构为一个数组，支持查询所有航司（如果不传airline_name）或特定航司。
     """
+    query_obj = db.query(WaybillStock)
     if airline_name:
-        airlines = [airline_name]
-    else:
-        airlines_res = db.query(WaybillStockBatch.airline_name).distinct().all()
-        airlines = [a[0] for a in airlines_res]
-
+        query_obj = query_obj.filter(WaybillStock.airline_name == airline_name)
+    
+    stocks = query_obj.all()
     results = []
-    for al_name in airlines:
-        batches = db.query(WaybillStockBatch).filter(WaybillStockBatch.airline_name == al_name).all()
+    
+    for stock in stocks:
+        batches = db.query(WaybillStockBatch).filter(WaybillStockBatch.stock_id == stock.id).all()
         
         claimed_count = 0
         total_capacity = 0
-        
-        # 查找最新的核定单号总数
-        latest_authorized_count = None
-        latest_batch = db.query(WaybillStockBatch).filter(
-            WaybillStockBatch.airline_name == al_name,
-            WaybillStockBatch.total_authorized_count.isnot(None)
-        ).order_by(WaybillStockBatch.created_at.desc()).first()
-        
-        if latest_batch:
-            latest_authorized_count = latest_batch.total_authorized_count
-            
         batch_ids = []
+        
         for b in batches:
             claimed_count += b.claim_quantity
             total_capacity += calculate_max_capacity(b.first_number, b.last_number)
@@ -597,7 +614,6 @@ async def get_waybill_stock_overview(
         used_count = 0
         
         if batch_ids:
-            # 统计单号使用情况
             stats = db.query(
                 func.sum(case((WaybillStockItem.usage_status == '0', 1), else_=0)).label('unused_count'),
                 func.sum(case((WaybillStockItem.usage_status == '1', 1), else_=0)).label('used_count')
@@ -610,8 +626,9 @@ async def get_waybill_stock_overview(
                 used_count = int(stats.used_count or 0)
                 
         results.append({
-            "airline_name": al_name,
-            "total_authorized_count": latest_authorized_count,
+            "stock_id": str(stock.id),
+            "airline_name": stock.airline_name,
+            "total_authorized_count": stock.total_authorized_count,
             "claimed_count": claimed_count,
             "claimable_count": claimable_count,
             "unused_count": unused_count,
@@ -621,21 +638,13 @@ async def get_waybill_stock_overview(
     return success_response(data=results, msg="获取单号库总览成功")
 
 
-@router.get("/airlines/{airline_name}/authorized-count", summary="获取航司核定单号总数")
-async def get_airline_authorized_count(
-    airline_name: str,
+@router.get("/{stock_id}/authorized-count", summary="获取核定单号总数")
+async def get_stock_authorized_count(
+    stock_id: str,
     current_user=Depends(require_permission("bill")),
     db: Session = Depends(get_db),
 ):
-    """
-    获取指定航司的最新核定单号总数
-    用于在新增单号页面自动带入之前输入的数值。
-    """
-    latest_batch = db.query(WaybillStockBatch).filter(
-        WaybillStockBatch.airline_name == airline_name,
-        WaybillStockBatch.total_authorized_count.isnot(None)
-    ).order_by(WaybillStockBatch.created_at.desc()).first()
-    
-    authorized_count = latest_batch.total_authorized_count if latest_batch else None
-    
+    """获取单号库的核定单号总数"""
+    stock = db.query(WaybillStock).filter(WaybillStock.id == int(stock_id)).first()
+    authorized_count = stock.total_authorized_count if stock else None
     return success_response(data={"total_authorized_count": authorized_count}, msg="获取成功")
