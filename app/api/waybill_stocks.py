@@ -369,16 +369,18 @@ async def update_waybill_stock_item(
     ).first()
     if not item:
         raise NotFoundException("单号详情不存在")
+        
+    # 校验：单号编辑仅能针对未使用的单号
+    if item.usage_status != "0":
+        raise BadRequestException(f"单号 {item.full_number} 非未使用状态，不允许编辑")
     
-    # 部分更新：仅更新传入的字段
+    # 部分更新：仅允许更新特定字段
+    allowed_fields = {"is_abnormal", "is_invalid", "invalid_reason"}
     update_data = payload.model_dump(exclude_unset=True)
     
     for key, value in update_data.items():
-        setattr(item, key, value)
-    
-    # 如果前缀或后缀被修改，自动重新计算完整单号
-    if "number_prefix" in update_data or "number_suffix" in update_data:
-        item.full_number = f"{item.number_prefix}{item.number_suffix}"
+        if key in allowed_fields:
+            setattr(item, key, value)
     
     db.commit()
     db.refresh(item)
@@ -425,10 +427,10 @@ async def delete_waybill_stock_items(
     if not items:
         return success_response(data=None, msg="无匹配的单号被删除")
     
-    # 2. 校验状态：已使用的单号不允许删除
+    # 2. 校验状态：单号删除仅能针对未使用的单号
     for item in items:
-        if item.usage_status == "1":
-            raise BadRequestException(f"单号 {item.full_number} 已使用，不允许删除")
+        if item.usage_status != "0":
+            raise BadRequestException(f"单号 {item.full_number} 非未使用状态，不允许删除")
     
     # 记录每个批次需要扣减的数量
     batch_deducts = {}
@@ -540,6 +542,7 @@ def _format_batch_response(batch: WaybillStockBatch, stats: dict = None) -> dict
     result = {
         "id": str(batch.id),
         "batch_id": str(batch.id),
+        "stock_id": str(batch.stock_id),
         "claim_date": batch.claim_date.isoformat() if batch.claim_date else None,
         "first_number": batch.first_number,
         "last_number": batch.last_number,
