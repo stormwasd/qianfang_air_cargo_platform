@@ -272,6 +272,9 @@ async def get_waybill_stock_items(
         WaybillStockBatch.stock_id == int(stock_id)
     )
     
+    if query.batch_id:
+        query_obj = query_obj.filter(WaybillStockItem.batch_id == int(query.batch_id))
+    
     if query.claim_date_range:
         dates = [d.strip() for d in query.claim_date_range.split(',') if d.strip()]
         if len(dates) == 2:
@@ -306,10 +309,12 @@ async def get_waybill_stock_items(
     total = query_obj.count()
     
     # 分页（按单号后缀升序排列）
-    offset = (query.page - 1) * query.page_size
-    items = query_obj.order_by(
-        WaybillStockItem.number_suffix.asc()
-    ).offset(offset).limit(query.page_size).all()
+    order_query = query_obj.order_by(WaybillStockItem.number_suffix.asc())
+    if query.is_all:
+        items = order_query.all()
+    else:
+        offset = (query.page - 1) * query.page_size
+        items = order_query.offset(offset).limit(query.page_size).all()
     
     item_list = [_format_item_response(item) for item in items]
     

@@ -76,10 +76,12 @@ class WaybillStockItemQuery(BaseModel):
     """单号详情查询schema"""
     model_config = ConfigDict(populate_by_name=True)
 
+    batch_id: Optional[str] = Field(None, description="领单批次ID精确筛选")
     claim_date_range: Optional[str] = Field(None, description="领单日期范围，格式：YYYY-MM-DD,YYYY-MM-DD")
     usage_status: Optional[str] = Field(None, description="使用状态筛选（0=未使用，1=已使用）")
     is_abnormal: Optional[str] = Field(None, description="异常状态筛选（0=异常，1=正常）")
     is_invalid: Optional[str] = Field(None, description="失效状态筛选（0=未失效，1=已失效）")
     usage_date_range: Optional[str] = Field(None, description="用单日期范围，格式：YYYY-MM-DD,YYYY-MM-DD")
+    is_all: Optional[bool] = Field(False, description="是否获取全部数据，传 true 时忽略分页参数")
     page: int = Field(1, ge=1, description="页码")
     page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
