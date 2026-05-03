@@ -5,13 +5,13 @@
 -- 1. 创建单号库顶级表
 CREATE TABLE waybill_stocks (
     id BIGINT NOT NULL AUTO_INCREMENT COMMENT '单号库ID',
-    airline_name VARCHAR(100) NOT NULL COMMENT '航司名称（如china_southern_air）',
+    airline_name VARCHAR(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '航司名称（如china_southern_air）',
     total_authorized_count INT COMMENT '核定单号总数',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL COMMENT '创建时间（中国时间UTC+8）',
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL COMMENT '更新时间（中国时间UTC+8）',
+    created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) NOT NULL COMMENT '创建时间（中国时间UTC+8）',
+    updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) NOT NULL COMMENT '更新时间（中国时间UTC+8）',
     PRIMARY KEY (id),
     UNIQUE KEY idx_waybill_stocks_airline (airline_name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单号库表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='单号库表';
 
 -- 2. 给现有的领单批次表添加 stock_id 外键列
 ALTER TABLE waybill_stock_batches ADD COLUMN stock_id BIGINT COMMENT '关联单号库ID' AFTER id;
