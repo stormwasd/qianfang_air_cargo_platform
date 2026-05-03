@@ -20,6 +20,7 @@ class WaybillStockBatch(Base):
     claim_quantity = Column(Integer, nullable=False, comment="领单数量")
     airline_name = Column(String(100), nullable=False, index=True, comment="航司名称（如china_southern_air）")
     number_prefix = Column(String(20), nullable=False, comment="单号前缀（如784-）")
+    total_authorized_count = Column(Integer, nullable=True, comment="核定单号总数（与航司挂钩）")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
@@ -40,7 +41,11 @@ class WaybillStockItem(Base):
     number_prefix = Column(String(20), nullable=False, comment="单号前缀（如784-）")
     number_suffix = Column(String(50), nullable=False, comment="单号后缀（数字部分）")
     full_number = Column(String(100), nullable=False, index=True, comment="完整单号（前缀+后缀）")
-    usage_status = Column(String(2), nullable=False, default="0", index=True, comment="使用状态（0=未使用，1=已使用，2=异常，3=失效）")
+    usage_status = Column(String(2), nullable=False, default="0", index=True, comment="使用状态（0=未使用，1=已使用）")
+    is_abnormal = Column(String(2), nullable=False, default="1", index=True, comment="异常状态（0=异常，1=正常）")
+    is_invalid = Column(String(2), nullable=False, default="0", index=True, comment="失效状态（0=未失效，1=已失效）")
+    invalid_reason = Column(String(255), nullable=True, comment="失效原因登记")
+    usage_date = Column(Date, nullable=True, index=True, comment="用单日期")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
