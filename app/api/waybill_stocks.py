@@ -3,7 +3,7 @@
 包含：新增单号（领单）、单号详情列表、单号编辑、领单统计
 """
 import logging
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, case
