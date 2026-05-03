@@ -289,6 +289,27 @@ async def get_waybill_stock_items(
     )
 
 
+@router.get("/items/{item_id}", summary="单号详情")
+async def get_waybill_stock_item(
+    item_id: str,
+    current_user=Depends(require_permission("bill")),
+    db: Session = Depends(get_db),
+):
+    """
+    根据ID获取单个单号详情
+    """
+    try:
+        item_id_int = int(item_id)
+    except ValueError:
+        raise BadRequestException("单号详情ID无效")
+
+    item = db.query(WaybillStockItem).filter(WaybillStockItem.id == item_id_int).first()
+    if not item:
+        raise NotFoundException("单号详情不存在")
+
+    return success_response(data=_format_item_response(item), msg="查询单号详情成功")
+
+
 @router.put("/items/{item_id}", summary="单号编辑")
 async def update_waybill_stock_item(
     item_id: str,
@@ -488,6 +509,7 @@ def _format_batch_response(batch: WaybillStockBatch, stats: dict = None) -> dict
     """格式化领单批次响应数据"""
     result = {
         "id": str(batch.id),
+        "batch_id": str(batch.id),
         "claim_date": batch.claim_date.isoformat() if batch.claim_date else None,
         "first_number": batch.first_number,
         "last_number": batch.last_number,
