@@ -242,11 +242,19 @@ async def get_waybill_stock_items(
         WaybillStockItem.batch_id == int(batch_id)
     )
     
-    if query.claim_date is not None:
-        query_obj = query_obj.filter(WaybillStockItem.claim_date == query.claim_date)
-        
-    if query.usage_date is not None:
-        query_obj = query_obj.filter(WaybillStockItem.usage_date == query.usage_date)
+    if query.claim_date_range:
+        dates = [d.strip() for d in query.claim_date_range.split(',') if d.strip()]
+        if len(dates) == 2:
+            query_obj = query_obj.filter(WaybillStockItem.claim_date >= dates[0], WaybillStockItem.claim_date <= dates[1])
+        elif len(dates) == 1:
+            query_obj = query_obj.filter(WaybillStockItem.claim_date == dates[0])
+            
+    if query.usage_date_range:
+        dates = [d.strip() for d in query.usage_date_range.split(',') if d.strip()]
+        if len(dates) == 2:
+            query_obj = query_obj.filter(WaybillStockItem.usage_date >= dates[0], WaybillStockItem.usage_date <= dates[1])
+        elif len(dates) == 1:
+            query_obj = query_obj.filter(WaybillStockItem.usage_date == dates[0])
     
     # 使用状态筛选
     if query.usage_status is not None:
@@ -522,7 +530,7 @@ def _format_item_response(item: WaybillStockItem) -> dict:
 
 @router.get("/overview", summary="单号库总览")
 async def get_waybill_stock_overview(
-    airline_name: str,
+    airline_name: Optional[str] = None,
     current_user=Depends(require_permission("bill")),
     db: Session = Depends(get_db),
 ):
@@ -530,59 +538,65 @@ async def get_waybill_stock_overview(
     单号库总览接口
     
     返回包括航司名称、核定单号总数、已领用单号数、可领用单号数、未使用单号数、已使用单号数。
-    可领用单号数 = 多个批次的领单首尾号区间的最大领用数之和 - 已领用单号数
-    核定单号总数取该航司最新一次领单中输入的总数。
+    返回结构为一个数组，支持查询所有航司（如果不传airline_name）或特定航司。
     """
-    if not airline_name:
-        raise BadRequestException("航司名称不能为空")
+    if airline_name:
+        airlines = [airline_name]
+    else:
+        airlines_res = db.query(WaybillStockBatch.airline_name).distinct().all()
+        airlines = [a[0] for a in airlines_res]
 
-    batches = db.query(WaybillStockBatch).filter(WaybillStockBatch.airline_name == airline_name).all()
-    
-    claimed_count = 0
-    total_capacity = 0
-    
-    # 查找最新的核定单号总数
-    latest_authorized_count = None
-    latest_batch = db.query(WaybillStockBatch).filter(
-        WaybillStockBatch.airline_name == airline_name,
-        WaybillStockBatch.total_authorized_count.isnot(None)
-    ).order_by(WaybillStockBatch.created_at.desc()).first()
-    
-    if latest_batch:
-        latest_authorized_count = latest_batch.total_authorized_count
+    results = []
+    for al_name in airlines:
+        batches = db.query(WaybillStockBatch).filter(WaybillStockBatch.airline_name == al_name).all()
         
-    batch_ids = []
-    for b in batches:
-        claimed_count += b.claim_quantity
-        total_capacity += calculate_max_capacity(b.first_number, b.last_number)
-        batch_ids.append(b.id)
+        claimed_count = 0
+        total_capacity = 0
         
-    claimable_count = total_capacity - claimed_count if total_capacity > claimed_count else 0
-    
-    unused_count = 0
-    used_count = 0
-    
-    if batch_ids:
-        # 统计单号使用情况
-        stats = db.query(
-            func.sum(case((WaybillStockItem.usage_status == '0', 1), else_=0)).label('unused_count'),
-            func.sum(case((WaybillStockItem.usage_status == '1', 1), else_=0)).label('used_count')
-        ).filter(
-            WaybillStockItem.batch_id.in_(batch_ids)
-        ).first()
+        # 查找最新的核定单号总数
+        latest_authorized_count = None
+        latest_batch = db.query(WaybillStockBatch).filter(
+            WaybillStockBatch.airline_name == al_name,
+            WaybillStockBatch.total_authorized_count.isnot(None)
+        ).order_by(WaybillStockBatch.created_at.desc()).first()
         
-        if stats:
-            unused_count = int(stats.unused_count or 0)
-            used_count = int(stats.used_count or 0)
+        if latest_batch:
+            latest_authorized_count = latest_batch.total_authorized_count
             
-    return success_response(data={
-        "airline_name": airline_name,
-        "total_authorized_count": latest_authorized_count,
-        "claimed_count": claimed_count,
-        "claimable_count": claimable_count,
-        "unused_count": unused_count,
-        "used_count": used_count,
-    }, msg="获取单号库总览成功")
+        batch_ids = []
+        for b in batches:
+            claimed_count += b.claim_quantity
+            total_capacity += calculate_max_capacity(b.first_number, b.last_number)
+            batch_ids.append(b.id)
+            
+        claimable_count = total_capacity - claimed_count if total_capacity > claimed_count else 0
+        
+        unused_count = 0
+        used_count = 0
+        
+        if batch_ids:
+            # 统计单号使用情况
+            stats = db.query(
+                func.sum(case((WaybillStockItem.usage_status == '0', 1), else_=0)).label('unused_count'),
+                func.sum(case((WaybillStockItem.usage_status == '1', 1), else_=0)).label('used_count')
+            ).filter(
+                WaybillStockItem.batch_id.in_(batch_ids)
+            ).first()
+            
+            if stats:
+                unused_count = int(stats.unused_count or 0)
+                used_count = int(stats.used_count or 0)
+                
+        results.append({
+            "airline_name": al_name,
+            "total_authorized_count": latest_authorized_count,
+            "claimed_count": claimed_count,
+            "claimable_count": claimable_count,
+            "unused_count": unused_count,
+            "used_count": used_count,
+        })
+            
+    return success_response(data=results, msg="获取单号库总览成功")
 
 
 @router.get("/airlines/{airline_name}/authorized-count", summary="获取航司核定单号总数")
