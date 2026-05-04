@@ -125,14 +125,25 @@ def calculate_max_capacity(first_number: str, last_number: str) -> int:
         return 0
         
     # 计算两个单号之间的有效数字个数
-    # 由于只有个位为0-6的数字是有效的，相当于7进制。
-    # 我们把每个有效数字映射到一个从0开始连续的整数上：
-    # index(num) = (num // 10) * 7 + (num % 10)
+    # 规则：个位0-6循环，每变一次十位加1。
+    # 这意味着每生成一个新单号，(num // 10) 都会精确地加1。
+    # 因此，总步数就是十位及以上部分的差值。
     
-    def get_index(num):
-        return (num // 10) * 7 + (num % 10)
-        
-    return get_index(last) - get_index(first) + 1
+    first_prefix = first // 10
+    last_prefix = last // 10
+    steps = last_prefix - first_prefix
+    
+    # 校验当前 last_number 是否能包含最后一步生成的单号
+    # 第 steps 个生成的单号，其个位数应该是 (first % 10 + steps) % 7
+    expected_last_units = (first % 10 + steps) % 7
+    actual_last_units = last % 10
+    
+    # 如果 last_number 的个位 >= 理论上第 steps 个号的个位，说明包含了第 steps 个号
+    if actual_last_units >= expected_last_units:
+        return steps + 1
+    else:
+        # 否则说明 last_number 还没到第 steps 个号的个位，步数需减1
+        return steps
 
 
 
