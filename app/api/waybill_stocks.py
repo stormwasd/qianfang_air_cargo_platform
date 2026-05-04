@@ -17,6 +17,7 @@ from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillSto
 from app.schemas.waybill_stock import (
     WaybillStockCreate,
     WaybillStockBatchCreate,
+    WaybillStockPreview,
     WaybillStockItemUpdate,
     WaybillStockItemBatchDelete,
     WaybillStockBatchQuery,
@@ -157,6 +158,44 @@ async def create_waybill_stock_pool(
     db.refresh(stock)
     return success_response(data={"id": str(stock.id)}, msg="创建单号库成功")
 
+
+@router.post("/preview", summary="单号预览")
+async def preview_waybill_numbers(
+    payload: WaybillStockPreview,
+    current_user=Depends(require_permission("bill")),
+    db: Session = Depends(get_db),
+):
+    """
+    根据首尾单号预览即将生成的完整单号列表
+    """
+    stock = db.query(WaybillStock).filter(WaybillStock.id == int(payload.stock_id)).first()
+    if not stock:
+        raise NotFoundException("指定的单号库不存在")
+    
+    number_prefix = settings.AIRLINE_NUMBER_PREFIX.get(stock.airline_name)
+    if not number_prefix:
+        raise BadRequestException(f"未找到航司'{stock.airline_name}'对应的单号前缀")
+        
+    # 1. 计算符合规则的实际数量
+    actual_quantity = calculate_max_capacity(payload.first_number, payload.last_number)
+    if actual_quantity <= 0:
+         raise BadRequestException("无法根据当前首尾单号生成有效单号，请检查输入")
+         
+    # 2. 生成单号序列
+    number_suffixes = generate_waybill_numbers(
+        payload.first_number,
+        payload.last_number,
+        actual_quantity,
+    )
+    
+    full_numbers = [f"{number_prefix}{suffix}" for suffix in number_suffixes]
+    
+    return success_response(data={
+        "total_count": actual_quantity,
+        "full_numbers": full_numbers
+    }, msg="预览成功")
+
+
 # ======================== 接口实现 ========================
 
 
@@ -187,7 +226,15 @@ async def create_waybill_stock_batch(
     if not stock:
         raise NotFoundException("指定的单号库不存在")
 
-    # 1. 根据航司名称获取单号前缀
+    # 1. 校验领单数量是否匹配首尾单号规则
+    expected_quantity = calculate_max_capacity(payload.first_number, payload.last_number)
+    if payload.claim_quantity != expected_quantity:
+        raise BadRequestException(
+            f"领单数量不正确。按照首单号 {payload.first_number} 和尾单号 {payload.last_number} 的规则，"
+            f"应包含 {expected_quantity} 个有效单号，但您输入的数量为 {payload.claim_quantity}"
+        )
+
+    # 2. 根据航司名称获取单号前缀
     number_prefix = settings.AIRLINE_NUMBER_PREFIX.get(stock.airline_name)
     if not number_prefix:
         raise BadRequestException(
@@ -195,7 +242,7 @@ async def create_waybill_stock_batch(
             f"当前支持的航司：{', '.join(settings.AIRLINE_NUMBER_PREFIX.keys())}"
         )
     
-    # 2. 生成单号序列
+    # 3. 生成单号序列
     number_suffixes = generate_waybill_numbers(
         payload.first_number,
         payload.last_number,

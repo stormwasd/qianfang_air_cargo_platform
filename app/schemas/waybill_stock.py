@@ -21,6 +21,13 @@ class WaybillStockBatchCreate(BaseModel):
     stock_id: str = Field(..., description="关联单号库ID（字符串格式）")
 
 
+class WaybillStockPreview(BaseModel):
+    """单号预览请求schema"""
+    first_number: str = Field(..., description="首单号（数字后缀部分）", min_length=1, max_length=50)
+    last_number: str = Field(..., description="尾单号（数字后缀部分）", min_length=1, max_length=50)
+    stock_id: str = Field(..., description="关联单号库ID")
+
+
 class WaybillStockItemUpdate(BaseModel):
     """
     编辑单号详情schema（全量覆盖，所有字段均可修改）
