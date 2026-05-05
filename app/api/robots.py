@@ -11,12 +11,13 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BadRequestException, NotFoundException, ConflictException
 from app.core.response import success_response
 from app.database import get_db
-from app.models.robot import Robot
+from app.models.robot import Robot, TaskProcess, RobotJob
 from app.models.rpa_task import RPATaskType
-from app.schemas.robot import RobotCreateOrUpdate, RobotListQuery
+from app.schemas.robot import RobotCreateOrUpdate, RobotListQuery, TaskProcessCreateUpdate, TaskProcessResponse
 from app.api.deps import require_permission
 from app.utils.helpers import format_datetime_china
 from app.utils.robot_crypto import decrypt_robot_id
+from app.services.robot_job_service import robot_job_service
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,11 @@ async def create_or_update_robot(
         db.commit()
         db.refresh(robot)
 
+        # 异步/后台同步生成 RPA Job（这里先简单同步执行，后续可考虑使用 BackgroundTasks）
+        await robot_job_service.sync_robot_jobs(db, robot)
+
         logger.info("修改机器人成功: id=%s, name=%s", robot.id, robot.name)
-        return success_response(data=_format_robot_response(robot), msg="机器人修改成功")
+        return success_response(data=_format_robot_response(robot, db), msg="机器人修改成功")
 
     else:
         # ========== 新增模式 ==========
@@ -113,8 +117,11 @@ async def create_or_update_robot(
         db.commit()
         db.refresh(robot)
 
+        # 异步/后台同步生成 RPA Job
+        await robot_job_service.sync_robot_jobs(db, robot)
+
         logger.info("新增机器人成功: id=%s, name=%s", robot.id, robot.name)
-        return success_response(data=_format_robot_response(robot), msg="机器人新增成功")
+        return success_response(data=_format_robot_response(robot, db), msg="机器人新增成功")
 
 
 @router.get("", summary="机器人列表")
@@ -146,7 +153,7 @@ async def get_robots(
         Robot.created_at.desc()
     ).offset(offset).limit(query.page_size).all()
 
-    robot_list = [_format_robot_response(r) for r in robots]
+    robot_list = [_format_robot_response(r, db) for r in robots]
 
     return success_response(
         data={"total": total, "items": robot_list},
@@ -213,13 +220,90 @@ async def get_robot_detail(
     if not robot:
         raise NotFoundException("机器人不存在")
 
-    return success_response(data=_format_robot_response(robot), msg="查询成功")
+    return success_response(data=_format_robot_response(robot, db), msg="查询成功")
+
+
+# ======================== 任务流程配置管理 (TaskProcess) ========================
+
+@router.get("/task-processes", summary="获取所有任务流程配置")
+async def get_task_processes(
+    current_user=Depends(require_permission("robot")),
+    db: Session = Depends(get_db),
+):
+    """获取所有任务流程配置列表"""
+    processes = db.query(TaskProcess).order_by(TaskProcess.task_name.asc()).all()
+    return success_response(data=[_format_task_process_response(p) for p in processes])
+
+
+@router.post("/task-processes", summary="维护任务流程配置")
+async def create_or_update_task_process(
+    payload: TaskProcessCreateUpdate,
+    current_user=Depends(require_permission("robot")),
+    db: Session = Depends(get_db),
+):
+    """
+    新增或修改任务流程配置。
+    如果 `process_detail_uuid` 发生变化，会自动触发所有关联机器人的 Job 重建。
+    """
+    process = db.query(TaskProcess).filter(TaskProcess.task_name == payload.task_name).first()
+    
+    param_json = json.dumps(payload.process_param, ensure_ascii=False) if payload.process_param else None
+    uuid_changed = False
+    
+    if process:
+        # 检查 UUID 是否变化
+        if process.process_detail_uuid != payload.process_detail_uuid:
+            uuid_changed = True
+            
+        process.chinese_name = payload.chinese_name
+        process.process_detail_uuid = payload.process_detail_uuid
+        process.version = payload.version
+        process.process_param = param_json
+        db.commit()
+        db.refresh(process)
+        msg = "任务流程配置更新成功"
+    else:
+        process = TaskProcess(
+            task_name=payload.task_name,
+            chinese_name=payload.chinese_name,
+            process_detail_uuid=payload.process_detail_uuid,
+            version=payload.version,
+            process_param=param_json
+        )
+        db.add(process)
+        db.commit()
+        db.refresh(process)
+        msg = "任务流程配置新增成功"
+        uuid_changed = True # 新增也视为变化，触发初始同步（虽然新流程可能还没机器人关联）
+
+    # 如果 UUID 变化，同步所有机器人
+    if uuid_changed:
+        logger.info(f"任务流程 UUID 发生变化，触发机器人 Job 重建: task_name={payload.task_name}")
+        await robot_job_service.sync_all_robots_for_process(db, payload.task_name)
+
+    return success_response(data=_format_task_process_response(process), msg=msg)
+
+
+@router.delete("/task-processes/{task_name}", summary="删除任务流程配置")
+async def delete_task_process(
+    task_name: str,
+    current_user=Depends(require_permission("robot")),
+    db: Session = Depends(get_db),
+):
+    """删除任务流程配置"""
+    process = db.query(TaskProcess).filter(TaskProcess.task_name == task_name).first()
+    if not process:
+        raise NotFoundException("任务流程配置不存在")
+    
+    db.delete(process)
+    db.commit()
+    return success_response(msg="删除成功")
 
 
 # ======================== 响应格式化工具 ========================
 
-def _format_robot_response(robot: Robot) -> dict:
-    """格式化机器人响应数据"""
+def _format_robot_response(robot: Robot, db: Session) -> dict:
+    """格式化机器人响应数据，包含每个任务对应的 jobUUID"""
     # 解析 task_permissions
     task_permissions = []
     if robot.task_permissions:
@@ -236,14 +320,40 @@ def _format_robot_response(robot: Robot) -> dict:
         except (json.JSONDecodeError, TypeError):
             extra_config = None
 
+    # 获取 Job 映射
+    jobs = db.query(RobotJob).filter(RobotJob.robot_id == robot.id).all()
+    job_mapping = {j.task_name: j.job_uuid for j in jobs}
+
     return {
         "id": str(robot.id),
         "robot_id": robot.robot_id,
         "name": robot.name,
         "location": robot.location,
         "task_permissions": task_permissions,
+        "job_mapping": job_mapping, # 返回 task_name -> jobUUID 的映射
         "extra_config": extra_config,
         "status": robot.status,
         "created_at": format_datetime_china(robot.created_at),
         "updated_at": format_datetime_china(robot.updated_at),
+    }
+
+
+def _format_task_process_response(process: TaskProcess) -> dict:
+    """格式化任务流程响应"""
+    param = None
+    if process.process_param:
+        try:
+            param = json.loads(process.process_param)
+        except:
+            param = None
+            
+    return {
+        "id": str(process.id),
+        "task_name": process.task_name,
+        "chinese_name": process.chinese_name,
+        "process_detail_uuid": process.process_detail_uuid,
+        "version": process.version,
+        "process_param": param,
+        "created_at": format_datetime_china(process.created_at),
+        "updated_at": format_datetime_china(process.updated_at),
     }

@@ -65,3 +65,19 @@ class RobotListQuery(BaseModel):
     status: Optional[int] = Field(None, description="机器人状态筛选（0=未启用，1=启用）")
     page: int = Field(1, ge=1, description="页码")
     page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
+
+
+class TaskProcessCreateUpdate(BaseModel):
+    """新增或修改任务流程请求schema"""
+    task_name: str = Field(..., description="任务名称（如 SHENZHEN_AIR_WAYBILL_EXECUTE）", min_length=1, max_length=100)
+    chinese_name: str = Field(..., description="中文名称", min_length=1, max_length=200)
+    process_detail_uuid: str = Field(..., description="RPA流程详情UUID", min_length=1, max_length=100)
+    version: str = Field(..., description="版本号", min_length=1, max_length=20)
+    process_param: Optional[Dict[str, Any]] = Field(None, description="流程入参（JSON对象）")
+
+
+class TaskProcessResponse(TaskProcessCreateUpdate):
+    """任务流程响应schema"""
+    id: str = Field(..., description="记录ID")
+    created_at: str = Field(..., description="创建时间")
+    updated_at: str = Field(..., description="更新时间")

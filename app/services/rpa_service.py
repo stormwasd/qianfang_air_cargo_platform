@@ -30,6 +30,50 @@ class RPAService:
             "Cookie": self.cookie
         }
 
+    async def create_rpa_job(
+        self,
+        job_name: str,
+        process_detail_uuid: str,
+        bot_uuid: str,
+        input_param: Dict[str, Any],
+        priority: int = 2,
+        execute_type: int = 2,
+        process_channel: int = 1
+    ) -> Dict[str, Any]:
+        """
+        基于流程ID和机器人ID创建RPA任务 (Job)
+        
+        Endpoint: /openAPI/v1/job
+        """
+        url = f"{self.base_url}/openAPI/v1/job"
+        
+        payload = {
+            "jobName": job_name,
+            "processDetailUUID": process_detail_uuid,
+            "executeType": execute_type,
+            "botList": [{"botUUID": bot_uuid, "priority": priority}],
+            "processChannel": process_channel,
+            "inputParam": input_param
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "RPA创建任务接口调用失败")
+                    raise BadRequestException(f"RPA创建任务接口调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"RPA创建任务接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"RPA创建任务接口请求失败: {repr(e)}")
+            except Exception as e:
+                raise BadRequestException(f"RPA创建任务接口调用异常: {repr(e)}")
+
     async def create_keep_login_job(
         self,
         job_uuid: str,
