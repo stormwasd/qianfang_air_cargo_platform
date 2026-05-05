@@ -154,27 +154,6 @@ async def get_robots(
     )
 
 
-@router.get("/{robot_id}", summary="机器人详情")
-async def get_robot_detail(
-    robot_id: str,
-    current_user=Depends(require_permission("robot")),
-    db: Session = Depends(get_db),
-):
-    """
-    获取机器人详情
-    """
-    try:
-        robot_id_int = int(robot_id)
-    except ValueError:
-        raise BadRequestException("机器人ID格式错误")
-
-    robot = db.query(Robot).filter(Robot.id == robot_id_int).first()
-    if not robot:
-        raise NotFoundException("机器人不存在")
-
-    return success_response(data=_format_robot_response(robot), msg="查询成功")
-
-
 @router.get("/task-types", summary="任务权限列表")
 async def get_task_types(
     current_user=Depends(require_permission("robot")),
@@ -210,6 +189,27 @@ async def get_task_types(
         })
 
     return success_response(data=task_types, msg="查询成功")
+
+
+@router.get("/{robot_id}", summary="机器人详情")
+async def get_robot_detail(
+    robot_id: str,
+    current_user=Depends(require_permission("robot")),
+    db: Session = Depends(get_db),
+):
+    """
+    获取机器人详情
+    """
+    try:
+        robot_id_int = int(robot_id)
+    except ValueError:
+        raise BadRequestException("机器人ID格式错误")
+
+    robot = db.query(Robot).filter(Robot.id == robot_id_int).first()
+    if not robot:
+        raise NotFoundException("机器人不存在")
+
+    return success_response(data=_format_robot_response(robot), msg="查询成功")
 
 
 # ======================== 响应格式化工具 ========================
