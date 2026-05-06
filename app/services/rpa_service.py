@@ -52,6 +52,7 @@ class RPAService:
             "processDetailUUID": process_detail_uuid,
             "executeType": execute_type,
             "cronExpression": "0 0 0 31 2 ?",
+            "distributionType": 2,
             "botList": [{"botUUID": bot_uuid, "priority": priority}],
             "processChannel": process_channel,
             "inputParam": input_param

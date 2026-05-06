@@ -26,10 +26,17 @@ class RobotJobService:
         if not robot.task_permissions:
             return
 
-        # 确保表中存在 bot_uuid 字段
+        # 确保表中存在 bot_uuid 和 job_name 字段
         try:
             from sqlalchemy import text
             db.execute(text("ALTER TABLE robot_jobs ADD COLUMN bot_uuid VARCHAR(100) NULL COMMENT '生成时使用的机器人UUID'"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        try:
+            from sqlalchemy import text
+            db.execute(text("ALTER TABLE robot_jobs ADD COLUMN job_name VARCHAR(200) NULL COMMENT '生成的RPA任务名称'"))
             db.commit()
         except Exception:
             db.rollback()
@@ -81,10 +88,17 @@ class RobotJobService:
         if not process:
             return
 
-        # 确保表中存在 bot_uuid 字段
+        # 确保表中存在 bot_uuid 和 job_name 字段
         try:
             from sqlalchemy import text
             db.execute(text("ALTER TABLE robot_jobs ADD COLUMN bot_uuid VARCHAR(100) NULL COMMENT '生成时使用的机器人UUID'"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        try:
+            from sqlalchemy import text
+            db.execute(text("ALTER TABLE robot_jobs ADD COLUMN job_name VARCHAR(200) NULL COMMENT '生成的RPA任务名称'"))
             db.commit()
         except Exception:
             db.rollback()
@@ -122,7 +136,8 @@ class RobotJobService:
     async def _create_or_update_job(db: Session, robot: Robot, bot_uuid: str, process: TaskProcess, existing_job: Optional[RobotJob]):
         """内部方法：调用RPA接口并记录映射"""
         now_str = get_china_now().strftime("%Y_%m_%d_%H_%M_%S")
-        job_name = f"{process.task_name}_{now_str}"
+        name_prefix = process.chinese_name if process.chinese_name else process.task_name
+        job_name = f"{name_prefix}_{bot_uuid}_{now_str}"
         
         input_param = {}
         if process.process_param:
@@ -148,6 +163,7 @@ class RobotJobService:
                 existing_job.job_uuid = job_uuid
                 existing_job.process_detail_uuid = process.process_detail_uuid
                 existing_job.bot_uuid = bot_uuid
+                existing_job.job_name = job_name
                 existing_job.updated_at = get_china_now()
             else:
                 new_job = RobotJob(
@@ -155,7 +171,8 @@ class RobotJobService:
                     task_name=process.task_name,
                     job_uuid=job_uuid,
                     process_detail_uuid=process.process_detail_uuid,
-                    bot_uuid=bot_uuid
+                    bot_uuid=bot_uuid,
+                    job_name=job_name
                 )
                 db.add(new_job)
             

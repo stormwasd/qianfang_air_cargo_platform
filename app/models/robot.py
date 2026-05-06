@@ -50,6 +50,7 @@ class RobotJob(Base):
     job_uuid = Column(String(100), nullable=False, index=True, comment="生成的RPA jobUUID")
     process_detail_uuid = Column(String(100), nullable=False, comment="生成时使用的流程UUID")
     bot_uuid = Column(String(100), nullable=True, comment="生成时使用的机器人UUID")
+    job_name = Column(String(200), nullable=True, comment="生成的RPA任务名称")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")
 

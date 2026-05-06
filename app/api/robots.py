@@ -324,6 +324,7 @@ def _format_robot_response(robot: Robot, db: Session) -> dict:
     # 获取 Job 映射
     jobs = db.query(RobotJob).filter(RobotJob.robot_id == robot.id).all()
     job_mapping = {j.task_name: j.job_uuid for j in jobs}
+    job_name_mapping = {j.task_name: j.job_name for j in jobs if j.job_name}
 
     return {
         "id": str(robot.id),
@@ -332,6 +333,7 @@ def _format_robot_response(robot: Robot, db: Session) -> dict:
         "location": robot.location,
         "task_permissions": task_permissions,
         "job_mapping": job_mapping, # 返回 task_name -> jobUUID 的映射
+        "job_name_mapping": job_name_mapping, # 返回 task_name -> RPA任务名称 的映射
         "extra_config": extra_config,
         "status": robot.status,
         "created_at": format_datetime_china(robot.created_at),
