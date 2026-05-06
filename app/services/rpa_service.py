@@ -37,7 +37,7 @@ class RPAService:
         bot_uuid: str,
         input_param: Dict[str, Any],
         priority: int = 2,
-        execute_type: int = 2,
+        execute_type: int = 9,
         process_channel: int = 1
     ) -> Dict[str, Any]:
         """
@@ -51,10 +51,12 @@ class RPAService:
             "jobName": job_name,
             "processDetailUUID": process_detail_uuid,
             "executeType": execute_type,
+            "cronExpression": "0 0 0 31 2 ?",
             "botList": [{"botUUID": bot_uuid, "priority": priority}],
             "processChannel": process_channel,
             "inputParam": input_param
         }
+
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
