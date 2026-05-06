@@ -26,6 +26,14 @@ class RobotJobService:
         if not robot.task_permissions:
             return
 
+        # 确保表中存在 bot_uuid 字段
+        try:
+            from sqlalchemy import text
+            db.execute(text("ALTER TABLE robot_jobs ADD COLUMN bot_uuid VARCHAR(100) NULL COMMENT '生成时使用的机器人UUID'"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
         try:
             permissions = json.loads(robot.task_permissions)
         except (json.JSONDecodeError, TypeError):
@@ -58,8 +66,10 @@ class RobotJobService:
 
             existing_job = job_map.get(task_name)
             
-            # 如果不存在，或者流程UUID已更新，则重新生成
-            if not existing_job or existing_job.process_detail_uuid != process.process_detail_uuid:
+            # 如果不存在，或者流程UUID已更新，或者绑定的物理机器人bot_uuid已发生变化，则重新生成
+            if (not existing_job 
+                or existing_job.process_detail_uuid != process.process_detail_uuid 
+                or getattr(existing_job, "bot_uuid", None) != bot_uuid):
                 await RobotJobService._create_or_update_job(db, robot, bot_uuid, process, existing_job)
 
     @staticmethod
@@ -70,6 +80,14 @@ class RobotJobService:
         process = db.query(TaskProcess).filter(TaskProcess.task_name == task_name).first()
         if not process:
             return
+
+        # 确保表中存在 bot_uuid 字段
+        try:
+            from sqlalchemy import text
+            db.execute(text("ALTER TABLE robot_jobs ADD COLUMN bot_uuid VARCHAR(100) NULL COMMENT '生成时使用的机器人UUID'"))
+            db.commit()
+        except Exception:
+            db.rollback()
 
         # 查找所有拥有此权限的机器人
         # 注意：task_permissions 存储为 JSON 字符串，使用 LIKE 匹配
@@ -95,7 +113,9 @@ class RobotJobService:
                 RobotJob.task_name == task_name
             ).first()
 
-            if not existing_job or existing_job.process_detail_uuid != process.process_detail_uuid:
+            if (not existing_job 
+                or existing_job.process_detail_uuid != process.process_detail_uuid 
+                or getattr(existing_job, "bot_uuid", None) != bot_uuid):
                 await RobotJobService._create_or_update_job(db, robot, bot_uuid, process, existing_job)
 
     @staticmethod
@@ -127,13 +147,15 @@ class RobotJobService:
             if existing_job:
                 existing_job.job_uuid = job_uuid
                 existing_job.process_detail_uuid = process.process_detail_uuid
+                existing_job.bot_uuid = bot_uuid
                 existing_job.updated_at = get_china_now()
             else:
                 new_job = RobotJob(
                     robot_id=robot.id,
                     task_name=process.task_name,
                     job_uuid=job_uuid,
-                    process_detail_uuid=process.process_detail_uuid
+                    process_detail_uuid=process.process_detail_uuid,
+                    bot_uuid=bot_uuid
                 )
                 db.add(new_job)
             
@@ -144,3 +166,4 @@ class RobotJobService:
             logger.error(f"生成RPA Job失败: robot={robot.name}, task={process.task_name}, error={str(e)}")
 
 robot_job_service = RobotJobService()
+
