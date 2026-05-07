@@ -160,7 +160,8 @@ class RPAService:
         waybill_type: str,
         package: str,
         storage_and_transportation_precautions: str = "",
-        chargeable_weight: str = ""
+        chargeable_weight: str = "",
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用深航新增运单任务RPA接口（仅适用于深圳航空，airline="1"或"深圳航空"）
@@ -191,7 +192,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_SHENZHEN_AIR_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_SHENZHEN_AIR_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "system_url": system_url,
@@ -443,7 +444,7 @@ class RPAService:
         """
         return f"784-{waybill_suffix}"
     
-    async def cancel_shenzhen_air_waybill(self, waybill_number_8: str) -> Dict[str, Any]:
+    async def cancel_shenzhen_air_waybill(self, waybill_number_8: str, job_uuid: Optional[str] = None) -> Dict[str, Any]:
         """
         调用深航作废运单任务RPA接口（仅适用于深圳航空，airline="1"或"深圳航空"）
         
@@ -456,7 +457,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_SHENZHEN_AIR_VOID_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_SHENZHEN_AIR_VOID_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "waybill_number_8": waybill_number_8
@@ -520,7 +521,8 @@ class RPAService:
         narrow_body_aircraft_rules: list = None,
         storage_and_transportation_precautions: str = "",
         product_name: str = "",
-        booking_volume: str = ""
+        booking_volume: str = "",
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用南航订舱任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -563,7 +565,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "address_of_the_application_executable_file_tangyi": address_of_the_application_executable_file_tangyi,
@@ -686,7 +688,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "system_url": system_url,
@@ -734,7 +736,8 @@ class RPAService:
         system_url: str,
         system_account: str,
         login_password: str,
-        waybill_number_8: str
+        waybill_number_8: str,
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用南航直接开单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -751,7 +754,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "system_url": system_url,
@@ -780,7 +783,7 @@ class RPAService:
             except Exception as e:
                 raise BadRequestException(f"南航直接开单RPA接口调用异常: {repr(e)}")
     
-    async def cancel_china_southern_air_waybill(self, waybill_number_8: str) -> Dict[str, Any]:
+    async def cancel_china_southern_air_waybill(self, waybill_number_8: str, job_uuid: Optional[str] = None) -> Dict[str, Any]:
         """
         调用南航作废运单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
         
@@ -793,7 +796,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_VOID_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_VOID_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "waybill_number_8": waybill_number_8
@@ -864,7 +867,8 @@ class RPAService:
         narrow_body_aircraft_rules: list = None,
         storage_and_transportation_precautions: str = "",
         product_name: str = "",
-        booking_volume: str = ""
+        booking_volume: str = "",
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用南航新增运单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -909,7 +913,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "address_of_the_application_executable_file_tangyi": address_of_the_application_executable_file_tangyi,
@@ -1000,7 +1004,8 @@ class RPAService:
         consignee_phone: str,
         order_contact_phone: str,
         order_contact_name: str,
-        settlement_file_number: str
+        settlement_file_number: str,
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用南航修改数据后开单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -1041,7 +1046,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "system_url": system_url,
@@ -1230,7 +1235,8 @@ class RPAService:
     async def print_file(
         self,
         absolute_path_to_the_file: str,
-        printer_name: str
+        printer_name: str,
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用文件打印RPA接口（深航和南航通用，用于打印制单后生成的文档文件）
@@ -1245,7 +1251,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_FILE_PRINT_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_FILE_PRINT_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "absolute_path_to_the_file": absolute_path_to_the_file,
@@ -1289,7 +1295,8 @@ class RPAService:
         system_account: str,
         login_password: str,
         waybill_number_8: str,
-        printer_name: str
+        printer_name: str,
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用深航货运主单打印RPA接口
@@ -1307,7 +1314,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_SHENZHEN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_SHENZHEN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "system_url": system_url,
@@ -1354,7 +1361,8 @@ class RPAService:
         system_account: str,
         login_password: str,
         waybill_number_8: str,
-        printer_name: str
+        printer_name: str,
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用南航货运主单打印RPA接口
@@ -1372,7 +1380,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "system_url": system_url,
@@ -1419,7 +1427,8 @@ class RPAService:
         system_account: str,
         login_password: str,
         waybill_number_8: str,
-        printer_name: str
+        printer_name: str,
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用南航货运安检申报单打印RPA接口
@@ -1437,7 +1446,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_SECURITY_PRINT_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_SECURITY_PRINT_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "system_url": system_url,
@@ -1484,7 +1493,8 @@ class RPAService:
         system_account: str,
         login_password: str,
         waybill_number_8: str,
-        printer_name: str
+        printer_name: str,
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用南航标签单打印RPA接口
@@ -1502,7 +1512,7 @@ class RPAService:
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
         payload = {
-            "jobUuid": settings.RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID,
+            "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID,
             "operation": 1,
             "inputParam": {
                 "address_of_the_application_executable_file_tangyi": address_of_the_application_executable_file_tangyi,

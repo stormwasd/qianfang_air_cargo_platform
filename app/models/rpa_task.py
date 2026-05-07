@@ -62,6 +62,7 @@ class RPATask(Base):
     priority = Column(Integer, nullable=False, default=1, index=True, comment="优先级（数值越大越优先，默认1）")
     work_uuid = Column(String(100), nullable=True, index=True, comment="RPA返回的workUuid")
     job_uuid = Column(String(100), nullable=True, comment="RPA的jobUuid")
+    robot_id = Column(BigInteger, nullable=True, index=True, comment="指定消费的机器人ID（NULL=任意有权限的机器人消费）")
     result = Column(Text, nullable=True, comment="执行结果（JSON格式）")
     error_message = Column(Text, nullable=True, comment="错误信息")
     created_by = Column(BigInteger, nullable=True, index=True, comment="创建用户ID")

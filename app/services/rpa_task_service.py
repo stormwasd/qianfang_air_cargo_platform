@@ -26,7 +26,8 @@ class RPATaskService:
         queue_params: Optional[Dict[str, Any]] = None,
         job_uuid: Optional[str] = None,
         priority: Optional[int] = None,
-        created_by: Optional[int] = None
+        created_by: Optional[int] = None,
+        robot_id: Optional[int] = None
     ) -> RPATask:
         """
         创建RPA任务
@@ -57,6 +58,7 @@ class RPATaskService:
             params=json.dumps(params, ensure_ascii=False),
             queue_params=json.dumps(queue_params, ensure_ascii=False) if queue_params else None,
             job_uuid=job_uuid,
+            robot_id=robot_id,
             status=RPATaskStatus.PENDING.value,
             priority=priority,
             created_by=created_by
@@ -99,6 +101,45 @@ class RPATaskService:
             RPATask.priority.desc(),
             RPATask.created_at.asc()
         ).with_for_update(skip_locked=True).first()  # 跳过已锁定的记录
+        
+        return task
+    
+    def get_pending_task_for_robot(
+        self,
+        db: Session,
+        robot_db_id: int,
+        allowed_task_types: list
+    ) -> Optional[RPATask]:
+        """
+        获取该机器人可消费的一个待执行任务
+        
+        匹配规则：
+        1. 任务类型必须在机器人的权限列表中
+        2. 任务的 robot_id 为 NULL（任意机器人可消费）或等于当前机器人ID（指定消费）
+        3. 使用行级锁 skip_locked 防止多 Worker 竞争
+        
+        Args:
+            db: 数据库会话
+            robot_db_id: 机器人记录数据库主键ID
+            allowed_task_types: 该机器人可执行的任务类型列表
+        
+        Returns:
+            待执行的任务对象，没有则返回None
+        """
+        if not allowed_task_types:
+            return None
+        
+        task = db.query(RPATask).filter(
+            RPATask.status == RPATaskStatus.PENDING.value,
+            RPATask.task_type.in_(allowed_task_types),
+            or_(
+                RPATask.robot_id == None,
+                RPATask.robot_id == robot_db_id
+            )
+        ).order_by(
+            RPATask.priority.desc(),
+            RPATask.created_at.asc()
+        ).with_for_update(skip_locked=True).first()
         
         return task
     

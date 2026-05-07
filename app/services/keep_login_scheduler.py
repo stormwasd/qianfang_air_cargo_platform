@@ -1,10 +1,12 @@
 """
-保持登录调度器
+保持登录调度器（多机器人版）
 
 作用：
-1. 从数据库 `BusinessConfig` 读取 system_account/login_password
-2. 按配置的时间间隔创建保持登录RPATask
-3. 由现有 RPAWorker 消费并调用对应RPA jobUuid
+1. 定期扫描所有启用的机器人
+2. 对每台机器人，检查其 task_permissions 中的保持登录权限
+3. 为有保持登录权限的机器人创建 RPATask（若当前没有 pending/running）
+4. 使用机器人专属的 job_uuid（从 robot_jobs 表获取）
+5. 设置 robot_id 使任务只能被对应机器人的 Worker 消费
 
 注意：该调度流程不涉及机器人端队列数据（不创建/读取/删除RPA队列）。
 """
@@ -13,16 +15,34 @@ import json
 import asyncio
 import threading
 import traceback
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Dict, Optional
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models.config import BusinessConfig
+from app.models.robot import Robot, RobotJob
 from app.models.rpa_task import RPATaskType
 from app.services.rpa_task_service import rpa_task_service
 
 
 KEEP_LOGIN_TARGET_TYPE = "keep_login"
+
+# 保持登录任务类型到凭据配置路径的映射
+KEEP_LOGIN_CONFIG_MAP = {
+    RPATaskType.SHENZHEN_AIR_KEEP_LOGIN.value: {
+        "config_path": ["shenzhen_air", "booking", "shenzhen_air_login"],
+        "interval_attr": "RPA_SHENZHEN_AIR_KEEP_LOGIN_INTERVAL_SECONDS",
+    },
+    RPATaskType.CHINA_SOUTHERN_AIR_KEEP_LOGIN.value: {
+        "config_path": ["china_southern_air", "booking_and_create", "china_southern_air_login"],
+        "interval_attr": "RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_INTERVAL_SECONDS",
+    },
+    RPATaskType.TANGYI_KEEP_LOGIN.value: {
+        "config_path": ["china_southern_air", "booking_and_create", "tangi_login"],
+        "fallback_path": ["china_southern_air", "booking_and_create", "china_southern_air_login"],
+        "interval_attr": "RPA_TANGYI_KEEP_LOGIN_INTERVAL_SECONDS",
+    },
+}
 
 
 def _get_business_config_dict(db_session) -> Dict[str, Any]:
@@ -36,192 +56,55 @@ def _get_business_config_dict(db_session) -> Dict[str, Any]:
         return {}
 
 
-def _load_shenzhen_air_keep_login_creds(business_config: Dict[str, Any]) -> Dict[str, str]:
-    """读取深航保持登录 system_account/login_password。"""
-    shenzhen_air_config = business_config.get("shenzhen_air", {})
-    booking_config = shenzhen_air_config.get("booking", {})
-    login_config = booking_config.get("shenzhen_air_login", {})
-
-    return {
-        "system_account": login_config.get("system_account", ""),
-        "login_password": login_config.get("login_password", ""),
-    }
-
-
-def _load_china_southern_air_keep_login_creds(business_config: Dict[str, Any]) -> Dict[str, str]:
-    """读取南航保持登录 system_account/login_password。"""
-    china_southern_air_config = business_config.get("china_southern_air", {})
-    booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
-    login_config = booking_and_create_config.get("china_southern_air_login", {})
-
-    return {
-        "system_account": login_config.get("system_account", ""),
-        "login_password": login_config.get("login_password", ""),
-    }
-
-
-def _load_tangyi_keep_login_creds(business_config: Dict[str, Any]) -> Dict[str, str]:
+def _load_creds_from_path(business_config: Dict[str, Any], config_path: list, fallback_path: list = None) -> Dict[str, str]:
     """
-    读取唐翼保持登录 system_account/login_password。
-
-    兼容策略：
-    - 优先读取 `booking_and_create.tangi_login` 的 system_account/login_password（如果配置了）
-    - 否则回退到 `booking_and_create.china_southern_air_login` 的 system_account/login_password
-      （与现有“南航相关流程传参”保持一致，降低变更风险）
+    根据配置路径从 business_config 中读取凭据。
+    支持 fallback_path 回退读取（用于唐翼兼容策略）。
     """
-    china_southern_air_config = business_config.get("china_southern_air", {})
-    booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
-
-    tangi_login = booking_and_create_config.get("tangi_login", {})
-    csa_login = booking_and_create_config.get("china_southern_air_login", {})
-
-    system_account = tangi_login.get("system_account", "") or csa_login.get("system_account", "")
-    login_password = tangi_login.get("login_password", "") or csa_login.get("login_password", "")
-
+    node = business_config
+    for key in config_path:
+        node = node.get(key, {})
+    
+    system_account = node.get("system_account", "")
+    login_password = node.get("login_password", "")
+    
+    # fallback：如果主路径没有凭据，尝试回退路径
+    if (not system_account or not login_password) and fallback_path:
+        fb_node = business_config
+        for key in fallback_path:
+            fb_node = fb_node.get(key, {})
+        system_account = system_account or fb_node.get("system_account", "")
+        login_password = login_password or fb_node.get("login_password", "")
+    
     return {
         "system_account": system_account,
         "login_password": login_password,
     }
 
 
-class KeepLoginRunner:
-    """
-    单个保持登录任务的周期调度器
-
-    每个Runner负责：
-    - 按间隔创建一个 RPATask（若当前没有 pending/running）
-    - 任务参数只包含 system_account/login_password
-    """
-
-    def __init__(
-        self,
-        *,
-        task_type: RPATaskType,
-        interval_attr_name: str,
-        target_id: int,
-        job_uuid: str,
-        cred_loader: Callable[[Dict[str, Any]], Dict[str, str]],
-    ):
-        self.task_type = task_type
-        self.interval_attr_name = interval_attr_name
-        self.target_id = target_id
-        self.job_uuid = job_uuid
-        self.cred_loader = cred_loader
-
-    def _get_interval_seconds(self) -> Optional[int]:
-        return getattr(settings, self.interval_attr_name, None)
-
-    async def _enqueue_once(self) -> None:
-        db = SessionLocal()
-        try:
-            existing = rpa_task_service.get_pending_task_for_target(
-                db,
-                target_type=KEEP_LOGIN_TARGET_TYPE,
-                target_id=self.target_id,
-                task_type=self.task_type.value,
-            )
-            if existing:
-                return
-
-            business_config = _get_business_config_dict(db)
-            creds = self.cred_loader(business_config)
-            system_account = creds.get("system_account", "")
-            login_password = creds.get("login_password", "")
-            if not system_account or not login_password:
-                print(
-                    f"[KeepLoginRunner] 缺少保持登录凭据: task_type={self.task_type.value}, target_id={self.target_id}"
-                )
-                return
-
-            params = {
-                "system_account": system_account,
-                "login_password": login_password,
-            }
-
-            rpa_task_service.create_task(
-                db=db,
-                task_type=self.task_type.value,
-                target_type=KEEP_LOGIN_TARGET_TYPE,
-                target_id=self.target_id,
-                params=params,
-                job_uuid=self.job_uuid,
-                priority=2,  # 保持登录任务优先级高于普通业务任务（默认1），确保登录态优先维持
-                created_by=None,
-            )
-
-        except Exception as e:
-            print(
-                f"[KeepLoginRunner] 入队失败: task_type={self.task_type.value}, target_id={self.target_id}, error={repr(e)}\n"
-                f"{traceback.format_exc()}"
-            )
-            db.rollback()
-        finally:
-            db.close()
-
-    async def run(self, stop_event: threading.Event) -> None:
-        # 先立即尝试入队一次，避免“启动后必须等满一个interval”
-        while not stop_event.is_set():
-            if not settings.RPA_KEEP_LOGIN_ENABLED:
-                await asyncio.sleep(10)
-                continue
-
-            interval_seconds = self._get_interval_seconds()
-            if not interval_seconds:
-                # 未配置间隔 => 不入队
-                await asyncio.sleep(60)
-                continue
-
-            await self._enqueue_once()
-
-            # 分段sleep：让stop_event能够更快生效
-            remaining = interval_seconds
-            while remaining > 0 and not stop_event.is_set():
-                step = min(5, remaining)
-                await asyncio.sleep(step)
-                remaining -= step
-
-
 class KeepLoginScheduler:
-    """全局保持登录调度器（启动多个Runner并在停机时停止）"""
+    """
+    全局保持登录调度器（多机器人版）
+    
+    工作流程：
+    1. 每隔一定时间扫描所有启用的机器人
+    2. 对每台机器人，检查其 task_permissions 中的保持登录类型
+    3. 为每个匹配的 (机器人, 保持登录类型) 组合检查是否已有 pending/running 任务
+    4. 若没有，则创建新任务，指定 robot_id 使其只被该机器人消费
+    """
 
     def __init__(self):
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
-        self._runners: list[KeepLoginRunner] = []
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
 
         self._stop_event.clear()
-
-        self._runners = [
-            KeepLoginRunner(
-                task_type=RPATaskType.CHINA_SOUTHERN_AIR_KEEP_LOGIN,
-                interval_attr_name="RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_INTERVAL_SECONDS",
-                target_id=1,
-                job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_JOB_UUID,
-                cred_loader=_load_china_southern_air_keep_login_creds,
-            ),
-            KeepLoginRunner(
-                task_type=RPATaskType.SHENZHEN_AIR_KEEP_LOGIN,
-                interval_attr_name="RPA_SHENZHEN_AIR_KEEP_LOGIN_INTERVAL_SECONDS",
-                target_id=2,
-                job_uuid=settings.RPA_SHENZHEN_AIR_KEEP_LOGIN_JOB_UUID,
-                cred_loader=_load_shenzhen_air_keep_login_creds,
-            ),
-            KeepLoginRunner(
-                task_type=RPATaskType.TANGYI_KEEP_LOGIN,
-                interval_attr_name="RPA_TANGYI_KEEP_LOGIN_INTERVAL_SECONDS",
-                target_id=3,
-                job_uuid=settings.RPA_TANGYI_KEEP_LOGIN_JOB_UUID,
-                cred_loader=_load_tangyi_keep_login_creds,
-            ),
-        ]
-
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        print("[KeepLoginScheduler] 已启动保持登录调度器")
+        print("[KeepLoginScheduler] 已启动保持登录调度器（多机器人版）")
 
     def _run(self) -> None:
         loop = asyncio.new_event_loop()
@@ -233,7 +116,108 @@ class KeepLoginScheduler:
             loop.close()
 
     async def _async_main(self) -> None:
-        await asyncio.gather(*(runner.run(self._stop_event) for runner in self._runners))
+        """主循环：定期扫描机器人并创建保持登录任务"""
+        while not self._stop_event.is_set():
+            if not settings.RPA_KEEP_LOGIN_ENABLED:
+                await asyncio.sleep(10)
+                continue
+
+            try:
+                await self._scan_and_enqueue()
+            except Exception as e:
+                print(f"[KeepLoginScheduler] 扫描创建保持登录任务失败: {repr(e)}\n{traceback.format_exc()}")
+
+            # 使用最短的保持登录间隔作为扫描间隔
+            scan_interval = self._get_min_interval()
+            remaining = scan_interval
+            while remaining > 0 and not self._stop_event.is_set():
+                step = min(5, remaining)
+                await asyncio.sleep(step)
+                remaining -= step
+
+    def _get_min_interval(self) -> int:
+        """获取最短的保持登录间隔（用作扫描周期）"""
+        intervals = []
+        for cfg in KEEP_LOGIN_CONFIG_MAP.values():
+            val = getattr(settings, cfg["interval_attr"], None)
+            if val and val > 0:
+                intervals.append(val)
+        return min(intervals) if intervals else 60
+
+    async def _scan_and_enqueue(self) -> None:
+        """扫描所有启用机器人，为有保持登录权限的创建任务"""
+        db = SessionLocal()
+        try:
+            business_config = _get_business_config_dict(db)
+            robots = db.query(Robot).filter(Robot.status == 1).all()
+
+            for robot in robots:
+                try:
+                    permissions = json.loads(robot.task_permissions) if robot.task_permissions else []
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+                for task_type_value, cfg in KEEP_LOGIN_CONFIG_MAP.items():
+                    if task_type_value not in permissions:
+                        continue
+
+                    # 检查间隔是否已配置
+                    interval = getattr(settings, cfg["interval_attr"], None)
+                    if not interval or interval <= 0:
+                        continue
+
+                    # 检查是否已有 pending/running 任务（使用 robot_id 作为 target_id 区分不同机器人）
+                    existing = rpa_task_service.get_pending_task_for_target(
+                        db,
+                        target_type=KEEP_LOGIN_TARGET_TYPE,
+                        target_id=robot.id,
+                        task_type=task_type_value,
+                    )
+                    if existing:
+                        continue
+
+                    # 读取凭据
+                    creds = _load_creds_from_path(
+                        business_config,
+                        cfg["config_path"],
+                        cfg.get("fallback_path"),
+                    )
+                    if not creds.get("system_account") or not creds.get("login_password"):
+                        print(
+                            f"[KeepLoginScheduler] 缺少凭据: robot={robot.name}, task_type={task_type_value}"
+                        )
+                        continue
+
+                    # 获取该机器人对应的 job_uuid
+                    robot_job = db.query(RobotJob).filter(
+                        RobotJob.robot_id == robot.id,
+                        RobotJob.task_name == task_type_value,
+                    ).first()
+                    job_uuid = robot_job.job_uuid if robot_job else None
+
+                    # 创建任务，指定 robot_id 使其只被该机器人的 Worker 消费
+                    rpa_task_service.create_task(
+                        db=db,
+                        task_type=task_type_value,
+                        target_type=KEEP_LOGIN_TARGET_TYPE,
+                        target_id=robot.id,
+                        params=creds,
+                        job_uuid=job_uuid,
+                        priority=2,  # 保持登录任务优先级高于普通业务任务
+                        created_by=None,
+                        robot_id=robot.id,  # 指定消费机器人
+                    )
+                    print(
+                        f"[KeepLoginScheduler] 已创建保持登录任务: robot={robot.name}, task_type={task_type_value}, job_uuid={job_uuid}"
+                    )
+
+        except Exception as e:
+            print(
+                f"[KeepLoginScheduler] 扫描入队失败: error={repr(e)}\n{traceback.format_exc()}"
+            )
+            db.rollback()
+        finally:
+            db.close()
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -242,4 +226,3 @@ class KeepLoginScheduler:
 
 # 全局单例
 rpa_keep_login_scheduler = KeepLoginScheduler()
-
