@@ -126,11 +126,13 @@ class RPAWorker:
                 print(f"{self._log_prefix} 任务 {task.id} 锁定失败，可能已被其他Worker处理")
                 return
             
-            # 4. 从 robot_jobs 表解析该机器人对应的 job_uuid
+            # 4. 从 robot_jobs 表解析该机器人对应的 job_uuid，并记录消费机器人
+            if task.robot_id is None:
+                task.robot_id = self.robot_db_id
             resolved_job_uuid = self._resolve_job_uuid(db, task.task_type)
             if resolved_job_uuid:
                 task.job_uuid = resolved_job_uuid
-                db.commit()
+            db.commit()
             
             print(f"{self._log_prefix} 开始处理任务 {task.id}, 类型: {task.task_type}, job_uuid: {task.job_uuid}")
             
@@ -2537,7 +2539,6 @@ class RPAWorkerManager:
             print("​RPA任务队列已禁用，不启动Worker")
             return
         
-        import json as _json
         db = SessionLocal()
         try:
             robots = db.query(Robot).filter(Robot.status == 1).all()
@@ -2551,6 +2552,49 @@ class RPAWorkerManager:
                 worker = RPAWorker(robot_db_id=robot.id, robot_name=robot.name)
                 worker.start()
                 self.workers.append(worker)
+        finally:
+            db.close()
+    
+    def sync_workers(self):
+        """
+        热同步Worker线程与数据库中的机器人（无需重启服务）
+        
+        - 新增了启用的机器人 → 自动启动对应Worker
+        - 机器人被禁用或删除 → 自动停止对应Worker
+        - 机器人状态未变 → 不做任何操作
+        """
+        if not settings.RPA_QUEUE_ENABLED:
+            return
+        
+        db = SessionLocal()
+        try:
+            # 查询所有启用的机器人
+            enabled_robots = db.query(Robot).filter(Robot.status == 1).all()
+            enabled_map = {r.id: r for r in enabled_robots}
+            
+            # 当前正在运行的 Worker 对应的机器人 ID
+            running_ids = {w.robot_db_id for w in self.workers}
+            
+            # 1. 启动新增机器人的 Worker
+            for robot in enabled_robots:
+                if robot.id not in running_ids:
+                    worker = RPAWorker(robot_db_id=robot.id, robot_name=robot.name)
+                    worker.start()
+                    self.workers.append(worker)
+                    print(f"[WorkerManager] 热启动新Worker: {robot.name} (ID: {robot.id})")
+            
+            # 2. 停止已禁用/删除的机器人的 Worker
+            workers_to_remove = []
+            for worker in self.workers:
+                if worker.robot_db_id not in enabled_map:
+                    worker.stop()
+                    workers_to_remove.append(worker)
+                    print(f"[WorkerManager] 停止Worker: {worker.robot_name} (ID: {worker.robot_db_id})")
+            
+            for w in workers_to_remove:
+                self.workers.remove(w)
+            
+            print(f"[WorkerManager] 同步完成，当前活跃Worker数: {len(self.workers)}")
         finally:
             db.close()
     

@@ -95,6 +95,10 @@ async def create_or_update_robot(
         # 异步/后台同步生成 RPA Job（这里先简单同步执行，后续可考虑使用 BackgroundTasks）
         await robot_job_service.sync_robot_jobs(db, robot)
 
+        # 热同步 Worker 线程（状态变更时自动启动/停止对应 Worker，无需重启服务）
+        from app.services.rpa_worker import rpa_worker_manager
+        rpa_worker_manager.sync_workers()
+
         logger.info("修改机器人成功: id=%s, name=%s", robot.id, robot.name)
         return success_response(data=_format_robot_response(robot, db), msg="机器人修改成功")
 
@@ -119,6 +123,10 @@ async def create_or_update_robot(
 
         # 异步/后台同步生成 RPA Job
         await robot_job_service.sync_robot_jobs(db, robot)
+
+        # 热同步 Worker 线程（新增机器人后自动启动对应 Worker，无需重启服务）
+        from app.services.rpa_worker import rpa_worker_manager
+        rpa_worker_manager.sync_workers()
 
         logger.info("新增机器人成功: id=%s, name=%s", robot.id, robot.name)
         return success_response(data=_format_robot_response(robot, db), msg="机器人新增成功")

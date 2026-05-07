@@ -50,6 +50,31 @@ class RPATaskService:
         if priority is None:
             priority = settings.RPA_QUEUE_DEFAULT_PRIORITY
         
+        # ---- 动态解析 robot_id 和 job_uuid（从 robot_jobs 表获取，替代硬编码值） ----
+        from app.models.robot import Robot, RobotJob
+        
+        # 如果未指定 robot_id，自动匹配第一个拥有该任务权限且启用的机器人
+        if robot_id is None:
+            enabled_robots = db.query(Robot).filter(Robot.status == 1).all()
+            for r in enabled_robots:
+                try:
+                    perms = json.loads(r.task_permissions) if r.task_permissions else []
+                except (json.JSONDecodeError, TypeError):
+                    perms = []
+                if task_type in perms:
+                    robot_id = r.id
+                    break
+        
+        # 从 robot_jobs 表解析该机器人对应该任务类型的专属 job_uuid（覆盖调用方传入的硬编码值）
+        if robot_id is not None:
+            robot_job = db.query(RobotJob).filter(
+                RobotJob.robot_id == robot_id,
+                RobotJob.task_name == task_type
+            ).first()
+            if robot_job:
+                job_uuid = robot_job.job_uuid
+        # ---- 动态解析结束 ----
+        
         task = RPATask(
             id=generate_id(),
             task_type=task_type,
