@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     if settings.RPA_QUEUE_ENABLED:
         from app.services.rpa_worker import rpa_worker_manager
         rpa_worker_manager.start_workers()
-        print(f"RPA任务队列已启用，启动了 {settings.RPA_QUEUE_WORKER_COUNT} 个Worker")
+        print(f"RPA任务队列已启用，启动了 {len(rpa_worker_manager.workers)} 个Worker")
         # 启动保持登录调度器（周期性入队，由Worker消费）
         from app.services.keep_login_scheduler import rpa_keep_login_scheduler
         rpa_keep_login_scheduler.start()

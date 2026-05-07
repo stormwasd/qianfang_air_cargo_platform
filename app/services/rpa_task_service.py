@@ -397,10 +397,14 @@ class RPATaskService:
             RPATask.status == RPATaskStatus.RUNNING.value
         ).count()
         
+        # 统计启用的机器人数量作为活动Worker数量
+        from app.models.robot import Robot
+        worker_count = db.query(Robot).filter(Robot.status == 1).count()
+        
         return {
             "pending_count": pending_count,
             "running_count": running_count,
-            "worker_count": settings.RPA_QUEUE_WORKER_COUNT,
+            "worker_count": worker_count,
             "queue_enabled": settings.RPA_QUEUE_ENABLED
         }
     
