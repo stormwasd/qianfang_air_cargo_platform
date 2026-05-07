@@ -12,9 +12,40 @@ from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
 from app.config import settings
 
+# 打印子任务类型（小写）→ RPATaskType 枚举值的映射
+# 用于将 prepare_print_tasks() 返回的子任务 type 映射为独立的 rpa_tasks.task_type
+PRINT_TYPE_MAPPING = {
+    "file_print": RPATaskType.FILE_PRINT.value,
+    "shenzhen_air_main_waybill_print": RPATaskType.SHENZHEN_AIR_MAIN_WAYBILL_PRINT.value,
+    "china_southern_air_main_waybill_print": RPATaskType.CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT.value,
+    "china_southern_air_security_print": RPATaskType.CHINA_SOUTHERN_AIR_SECURITY_PRINT.value,
+    "china_southern_air_label_print": RPATaskType.CHINA_SOUTHERN_AIR_LABEL_PRINT.value,
+}
+
+# RPATaskType 枚举值 → 打印子任务类型（小写）的反向映射
+# 用于 Worker 执行时将 task_type 映射回 _execute_single_print_task 所需的类型字符串
+PRINT_TYPE_REVERSE_MAPPING = {v: k for k, v in PRINT_TYPE_MAPPING.items()}
+
+# 所有打印相关的任务类型集合
+PRINT_TASK_TYPES = set(PRINT_TYPE_MAPPING.values())
+
 
 class RPATaskService:
     """RPA任务队列服务类"""
+    
+    @staticmethod
+    def resolve_task_location(task_type: str) -> Optional[str]:
+        """
+        根据任务类型自动推断所属区域
+        
+        Returns:
+            "shenzhen_air" / "china_southern_air" / None（无法推断，需显式传入）
+        """
+        if task_type.startswith("SHENZHEN_AIR_"):
+            return "shenzhen_air"
+        elif task_type.startswith("CHINA_SOUTHERN_AIR_") or task_type.startswith("TANGYI_"):
+            return "china_southern_air"
+        return None
     
     def create_task(
         self,
@@ -27,7 +58,8 @@ class RPATaskService:
         job_uuid: Optional[str] = None,
         priority: Optional[int] = None,
         created_by: Optional[int] = None,
-        robot_id: Optional[int] = None
+        robot_id: Optional[int] = None,
+        location: Optional[str] = None
     ) -> RPATask:
         """
         创建RPA任务
@@ -42,6 +74,8 @@ class RPATaskService:
             job_uuid: RPA的jobUuid
             priority: 优先级（不传则使用配置文件默认值）
             created_by: 创建用户ID
+            robot_id: 指定消费的机器人ID
+            location: 任务所属区域（shenzhen_air/china_southern_air），不传则从 task_type 自动推断
         
         Returns:
             创建的任务对象
@@ -50,13 +84,20 @@ class RPATaskService:
         if priority is None:
             priority = settings.RPA_QUEUE_DEFAULT_PRIORITY
         
+        # ---- 自动推断 location ----
+        if location is None:
+            location = self.resolve_task_location(task_type)
+        
         # ---- 动态解析 robot_id 和 job_uuid（从 robot_jobs 表获取，替代硬编码值） ----
         from app.models.robot import Robot, RobotJob
         
-        # 如果未指定 robot_id，自动匹配第一个拥有该任务权限且启用的机器人
+        # 如果未指定 robot_id，自动匹配第一个拥有该任务权限、启用且 location 匹配的机器人
         if robot_id is None:
             enabled_robots = db.query(Robot).filter(Robot.status == 1).all()
             for r in enabled_robots:
+                # location 匹配检查
+                if location and r.location != location:
+                    continue
                 try:
                     perms = json.loads(r.task_permissions) if r.task_permissions else []
                 except (json.JSONDecodeError, TypeError):
@@ -84,6 +125,7 @@ class RPATaskService:
             queue_params=json.dumps(queue_params, ensure_ascii=False) if queue_params else None,
             job_uuid=job_uuid,
             robot_id=robot_id,
+            location=location,
             status=RPATaskStatus.PENDING.value,
             priority=priority,
             created_by=created_by
@@ -133,20 +175,23 @@ class RPATaskService:
         self,
         db: Session,
         robot_db_id: int,
-        allowed_task_types: list
+        allowed_task_types: list,
+        robot_location: Optional[str] = None
     ) -> Optional[RPATask]:
         """
         获取该机器人可消费的一个待执行任务
         
         匹配规则：
         1. 任务类型必须在机器人的权限列表中
-        2. 任务的 robot_id 为 NULL（任意机器人可消费）或等于当前机器人ID（指定消费）
-        3. 使用行级锁 skip_locked 防止多 Worker 竞争
+        2. 任务的 location 必须与机器人的 location 一致
+        3. 任务的 robot_id 为 NULL（任意机器人可消费）或等于当前机器人ID（指定消费）
+        4. 使用行级锁 skip_locked 防止多 Worker 竞争
         
         Args:
             db: 数据库会话
             robot_db_id: 机器人记录数据库主键ID
             allowed_task_types: 该机器人可执行的任务类型列表
+            robot_location: 机器人所属区域（shenzhen_air/china_southern_air）
         
         Returns:
             待执行的任务对象，没有则返回None
@@ -154,13 +199,21 @@ class RPATaskService:
         if not allowed_task_types:
             return None
         
-        task = db.query(RPATask).filter(
+        filters = [
             RPATask.status == RPATaskStatus.PENDING.value,
             RPATask.task_type.in_(allowed_task_types),
             or_(
                 RPATask.robot_id == None,
                 RPATask.robot_id == robot_db_id
             )
+        ]
+        
+        # location 区域过滤：只消费相同区域的任务
+        if robot_location:
+            filters.append(RPATask.location == robot_location)
+        
+        task = db.query(RPATask).filter(
+            *filters
         ).order_by(
             RPATask.priority.desc(),
             RPATask.created_at.asc()

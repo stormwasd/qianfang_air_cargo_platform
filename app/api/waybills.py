@@ -816,31 +816,32 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
             return
         
         # 打印任务详情
-        for i, t in enumerate(print_tasks.get("tasks", [])):
+        sub_tasks = print_tasks.get("tasks", [])
+        for i, t in enumerate(sub_tasks):
             print(f"[自动打单] 打印子任务 {i+1}/{task_count}: {t.get('description')}, 类型: {t.get('type')}")
         
-        # 检查是否已有待执行或执行中的打单任务
-        existing_task = rpa_task_service.get_pending_task_for_target(
-            db,
-            target_type=RPATargetType.WAYBILL.value,
-            target_id=waybill.id,
-            task_type=RPATaskType.DOCUMENT_PRINT.value
-        )
-        if existing_task:
-            print(f"[自动打单] 已存在待执行或执行中的打单任务（任务ID: {existing_task.id}），跳过自动打单，运单ID: {waybill.id}")
-            return
+        # 为每个打印子任务创建独立的 rpa_tasks 记录（拆分为独立任务，不同机器人可并行消费）
+        from app.services.rpa_task_service import PRINT_TYPE_MAPPING
+        created_count = 0
+        for sub_task in sub_tasks:
+            sub_type = sub_task.get("type", "")
+            rpa_task_type = PRINT_TYPE_MAPPING.get(sub_type)
+            if not rpa_task_type:
+                print(f"[自动打单] 未知的打印子任务类型: {sub_type}，跳过")
+                continue
+            
+            rpa_task_service.create_task(
+                db=db,
+                task_type=rpa_task_type,
+                target_type=RPATargetType.WAYBILL.value,
+                target_id=waybill.id,
+                params=sub_task.get("params", {}),
+                created_by=None,
+                location=airline_code
+            )
+            created_count += 1
         
-        # 创建打单RPA任务
-        task = rpa_task_service.create_task(
-            db=db,
-            task_type=RPATaskType.DOCUMENT_PRINT.value,
-            target_type=RPATargetType.WAYBILL.value,
-            target_id=waybill.id,
-            params=print_tasks,
-            created_by=None  # 自动触发，无创建人
-        )
-        
-        print(f"[自动打单] 打单任务已成功创建！任务ID: {task.id}, 共 {task_count} 个打印子任务，运单ID: {waybill.id}")
+        print(f"[自动打单] 打单任务已成功创建！共创建 {created_count} 个独立打印任务，运单ID: {waybill.id}")
         
     except Exception as e:
         print(f"[自动打单] 自动触发打单失败，运单ID: {waybill.id}, 错误: {str(e)}")
@@ -1957,22 +1958,20 @@ async def print_single_document(
             }
         }
     
-    # 构建任务参数
-    print_tasks = {
-        "airline": airline_code,
-        "waybill_id": int(waybill_id),
-        "waybill_number": waybill.waybill_number,
-        "tasks": [print_task]
-    }
+    # 确定具体的 RPA 任务类型（不再使用通用 FILE_PRINT，按打印类型精确匹配）
+    from app.services.rpa_task_service import PRINT_TYPE_MAPPING
+    sub_type = print_task.get("type", "")
+    rpa_task_type = PRINT_TYPE_MAPPING.get(sub_type, RPATaskType.FILE_PRINT.value)
     
     # 创建打印RPA任务（单个文档打印不检查是否存在其他任务，允许重复打印）
     task = rpa_task_service.create_task(
         db=db,
-        task_type=RPATaskType.DOCUMENT_PRINT.value,
+        task_type=rpa_task_type,
         target_type=RPATargetType.WAYBILL.value,
         target_id=int(waybill_id),
-        params=print_tasks,
-        created_by=current_user.id if hasattr(current_user, 'id') else None
+        params=print_task.get("params", {}),
+        created_by=current_user.id if hasattr(current_user, 'id') else None,
+        location=airline_code
     )
     
     # 刷新运单数据

@@ -17,7 +17,7 @@ from app.models.waybill import Waybill
 from app.models.booking import Booking
 from app.models.settlement import Settlement
 from app.services.rpa_service import rpa_service
-from app.services.rpa_task_service import rpa_task_service
+from app.services.rpa_task_service import rpa_task_service, PRINT_TASK_TYPES, PRINT_TYPE_REVERSE_MAPPING, PRINT_TYPE_MAPPING
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.helpers import get_china_now
 
@@ -90,6 +90,95 @@ class RPAWorker:
         ).first()
         return robot_job.job_uuid if robot_job else None
     
+    def _apply_extra_config_overrides(self, db, task: RPATask, robot: Robot):
+        """
+        应用机器人 extra_config 中的参数覆盖
+        
+        覆盖规则：
+        1. shenzhen_air_account: account+password 均非空 → 替换 system_account, login_password
+        2. printer_service: 三种打印机均非空 → 替换 printer_name (暂取 normal_a4_printer)
+        3. tangyi_program: executable_path 非空 → 替换 address_of_the_application_executable_file_tangyi
+        
+        只有当机器人的 location 与任务的 location 匹配时才进行覆盖。
+        """
+        if not robot.extra_config:
+            return
+        
+        # location 匹配检查
+        if robot.location and task.location and robot.location != task.location:
+            return
+        
+        try:
+            extra_config = json.loads(robot.extra_config) if isinstance(robot.extra_config, str) else robot.extra_config
+        except (json.JSONDecodeError, TypeError):
+            return
+        
+        if not extra_config or not isinstance(extra_config, dict):
+            return
+        
+        # 解析当前任务参数
+        try:
+            params = json.loads(task.params) if isinstance(task.params, str) else task.params
+        except (json.JSONDecodeError, TypeError):
+            return
+        
+        if not isinstance(params, dict):
+            return
+        
+        modified = False
+        
+        # 1. shenzhen_air_account 覆盖 system_account + login_password
+        sz_account = extra_config.get("shenzhen_air_account")
+        if isinstance(sz_account, dict):
+            account = sz_account.get("account", "")
+            password = sz_account.get("password", "")
+            if account and password:
+                if "system_account" in params:
+                    params["system_account"] = account
+                    params["login_password"] = password
+                    modified = True
+                    print(f"{self._log_prefix} [extra_config] 覆盖 system_account/login_password (来自 shenzhen_air_account)")
+        
+        # 2. printer_service 覆盖 printer_name (暂取 normal_a4_printer)
+        printer_svc = extra_config.get("printer_service")
+        if isinstance(printer_svc, dict):
+            normal = printer_svc.get("normal_a4_printer", "")
+            dot_matrix = printer_svc.get("dot_matrix_printer", "")
+            label = printer_svc.get("label_printer", "")
+            if normal and dot_matrix and label:
+                if "printer_name" in params:
+                    params["printer_name"] = normal
+                    modified = True
+                    print(f"{self._log_prefix} [extra_config] 覆盖 printer_name → {normal} (来自 printer_service)")
+                # 对于打印子任务（tasks 数组内的 params），也进行覆盖
+                if "tasks" in params and isinstance(params["tasks"], list):
+                    for sub_task in params["tasks"]:
+                        sub_params = sub_task.get("params", {})
+                        if isinstance(sub_params, dict) and "printer_name" in sub_params:
+                            sub_params["printer_name"] = normal
+                            modified = True
+        
+        # 3. tangyi_program 覆盖 address_of_the_application_executable_file_tangyi
+        tangyi = extra_config.get("tangyi_program")
+        if isinstance(tangyi, dict):
+            exe_path = tangyi.get("executable_path", "")
+            if exe_path:
+                if "address_of_the_application_executable_file_tangyi" in params:
+                    params["address_of_the_application_executable_file_tangyi"] = exe_path
+                    modified = True
+                    print(f"{self._log_prefix} [extra_config] 覆盖 tangyi executable_path → {exe_path}")
+                # 对于打印子任务（tasks 数组内的 params），也进行覆盖
+                if "tasks" in params and isinstance(params["tasks"], list):
+                    for sub_task in params["tasks"]:
+                        sub_params = sub_task.get("params", {})
+                        if isinstance(sub_params, dict) and "address_of_the_application_executable_file_tangyi" in sub_params:
+                            sub_params["address_of_the_application_executable_file_tangyi"] = exe_path
+                            modified = True
+        
+        # 写回 task.params
+        if modified:
+            task.params = json.dumps(params, ensure_ascii=False)
+    
     async def _process_one_task(self):
         """处理一个任务"""
         import json as _json
@@ -116,8 +205,10 @@ class RPAWorker:
             # 更新机器人名称（可能被修改）
             self.robot_name = robot.name
             
-            # 2. 获取该机器人可消费的一个待执行任务
-            task = rpa_task_service.get_pending_task_for_robot(db, self.robot_db_id, permissions)
+            # 2. 获取该机器人可消费的一个待执行任务（按权限+location匹配）
+            task = rpa_task_service.get_pending_task_for_robot(
+                db, self.robot_db_id, permissions, robot_location=robot.location
+            )
             if not task:
                 return
             
@@ -132,9 +223,13 @@ class RPAWorker:
             resolved_job_uuid = self._resolve_job_uuid(db, task.task_type)
             if resolved_job_uuid:
                 task.job_uuid = resolved_job_uuid
+            
+            # 5. 应用机器人 extra_config 参数覆盖（替换 system_account/login_password/printer_name 等）
+            self._apply_extra_config_overrides(db, task, robot)
+            
             db.commit()
             
-            print(f"{self._log_prefix} 开始处理任务 {task.id}, 类型: {task.task_type}, job_uuid: {task.job_uuid}")
+            print(f"{self._log_prefix} 开始处理任务 {task.id}, 类型: {task.task_type}, location: {task.location}, job_uuid: {task.job_uuid}")
             
             # 5. 根据任务类型执行不同的处理逻辑
             try:
@@ -154,8 +249,16 @@ class RPAWorker:
                     await self._execute_china_southern_air_waybill(db, task)
                 elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA.value:
                     await self._execute_china_southern_air_invoice_with_data(db, task)
-                elif task.task_type == RPATaskType.DOCUMENT_PRINT.value:
-                    await self._execute_document_print(db, task)
+                elif task.task_type == RPATaskType.FILE_PRINT.value:
+                    await self._execute_individual_print(db, task)
+                elif task.task_type == RPATaskType.SHENZHEN_AIR_MAIN_WAYBILL_PRINT.value:
+                    await self._execute_individual_print(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT.value:
+                    await self._execute_individual_print(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_SECURITY_PRINT.value:
+                    await self._execute_individual_print(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_LABEL_PRINT.value:
+                    await self._execute_individual_print(db, task)
                 elif task.task_type == RPATaskType.SHENZHEN_AIR_KEEP_LOGIN.value:
                     await self._execute_shenzhen_air_keep_login(db, task)
                 elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_KEEP_LOGIN.value:
@@ -193,7 +296,7 @@ class RPAWorker:
                         waybill.waybill_void_status = "2"  # 作废失败
                     elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value:
                         waybill.airline_record_status = "2"  # 开单失败
-                    elif task.task_type == RPATaskType.DOCUMENT_PRINT.value:
+                    elif task.task_type in PRINT_TASK_TYPES:
                         waybill.document_print_status = "2"  # 打单失败
                     db.commit()
             elif task.target_type == RPATargetType.BOOKING.value:
@@ -2224,35 +2327,121 @@ class RPAWorker:
                 return
             
             # 打印任务详情
-            for i, t in enumerate(print_tasks.get("tasks", [])):
+            sub_tasks = print_tasks.get("tasks", [])
+            for i, t in enumerate(sub_tasks):
                 print(f"{self._log_prefix} [自动打单] 打印子任务 {i+1}/{task_count}: {t.get('description')}, 类型: {t.get('type')}")
             
-            # 检查是否已有待执行或执行中的打单任务
-            existing_task = rpa_task_service.get_pending_task_for_target(
-                db,
-                target_type=RPATargetType.WAYBILL.value,
-                target_id=waybill.id,
-                task_type=RPATaskType.DOCUMENT_PRINT.value
-            )
-            if existing_task:
-                print(f"{self._log_prefix} [自动打单] 已存在待执行或执行中的打单任务（任务ID: {existing_task.id}），跳过自动打单")
-                return
+            # 为每个打印子任务创建独立的 rpa_tasks 记录
+            created_count = 0
+            for sub_task in sub_tasks:
+                sub_type = sub_task.get("type", "")
+                rpa_task_type = PRINT_TYPE_MAPPING.get(sub_type)
+                if not rpa_task_type:
+                    print(f"{self._log_prefix} [自动打单] 未知的打印子任务类型: {sub_type}，跳过")
+                    continue
+                
+                rpa_task_service.create_task(
+                    db=db,
+                    task_type=rpa_task_type,
+                    target_type=RPATargetType.WAYBILL.value,
+                    target_id=waybill.id,
+                    params=sub_task.get("params", {}),
+                    created_by=None,
+                    location=airline_code
+                )
+                created_count += 1
             
-            # 创建打单RPA任务
-            task = rpa_task_service.create_task(
-                db=db,
-                task_type=RPATaskType.DOCUMENT_PRINT.value,
-                target_type=RPATargetType.WAYBILL.value,
-                target_id=waybill.id,
-                params=print_tasks,
-                created_by=None  # 自动触发，无创建人
-            )
-            
-            print(f"{self._log_prefix} [自动打单] 打单任务已成功创建！任务ID: {task.id}, 共 {task_count} 个打印子任务，运单ID: {waybill.id}")
+            print(f"{self._log_prefix} [自动打单] 打单任务已成功创建！共创建 {created_count} 个独立打印任务，运单ID: {waybill.id}")
             
         except Exception as e:
             print(f"{self._log_prefix} [自动打单] 自动触发打单失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             # 自动打单失败不影响货站录单的成功状态
+    
+    async def _execute_individual_print(self, db, task: RPATask):
+        """
+        执行独立打印任务（拆分后的单个打印任务）
+        
+        每个打印任务对应一条独立的 rpa_tasks 记录，params 是扁平结构：
+        - FILE_PRINT: {"absolute_path_to_the_file": "...", "printer_name": "..."}
+        - SHENZHEN_AIR_MAIN_WAYBILL_PRINT: {"system_url": "...", "system_account": "...", ...}
+        - 其他打印类型类似
+        """
+        params = json.loads(task.params) if isinstance(task.params, str) else task.params
+        
+        # 更新运单打单状态为执行中
+        waybill = db.query(Waybill).filter(Waybill.id == task.target_id).first()
+        if not waybill:
+            raise Exception("运单不存在")
+        
+        if waybill.document_print_status != "1":
+            waybill.document_print_status = "1"  # 打单中
+            db.commit()
+        
+        # 将 RPATaskType 枚举值映射为 _execute_single_print_task 所需的小写类型字符串
+        print_sub_type = PRINT_TYPE_REVERSE_MAPPING.get(task.task_type)
+        if not print_sub_type:
+            raise Exception(f"无法识别的打印任务类型: {task.task_type}")
+        
+        print(f"{self._log_prefix} 执行独立打印任务: {task.task_type} → {print_sub_type}")
+        
+        try:
+            success = await self._execute_single_print_task(
+                print_sub_type, task.job_uuid, params
+            )
+            
+            if success:
+                print(f"{self._log_prefix} 打印任务执行成功: {task.task_type}")
+                # 检查该运单是否还有其他未完成的打印任务
+                self._update_waybill_print_status(db, waybill, task)
+                rpa_task_service.complete_task(db, task.id, True)
+            else:
+                print(f"{self._log_prefix} 打印任务执行失败: {task.task_type}")
+                db.refresh(waybill)
+                waybill.document_print_status = "2"  # 失败
+                db.commit()
+                rpa_task_service.complete_task(db, task.id, False, error_message="RPA执行失败")
+        except Exception as e:
+            db.refresh(waybill)
+            waybill.document_print_status = "2"  # 失败
+            db.commit()
+            raise e
+    
+    def _update_waybill_print_status(self, db, waybill, current_task: RPATask):
+        """
+        当一个打印任务成功完成后，检查该运单是否还有其他未完成的打印任务。
+        如果所有打印任务都已完成且成功，则将 document_print_status 设为 "3"（成功）。
+        """
+        # 查询该运单下所有打印类型的任务（排除当前任务）
+        other_print_tasks = db.query(RPATask).filter(
+            RPATask.target_type == RPATargetType.WAYBILL.value,
+            RPATask.target_id == waybill.id,
+            RPATask.task_type.in_(list(PRINT_TASK_TYPES)),
+            RPATask.id != current_task.id
+        ).all()
+        
+        # 检查是否有未完成的打印任务
+        has_pending = any(
+            t.status in (RPATaskStatus.PENDING.value, RPATaskStatus.PROCESSING.value)
+            for t in other_print_tasks
+        )
+        
+        # 检查是否有失败的打印任务
+        has_failed = any(
+            t.status == RPATaskStatus.FAILED.value
+            for t in other_print_tasks
+        )
+        
+        db.refresh(waybill)
+        if has_pending:
+            # 还有未完成的任务，保持"打单中"
+            waybill.document_print_status = "1"
+        elif has_failed:
+            # 有失败的任务
+            waybill.document_print_status = "2"
+        else:
+            # 所有打印任务都已成功完成
+            waybill.document_print_status = "3"
+        db.commit()
     
     async def _execute_document_print(self, db, task: RPATask):
         """

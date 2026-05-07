@@ -44,7 +44,7 @@ async def create_or_update_robot(
     - **robot_id**: 机器人ID（加密后的字符串，使用 robot_id_encrypt_tool.py 生成）
     - **name**: 机器人名称
     - **location**: 机器人所在位置
-    - **task_permissions**: 可执行任务权限列表（如 ["SHENZHEN_AIR_WAYBILL_EXECUTE", "DOCUMENT_PRINT"]）
+    - **task_permissions**: 可执行任务权限列表（如 ["SHENZHEN_AIR_WAYBILL_EXECUTE", "FILE_PRINT"]）
     - **extra_config**: 机器人其他配置（可选，包含深航账号密码、打印机服务、唐翼程序地址）
     - **status**: 机器人状态（可选，1=启用，0=未启用，默认1）
     """

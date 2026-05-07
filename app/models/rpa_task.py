@@ -63,6 +63,7 @@ class RPATask(Base):
     work_uuid = Column(String(100), nullable=True, index=True, comment="RPA返回的workUuid")
     job_uuid = Column(String(100), nullable=True, comment="RPA的jobUuid")
     robot_id = Column(BigInteger, nullable=True, index=True, comment="指定消费的机器人ID（NULL=任意有权限的机器人消费）")
+    location = Column(String(50), nullable=True, index=True, comment="任务所属区域（shenzhen_air/china_southern_air），用于匹配机器人location")
     result = Column(Text, nullable=True, comment="执行结果（JSON格式）")
     error_message = Column(Text, nullable=True, comment="错误信息")
     created_by = Column(BigInteger, nullable=True, index=True, comment="创建用户ID")
