@@ -33,8 +33,8 @@ PRINT_TASK_TYPES = set(PRINT_TYPE_MAPPING.values())
 # 只有以下任务类型需要 RPA 队列，其他任务类型（作废、打印、保持登录等）不使用队列
 TASK_QUEUE_CONFIGS = {
     "SHENZHEN_AIR_WAYBILL_EXECUTE": ["waybill_number", "freight_rate", "freight", "delivery_fee"],
-    "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE": ["waybill_number"],
-    "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE": ["waybill_number", "freight_rate", "freight", "fuel_costs", "extended_service_fee"],
+    # 南航订舱不再需要队列（运单号改为从单号库预分配）
+    "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE": ["freight_rate", "freight", "fuel_costs", "extended_service_fee"],
     "CHINA_SOUTHERN_AIR_DIRECT_INVOICE": ["rate", "freight", "fuel_costs", "extended_service_fee"],
     "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA": ["rate", "freight", "fuel_costs", "extended_service_fee"],
 }
@@ -73,17 +73,20 @@ class RPATaskService:
         """
         创建RPA任务
         
+        注意：任务创建时 robot_id 默认为 NULL，由 Worker 消费时通过 location + 权限竞争分配。
+        仅在需要指定特定机器人消费时才传入 robot_id。
+        
         Args:
             db: 数据库会话
             task_type: 任务类型
             target_type: 目标类型（waybill/booking）
             target_id: 目标ID
             params: RPA调用参数
-            queue_params: 队列参数（用于创建RPA数据队列）
-            job_uuid: RPA的jobUuid
+            queue_params: 队列参数（已废弃，Worker 消费时从 robot_queues 动态构建）
+            job_uuid: RPA的jobUuid（已废弃，Worker 消费时从 robot_jobs 动态解析）
             priority: 优先级（不传则使用配置文件默认值）
             created_by: 创建用户ID
-            robot_id: 指定消费的机器人ID
+            robot_id: 指定消费的机器人ID（通常为 NULL，由 Worker 竞争消费）
             location: 任务所属区域（shenzhen_air/china_southern_air），不传则从 task_type 自动推断
         
         Returns:
@@ -97,43 +100,15 @@ class RPATaskService:
         if location is None:
             location = self.resolve_task_location(task_type)
         
-        # ---- 动态解析 robot_id 和 job_uuid（从 robot_jobs 表获取，替代硬编码值） ----
-        from app.models.robot import Robot, RobotJob
-        
-        # 如果未指定 robot_id，自动匹配第一个拥有该任务权限、启用且 location 匹配的机器人
-        if robot_id is None:
-            enabled_robots = db.query(Robot).filter(Robot.status == 1).all()
-            for r in enabled_robots:
-                # location 匹配检查
-                if location and r.location != location:
-                    continue
-                try:
-                    perms = json.loads(r.task_permissions) if r.task_permissions else []
-                except (json.JSONDecodeError, TypeError):
-                    perms = []
-                if task_type in perms:
-                    robot_id = r.id
-                    break
-        
-        # 从 robot_jobs 表解析该机器人对应该任务类型的专属 job_uuid（覆盖调用方传入的硬编码值）
-        if robot_id is not None:
-            robot_job = db.query(RobotJob).filter(
-                RobotJob.robot_id == robot_id,
-                RobotJob.task_name == task_type
-            ).first()
-            if robot_job:
-                job_uuid = robot_job.job_uuid
-        # ---- 动态解析结束 ----
-        
         task = RPATask(
             id=generate_id(),
             task_type=task_type,
             target_type=target_type,
             target_id=target_id,
             params=json.dumps(params, ensure_ascii=False),
-            queue_params=json.dumps(queue_params, ensure_ascii=False) if queue_params else None,
-            job_uuid=job_uuid,
-            robot_id=robot_id,
+            queue_params=None,  # 队列参数由 Worker 消费时动态构建
+            job_uuid=None,  # job_uuid 由 Worker 消费时动态解析
+            robot_id=robot_id,  # 默认 NULL，由 Worker 竞争消费
             location=location,
             status=RPATaskStatus.PENDING.value,
             priority=priority,

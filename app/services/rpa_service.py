@@ -191,7 +191,8 @@ class RPAService:
         package: str,
         storage_and_transportation_precautions: str = "",
         chargeable_weight: str = "",
-        job_uuid: Optional[str] = None
+        job_uuid: Optional[str] = None,
+        queue_names: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
         调用深航新增运单任务RPA接口（仅适用于深圳航空，airline="1"或"深圳航空"）
@@ -215,35 +216,41 @@ class RPAService:
             waybill_type: 运单类型（可选，可能为空）
             package: 包装（如：麻袋）
             storage_and_transportation_precautions: 储运注意事项（可选）
+            queue_names: 队列名称字典（如 {"queue_waybill_number": "...", "queue_freight_rate": "..."}）
         
         Returns:
             RPA接口返回的数据，包含workUuid等信息
         """
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
+        input_param = {
+            "system_url": system_url,
+            "system_account": system_account,
+            "login_password": login_password,
+            "origin_station": origin_station,
+            "destination": destination,
+            "flight_date": flight_date,
+            "flight_number": flight_number,
+            "shipper_info": shipper_info,
+            "consignee_info": consignee_info,
+            "quantity": quantity,
+            "weight": weight,
+            "chargeable_weight": chargeable_weight,
+            "freight_code": freight_code,
+            "cargo_code": cargo_code,
+            "cargo_name": cargo_name,
+            "waybill_type": waybill_type,
+            "package": package,
+            "storage_and_transportation_precautions": storage_and_transportation_precautions
+        }
+        # 合并队列名称到流程入参
+        if queue_names:
+            input_param.update(queue_names)
+        
         payload = {
             "jobUuid": job_uuid or settings.RPA_SHENZHEN_AIR_JOB_UUID,
             "operation": 1,
-            "inputParam": {
-                "system_url": system_url,
-                "system_account": system_account,
-                "login_password": login_password,
-                "origin_station": origin_station,
-                "destination": destination,
-                "flight_date": flight_date,
-                "flight_number": flight_number,
-                "shipper_info": shipper_info,
-                "consignee_info": consignee_info,
-                "quantity": quantity,
-                "weight": weight,
-                "chargeable_weight": chargeable_weight,
-                "freight_code": freight_code,
-                "cargo_code": cargo_code,
-                "cargo_name": cargo_name,
-                "waybill_type": waybill_type,
-                "package": package,
-                "storage_and_transportation_precautions": storage_and_transportation_precautions
-            }
+            "inputParam": input_param
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -552,7 +559,8 @@ class RPAService:
         storage_and_transportation_precautions: str = "",
         product_name: str = "",
         booking_volume: str = "",
-        job_uuid: Optional[str] = None
+        job_uuid: Optional[str] = None,
+        queue_names: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
         调用南航订舱任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -594,39 +602,43 @@ class RPAService:
         """
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
+        input_param = {
+            "address_of_the_application_executable_file_tangyi": address_of_the_application_executable_file_tangyi,
+            "system_account": system_account,
+            "login_password": login_password,
+            "system_url": system_url,
+            "origin_station": origin_station,
+            "destination": destination,
+            "flight_date": flight_date,
+            "cargo_type": cargo_type,
+            "cargo_code": cargo_code,
+            "flight_number": flight_number,
+            "booking_remark_wide": booking_remark_wide,
+            "booking_remark_narrow": booking_remark_narrow,
+            "cargo_name": cargo_name,
+            "quantity": quantity,
+            "weight": weight,
+            "special_cargo_code": special_cargo_code,
+            "settlement_file_number": settlement_file_number,
+            "order_contact_name": order_contact_name,
+            "order_contact_phone": order_contact_phone,
+            "agent_checker_name": agent_checker_name,
+            "agent_consignor_name": agent_consignor_name,
+            "oversized_cargo": oversized_cargo,
+            "no_dangerous_goods": no_dangerous_goods,
+            "wide_body_aircraft_rules": wide_body_aircraft_rules or [],
+            "narrow_body_aircraft_rules": narrow_body_aircraft_rules or [],
+            "storage_and_transportation_precautions": storage_and_transportation_precautions,
+            "product_name": product_name,
+            "booking_volume": booking_volume
+        }
+        if queue_names:
+            input_param.update(queue_names)
+        
         payload = {
             "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID,
             "operation": 1,
-            "inputParam": {
-                "address_of_the_application_executable_file_tangyi": address_of_the_application_executable_file_tangyi,
-                "system_account": system_account,
-                "login_password": login_password,
-                "system_url": system_url,
-                "origin_station": origin_station,
-                "destination": destination,
-                "flight_date": flight_date,
-                "cargo_type": cargo_type,
-                "cargo_code": cargo_code,
-                "flight_number": flight_number,
-                "booking_remark_wide": booking_remark_wide,
-                "booking_remark_narrow": booking_remark_narrow,
-                "cargo_name": cargo_name,
-                "quantity": quantity,
-                "weight": weight,
-                "special_cargo_code": special_cargo_code,
-                "settlement_file_number": settlement_file_number,
-                "order_contact_name": order_contact_name,
-                "order_contact_phone": order_contact_phone,
-                "agent_checker_name": agent_checker_name,
-                "agent_consignor_name": agent_consignor_name,
-                "oversized_cargo": oversized_cargo,
-                "no_dangerous_goods": no_dangerous_goods,
-                "wide_body_aircraft_rules": wide_body_aircraft_rules or [],
-                "narrow_body_aircraft_rules": narrow_body_aircraft_rules or [],
-                "storage_and_transportation_precautions": storage_and_transportation_precautions,
-                "product_name": product_name,
-                "booking_volume": booking_volume
-            }
+            "inputParam": input_param
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -767,7 +779,8 @@ class RPAService:
         system_account: str,
         login_password: str,
         waybill_number_8: str,
-        job_uuid: Optional[str] = None
+        job_uuid: Optional[str] = None,
+        queue_names: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
         调用南航直接开单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -776,22 +789,27 @@ class RPAService:
             system_url: 系统URL（从业务参数配置获取）
             system_account: 系统账号（从业务参数配置获取）
             login_password: 登录密码（从业务参数配置获取）
-            waybill_number_8: 运单号后八位（从booking.master_airwaybill_number提取，以"-"分割取最后一部分）
+            waybill_number_8: 运单号后八位
+            queue_names: 队列名称字典
         
         Returns:
             RPA接口返回的数据，包含workUuid等信息
         """
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
+        input_param = {
+            "system_url": system_url,
+            "system_account": system_account,
+            "login_password": login_password,
+            "waybill_number_8": waybill_number_8
+        }
+        if queue_names:
+            input_param.update(queue_names)
+        
         payload = {
             "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID,
             "operation": 1,
-            "inputParam": {
-                "system_url": system_url,
-                "system_account": system_account,
-                "login_password": login_password,
-                "waybill_number_8": waybill_number_8
-            }
+            "inputParam": input_param
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -898,7 +916,8 @@ class RPAService:
         storage_and_transportation_precautions: str = "",
         product_name: str = "",
         booking_volume: str = "",
-        job_uuid: Optional[str] = None
+        job_uuid: Optional[str] = None,
+        queue_names: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
         调用南航新增运单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -942,44 +961,48 @@ class RPAService:
         """
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
+        input_param = {
+            "address_of_the_application_executable_file_tangyi": address_of_the_application_executable_file_tangyi,
+            "system_account": system_account,
+            "login_password": login_password,
+            "system_url": system_url,
+            "origin_station": origin_station,
+            "destination": destination,
+            "flight_date": flight_date,
+            "cargo_type": cargo_type,
+            "cargo_code": cargo_code,
+            "flight_number": flight_number,
+            "booking_remark": booking_remark,
+            "cargo_name": cargo_name,
+            "quantity": quantity,
+            "weight": weight,
+            "special_cargo_code": special_cargo_code,
+            "region_province_shipper": region_province_shipper,
+            "region_city_shipper": region_city_shipper,
+            "region_city_district": region_city_district,
+            "address_detail": address_detail,
+            "consignee_phone": consignee_phone,
+            "settlement_file_number": settlement_file_number,
+            "order_contact_name": order_contact_name,
+            "order_contact_phone": order_contact_phone,
+            "agent_checker_name": agent_checker_name,
+            "agent_consignor_name": agent_consignor_name,
+            "oversized_cargo": oversized_cargo,
+            "no_dangerous_goods": no_dangerous_goods,
+            "shipper": shipper,
+            "shipper_phone": shipper_phone,
+            "consignee": consignee,
+            "storage_and_transportation_precautions": storage_and_transportation_precautions,
+            "product_name": product_name,
+            "booking_volume": booking_volume
+        }
+        if queue_names:
+            input_param.update(queue_names)
+        
         payload = {
             "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID,
             "operation": 1,
-            "inputParam": {
-                "address_of_the_application_executable_file_tangyi": address_of_the_application_executable_file_tangyi,
-                "system_account": system_account,
-                "login_password": login_password,
-                "system_url": system_url,
-                "origin_station": origin_station,
-                "destination": destination,
-                "flight_date": flight_date,
-                "cargo_type": cargo_type,
-                "cargo_code": cargo_code,
-                "flight_number": flight_number,
-                "booking_remark": booking_remark,
-                "cargo_name": cargo_name,
-                "quantity": quantity,
-                "weight": weight,
-                "special_cargo_code": special_cargo_code,
-                "region_province_shipper": region_province_shipper,
-                "region_city_shipper": region_city_shipper,
-                "region_city_district": region_city_district,
-                "address_detail": address_detail,
-                "consignee_phone": consignee_phone,
-                "settlement_file_number": settlement_file_number,
-                "order_contact_name": order_contact_name,
-                "order_contact_phone": order_contact_phone,
-                "agent_checker_name": agent_checker_name,
-                "agent_consignor_name": agent_consignor_name,
-                "oversized_cargo": oversized_cargo,
-                "no_dangerous_goods": no_dangerous_goods,
-                "shipper": shipper,
-                "shipper_phone": shipper_phone,
-                "consignee": consignee,
-                "storage_and_transportation_precautions": storage_and_transportation_precautions,
-                "product_name": product_name,
-                "booking_volume": booking_volume
-            }
+            "inputParam": input_param
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -1035,7 +1058,8 @@ class RPAService:
         order_contact_phone: str,
         order_contact_name: str,
         settlement_file_number: str,
-        job_uuid: Optional[str] = None
+        job_uuid: Optional[str] = None,
+        queue_names: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
         调用南航修改数据后开单任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
@@ -1075,36 +1099,40 @@ class RPAService:
         """
         url = f"{self.base_url}/openAPI/v2/job/operation"
         
+        input_param = {
+            "system_url": system_url,
+            "system_account": system_account,
+            "login_password": login_password,
+            "waybill_number_8": waybill_number_8,
+            "flight_number": flight_number,
+            "flight_date": flight_date,
+            "booking_remark": booking_remark,
+            "cargo_code": cargo_code,
+            "cargo_name": cargo_name,
+            "weight": weight,
+            "quantity": quantity,
+            "volume": volume,
+            "special_cargo_code": special_cargo_code,
+            "oversized_cargo": oversized_cargo,
+            "shipper": shipper,
+            "shipper_phone": shipper_phone,
+            "address_detail": address_detail,
+            "region_province_shipper": region_province_shipper,
+            "region_city_shipper": region_city_shipper,
+            "region_city_district": region_city_district,
+            "consignee": consignee,
+            "consignee_phone": consignee_phone,
+            "order_contact_phone": order_contact_phone,
+            "order_contact_name": order_contact_name,
+            "settlement_file_number": settlement_file_number
+        }
+        if queue_names:
+            input_param.update(queue_names)
+        
         payload = {
             "jobUuid": job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID,
             "operation": 1,
-            "inputParam": {
-                "system_url": system_url,
-                "system_account": system_account,
-                "login_password": login_password,
-                "waybill_number_8": waybill_number_8,
-                "flight_number": flight_number,
-                "flight_date": flight_date,
-                "booking_remark": booking_remark,
-                "cargo_code": cargo_code,
-                "cargo_name": cargo_name,
-                "weight": weight,
-                "quantity": quantity,
-                "volume": volume,
-                "special_cargo_code": special_cargo_code,
-                "oversized_cargo": oversized_cargo,
-                "shipper": shipper,
-                "shipper_phone": shipper_phone,
-                "address_detail": address_detail,
-                "region_province_shipper": region_province_shipper,
-                "region_city_shipper": region_city_shipper,
-                "region_city_district": region_city_district,
-                "consignee": consignee,
-                "consignee_phone": consignee_phone,
-                "order_contact_phone": order_contact_phone,
-                "order_contact_name": order_contact_name,
-                "settlement_file_number": settlement_file_number
-            }
+            "inputParam": input_param
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:

@@ -16,6 +16,7 @@ from app.models.robot import Robot, RobotJob
 from app.models.waybill import Waybill
 from app.models.booking import Booking
 from app.models.settlement import Settlement
+from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
 from app.services.rpa_service import rpa_service
 from app.services.rpa_task_service import rpa_task_service, PRINT_TASK_TYPES, PRINT_TYPE_REVERSE_MAPPING, PRINT_TYPE_MAPPING
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
@@ -220,6 +221,79 @@ class RPAWorker:
         new_queue_params = {"queue_configs": queue_configs}
         task.queue_params = json.dumps(new_queue_params, ensure_ascii=False)
         print(f"{self._log_prefix} [队列] 已替换为机器人专属队列: {[c['key'] + '=' + c['name'] for c in queue_configs]}")
+    
+    @staticmethod
+    def _build_queue_names_for_flow(queues_info: dict) -> dict:
+        """
+        从 queues_info 中提取队列名称，构建 RPA 流程 inputParam 所需的 queue_names 字典。
+        
+        转换规则：queue_key → queue_{queue_key} = queue_name
+        例如：{"waybill_number": {"queueName": "xxx"}} → {"queue_waybill_number": "xxx"}
+        """
+        if not queues_info:
+            return {}
+        queue_names = {}
+        for key, info in queues_info.items():
+            queue_names[f"queue_{key}"] = info.get("queueName", "")
+        return queue_names
+    
+    @staticmethod
+    def _allocate_waybill_number_from_stock(db, airline_name: str) -> WaybillStockItem:
+        """
+        从单号库中分配一个可用的运单号。
+        
+        查询条件：usage_status="0"(未使用) AND is_abnormal="1"(正常) AND is_invalid="0"(未失效)
+        分配后将 usage_status 改为 "1"(已使用)，usage_date 设为当天。
+        
+        Args:
+            db: 数据库会话
+            airline_name: 航司名称（如 shenzhen_air、china_southern_air）
+        
+        Returns:
+            WaybillStockItem 对象
+        
+        Raises:
+            Exception: 没有可用单号时抛出异常
+        """
+        stock_item = (
+            db.query(WaybillStockItem)
+            .join(WaybillStockBatch, WaybillStockItem.batch_id == WaybillStockBatch.id)
+            .join(WaybillStock, WaybillStockBatch.stock_id == WaybillStock.id)
+            .filter(
+                WaybillStock.airline_name == airline_name,
+                WaybillStockItem.usage_status == "0",
+                WaybillStockItem.is_abnormal == "1",
+                WaybillStockItem.is_invalid == "0"
+            )
+            .order_by(WaybillStockItem.id.asc())
+            .with_for_update(skip_locked=True)
+            .first()
+        )
+        
+        if not stock_item:
+            raise Exception(f"航司 {airline_name} 的单号库中没有可用单号，请及时补充单号库")
+        
+        stock_item.usage_status = "1"
+        stock_item.usage_date = get_china_now().date()
+        db.flush()
+        
+        return stock_item
+    
+    @staticmethod
+    def _rollback_waybill_number_stock(db, stock_item_id: int):
+        """
+        回退已分配的运单号（RPA执行失败时调用）
+        
+        将 usage_status 改回 "0"(未使用)，usage_date 清空。
+        """
+        try:
+            stock_item = db.query(WaybillStockItem).filter(WaybillStockItem.id == stock_item_id).first()
+            if stock_item:
+                stock_item.usage_status = "0"
+                stock_item.usage_date = None
+                db.commit()
+        except Exception as e:
+            print(f"[单号库回退失败] stock_item_id={stock_item_id}: {repr(e)}")
     
     async def _process_one_task(self):
         """处理一个任务"""
@@ -489,6 +563,7 @@ class RPAWorker:
             db.commit()
         
         # 调用RPA接口
+        queue_names = self._build_queue_names_for_flow(queues_info)
         try:
             rpa_response = await asyncio.wait_for(
                 rpa_service.create_shenzhen_air_waybill(
@@ -510,7 +585,8 @@ class RPAWorker:
                     package=params.get("package", ""),
                     storage_and_transportation_precautions=params.get("storage_and_transportation_precautions", ""),
                     chargeable_weight=params.get("chargeable_weight", ""),
-                    job_uuid=task.job_uuid
+                    job_uuid=task.job_uuid,
+                    queue_names=queue_names
                 ),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
@@ -1118,7 +1194,6 @@ class RPAWorker:
     async def _execute_china_southern_air_booking(self, db, task: RPATask):
         """执行南航订舱任务"""
         params = json.loads(task.params)
-        queue_params = json.loads(task.queue_params) if task.queue_params else None
         
         # 更新订舱状态为执行中
         booking = db.query(Booking).filter(Booking.id == task.target_id).first()
@@ -1128,35 +1203,23 @@ class RPAWorker:
         booking.booking_status = "1"  # 执行中
         db.commit()
         
-        # 创建队列（统一 queue_configs 格式）
-        queue_uuid = None
-        queue_id = None
-        if queue_params:
-            queue_configs = queue_params.get("queue_configs", [])
-            # 南航订舱只使用1个队列（waybill_number）
-            if queue_configs:
-                queue_config = queue_configs[0]
-                queue_name = queue_config.get("name", "")
-                if queue_name:
-                    try:
-                        queue_data = await asyncio.wait_for(
-                            rpa_service.create_queue(queue_name=queue_name, max_queue_number=999, is_expire=False),
-                            timeout=settings.RPA_QUEUE_TASK_TIMEOUT
-                        )
-                        queue_uuid = queue_data.get("queueUUID", "")
-                        queue_id = str(queue_data.get("queueID", ""))
-                        
-                        # 保存队列信息到订舱
-                        booking.rpa_queue_uuid = queue_uuid
-                        booking.rpa_queue_id = queue_id
-                        db.commit()
-                    except Exception as e:
-                        print(f"{self._log_prefix} 创建队列失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
+        # 从单号库预分配运单号
+        allocated_stock_item = None
+        try:
+            allocated_stock_item = self._allocate_waybill_number_from_stock(db, "china_southern_air")
+            booking.master_airwaybill_number = allocated_stock_item.full_number
+            db.commit()
+            print(f"{self._log_prefix} 已从单号库分配南航运单号: {allocated_stock_item.number_suffix} (full: {allocated_stock_item.full_number})")
+        except Exception as e:
+            booking.booking_status = "2"  # 失败
+            db.commit()
+            raise Exception(f"单号库分配失败: {_get_error_detail(e)}")
         
-        # 调用RPA接口
+        # 调用RPA接口（南航订舱不再使用队列，仅传入预分配的运单号）
+        booking_queue_names = {"allocated_waybill_number": allocated_stock_item.number_suffix}
         try:
             rpa_response = await asyncio.wait_for(
-                rpa_service.create_china_southern_air_booking(**params, job_uuid=task.job_uuid),
+                rpa_service.create_china_southern_air_booking(**params, job_uuid=task.job_uuid, queue_names=booking_queue_names),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
             
@@ -1173,28 +1236,18 @@ class RPAWorker:
             rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
             
             # 轮询RPA状态
-            await self._poll_china_southern_air_booking_status(db, task, booking, work_uuid, queue_uuid, queue_id)
+            await self._poll_china_southern_air_booking_status(db, task, booking, work_uuid, allocated_stock_item.id)
             
-        finally:
-            # 清理队列（统一在finally处理兜底，包含正常结束和各类异常）
-            db.refresh(booking)
-            actual_queue_id = booking.rpa_queue_id or queue_id
-            if actual_queue_id:
-                for retry in range(3):
-                    try:
-                        await rpa_service.delete_queue(actual_queue_id)
-                        booking.rpa_queue_uuid = None
-                        booking.rpa_queue_id = None
-                        db.commit()
-                        break
-                    except Exception as clean_err:
-                        if retry == 2:
-                            print(f"{self._log_prefix} 最终清理此队列失败 {actual_queue_id}: {repr(clean_err)}")
-                        else:
-                            await asyncio.sleep(1)
+        except Exception as e:
+            # 回退单号
+            if allocated_stock_item:
+                self._rollback_waybill_number_stock(db, allocated_stock_item.id)
+                booking.master_airwaybill_number = None
+                db.commit()
+            raise e
     
-    async def _poll_china_southern_air_booking_status(self, db, task: RPATask, booking: Booking, work_uuid: str, queue_uuid: str, queue_id: str):
-        """轮询南航订舱RPA状态"""
+    async def _poll_china_southern_air_booking_status(self, db, task: RPATask, booking: Booking, work_uuid: str, stock_item_id: int = None):
+        """轮询南航订舱RPA状态（运单号已从单号库预分配，不再从队列获取）"""
         max_polls = settings.RPA_POLL_MAX_COUNT
         poll_interval = settings.RPA_POLL_INTERVAL
         job_uuid = task.job_uuid or settings.RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID
@@ -1215,40 +1268,20 @@ class RPAWorker:
                         if dict_value:
                             booking.booking_status = dict_value
                         
-                        # 如果成功，获取运单号
+                        # 如果成功（运单号已预分配，直接标记成功）
                         if rpa_status == 5:
-                            waybill_number_retrieved = False
-                            # 优先使用传入的queue_uuid，如果为空则从数据库读取
-                            actual_queue_uuid = queue_uuid or booking.rpa_queue_uuid
-                            actual_queue_id = queue_id or booking.rpa_queue_id
-                            
-                            if actual_queue_uuid:
-                                try:
-                                    waybill_suffix = await rpa_service.get_china_southern_air_waybill_number(actual_queue_uuid)
-                                    if waybill_suffix:
-                                        booking.master_airwaybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_suffix)
-                                        waybill_number_retrieved = True
-                                except Exception as e:
-                                    print(f"{self._log_prefix} 获取南航运单号失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
-                            else:
-                                print(f"{self._log_prefix} 订舱 {booking.id} 没有queue_uuid，无法获取运单号")
-                            
-                            # 如果获取运单号失败，将状态设置为失败
-                            if not waybill_number_retrieved:
-                                booking.booking_status = "2"  # 失败
-                                print(f"{self._log_prefix} RPA返回成功但获取主单号失败，将状态设置为失败")
-                            
                             db.commit()
-                            # 只有成功获取运单号时才标记任务为成功
-                            rpa_task_service.complete_task(db, task.id, waybill_number_retrieved)
+                            rpa_task_service.complete_task(db, task.id, True)
                             return
                         
-                        # 如果失败，清理队列
+                        # 如果失败，回退单号
                         elif rpa_status == 3:
                             # 识别具体的异常信息（如：机型识别失败）
                             await self._check_csa_booking_feedback(db, booking, work_uuid)
-                            
+                            booking.master_airwaybill_number = None
                             db.commit()
+                            if stock_item_id:
+                                self._rollback_waybill_number_stock(db, stock_item_id)
                             rpa_task_service.complete_task(db, task.id, False, error_message="RPA订舱执行失败")
                             return
                         
@@ -1257,9 +1290,12 @@ class RPAWorker:
                 print(f"{self._log_prefix} 轮询订舱状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
-        # 轮询超时
+        # 轮询超时，回退单号
         booking.booking_status = "2"  # 失败
+        booking.master_airwaybill_number = None
         db.commit()
+        if stock_item_id:
+            self._rollback_waybill_number_stock(db, stock_item_id)
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA订舱状态轮询超时")
     
     async def _execute_china_southern_air_booking_cancel(self, db, task: RPATask):
@@ -1387,6 +1423,7 @@ class RPAWorker:
             db.commit()
         
         # 调用RPA接口
+        queue_names = self._build_queue_names_for_flow(queues_info)
         try:
             rpa_response = await asyncio.wait_for(
                 rpa_service.create_china_southern_air_direct_invoice(
@@ -1394,7 +1431,8 @@ class RPAWorker:
                     system_account=params.get("system_account", ""),
                     login_password=params.get("login_password", ""),
                     waybill_number_8=params.get("waybill_number_8", ""),
-                    job_uuid=task.job_uuid
+                    job_uuid=task.job_uuid,
+                    queue_names=queue_names
                 ),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
@@ -1708,7 +1746,21 @@ class RPAWorker:
             waybill.rpa_queue_uuids = json.dumps(queues_info, ensure_ascii=False)
             db.commit()
         
+        # 从单号库预分配运单号
+        allocated_stock_item = None
+        try:
+            allocated_stock_item = self._allocate_waybill_number_from_stock(db, "china_southern_air")
+            waybill.waybill_number = allocated_stock_item.full_number
+            db.commit()
+            print(f"{self._log_prefix} 已从单号库分配南航运单号: {allocated_stock_item.number_suffix} (full: {allocated_stock_item.full_number})")
+        except Exception as e:
+            waybill.airline_record_status = "2"  # 失败
+            db.commit()
+            raise Exception(f"单号库分配失败: {_get_error_detail(e)}")
+        
         # 调用RPA接口
+        queue_names = self._build_queue_names_for_flow(queues_info)
+        queue_names["allocated_waybill_number"] = allocated_stock_item.number_suffix
         try:
             rpa_response = await asyncio.wait_for(
                 rpa_service.create_china_southern_air_waybill(
@@ -1745,7 +1797,8 @@ class RPAWorker:
                     storage_and_transportation_precautions=params.get("storage_and_transportation_precautions", ""),
                     product_name=params.get("product_name", ""),
                     booking_volume=params.get("booking_volume", ""),
-                    job_uuid=task.job_uuid
+                    job_uuid=task.job_uuid,
+                    queue_names=queue_names
                 ),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
@@ -1763,16 +1816,21 @@ class RPAWorker:
             rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
             
             # 轮询RPA状态
-            await self._poll_china_southern_air_waybill_status(db, task, waybill, work_uuid, queues_info, params)
+            await self._poll_china_southern_air_waybill_status(db, task, waybill, work_uuid, queues_info, params, allocated_stock_item.id)
             
         except Exception as e:
             # 清理队列
             await self._cleanup_queues(queues_info)
             waybill.rpa_queue_uuids = None
             db.commit()
+            # 回退单号
+            if allocated_stock_item:
+                self._rollback_waybill_number_stock(db, allocated_stock_item.id)
+                waybill.waybill_number = None
+                db.commit()
             raise e
     
-    async def _poll_china_southern_air_waybill_status(self, db, task: RPATask, waybill: Waybill, work_uuid: str, queues_info: dict, params: dict):
+    async def _poll_china_southern_air_waybill_status(self, db, task: RPATask, waybill: Waybill, work_uuid: str, queues_info: dict, params: dict, stock_item_id: int = None):
         """轮询南航新增运单RPA状态"""
         max_polls = settings.RPA_POLL_MAX_COUNT
         poll_interval = settings.RPA_POLL_INTERVAL
@@ -1797,21 +1855,21 @@ class RPAWorker:
                         if dict_value:
                             waybill.airline_record_status = dict_value
                         
-                        # 如果成功，获取队列数据
+                        # 如果成功，获取队列数据（运单号已预分配，只需获取费率等）
                         if rpa_status == 5:
-                            # 处理成功后的数据获取，如果获取运单号失败，方法内部会将状态设置为失败并返回
                             await self._process_china_southern_air_waybill_success(db, waybill, queues_info, params)
-                            # 检查最终状态，如果运单号获取失败，状态会被设置为失败
                             db.refresh(waybill)
-                            is_success = waybill.airline_record_status == "3" and waybill.waybill_number is not None
-                            rpa_task_service.complete_task(db, task.id, is_success)
+                            rpa_task_service.complete_task(db, task.id, True)
                             return
                         
-                        # 如果失败，清理队列
+                        # 如果失败，清理队列并回退单号
                         elif rpa_status == 3:
                             await self._cleanup_queues(queues_info)
                             waybill.rpa_queue_uuids = None
+                            waybill.waybill_number = None
                             db.commit()
+                            if stock_item_id:
+                                self._rollback_waybill_number_stock(db, stock_item_id)
                             rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单执行失败")
                             return
                         
@@ -1820,59 +1878,25 @@ class RPAWorker:
                 print(f"{self._log_prefix} 轮询南航新增运单状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
-        # 轮询超时
+        # 轮询超时，回退单号
         await self._cleanup_queues(queues_info)
         waybill.rpa_queue_uuids = None
         waybill.airline_record_status = "2"  # 失败
+        waybill.waybill_number = None
         db.commit()
+        if stock_item_id:
+            self._rollback_waybill_number_stock(db, stock_item_id)
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单状态轮询超时")
     
     async def _process_china_southern_air_waybill_success(self, db, waybill: Waybill, queues_info: dict, params: dict):
-        """处理南航新增运单成功后的数据获取和结算单创建"""
-        waybill_number_data = None
+        """处理南航新增运单成功后的数据获取和结算单创建（运单号已从单号库预分配）"""
         freight_rate_data = None
         freight_data = None
         fuel_costs_data = None
         extended_service_fee_data = None
         
-        # 队列数据获取重试配置（RPA状态变为成功后，数据写入队列可能有延迟）
-        max_queue_retries = 5  # 最大重试次数
-        queue_retry_interval = 2  # 每次重试间隔（秒）
-        
         try:
-            # 获取运单号（带重试机制，因为RPA写入队列可能有延迟）
-            waybill_number_retrieved = False
-            if "waybill_number" in queues_info:
-                for retry in range(max_queue_retries):
-                    try:
-                        waybill_number_data = await rpa_service.get_china_southern_air_waybill_number(
-                            queues_info["waybill_number"]["queueUUID"]
-                        )
-                        if waybill_number_data:
-                            waybill_number = rpa_service.format_china_southern_air_waybill_number(waybill_number_data)
-                            waybill.waybill_number = waybill_number
-                            waybill_number_retrieved = True
-                            print(f"{self._log_prefix} 获取南航运单号成功: {waybill_number}，重试次数: {retry}")
-                            break
-                        else:
-                            # 返回为空，等待后重试
-                            if retry < max_queue_retries - 1:
-                                print(f"{self._log_prefix} 南航队列数据为空，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）")
-                                await asyncio.sleep(queue_retry_interval)
-                    except Exception as e:
-                        # 发生异常，等待后重试
-                        if retry < max_queue_retries - 1:
-                            print(f"{self._log_prefix} 获取南航运单号失败: {_get_error_detail(e)}，等待 {queue_retry_interval} 秒后重试（{retry + 1}/{max_queue_retries}）\n{traceback.format_exc()}")
-                            await asyncio.sleep(queue_retry_interval)
-                        else:
-                            print(f"{self._log_prefix} 获取南航运单号最终失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
-            
-            # 如果获取运单号失败，将状态设置为失败
-            if not waybill_number_retrieved:
-                waybill.airline_record_status = "2"  # 失败
-                print(f"{self._log_prefix} RPA返回成功但获取南航运单号失败（已重试{max_queue_retries}次），将状态设置为失败")
-                db.commit()
-                return
+            # 运单号已在调用RPA前从单号库预分配，无需从队列获取
             
             # 获取费率
             if "freight_rate" in queues_info:
@@ -1910,8 +1934,8 @@ class RPAWorker:
                 except Exception as e:
                     print(f"{self._log_prefix} 获取延伸服务费失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
             
-            # 创建结算单
-            if waybill_number_data:
+            # 创建结算单（运单号已从单号库预分配）
+            if waybill.waybill_number:
                 form_data_dict = json.loads(waybill.form_data)
                 flight_info = form_data_dict.get("flight_info", {})
                 cargo_info = form_data_dict.get("cargo_info", {})
@@ -2036,6 +2060,7 @@ class RPAWorker:
             db.commit()
         
         # 调用RPA接口
+        queue_names = self._build_queue_names_for_flow(queues_info)
         try:
             rpa_response = await asyncio.wait_for(
                 rpa_service.create_china_southern_air_invoice_with_data(
@@ -2064,7 +2089,8 @@ class RPAWorker:
                     order_contact_phone=params.get("order_contact_phone", ""),
                     order_contact_name=params.get("order_contact_name", ""),
                     settlement_file_number=params.get("settlement_file_number", ""),
-                    job_uuid=task.job_uuid
+                    job_uuid=task.job_uuid,
+                    queue_names=queue_names
                 ),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
