@@ -77,6 +77,36 @@ class RPAService:
             except Exception as e:
                 raise BadRequestException(f"RPA创建任务接口调用异常: {repr(e)}")
 
+    async def delete_rpa_job(self, job_uuid: str) -> bool:
+        """
+        删除RPA任务 (Job)
+        
+        Endpoint: PUT /openAPI/v1/job/{job_uuid}/4
+        其中 4 为固定值表示删除操作
+        
+        Args:
+            job_uuid: RPA任务的 jobUUID
+        
+        Returns:
+            是否删除成功
+        """
+        url = f"{self.base_url}/openAPI/v1/job/{job_uuid}/4"
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                response = await client.put(url, headers=self._get_headers())
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") == 0 and result.get("data") is True:
+                    return True
+                else:
+                    print(f"RPA删除Job接口返回异常: job_uuid={job_uuid}, response={result}")
+                    return False
+            except Exception as e:
+                print(f"RPA删除Job接口调用失败: job_uuid={job_uuid}, error={repr(e)}")
+                return False
+
     async def create_keep_login_job(
         self,
         job_uuid: str,

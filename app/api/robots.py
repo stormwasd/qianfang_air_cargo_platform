@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BadRequestException, NotFoundException, ConflictException
 from app.core.response import success_response
 from app.database import get_db
-from app.models.robot import Robot, TaskProcess, RobotJob
+from app.models.robot import Robot, TaskProcess, RobotJob, RobotQueue
 from app.models.rpa_task import RPATaskType
 from app.schemas.robot import RobotCreateOrUpdate, RobotListQuery, TaskProcessCreateUpdate, TaskProcessResponse
 from app.api.deps import require_permission
@@ -66,7 +66,7 @@ async def create_or_update_robot(
     task_permissions_json = json.dumps(payload.task_permissions, ensure_ascii=False)
 
     if payload.id:
-        # ========== 修改模式 ==========
+        # ========== 修改模式（先清理旧数据，再重建）==========
         robot = db.query(Robot).filter(Robot.id == int(payload.id)).first()
         if not robot:
             raise NotFoundException("机器人记录不存在")
@@ -80,7 +80,10 @@ async def create_or_update_robot(
             if existing:
                 raise ConflictException("该机器人ID已被其他机器人使用")
 
-        # 更新字段
+        # 1. 先清理旧的远程 Job 和本地 robot_jobs/robot_queues
+        await robot_job_service.cleanup_robot(db, robot)
+
+        # 2. 更新字段
         robot.robot_id = payload.robot_id
         robot.name = payload.name
         robot.location = payload.location
@@ -92,7 +95,7 @@ async def create_or_update_robot(
         db.commit()
         db.refresh(robot)
 
-        # 异步/后台同步生成 RPA Job（这里先简单同步执行，后续可考虑使用 BackgroundTasks）
+        # 3. 根据新数据重建 RPA Job 和队列配置
         await robot_job_service.sync_robot_jobs(db, robot)
 
         # 热同步 Worker 线程（状态变更时自动启动/停止对应 Worker，无需重启服务）
@@ -308,6 +311,48 @@ async def get_robot_detail(
     return success_response(data=_format_robot_response(robot, db), msg="查询成功")
 
 
+@router.delete("/{robot_id}", summary="删除机器人")
+async def delete_robot(
+    robot_id: str,
+    current_user=Depends(require_permission("robot")),
+    db: Session = Depends(get_db),
+):
+    """
+    删除机器人（需要robot权限或管理员权限）
+    
+    删除流程：
+    1. 远程调用 RPA 接口删除该机器人的所有 Job
+    2. 删除本地 robot_jobs 记录
+    3. 删除本地 robot_queues 记录
+    4. 删除 robots 表记录
+    5. 停止对应的 Worker 线程
+    """
+    try:
+        robot_id_int = int(robot_id)
+    except ValueError:
+        raise BadRequestException("机器人ID格式错误")
+
+    robot = db.query(Robot).filter(Robot.id == robot_id_int).first()
+    if not robot:
+        raise NotFoundException("机器人不存在")
+
+    robot_name = robot.name
+
+    # 1. 清理关联资源（远程删除 Job + 本地删除 robot_jobs + robot_queues）
+    await robot_job_service.cleanup_robot(db, robot)
+
+    # 2. 删除机器人记录
+    db.delete(robot)
+    db.commit()
+
+    # 3. 热同步 Worker 线程（删除机器人后自动停止对应 Worker）
+    from app.services.rpa_worker import rpa_worker_manager
+    rpa_worker_manager.sync_workers()
+
+    logger.info("删除机器人成功: id=%s, name=%s", robot_id_int, robot_name)
+    return success_response(msg=f"机器人 {robot_name} 删除成功")
+
+
 
 # ======================== 响应格式化工具 ========================
 
@@ -334,6 +379,14 @@ def _format_robot_response(robot: Robot, db: Session) -> dict:
     job_mapping = {j.task_name: j.job_uuid for j in jobs}
     job_name_mapping = {j.task_name: j.job_name for j in jobs if j.job_name}
 
+    # 获取队列映射（按 task_name 分组）
+    queues = db.query(RobotQueue).filter(RobotQueue.robot_id == robot.id).all()
+    queue_mapping = {}
+    for q in queues:
+        if q.task_name not in queue_mapping:
+            queue_mapping[q.task_name] = {}
+        queue_mapping[q.task_name][q.queue_key] = q.queue_name
+
     return {
         "id": str(robot.id),
         "robot_id": robot.robot_id,
@@ -342,6 +395,7 @@ def _format_robot_response(robot: Robot, db: Session) -> dict:
         "task_permissions": task_permissions,
         "job_mapping": job_mapping, # 返回 task_name -> jobUUID 的映射
         "job_name_mapping": job_name_mapping, # 返回 task_name -> RPA任务名称 的映射
+        "queue_mapping": queue_mapping, # 返回 task_name -> {queue_key: queue_name} 的映射
         "extra_config": extra_config,
         "status": robot.status,
         "created_at": format_datetime_china(robot.created_at),

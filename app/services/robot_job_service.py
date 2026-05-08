@@ -226,4 +226,60 @@ class RobotJobService:
         except Exception as e:
             logger.error(f"生成RPA Job失败: robot={robot.name}, task={process.task_name}, error={str(e)}")
 
+    @staticmethod
+    async def cleanup_robot(db: Session, robot: Robot):
+        """
+        清理机器人关联的所有资源：
+        1. 远程调用 RPA 接口逐个删除 robot_jobs 中的 Job
+        2. 删除本地 robot_jobs 记录
+        3. 删除本地 robot_queues 记录
+        
+        注意：此方法不删除 robots 表本身的记录，由调用方负责。
+        """
+        import asyncio
+        
+        # 1. 获取该机器人所有的 Job 映射
+        jobs = db.query(RobotJob).filter(RobotJob.robot_id == robot.id).all()
+        
+        if jobs:
+            # 并发调用 RPA 删除接口（加速删除）
+            job_uuids = [j.job_uuid for j in jobs]
+            results = await RobotJobService._delete_remote_jobs(job_uuids)
+            
+            success_count = sum(1 for r in results if r)
+            logger.info(f"远程删除RPA Job: robot={robot.name}, 总数={len(job_uuids)}, 成功={success_count}")
+            
+            # 删除本地 robot_jobs 记录
+            db.query(RobotJob).filter(RobotJob.robot_id == robot.id).delete(synchronize_session=False)
+        
+        # 2. 删除本地 robot_queues 记录
+        db.query(RobotQueue).filter(RobotQueue.robot_id == robot.id).delete(synchronize_session=False)
+        
+        db.commit()
+        logger.info(f"清理机器人关联资源完成: robot={robot.name}, id={robot.id}")
+    
+    @staticmethod
+    async def _delete_remote_jobs(job_uuids: list) -> list:
+        """
+        并发删除多个远程 RPA Job（不因单个失败而中断）
+        
+        Args:
+            job_uuids: 待删除的 job_uuid 列表
+        
+        Returns:
+            每个删除操作的结果（True/False）
+        """
+        import asyncio
+        
+        async def _delete_one(job_uuid: str) -> bool:
+            try:
+                return await rpa_service.delete_rpa_job(job_uuid)
+            except Exception as e:
+                logger.error(f"远程删除RPA Job异常: job_uuid={job_uuid}, error={repr(e)}")
+                return False
+        
+        # 并发执行所有删除请求
+        tasks = [_delete_one(uuid) for uuid in job_uuids]
+        return await asyncio.gather(*tasks)
+
 robot_job_service = RobotJobService()
