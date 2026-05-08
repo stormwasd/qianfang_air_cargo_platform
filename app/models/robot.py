@@ -54,3 +54,20 @@ class RobotJob(Base):
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")
 
+
+class RobotQueue(Base):
+    """机器人队列配置表"""
+    __tablename__ = "robot_queues"
+    
+    id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="记录ID")
+    robot_id = Column(BigInteger, nullable=False, index=True, comment="机器人记录ID（FK robots.id）")
+    task_name = Column(String(100), nullable=False, index=True, comment="任务名称（如 SHENZHEN_AIR_WAYBILL_EXECUTE）")
+    queue_key = Column(String(100), nullable=False, comment="队列用途标识（如 waybill_number, freight_rate）")
+    queue_name = Column(String(200), nullable=False, comment="队列名称（全局唯一，带机器人标识）")
+    created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")
+    
+    __table_args__ = (
+        Index('uk_robot_task_queue', 'robot_id', 'task_name', 'queue_key', unique=True),
+    )
+

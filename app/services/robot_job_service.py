@@ -7,10 +7,12 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy.orm import Session
-from app.models.robot import Robot, TaskProcess, RobotJob
+from app.models.robot import Robot, TaskProcess, RobotJob, RobotQueue
 from app.services.rpa_service import RPAService
+from app.services.rpa_task_service import TASK_QUEUE_CONFIGS
 from app.utils.robot_crypto import decrypt_robot_id
 from app.utils.helpers import get_china_now
+from app.utils.snowflake import generate_id
 
 logger = logging.getLogger(__name__)
 rpa_service = RPAService()
@@ -78,6 +80,48 @@ class RobotJobService:
                 or existing_job.process_detail_uuid != process.process_detail_uuid 
                 or getattr(existing_job, "bot_uuid", None) != bot_uuid):
                 await RobotJobService._create_or_update_job(db, robot, bot_uuid, process, existing_job)
+        
+        # 同步队列配置
+        RobotJobService._sync_robot_queues(db, robot, permissions)
+
+    @staticmethod
+    def _sync_robot_queues(db: Session, robot: Robot, permissions: list):
+        """
+        根据机器人的任务权限，自动生成专属队列名称并存入 robot_queues 表。
+        
+        命名规则: {task_name_lower}_queue_{queue_key}_{robot_db_id}
+        示例: shenzhen_air_waybill_execute_queue_waybill_number_310680091942326272
+        """
+        # 获取已有的队列配置
+        existing_queues = db.query(RobotQueue).filter(RobotQueue.robot_id == robot.id).all()
+        existing_map = {(q.task_name, q.queue_key): q for q in existing_queues}
+        
+        for task_name in permissions:
+            queue_keys = TASK_QUEUE_CONFIGS.get(task_name)
+            if not queue_keys:
+                # 该任务类型不需要队列
+                continue
+            
+            for queue_key in queue_keys:
+                lookup = (task_name, queue_key)
+                if lookup in existing_map:
+                    # 已存在，跳过
+                    continue
+                
+                # 生成全局唯一的队列名称
+                queue_name = f"{task_name.lower()}_queue_{queue_key}_{robot.id}"
+                
+                new_queue = RobotQueue(
+                    id=generate_id(),
+                    robot_id=robot.id,
+                    task_name=task_name,
+                    queue_key=queue_key,
+                    queue_name=queue_name
+                )
+                db.add(new_queue)
+                logger.info(f"生成队列配置: robot={robot.name}, task={task_name}, key={queue_key}, name={queue_name}")
+        
+        db.commit()
 
     @staticmethod
     async def sync_all_robots_for_process(db: Session, task_name: str):
@@ -104,11 +148,9 @@ class RobotJobService:
             db.rollback()
 
         # 查找所有拥有此权限的机器人
-        # 注意：task_permissions 存储为 JSON 字符串，使用 LIKE 匹配
         robots = db.query(Robot).filter(Robot.task_permissions.like(f'%"{task_name}"%')).all()
         
         for robot in robots:
-            # 再次精确验证权限列表
             try:
                 perms = json.loads(robot.task_permissions)
                 if task_name not in perms:
@@ -116,7 +158,6 @@ class RobotJobService:
             except:
                 continue
 
-            # 解密机器人ID
             try:
                 bot_uuid = decrypt_robot_id(robot.robot_id)
             except:
@@ -131,6 +172,9 @@ class RobotJobService:
                 or existing_job.process_detail_uuid != process.process_detail_uuid 
                 or getattr(existing_job, "bot_uuid", None) != bot_uuid):
                 await RobotJobService._create_or_update_job(db, robot, bot_uuid, process, existing_job)
+            
+            # 同步队列配置
+            RobotJobService._sync_robot_queues(db, robot, perms)
 
     @staticmethod
     async def _create_or_update_job(db: Session, robot: Robot, bot_uuid: str, process: TaskProcess, existing_job: Optional[RobotJob]):
@@ -183,4 +227,3 @@ class RobotJobService:
             logger.error(f"生成RPA Job失败: robot={robot.name}, task={process.task_name}, error={str(e)}")
 
 robot_job_service = RobotJobService()
-

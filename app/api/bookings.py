@@ -469,10 +469,7 @@ async def execute_booking(
     if not business_config:
         raise BadRequestException("业务参数配置不存在，无法调用南航订舱接口")
     
-    # 构建队列参数（所有订舱共享，只使用运单号队列）
-    queue_params = {
-        "queue_name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_WAYBILL_NUMBER
-    }
+
     
     # 存储每个订舱的执行结果
     execute_results = []
@@ -557,15 +554,13 @@ async def execute_booking(
                 failed_count += 1
                 continue
             
-            # 创建RPA任务
+            # 创建RPA任务（队列名称不再硬编码，由 Worker 消费时从 robot_queues 表动态获取）
             task = rpa_task_service.create_task(
                 db=db,
                 task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
                 target_type=RPATargetType.BOOKING.value,
                 target_id=booking_id,
                 params=rpa_params,
-                queue_params=queue_params,
-                job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID,
                 priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
                 created_by=current_user.id if current_user else None
             )
@@ -1601,25 +1596,13 @@ async def direct_invoice(
         "shipper": shipper  # 用于创建结算单
     }
     
-    # 构建队列参数（使用4个费用队列）
-    queue_params = {
-        "queue_configs": [
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_RATE, "key": "rate"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FREIGHT, "key": "freight"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FUEL_COSTS, "key": "fuel_costs"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_EXTENDED_SERVICE_FEE, "key": "extended_service_fee"}
-        ]
-    }
-    
-    # 创建RPA任务
+    # 创建RPA任务（队列名称不再硬编码，由 Worker 消费时从 robot_queues 表动态获取）
     task = rpa_task_service.create_task(
         db=db,
         task_type=RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_INVOICE.value,
         target_type=RPATargetType.BOOKING.value,
         target_id=int(booking_id),
         params=rpa_params,
-        queue_params=queue_params,
-        job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID,
         priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
         created_by=current_user.id if current_user else None
     )
@@ -1808,25 +1791,13 @@ async def invoice_with_data(
     if missing_params:
         raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
     
-    # 构建队列参数（使用4个费用队列）
-    queue_params = {
-        "queue_configs": [
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_RATE, "key": "rate"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FREIGHT, "key": "freight"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FUEL_COSTS, "key": "fuel_costs"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_EXTENDED_SERVICE_FEE, "key": "extended_service_fee"}
-        ]
-    }
-    
-    # 创建RPA任务
+    # 创建RPA任务（队列名称不再硬编码，由 Worker 消费时从 robot_queues 表动态获取）
     task = rpa_task_service.create_task(
         db=db,
         task_type=RPATaskType.CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA.value,
         target_type=RPATargetType.BOOKING.value,
         target_id=int(booking_id),
         params=rpa_params,
-        queue_params=queue_params,
-        job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID,
         priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
         created_by=current_user.id if current_user else None
     )

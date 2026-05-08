@@ -1165,25 +1165,13 @@ async def execute_waybill(
     if missing_params:
         raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
     
-    # 构建队列参数
-    queue_params = {
-        "queue_configs": [
-            {"name": settings.RPA_SHENZHEN_AIR_QUEUE_WAYBILL_NUMBER, "key": "waybill_number"},
-            {"name": settings.RPA_SHENZHEN_AIR_QUEUE_FREIGHT_RATE, "key": "freight_rate"},
-            {"name": settings.RPA_SHENZHEN_AIR_QUEUE_FREIGHT, "key": "freight"},
-            {"name": settings.RPA_SHENZHEN_AIR_QUEUE_DELIVERY_FEE, "key": "delivery_fee"}
-        ]
-    }
-    
-    # 创建RPA任务
+    # 创建RPA任务（队列名称不再硬编码，由 Worker 消费时从 robot_queues 表动态获取）
     task = rpa_task_service.create_task(
         db=db,
         task_type=RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value,
         target_type=RPATargetType.WAYBILL.value,
         target_id=int(waybill_id),
         params=rpa_params,
-        queue_params=queue_params,
-        job_uuid=settings.RPA_SHENZHEN_AIR_JOB_UUID,
         priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
         created_by=current_user.id if current_user else None
     )
@@ -1410,26 +1398,13 @@ async def execute_china_southern_air_waybill(
     if missing_params:
         raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
     
-    # 构建队列参数（5个队列：运单号 + 4个费用队列）
-    queue_params = {
-        "queue_configs": [
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_WAYBILL_NUMBER, "key": "waybill_number"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_RATE, "key": "freight_rate"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FREIGHT, "key": "freight"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_FUEL_COSTS, "key": "fuel_costs"},
-            {"name": settings.RPA_CHINA_SOUTHERN_AIR_QUEUE_EXTENDED_SERVICE_FEE, "key": "extended_service_fee"}
-        ]
-    }
-    
-    # 创建RPA任务
+    # 创建RPA任务（队列名称不再硬编码，由 Worker 消费时从 robot_queues 表动态获取）
     task = rpa_task_service.create_task(
         db=db,
         task_type=RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value,
         target_type=RPATargetType.WAYBILL.value,
         target_id=int(waybill_id),
         params=rpa_params,
-        queue_params=queue_params,
-        job_uuid=settings.RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID,
         priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
         created_by=current_user.id if current_user else None
     )

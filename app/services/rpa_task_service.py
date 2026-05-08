@@ -29,6 +29,15 @@ PRINT_TYPE_REVERSE_MAPPING = {v: k for k, v in PRINT_TYPE_MAPPING.items()}
 # 所有打印相关的任务类型集合
 PRINT_TASK_TYPES = set(PRINT_TYPE_MAPPING.values())
 
+# 任务类型 → 需要的队列 key 列表
+# 只有以下任务类型需要 RPA 队列，其他任务类型（作废、打印、保持登录等）不使用队列
+TASK_QUEUE_CONFIGS = {
+    "SHENZHEN_AIR_WAYBILL_EXECUTE": ["waybill_number", "freight_rate", "freight", "delivery_fee"],
+    "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE": ["waybill_number"],
+    "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE": ["waybill_number", "freight_rate", "freight", "fuel_costs", "extended_service_fee"],
+    "CHINA_SOUTHERN_AIR_DIRECT_INVOICE": ["rate", "freight", "fuel_costs", "extended_service_fee"],
+    "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA": ["rate", "freight", "fuel_costs", "extended_service_fee"],
+}
 
 class RPATaskService:
     """RPA任务队列服务类"""

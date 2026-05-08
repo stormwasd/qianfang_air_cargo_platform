@@ -179,6 +179,48 @@ class RPAWorker:
         if modified:
             task.params = json.dumps(params, ensure_ascii=False)
     
+    def _resolve_queue_names(self, db, task: RPATask):
+        """
+        从 robot_queues 表读取该机器人专属的队列名称，动态覆盖 task.queue_params。
+        
+        覆盖逻辑：
+        1. 根据 task.robot_id + task.task_type 查询 robot_queues 表
+        2. 如果找到队列配置，重新构造 queue_params（统一为 queue_configs 格式）
+        3. 将新的 queue_params 写回 task.queue_params
+        """
+        from app.models.robot import RobotQueue
+        from app.services.rpa_task_service import TASK_QUEUE_CONFIGS
+        
+        # 只有需要队列的任务类型才处理
+        if task.task_type not in TASK_QUEUE_CONFIGS:
+            return
+        
+        robot_id = task.robot_id
+        if not robot_id:
+            return
+        
+        # 查询该机器人该任务类型的所有队列配置
+        queues = db.query(RobotQueue).filter(
+            RobotQueue.robot_id == robot_id,
+            RobotQueue.task_name == task.task_type
+        ).all()
+        
+        if not queues:
+            print(f"{self._log_prefix} [队列] 未找到机器人 {robot_id} 的队列配置（task_type={task.task_type}），保留原始 queue_params")
+            return
+        
+        # 构造统一格式的 queue_configs
+        queue_configs = []
+        for q in queues:
+            queue_configs.append({
+                "name": q.queue_name,
+                "key": q.queue_key
+            })
+        
+        new_queue_params = {"queue_configs": queue_configs}
+        task.queue_params = json.dumps(new_queue_params, ensure_ascii=False)
+        print(f"{self._log_prefix} [队列] 已替换为机器人专属队列: {[c['key'] + '=' + c['name'] for c in queue_configs]}")
+    
     async def _process_one_task(self):
         """处理一个任务"""
         import json as _json
@@ -226,6 +268,9 @@ class RPAWorker:
             
             # 5. 应用机器人 extra_config 参数覆盖（替换 system_account/login_password/printer_name 等）
             self._apply_extra_config_overrides(db, task, robot)
+            
+            # 6. 动态替换队列名称（从 robot_queues 表获取该机器人专属的队列名称）
+            self._resolve_queue_names(db, task)
             
             db.commit()
             
@@ -1083,26 +1128,30 @@ class RPAWorker:
         booking.booking_status = "1"  # 执行中
         db.commit()
         
-        # 创建队列
+        # 创建队列（统一 queue_configs 格式）
         queue_uuid = None
         queue_id = None
         if queue_params:
-            queue_name = queue_params.get("queue_name", "")
-            if queue_name:
-                try:
-                    queue_data = await asyncio.wait_for(
-                        rpa_service.create_queue(queue_name=queue_name, max_queue_number=999, is_expire=False),
-                        timeout=settings.RPA_QUEUE_TASK_TIMEOUT
-                    )
-                    queue_uuid = queue_data.get("queueUUID", "")
-                    queue_id = str(queue_data.get("queueID", ""))
-                    
-                    # 保存队列信息到订舱
-                    booking.rpa_queue_uuid = queue_uuid
-                    booking.rpa_queue_id = queue_id
-                    db.commit()
-                except Exception as e:
-                    print(f"{self._log_prefix} 创建队列失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
+            queue_configs = queue_params.get("queue_configs", [])
+            # 南航订舱只使用1个队列（waybill_number）
+            if queue_configs:
+                queue_config = queue_configs[0]
+                queue_name = queue_config.get("name", "")
+                if queue_name:
+                    try:
+                        queue_data = await asyncio.wait_for(
+                            rpa_service.create_queue(queue_name=queue_name, max_queue_number=999, is_expire=False),
+                            timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                        )
+                        queue_uuid = queue_data.get("queueUUID", "")
+                        queue_id = str(queue_data.get("queueID", ""))
+                        
+                        # 保存队列信息到订舱
+                        booking.rpa_queue_uuid = queue_uuid
+                        booking.rpa_queue_id = queue_id
+                        db.commit()
+                    except Exception as e:
+                        print(f"{self._log_prefix} 创建队列失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
         
         # 调用RPA接口
         try:
