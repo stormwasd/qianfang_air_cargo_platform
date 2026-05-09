@@ -97,7 +97,7 @@ class RPAWorker:
         
         覆盖规则：
         1. shenzhen_air_account: account+password 均非空 → 替换 system_account, login_password
-        2. printer_service: 三种打印机均非空 → 替换 printer_name (暂取 normal_a4_printer)
+        2. printer_service: 三种打印机均非空 → 将 printer_name（打印机类型）映射为真实打印机名称
         3. tangyi_program: executable_path 非空 → 替换 address_of_the_application_executable_file_tangyi
         
         只有当机器人的 location 与任务的 location 匹配时才进行覆盖。
@@ -140,24 +140,33 @@ class RPAWorker:
                     modified = True
                     print(f"{self._log_prefix} [extra_config] 覆盖 system_account/login_password (来自 shenzhen_air_account)")
         
-        # 2. printer_service 覆盖 printer_name (暂取 normal_a4_printer)
+        # 2. printer_service 覆盖 printer_name
+        #    printer_name 字段存储的是打印机类型（如 normal_a4_printer / dot_matrix_printer / label_printer），
+        #    通过机器人 printer_service 映射为真实打印机名称。
         printer_svc = extra_config.get("printer_service")
         if isinstance(printer_svc, dict):
             normal = printer_svc.get("normal_a4_printer", "")
             dot_matrix = printer_svc.get("dot_matrix_printer", "")
             label = printer_svc.get("label_printer", "")
             if normal and dot_matrix and label:
+                # 直接覆盖顶层 printer_name（打印机类型 → 真实名称）
                 if "printer_name" in params:
-                    params["printer_name"] = normal
-                    modified = True
-                    print(f"{self._log_prefix} [extra_config] 覆盖 printer_name → {normal} (来自 printer_service)")
-                # 对于打印子任务（tasks 数组内的 params），也进行覆盖
+                    resolved = printer_svc.get(params["printer_name"])
+                    if resolved:
+                        print(f"{self._log_prefix} [extra_config] 覆盖 printer_name: {params['printer_name']} → {resolved}")
+                        params["printer_name"] = resolved
+                        modified = True
+                    else:
+                        print(f"{self._log_prefix} [extra_config] printer_name '{params['printer_name']}' 不是已知的打印机类型，保持原值")
+                # 对于打印子任务（tasks 数组内的 params），也进行类型→名称转换
                 if "tasks" in params and isinstance(params["tasks"], list):
                     for sub_task in params["tasks"]:
                         sub_params = sub_task.get("params", {})
                         if isinstance(sub_params, dict) and "printer_name" in sub_params:
-                            sub_params["printer_name"] = normal
-                            modified = True
+                            resolved = printer_svc.get(sub_params["printer_name"])
+                            if resolved:
+                                sub_params["printer_name"] = resolved
+                                modified = True
         
         # 3. tangyi_program 覆盖 address_of_the_application_executable_file_tangyi
         tangyi = extra_config.get("tangyi_program")

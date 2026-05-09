@@ -91,7 +91,10 @@ def get_printer_name_from_config(
     document_type: str
 ) -> Optional[str]:
     """
-    从业务参数配置中获取指定文档类型对应的打印机名称
+    从业务参数配置中获取指定文档类型对应的打印机类型
+    
+    注意：printer_config 中的 printer_name 存储的是打印机类型（如 normal_a4_printer / dot_matrix_printer / label_printer），
+    而非真实的打印机名称。真实打印机名称在 Worker 消费时通过机器人 extra_config.printer_service 映射。
     
     Args:
         business_config: 业务参数配置
@@ -99,7 +102,7 @@ def get_printer_name_from_config(
         document_type: 文档类型（如：交接单、航司货运主单、航空货物安检申报清单、标签单）
     
     Returns:
-        打印机名称，如果未找到则返回None
+        打印机类型（如 normal_a4_printer），如果未找到则返回None
     """
     airline_config = business_config.get(airline, {})
     print_config = airline_config.get("print", {})
