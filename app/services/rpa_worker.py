@@ -2505,7 +2505,7 @@ class RPAWorker:
         
         # 检查是否有未完成的打印任务
         has_pending = any(
-            t.status in (RPATaskStatus.PENDING.value, RPATaskStatus.PROCESSING.value)
+            t.status in (RPATaskStatus.PENDING.value, RPATaskStatus.RUNNING.value)
             for t in other_print_tasks
         )
         
