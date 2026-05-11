@@ -284,7 +284,7 @@ class RPAWorker:
         
         stock_item.usage_status = "1"
         stock_item.usage_date = get_china_now().date()
-        db.flush()
+        db.commit()
         
         return stock_item
     
