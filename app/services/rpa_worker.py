@@ -285,24 +285,12 @@ class RPAWorker:
         stock_item.usage_status = "1"
         stock_item.usage_date = get_china_now().date()
         db.commit()
+        db.refresh(stock_item)
+        print(f"[单号库] 已分配单号 {stock_item.full_number}, usage_status={stock_item.usage_status}, usage_date={stock_item.usage_date}")
         
         return stock_item
     
-    @staticmethod
-    def _rollback_waybill_number_stock(db, stock_item_id: int):
-        """
-        回退已分配的运单号（RPA执行失败时调用）
-        
-        将 usage_status 改回 "0"(未使用)，usage_date 清空。
-        """
-        try:
-            stock_item = db.query(WaybillStockItem).filter(WaybillStockItem.id == stock_item_id).first()
-            if stock_item:
-                stock_item.usage_status = "0"
-                stock_item.usage_date = None
-                db.commit()
-        except Exception as e:
-            print(f"[单号库回退失败] stock_item_id={stock_item_id}: {repr(e)}")
+
     
     async def _process_one_task(self):
         """处理一个任务"""
@@ -1248,11 +1236,6 @@ class RPAWorker:
             await self._poll_china_southern_air_booking_status(db, task, booking, work_uuid, allocated_stock_item.id)
             
         except Exception as e:
-            # 回退单号
-            if allocated_stock_item:
-                self._rollback_waybill_number_stock(db, allocated_stock_item.id)
-                booking.master_airwaybill_number = None
-                db.commit()
             raise e
     
     async def _poll_china_southern_air_booking_status(self, db, task: RPATask, booking: Booking, work_uuid: str, stock_item_id: int = None):
@@ -1283,14 +1266,11 @@ class RPAWorker:
                             rpa_task_service.complete_task(db, task.id, True)
                             return
                         
-                        # 如果失败，回退单号
+                        # 如果失败
                         elif rpa_status == 3:
                             # 识别具体的异常信息（如：机型识别失败）
                             await self._check_csa_booking_feedback(db, booking, work_uuid)
-                            booking.master_airwaybill_number = None
                             db.commit()
-                            if stock_item_id:
-                                self._rollback_waybill_number_stock(db, stock_item_id)
                             rpa_task_service.complete_task(db, task.id, False, error_message="RPA订舱执行失败")
                             return
                         
@@ -1299,12 +1279,9 @@ class RPAWorker:
                 print(f"{self._log_prefix} 轮询订舱状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
-        # 轮询超时，回退单号
+        # 轮询超时
         booking.booking_status = "2"  # 失败
-        booking.master_airwaybill_number = None
         db.commit()
-        if stock_item_id:
-            self._rollback_waybill_number_stock(db, stock_item_id)
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA订舱状态轮询超时")
     
     async def _execute_china_southern_air_booking_cancel(self, db, task: RPATask):
@@ -1832,11 +1809,6 @@ class RPAWorker:
             await self._cleanup_queues(queues_info)
             waybill.rpa_queue_uuids = None
             db.commit()
-            # 回退单号
-            if allocated_stock_item:
-                self._rollback_waybill_number_stock(db, allocated_stock_item.id)
-                waybill.waybill_number = None
-                db.commit()
             raise e
     
     async def _poll_china_southern_air_waybill_status(self, db, task: RPATask, waybill: Waybill, work_uuid: str, queues_info: dict, params: dict, stock_item_id: int = None):
@@ -1871,14 +1843,11 @@ class RPAWorker:
                             rpa_task_service.complete_task(db, task.id, True)
                             return
                         
-                        # 如果失败，清理队列并回退单号
+                        # 如果失败，清理队列
                         elif rpa_status == 3:
                             await self._cleanup_queues(queues_info)
                             waybill.rpa_queue_uuids = None
-                            waybill.waybill_number = None
                             db.commit()
-                            if stock_item_id:
-                                self._rollback_waybill_number_stock(db, stock_item_id)
                             rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单执行失败")
                             return
                         
@@ -1887,14 +1856,11 @@ class RPAWorker:
                 print(f"{self._log_prefix} 轮询南航新增运单状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
-        # 轮询超时，回退单号
+        # 轮询超时
         await self._cleanup_queues(queues_info)
         waybill.rpa_queue_uuids = None
         waybill.airline_record_status = "2"  # 失败
-        waybill.waybill_number = None
         db.commit()
-        if stock_item_id:
-            self._rollback_waybill_number_stock(db, stock_item_id)
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单状态轮询超时")
     
     async def _process_china_southern_air_waybill_success(self, db, waybill: Waybill, queues_info: dict, params: dict):

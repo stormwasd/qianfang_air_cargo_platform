@@ -203,7 +203,7 @@ class KeepLoginScheduler:
                         target_id=robot.id,
                         params=creds,
                         job_uuid=job_uuid,
-                        priority=2,  # 保持登录任务优先级高于普通业务任务
+                        priority=3,  # 保持登录任务最高优先级
                         created_by=None,
                         robot_id=robot.id,  # 指定消费机器人
                     )

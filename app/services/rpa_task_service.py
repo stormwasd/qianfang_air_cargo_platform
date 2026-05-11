@@ -39,6 +39,20 @@ TASK_QUEUE_CONFIGS = {
     "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA": ["rate", "freight", "fuel_costs", "extended_service_fee"],
 }
 
+# 任务类型 → 默认优先级（数值越大越优先）
+# 未在此映射中的任务类型使用 settings.RPA_QUEUE_DEFAULT_PRIORITY（默认 1）
+TASK_PRIORITY_MAP = {
+    # 保持登录任务：最高优先级（确保登录态不丢失）
+    RPATaskType.SHENZHEN_AIR_KEEP_LOGIN.value: 3,
+    RPATaskType.CHINA_SOUTHERN_AIR_KEEP_LOGIN.value: 3,
+    RPATaskType.TANGYI_KEEP_LOGIN.value: 3,
+    # 打印类任务：高于普通业务任务
+    RPATaskType.SHENZHEN_AIR_MAIN_WAYBILL_PRINT.value: 2,
+    RPATaskType.CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT.value: 2,
+    RPATaskType.CHINA_SOUTHERN_AIR_SECURITY_PRINT.value: 2,
+    RPATaskType.CHINA_SOUTHERN_AIR_LABEL_PRINT.value: 2,
+}
+
 class RPATaskService:
     """RPA任务队列服务类"""
     
@@ -92,9 +106,9 @@ class RPATaskService:
         Returns:
             创建的任务对象
         """
-        # 使用配置文件中的默认优先级
+        # 优先级自动推断：先查 TASK_PRIORITY_MAP，未命中则使用配置文件默认值
         if priority is None:
-            priority = settings.RPA_QUEUE_DEFAULT_PRIORITY
+            priority = TASK_PRIORITY_MAP.get(task_type, settings.RPA_QUEUE_DEFAULT_PRIORITY)
         
         # ---- 自动推断 location ----
         if location is None:
