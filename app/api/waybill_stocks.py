@@ -272,9 +272,9 @@ async def create_waybill_stock_batch(
     db.add(batch)
     db.flush()  # 获取 batch.id
     
-    # 4. 批量创建单号详情记录
+    # 4. 批量创建单号详情记录（按单号从大到小写入，确保分配时优先使用大单号）
     items = []
-    for suffix in number_suffixes:
+    for suffix in reversed(number_suffixes):
         item = WaybillStockItem(
             batch_id=batch.id,
             claim_date=payload.claim_date,
