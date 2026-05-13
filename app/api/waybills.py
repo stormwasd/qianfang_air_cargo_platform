@@ -1949,6 +1949,10 @@ async def print_single_document(
         location=airline_code
     )
     
+    # 明确设置打印状态为执行中，供前端展示
+    waybill.document_print_status = "1"
+    db.commit()
+    
     # 刷新运单数据
     db.refresh(waybill)
     

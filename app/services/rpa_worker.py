@@ -2380,6 +2380,10 @@ class RPAWorker:
                 print(f"{self._log_prefix} [自动打单] 没有可执行的打印任务（task_count=0），跳过自动打单。请检查业务参数中 {airline_code}.print.printer_config 是否已配置打印机")
                 return
             
+            # 批量创建打印任务前，预先将打单状态更新为“执行中”，防止任务执行过快导致的并发状态覆写
+            waybill.document_print_status = "1"
+            db.commit()
+            
             # 打印任务详情
             sub_tasks = print_tasks.get("tasks", [])
             for i, t in enumerate(sub_tasks):
@@ -2422,17 +2426,6 @@ class RPAWorker:
         """
         params = json.loads(task.params) if isinstance(task.params, str) else task.params
         
-        # 使用悲观锁保护状态更新，避免并发覆写
-        waybill = db.query(Waybill).filter(Waybill.id == task.target_id).with_for_update().first()
-        if not waybill:
-            db.rollback()
-            raise Exception("运单不存在")
-        
-        if waybill.document_print_status != "1":
-            waybill.document_print_status = "1"  # 打单中
-            
-        db.commit()
-        
         # 将 RPATaskType 枚举值映射为 _execute_single_print_task 所需的小写类型字符串
         print_sub_type = PRINT_TYPE_REVERSE_MAPPING.get(task.task_type)
         if not print_sub_type:
@@ -2447,9 +2440,10 @@ class RPAWorker:
             
             if success:
                 print(f"{self._log_prefix} 打印任务执行成功: {task.task_type}")
+                # 先完成并删除任务，防止_update_waybill_print_status并发查询时误判为RUNNING
+                rpa_task_service.complete_task(db, task.id, True)
                 # 检查该运单是否还有其他未完成的打印任务
                 self._update_waybill_print_status(db, task.target_id, task)
-                rpa_task_service.complete_task(db, task.id, True)
             else:
                 print(f"{self._log_prefix} 打印任务执行失败: {task.task_type}")
                 waybill = db.query(Waybill).filter(Waybill.id == task.target_id).with_for_update().first()
