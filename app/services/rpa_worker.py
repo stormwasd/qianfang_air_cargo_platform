@@ -896,18 +896,8 @@ class RPAWorker:
             waybill: 运单对象
             form_data_dict: 运单表单数据字典
         """
-        from app.services.cargo_station_record_service import (
-            generate_csa_all_documents, 
-            is_csa_cargo_station_record_required
-        )
+        from app.services.cargo_station_record_service import generate_csa_all_documents
         from app.models.config import BusinessConfig
-        
-        # 检查是否需要进行货站录单
-        if not is_csa_cargo_station_record_required(form_data_dict):
-            print(f"{self._log_prefix} 南航运单ID: {waybill.id} 不需要货站录单（开关不为0），直接触发固定打单流程")
-            # 不需要制单，但固定打单流程（货运主单、安检申报单、标签单）仍需执行
-            await self._auto_trigger_document_print(db, waybill, form_data_dict)
-            return
         
         print(f"{self._log_prefix} 开始南航自动生成货站录单文档，运单ID: {waybill.id}")
         
@@ -945,9 +935,11 @@ class RPAWorker:
                 # 货站录单成功后自动触发打单（延迟等待文件传输）
                 await self._auto_trigger_document_print(db, waybill, form_data_dict, delay_for_file_transfer=True)
             elif not documents_result:
-                # 没有文档需要生成（理论上不会走到这里，因为前面已经检查过了）
-                print(f"{self._log_prefix} 南航无文档需要生成，运单ID: {waybill.id}")
+                # 没有文档需要生成（防备分支，保持与前面逻辑的一致性）
+                print(f"{self._log_prefix} 南航无文档需要生成，运单ID: {waybill.id}，将状态标记为已录单并触发打单")
+                waybill.cargo_station_record_status = "3"
                 db.commit()
+                await self._auto_trigger_document_print(db, waybill, form_data_dict)
             else:
                 waybill.cargo_station_record_status = "2"  # 失败
                 print(f"{self._log_prefix} 南航货站录单文档生成失败，运单ID: {waybill.id}")
