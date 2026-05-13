@@ -403,7 +403,8 @@ class RPAWorker:
         """更新目标状态为失败"""
         try:
             if task.target_type == RPATargetType.WAYBILL.value:
-                waybill = db.query(Waybill).filter(Waybill.id == task.target_id).first()
+                # 使用悲观锁保护状态更新
+                waybill = db.query(Waybill).filter(Waybill.id == task.target_id).with_for_update().first()
                 if waybill:
                     if task.task_type == RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value:
                         waybill.airline_record_status = "2"  # 失败
@@ -417,7 +418,8 @@ class RPAWorker:
                         waybill.document_print_status = "2"  # 打单失败
                     db.commit()
             elif task.target_type == RPATargetType.BOOKING.value:
-                booking = db.query(Booking).filter(Booking.id == task.target_id).first()
+                # 使用悲观锁保护状态更新
+                booking = db.query(Booking).filter(Booking.id == task.target_id).with_for_update().first()
                 if booking:
                     if task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value:
                         booking.booking_status = "2"  # 失败
@@ -429,6 +431,7 @@ class RPAWorker:
                         booking.invoice_status = "2"  # 开单失败
                     db.commit()
         except Exception as e:
+            db.rollback()
             print(f"{self._log_prefix} 更新目标状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
 
     async def _execute_keep_login_job(self, db, task: RPATask, job_uuid: str):
@@ -2419,14 +2422,16 @@ class RPAWorker:
         """
         params = json.loads(task.params) if isinstance(task.params, str) else task.params
         
-        # 更新运单打单状态为执行中
-        waybill = db.query(Waybill).filter(Waybill.id == task.target_id).first()
+        # 使用悲观锁保护状态更新，避免并发覆写
+        waybill = db.query(Waybill).filter(Waybill.id == task.target_id).with_for_update().first()
         if not waybill:
+            db.rollback()
             raise Exception("运单不存在")
         
         if waybill.document_print_status != "1":
             waybill.document_print_status = "1"  # 打单中
-            db.commit()
+            
+        db.commit()
         
         # 将 RPATaskType 枚举值映射为 _execute_single_print_task 所需的小写类型字符串
         print_sub_type = PRINT_TYPE_REVERSE_MAPPING.get(task.task_type)
@@ -2443,29 +2448,42 @@ class RPAWorker:
             if success:
                 print(f"{self._log_prefix} 打印任务执行成功: {task.task_type}")
                 # 检查该运单是否还有其他未完成的打印任务
-                self._update_waybill_print_status(db, waybill, task)
+                self._update_waybill_print_status(db, task.target_id, task)
                 rpa_task_service.complete_task(db, task.id, True)
             else:
                 print(f"{self._log_prefix} 打印任务执行失败: {task.task_type}")
-                db.refresh(waybill)
-                waybill.document_print_status = "2"  # 失败
-                db.commit()
+                waybill = db.query(Waybill).filter(Waybill.id == task.target_id).with_for_update().first()
+                if waybill:
+                    waybill.document_print_status = "2"  # 失败
+                    db.commit()
                 rpa_task_service.complete_task(db, task.id, False, error_message="RPA执行失败")
         except Exception as e:
-            db.refresh(waybill)
-            waybill.document_print_status = "2"  # 失败
-            db.commit()
+            waybill = db.query(Waybill).filter(Waybill.id == task.target_id).with_for_update().first()
+            if waybill:
+                waybill.document_print_status = "2"  # 失败
+                db.commit()
             raise e
     
-    def _update_waybill_print_status(self, db, waybill, current_task: RPATask):
+    def _update_waybill_print_status(self, db, waybill_id: int, current_task: RPATask):
         """
         当一个打印任务成功完成后，检查该运单是否还有其他未完成的打印任务。
         如果所有打印任务都已完成且成功，则将 document_print_status 设为 "3"（成功）。
         """
+        # 使用行级锁防止并发更新状态时发生覆写
+        locked_waybill = db.query(Waybill).filter(Waybill.id == waybill_id).with_for_update().first()
+        if not locked_waybill:
+            db.rollback()
+            return
+            
+        # 核心防覆盖逻辑：如果状态已经被其他并发失败的任务更新为 2（失败），则绝不能再改回 1 或 3
+        if locked_waybill.document_print_status == "2":
+            db.commit()
+            return
+
         # 查询该运单下所有打印类型的任务（排除当前任务）
         other_print_tasks = db.query(RPATask).filter(
             RPATask.target_type == RPATargetType.WAYBILL.value,
-            RPATask.target_id == waybill.id,
+            RPATask.target_id == locked_waybill.id,
             RPATask.task_type.in_(list(PRINT_TASK_TYPES)),
             RPATask.id != current_task.id
         ).all()
@@ -2476,22 +2494,13 @@ class RPAWorker:
             for t in other_print_tasks
         )
         
-        # 检查是否有失败的打印任务
-        has_failed = any(
-            t.status == RPATaskStatus.FAILED.value
-            for t in other_print_tasks
-        )
-        
-        db.refresh(waybill)
         if has_pending:
             # 还有未完成的任务，保持"打单中"
-            waybill.document_print_status = "1"
-        elif has_failed:
-            # 有失败的任务
-            waybill.document_print_status = "2"
+            locked_waybill.document_print_status = "1"
         else:
             # 所有打印任务都已成功完成
-            waybill.document_print_status = "3"
+            locked_waybill.document_print_status = "3"
+            
         db.commit()
     
     async def _execute_document_print(self, db, task: RPATask):
