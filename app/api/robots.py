@@ -44,6 +44,7 @@ async def create_or_update_robot(
     - **robot_id**: 机器人ID（加密后的字符串，使用 robot_id_encrypt_tool.py 生成）
     - **name**: 机器人名称
     - **location**: 机器人所在位置
+    - **location_required**: 是否启用location区域限制（可选，1=开启，0=关闭，默认1）
     - **task_permissions**: 可执行任务权限列表（如 ["SHENZHEN_AIR_WAYBILL_EXECUTE", "FILE_PRINT"]）
     - **extra_config**: 机器人其他配置（可选，包含深航账号密码、打印机服务、唐翼程序地址）
     - **status**: 机器人状态（可选，1=启用，0=未启用，默认1）
@@ -87,6 +88,8 @@ async def create_or_update_robot(
         robot.robot_id = payload.robot_id
         robot.name = payload.name
         robot.location = payload.location
+        if payload.location_required is not None:
+            robot.location_required = payload.location_required
         robot.task_permissions = task_permissions_json
         robot.extra_config = extra_config_json
         if payload.status is not None:
@@ -116,6 +119,7 @@ async def create_or_update_robot(
             robot_id=payload.robot_id,
             name=payload.name,
             location=payload.location,
+            location_required=payload.location_required if payload.location_required is not None else 1,
             task_permissions=task_permissions_json,
             extra_config=extra_config_json,
             status=payload.status if payload.status is not None else 1,
@@ -392,6 +396,7 @@ def _format_robot_response(robot: Robot, db: Session) -> dict:
         "robot_id": robot.robot_id,
         "name": robot.name,
         "location": robot.location,
+        "location_required": robot.location_required,
         "task_permissions": task_permissions,
         "job_mapping": job_mapping, # 返回 task_name -> jobUUID 的映射
         "job_name_mapping": job_name_mapping, # 返回 task_name -> RPA任务名称 的映射

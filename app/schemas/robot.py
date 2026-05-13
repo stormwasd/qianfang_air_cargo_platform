@@ -36,6 +36,7 @@ class RobotCreateOrUpdate(BaseModel):
     robot_id: str = Field(..., description="机器人ID（加密后的字符串）", min_length=1, max_length=500)
     name: str = Field(..., description="机器人名称", min_length=1, max_length=200)
     location: str = Field(..., description="机器人所在位置", min_length=1, max_length=200)
+    location_required: Optional[int] = Field(1, description="是否启用location区域限制（1=开启，0=关闭）")
     task_permissions: List[str] = Field(..., description="可执行任务权限列表", min_length=1)
     extra_config: Optional[RobotExtraConfig] = Field(None, description="机器人其他配置")
     status: Optional[int] = Field(1, description="机器人状态（1=启用，0=未启用）")
@@ -45,6 +46,13 @@ class RobotCreateOrUpdate(BaseModel):
     def validate_status(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v not in (0, 1):
             raise ValueError("状态值无效，有效值为：0=未启用，1=启用")
+        return v
+
+    @field_validator("location_required")
+    @classmethod
+    def validate_location_required(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (0, 1):
+            raise ValueError("location_required值无效，有效值为：0=关闭，1=开启")
         return v
 
     @field_validator("task_permissions")

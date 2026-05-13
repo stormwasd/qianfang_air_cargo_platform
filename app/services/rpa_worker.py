@@ -105,10 +105,6 @@ class RPAWorker:
         if not robot.extra_config:
             return
         
-        # location 匹配检查
-        if robot.location and task.location and robot.location != task.location:
-            return
-        
         try:
             extra_config = json.loads(robot.extra_config) if isinstance(robot.extra_config, str) else robot.extra_config
         except (json.JSONDecodeError, TypeError):
@@ -129,16 +125,18 @@ class RPAWorker:
         modified = False
         
         # 1. shenzhen_air_account 覆盖 system_account + login_password
-        sz_account = extra_config.get("shenzhen_air_account")
-        if isinstance(sz_account, dict):
-            account = sz_account.get("account", "")
-            password = sz_account.get("password", "")
-            if account and password:
-                if "system_account" in params:
-                    params["system_account"] = account
-                    params["login_password"] = password
-                    modified = True
-                    print(f"{self._log_prefix} [extra_config] 覆盖 system_account/login_password (来自 shenzhen_air_account)")
+        # 仅针对深航任务进行账号覆盖
+        if task.location == "shenzhen_air":
+            sz_account = extra_config.get("shenzhen_air_account")
+            if isinstance(sz_account, dict):
+                account = sz_account.get("account", "")
+                password = sz_account.get("password", "")
+                if account and password:
+                    if "system_account" in params:
+                        params["system_account"] = account
+                        params["login_password"] = password
+                        modified = True
+                        print(f"{self._log_prefix} [extra_config] 覆盖 system_account/login_password (来自 shenzhen_air_account)")
         
         # 2. printer_service 覆盖 printer_name
         #    printer_name 字段存储的是打印机类型（如 normal_a4_printer / dot_matrix_printer / label_printer），
@@ -169,21 +167,23 @@ class RPAWorker:
                                 modified = True
         
         # 3. tangyi_program 覆盖 address_of_the_application_executable_file_tangyi
-        tangyi = extra_config.get("tangyi_program")
-        if isinstance(tangyi, dict):
-            exe_path = tangyi.get("executable_path", "")
-            if exe_path:
-                if "address_of_the_application_executable_file_tangyi" in params:
-                    params["address_of_the_application_executable_file_tangyi"] = exe_path
-                    modified = True
-                    print(f"{self._log_prefix} [extra_config] 覆盖 tangyi executable_path → {exe_path}")
-                # 对于打印子任务（tasks 数组内的 params），也进行覆盖
-                if "tasks" in params and isinstance(params["tasks"], list):
-                    for sub_task in params["tasks"]:
-                        sub_params = sub_task.get("params", {})
-                        if isinstance(sub_params, dict) and "address_of_the_application_executable_file_tangyi" in sub_params:
-                            sub_params["address_of_the_application_executable_file_tangyi"] = exe_path
-                            modified = True
+        # 仅针对南航任务进行唐翼程序覆盖
+        if task.location == "china_southern_air":
+            tangyi = extra_config.get("tangyi_program")
+            if isinstance(tangyi, dict):
+                exe_path = tangyi.get("executable_path", "")
+                if exe_path:
+                    if "address_of_the_application_executable_file_tangyi" in params:
+                        params["address_of_the_application_executable_file_tangyi"] = exe_path
+                        modified = True
+                        print(f"{self._log_prefix} [extra_config] 覆盖 tangyi executable_path → {exe_path}")
+                    # 对于打印子任务（tasks 数组内的 params），也进行覆盖
+                    if "tasks" in params and isinstance(params["tasks"], list):
+                        for sub_task in params["tasks"]:
+                            sub_params = sub_task.get("params", {})
+                            if isinstance(sub_params, dict) and "address_of_the_application_executable_file_tangyi" in sub_params:
+                                sub_params["address_of_the_application_executable_file_tangyi"] = exe_path
+                                modified = True
         
         # 写回 task.params
         if modified:
@@ -320,7 +320,8 @@ class RPAWorker:
             
             # 2. 获取该机器人可消费的一个待执行任务（按权限+location匹配）
             task = rpa_task_service.get_pending_task_for_robot(
-                db, self.robot_db_id, permissions, robot_location=robot.location
+                db, self.robot_db_id, permissions,
+                robot_location=robot.location if robot.location_required == 1 else None
             )
             if not task:
                 return

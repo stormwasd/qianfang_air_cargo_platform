@@ -16,6 +16,7 @@ class Robot(Base):
     robot_id = Column(String(500), nullable=False, unique=True, index=True, comment="机器人ID（加密后存储）")
     name = Column(String(200), nullable=False, comment="机器人名称")
     location = Column(String(200), nullable=False, comment="机器人所在位置")
+    location_required = Column(SmallInteger, nullable=False, default=1, comment="是否启用location区域限制（1=开启，0=关闭）")
     task_permissions = Column(Text, nullable=False, comment="可执行任务权限列表（JSON数组）")
     extra_config = Column(Text, nullable=True, comment="机器人其他配置（JSON对象）")
     status = Column(SmallInteger, nullable=False, default=1, index=True, comment="机器人状态（1=启用，0=未启用）")
