@@ -1346,6 +1346,25 @@ class RPAWorker:
                             return
                         elif rpa_status == 5:
                             booking.booking_cancel_status = "3"  # 退舱成功
+                            
+                            # 退舱成功后，将该订舱所占用的单号归还给单号库，恢复为未使用状态
+                            if booking.master_airwaybill_number:
+                                try:
+                                    stock_item = (
+                                        db.query(WaybillStockItem)
+                                        .filter(WaybillStockItem.full_number == booking.master_airwaybill_number)
+                                        .with_for_update()
+                                        .first()
+                                    )
+                                    if stock_item:
+                                        stock_item.usage_status = "0"   # 恢复为未使用
+                                        stock_item.usage_date = None     # 清除使用日期
+                                        print(f"{self._log_prefix} 退舱成功，已将单号 {booking.master_airwaybill_number} 归还单号库（usage_status=0）")
+                                    else:
+                                        print(f"{self._log_prefix} 退舱成功，但未找到单号库记录: {booking.master_airwaybill_number}")
+                                except Exception as stock_err:
+                                    print(f"{self._log_prefix} 退舱成功但归还单号库失败: {_get_error_detail(stock_err)}\n{traceback.format_exc()}")
+                            
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, True)
                             return

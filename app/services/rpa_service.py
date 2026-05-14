@@ -713,7 +713,8 @@ class RPAService:
         system_url: str,
         system_account: str,
         login_password: str,
-        waybill_number_8: str
+        waybill_number_8: str,
+        job_uuid: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         调用南航退舱任务RPA接口（仅适用于南方航空，airline="2"或"南方航空"）
