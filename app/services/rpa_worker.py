@@ -290,8 +290,46 @@ class RPAWorker:
         
         return stock_item
     
+    @staticmethod
+    def _return_stock_item_to_pool(db, full_number: str = None, stock_item_id: int = None) -> bool:
+        """
+        将单号库中的单号归还（恢复为未使用状态）。
 
-    
+        分配失败或 RPA 执行失败时调用，确保单号可被后续流程重新分配。
+        注意：调用方需自行在之后执行 db.commit()。
+
+        Args:
+            db: 数据库会话
+            full_number: 完整单号（如 784-47888190），与 stock_item_id 二选一
+            stock_item_id: 单号详情ID，与 full_number 二选一
+
+        Returns:
+            bool: 归还是否成功（找到并重置了记录）
+        """
+        try:
+            query = db.query(WaybillStockItem)
+            if stock_item_id:
+                query = query.filter(WaybillStockItem.id == stock_item_id)
+            elif full_number:
+                query = query.filter(WaybillStockItem.full_number == full_number)
+            else:
+                return False
+
+            stock_item = query.with_for_update().first()
+            if stock_item:
+                stock_item.usage_status = "0"   # 恢复为未使用
+                stock_item.usage_date = None     # 清除使用日期
+                print(f"[单号库] 已将单号 {stock_item.full_number} 归还（usage_status=0）")
+                return True
+            else:
+                print(f"[单号库] 未找到需要归还的单号记录: full_number={full_number}, stock_item_id={stock_item_id}")
+                return False
+        except Exception as e:
+            print(f"[单号库] 归还单号失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
+            return False
+
+
+
     async def _process_one_task(self):
         """处理一个任务"""
         import json as _json
@@ -1249,6 +1287,11 @@ class RPAWorker:
             await self._poll_china_southern_air_booking_status(db, task, booking, work_uuid, allocated_stock_item.id)
             
         except Exception as e:
+            # RPA 接口调用异常：清空主单号并将单号归还单号库
+            if booking.master_airwaybill_number:
+                self._return_stock_item_to_pool(db, full_number=booking.master_airwaybill_number)
+                booking.master_airwaybill_number = None
+                db.commit()
             raise e
     
     async def _poll_china_southern_air_booking_status(self, db, task: RPATask, booking: Booking, work_uuid: str, stock_item_id: int = None):
@@ -1279,10 +1322,14 @@ class RPAWorker:
                             rpa_task_service.complete_task(db, task.id, True)
                             return
                         
-                        # 如果失败
+                        # 如果失败：清空主单号并归还单号库
                         elif rpa_status == 3:
                             # 识别具体的异常信息（如：机型识别失败）
                             await self._check_csa_booking_feedback(db, booking, work_uuid)
+                            # 归还单号库，主单号置空
+                            if booking.master_airwaybill_number:
+                                self._return_stock_item_to_pool(db, full_number=booking.master_airwaybill_number)
+                                booking.master_airwaybill_number = None
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, False, error_message="RPA订舱执行失败")
                             return
@@ -1292,8 +1339,11 @@ class RPAWorker:
                 print(f"{self._log_prefix} 轮询订舱状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
-        # 轮询超时
+        # 轮询超时：清空主单号并归还单号库
         booking.booking_status = "2"  # 失败
+        if booking.master_airwaybill_number:
+            self._return_stock_item_to_pool(db, full_number=booking.master_airwaybill_number)
+            booking.master_airwaybill_number = None
         db.commit()
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA订舱状态轮询超时")
     
@@ -1837,9 +1887,12 @@ class RPAWorker:
             await self._poll_china_southern_air_waybill_status(db, task, waybill, work_uuid, queues_info, params, allocated_stock_item.id)
             
         except Exception as e:
-            # 清理队列
+            # RPA 接口调用异常：清理队列，清空运单号并将单号归还单号库
             await self._cleanup_queues(queues_info)
             waybill.rpa_queue_uuids = None
+            if waybill.waybill_number:
+                self._return_stock_item_to_pool(db, full_number=waybill.waybill_number)
+                waybill.waybill_number = None
             db.commit()
             raise e
     
@@ -1875,10 +1928,13 @@ class RPAWorker:
                             rpa_task_service.complete_task(db, task.id, True)
                             return
                         
-                        # 如果失败，清理队列
+                        # 如果失败：清理队列，清空运单号并归还单号库
                         elif rpa_status == 3:
                             await self._cleanup_queues(queues_info)
                             waybill.rpa_queue_uuids = None
+                            if waybill.waybill_number:
+                                self._return_stock_item_to_pool(db, full_number=waybill.waybill_number)
+                                waybill.waybill_number = None
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单执行失败")
                             return
@@ -1888,10 +1944,13 @@ class RPAWorker:
                 print(f"{self._log_prefix} 轮询南航新增运单状态失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
                 continue
         
-        # 轮询超时
+        # 轮询超时：清理队列，清空运单号并归还单号库
         await self._cleanup_queues(queues_info)
         waybill.rpa_queue_uuids = None
         waybill.airline_record_status = "2"  # 失败
+        if waybill.waybill_number:
+            self._return_stock_item_to_pool(db, full_number=waybill.waybill_number)
+            waybill.waybill_number = None
         db.commit()
         rpa_task_service.complete_task(db, task.id, False, error_message="RPA南航新增运单状态轮询超时")
     
