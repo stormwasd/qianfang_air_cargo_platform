@@ -1169,6 +1169,23 @@ class RPAWorker:
                                         print(f"{self._log_prefix} 警告：未找到对应的结算单，waybill_number={waybill.waybill_number}")
                                 except Exception as e:
                                     print(f"{self._log_prefix} 同步运单作废状态到结算单失败: {_get_error_detail(e)}\n{traceback.format_exc()}")
+                                
+                                # 作废成功后，将该运单占用的单号归还给单号库，恢复为未使用状态
+                                try:
+                                    stock_item = (
+                                        db.query(WaybillStockItem)
+                                        .filter(WaybillStockItem.full_number == waybill.waybill_number)
+                                        .with_for_update()
+                                        .first()
+                                    )
+                                    if stock_item:
+                                        stock_item.usage_status = "0"   # 恢复为未使用
+                                        stock_item.usage_date = None     # 清除使用日期
+                                        print(f"{self._log_prefix} 运单作废成功，已将单号 {waybill.waybill_number} 归还单号库（usage_status=0）")
+                                    else:
+                                        print(f"{self._log_prefix} 运单作废成功，但未找到单号库记录: {waybill.waybill_number}")
+                                except Exception as stock_err:
+                                    print(f"{self._log_prefix} 运单作废成功但归还单号库失败: {_get_error_detail(stock_err)}\n{traceback.format_exc()}")
                             
                             db.commit()
                             rpa_task_service.complete_task(db, task.id, True)
