@@ -39,6 +39,15 @@ TASK_QUEUE_CONFIGS = {
     "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA": ["rate", "freight", "fuel_costs", "extended_service_fee"],
 }
 
+# 全局单例任务类型：同一时刻整个系统只允许一个机器人执行的任务类型。
+# 背景：深航开单时，多个机器人同时登录同一深航账号会导致 session 共享，
+#       进而使深航系统把同一个单号分配给多个任务，出现单号重复的情况。
+#       因此 SHENZHEN_AIR_WAYBILL_EXECUTE 需要全局串行：同类任务的 RUNNING 数量必须为 0，
+#       才允许新的机器人消费并开始执行下一个。
+SINGLETON_TASK_TYPES: set = {
+    RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value,
+}
+
 # 任务类型 → 默认优先级（数值越大越优先）
 # 未在此映射中的任务类型使用 settings.RPA_QUEUE_DEFAULT_PRIORITY（默认 1）
 TASK_PRIORITY_MAP = {
@@ -184,6 +193,7 @@ class RPATaskService:
         2. 任务的 location 必须与机器人的 location 一致
         3. 任务的 robot_id 为 NULL（任意机器人可消费）或等于当前机器人ID（指定消费）
         4. 使用行级锁 skip_locked 防止多 Worker 竞争
+        5. SINGLETON_TASK_TYPES 中的任务类型：如果全局已有同类任务 RUNNING，则本次不消费该类型
         
         Args:
             db: 数据库会话
@@ -197,9 +207,31 @@ class RPATaskService:
         if not allowed_task_types:
             return None
         
+        # ---- 单例任务类型全局并发检查 ----
+        # 对于 SINGLETON_TASK_TYPES 中的任务类型，同一时刻全局只允许一个机器人执行。
+        # 若已有同类任务处于 RUNNING 状态，则将该类型从本次可消费的候选列表中剔除，
+        # 避免多个机器人并发操作深航等对并发敏感的系统。
+        # 注意：这里只需普通 SELECT，不需要加锁，是一次"软过滤"——即使极端情况下
+        #       两个 Worker 同时通过此检查，后续 with_for_update(skip_locked=True)
+        #       的行级锁保证最终只有一个成功 lock_task()。
+        effective_types = list(allowed_task_types)
+        singleton_types_in_allowed = [t for t in effective_types if t in SINGLETON_TASK_TYPES]
+        if singleton_types_in_allowed:
+            already_running = db.query(RPATask.task_type).filter(
+                RPATask.task_type.in_(singleton_types_in_allowed),
+                RPATask.status == RPATaskStatus.RUNNING.value
+            ).first()
+            if already_running:
+                # 从候选列表中去除所有已有 RUNNING 实例的单例任务类型
+                running_type = already_running[0]
+                effective_types = [t for t in effective_types if t != running_type]
+                if not effective_types:
+                    return None
+        # ---- 单例检查结束 ----
+        
         filters = [
             RPATask.status == RPATaskStatus.PENDING.value,
-            RPATask.task_type.in_(allowed_task_types),
+            RPATask.task_type.in_(effective_types),
             or_(
                 RPATask.robot_id == None,
                 RPATask.robot_id == robot_db_id
