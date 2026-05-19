@@ -78,7 +78,7 @@ class BookingQuery(BaseModel):
     booking_date_start: Optional[date] = Field(None, description="订舱日期开始（格式：YYYY-MM-DD，作用于booking_time）")
     booking_date_end: Optional[date] = Field(None, description="订舱日期结束（格式：YYYY-MM-DD，作用于booking_time）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
+    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")
 
 
 class BookingResponse(BaseModel):
