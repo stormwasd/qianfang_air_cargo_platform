@@ -173,13 +173,16 @@ async def refresh_token(
     if not user:
         raise UnauthorizedException("用户不存在")
     
-    # 检查用户是否启用
-    if not user.is_active:
-        raise ForbiddenException("用户已被禁用")
-    
     # 验证token_version是否匹配（检查JWT是否已失效）
+    # 注意：此检查放在is_active之前，因为禁用用户时会递增token_version，
+    # 这样被禁用的用户会先得到401（token失效），前端可以正确重定向到登录页面
     if token_data.token_version != user.token_version:
         raise UnauthorizedException("token已失效，请重新登录")
+    
+    # 检查用户是否启用（兜底检查）
+    # 使用401而非403，确保前端统一跳转到登录页面
+    if not user.is_active:
+        raise UnauthorizedException("用户已被禁用")
     
     # 生成新的token
     # 注意：JWT标准要求sub字段必须是字符串
