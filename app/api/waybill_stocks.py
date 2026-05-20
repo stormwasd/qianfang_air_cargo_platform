@@ -314,7 +314,7 @@ async def get_waybill_stock_items(
     - **stock_id**: 关联单号库ID（字符串格式）
     - **usage_status**: 使用状态筛选（可选，0=未使用，1=已使用，2=异常，3=失效）
     - **page**: 页码（默认1）
-    - **pageSize**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大200）
     """
     # 验证单号库是否存在
     stock = db.query(WaybillStock).filter(
@@ -543,7 +543,7 @@ async def get_waybill_stock_batches(
     参数说明：
     - **stock_id**: 单号库ID精确筛选（可选）
     - **page**: 页码（默认1）
-    - **pageSize**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大200）
     """
     # 构建查询
     query_obj = db.query(WaybillStockBatch)

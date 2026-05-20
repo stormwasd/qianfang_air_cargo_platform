@@ -131,7 +131,7 @@ async def get_settlements(
     - **airline_record_time_start**: 航司录单时间开始（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）
     - **airline_record_time_end**: 航司录单时间结束（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）
     - **page**: 页码（默认1）
-    - **pageSize**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大200）
     
     支持多条件组合筛选，航司录单时间从form_data JSON中提取进行日期范围筛选。列表不包含 waybill_void_status='3'（作废成功）的结算单。
     """

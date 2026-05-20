@@ -72,7 +72,7 @@ class RobotListQuery(BaseModel):
 
     status: Optional[int] = Field(None, description="机器人状态筛选（0=未启用，1=启用）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
+    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")
 
 
 class TaskProcessCreateUpdate(BaseModel):

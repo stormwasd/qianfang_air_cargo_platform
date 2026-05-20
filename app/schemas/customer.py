@@ -53,5 +53,5 @@ class CustomerQuery(BaseModel):
     company_name: Optional[str] = Field(None, description="公司名称（模糊搜索）")
     contact_person: Optional[str] = Field(None, description="联系人（模糊搜索）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
+    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")
 

@@ -76,7 +76,7 @@ class WaybillStockBatchQuery(BaseModel):
 
     stock_id: Optional[str] = Field(None, description="单号库ID精确筛选")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
+    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")
 
 
 class WaybillStockItemQuery(BaseModel):
@@ -91,4 +91,4 @@ class WaybillStockItemQuery(BaseModel):
     usage_date_range: Optional[str] = Field(None, description="用单日期范围，格式：YYYY-MM-DD,YYYY-MM-DD")
     is_all: Optional[bool] = Field(False, description="是否获取全部数据，传 true 时忽略分页参数")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=100, alias="pageSize", description="每页数量")
+    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")

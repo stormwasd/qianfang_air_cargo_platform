@@ -169,21 +169,31 @@ async def update_user_status(
     db: Session = Depends(get_db)
 ):
     """
-    启用或停用账号接口（需要管理员权限，支持批量）
+    启用或停用账号接口（需要管理员权限）
     
     - **user_id**: 用户ID（字符串格式）
     - **is_active**: 是否启用（true=启用，false=停用）
+    
+    注意：停用账号时会递增该用户的token_version，使其所有已有的JWT立即失效，
+    被停用的用户将无法继续使用系统，需要重新登录（但登录时会被is_active检查拦截）。
     """
     user = db.query(User).filter(User.id == int(user_id)).first()
     if not user:
         raise NotFoundException("用户不存在")
     
     user.is_active = is_active
+    
+    # 停用账号时，递增token_version使该用户所有已有的JWT立即失效
+    # 防止被禁用的用户继续使用缓存的token访问系统
+    if not is_active:
+        user.token_version = (user.token_version or 0) + 1
+    
     db.commit()
     
+    msg = "账号已停用，该用户的所有登录凭证已失效" if not is_active else "账号已启用"
     return success_response(
         data={"user_id": str(user_id), "is_active": is_active},
-        msg="操作成功"
+        msg=msg
     )
 
 
@@ -198,6 +208,9 @@ async def batch_update_user_status(
     
     - **user_ids**: 用户ID列表（字符串格式）
     - **is_active**: 是否启用（true=启用，false=停用）
+    
+    注意：批量停用账号时会递增每个用户的token_version，使其所有已有的JWT立即失效，
+    被停用的用户将无法继续使用系统，需要重新登录（但登录时会被is_active检查拦截）。
     """
     # 将字符串ID转换为整数用于查询
     user_ids_int = [int(uid) for uid in batch_data.user_ids]
@@ -207,11 +220,17 @@ async def batch_update_user_status(
     
     for user in users:
         user.is_active = batch_data.is_active
+        # 停用账号时，递增token_version使该用户所有已有的JWT立即失效
+        # 防止被禁用的用户继续使用缓存的token访问系统
+        if not batch_data.is_active:
+            user.token_version = (user.token_version or 0) + 1
+    
     db.commit()
     
+    msg = f"批量停用成功，共停用{len(users)}个账号，所有登录凭证已失效" if not batch_data.is_active else f"批量启用成功，共启用{len(users)}个账号"
     return success_response(
         data={"count": len(users), "is_active": batch_data.is_active},
-        msg="批量操作成功"
+        msg=msg
     )
 
 

@@ -71,7 +71,7 @@ async def get_tasks(
     target_id: str = Query(None, description="目标ID"),
     status: str = Query(None, description="任务状态（pending/running/success/failed/timeout）"),
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(10, ge=1, le=100, alias="pageSize", description="每页数量"),
+    page_size: int = Query(10, ge=1, le=200, alias="pageSize", description="每页数量"),
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -84,7 +84,7 @@ async def get_tasks(
     - **target_id**: 目标ID（可选）
     - **status**: 任务状态（可选，pending/running/success/failed/timeout）
     - **page**: 页码（默认1）
-    - **pageSize**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大200）
     """
     result = rpa_task_service.get_tasks_list(
         db=db,

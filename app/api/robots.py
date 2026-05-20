@@ -151,7 +151,7 @@ async def get_robots(
     参数说明：
     - **status**: 机器人状态筛选（可选，0=未启用，1=启用）
     - **page**: 页码（默认1）
-    - **pageSize**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大200）
     """
     query_obj = db.query(Robot)
 

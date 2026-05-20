@@ -618,7 +618,7 @@ async def get_bookings(
     - **booking_date_start**: 订舱日期开始（格式：YYYY-MM-DD，作用于booking_time）
     - **booking_date_end**: 订舱日期结束（格式：YYYY-MM-DD，作用于booking_time）
     - **page**: 页码（默认1）
-    - **pageSize**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大200）
     
     支持多条件组合筛选
     """

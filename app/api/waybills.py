@@ -102,7 +102,7 @@ async def get_waybills(
     - **shipper**: 托运单位（模糊搜索，从form_data中提取，支持深圳航空的shipper_consignee_info.shipper_unit和南方航空的contact_info.shipper_unit）
     - **waybill_number**: 运单号（模糊搜索）
     - **page**: 页码（默认1）
-    - **pageSize**: 每页数量（默认10，最大100）
+    - **pageSize**: 每页数量（默认10，最大200）
     
     支持多条件组合筛选
     """
