@@ -274,7 +274,7 @@ class RPAWorker:
                 WaybillStockItem.is_abnormal == "1",
                 WaybillStockItem.is_invalid == "0"
             )
-            .order_by(WaybillStockItem.id.asc())
+            .order_by(WaybillStockItem.id.desc())
             .with_for_update(skip_locked=True)
             .first()
         )
