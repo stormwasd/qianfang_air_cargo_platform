@@ -558,7 +558,7 @@ async def get_waybill_stock_batches(
     # 分页（按创建时间倒序）
     offset = (query.page - 1) * query.page_size
     batches = query_obj.order_by(
-        WaybillStockBatch.created_at.desc()
+        WaybillStockBatch.created_at.desc(), WaybillStockBatch.id.desc()
     ).offset(offset).limit(query.page_size).all()
     
     # 统计单号使用情况

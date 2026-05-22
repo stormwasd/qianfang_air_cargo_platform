@@ -165,7 +165,7 @@ async def get_robots(
     # 分页（按创建时间倒序）
     offset = (query.page - 1) * query.page_size
     robots = query_obj.order_by(
-        Robot.created_at.desc()
+        Robot.created_at.desc(), Robot.id.desc()
     ).offset(offset).limit(query.page_size).all()
 
     robot_list = [_format_robot_response(r, db) for r in robots]

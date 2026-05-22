@@ -675,7 +675,7 @@ async def get_bookings(
     # 分页
     offset = (query.page - 1) * query.page_size
     bookings = query_obj.order_by(
-        Booking.created_at.desc()
+        Booking.created_at.desc(), Booking.id.desc()
     ).offset(offset).limit(query.page_size).all()
     
     booking_list = []

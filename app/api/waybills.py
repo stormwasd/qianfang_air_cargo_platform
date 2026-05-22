@@ -254,7 +254,7 @@ async def get_waybills(
     # 分页
     offset = (query.page - 1) * query.page_size
     waybills = query_obj.order_by(
-        Waybill.created_at.desc()
+        Waybill.created_at.desc(), Waybill.id.desc()
     ).offset(offset).limit(query.page_size).all()
     
     waybill_list = []
