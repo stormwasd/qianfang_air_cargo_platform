@@ -10,36 +10,34 @@ from datetime import datetime
 class CustomerCreate(BaseModel):
     """创建客户schema（仅 company_name 必填，其余可选）"""
     company_name: str = Field(..., description="承运单位/公司名称", min_length=1, max_length=200)
-    settlement_method: Optional[str] = Field(None, description="结算方式", min_length=1, max_length=50)
     rate: Optional[Decimal] = Field(None, description="费率(元/公斤)", ge=0)
     contact_person: Optional[str] = Field(None, description="联系人", min_length=1, max_length=50)
     contact_phone: Optional[str] = Field(None, description="联系电话", min_length=1, max_length=20)
     
     minimum_ticket_fee: Optional[Decimal] = Field(None, description="最低票费用", ge=0)
     document_fee: Optional[Decimal] = Field(None, description="制单费", ge=0)
-    minimum_ticket_fee_condition: Optional[str] = Field(None, description="最低票收取条件", max_length=200)
-    document_fee_condition: Optional[str] = Field(None, description="制单费收取条件", max_length=200)
+    minimum_ticket_fee_condition: Optional[Decimal] = Field(None, description="最低票收取条件")
+    document_fee_condition: Optional[Decimal] = Field(None, description="制单费收取条件")
     weight_range_operation_fee_rate: Optional[Dict[str, Any]] = Field(None, description="重量范围_操作费费率")
     cargo_type_transit_fee_rate: Optional[Dict[str, Any]] = Field(None, description="货物类型_过站费费率")
-    settlement_cycle: Optional[str] = Field(None, description="结算周期", max_length=50)
+    settlement_cycle: Optional[int] = Field(None, description="结算周期(1=周结, 2=半月结, 3=月结, 4=现结)")
     is_invoiced: Optional[bool] = Field(False, description="是否开票")
 
 
 class CustomerUpdate(BaseModel):
     """更新客户schema"""
     company_name: Optional[str] = Field(None, description="承运单位/公司名称", min_length=1, max_length=200)
-    settlement_method: Optional[str] = Field(None, description="结算方式", min_length=1, max_length=50)
     rate: Optional[Decimal] = Field(None, description="费率(元/公斤)", ge=0)
     contact_person: Optional[str] = Field(None, description="联系人", min_length=1, max_length=50)
     contact_phone: Optional[str] = Field(None, description="联系电话", min_length=1, max_length=20)
     
     minimum_ticket_fee: Optional[Decimal] = Field(None, description="最低票费用", ge=0)
     document_fee: Optional[Decimal] = Field(None, description="制单费", ge=0)
-    minimum_ticket_fee_condition: Optional[str] = Field(None, description="最低票收取条件", max_length=200)
-    document_fee_condition: Optional[str] = Field(None, description="制单费收取条件", max_length=200)
+    minimum_ticket_fee_condition: Optional[Decimal] = Field(None, description="最低票收取条件")
+    document_fee_condition: Optional[Decimal] = Field(None, description="制单费收取条件")
     weight_range_operation_fee_rate: Optional[Dict[str, Any]] = Field(None, description="重量范围_操作费费率")
     cargo_type_transit_fee_rate: Optional[Dict[str, Any]] = Field(None, description="货物类型_过站费费率")
-    settlement_cycle: Optional[str] = Field(None, description="结算周期", max_length=50)
+    settlement_cycle: Optional[int] = Field(None, description="结算周期(1=周结, 2=半月结, 3=月结, 4=现结)")
     is_invoiced: Optional[bool] = Field(None, description="是否开票")
 
 
@@ -48,17 +46,16 @@ class CustomerResponse(BaseModel):
     id: str  # ID以字符串形式返回
     customer_code: Optional[str] = None
     company_name: str
-    settlement_method: str
     rate: Decimal
     contact_person: str
     contact_phone: str
     minimum_ticket_fee: Optional[Decimal] = None
     document_fee: Optional[Decimal] = None
-    minimum_ticket_fee_condition: Optional[str] = None
-    document_fee_condition: Optional[str] = None
+    minimum_ticket_fee_condition: Optional[Decimal] = None
+    document_fee_condition: Optional[Decimal] = None
     weight_range_operation_fee_rate: Optional[Dict[str, Any]] = None
     cargo_type_transit_fee_rate: Optional[Dict[str, Any]] = None
-    settlement_cycle: Optional[str] = None
+    settlement_cycle: Optional[int] = None
     is_invoiced: Optional[bool] = False
     created_at: datetime
     updated_at: datetime

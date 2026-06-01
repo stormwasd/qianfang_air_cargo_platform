@@ -1,10 +1,13 @@
 import os
 
-new_docs = """
+with open('API_DOCS.md', 'r', encoding='utf-8') as f:
+    content = f.read()
 
----
+index = content.find('### 14. 客户管理（三期需求）')
+if index != -1:
+    content = content[:index]
 
-### 14. 客户管理（三期需求）
+new_docs = """### 14. 客户管理（三期需求）
 
 #### 14.1 新增客户（三期扩展）
 
@@ -17,14 +20,13 @@ new_docs = """
 ```json
 {
   "company_name": "千方航空",
-  "settlement_method": "月结",
   "rate": 15.5,
   "contact_person": "张三",
   "contact_phone": "13800138000",
   "minimum_ticket_fee": 100.0,
   "document_fee": 50.0,
-  "minimum_ticket_fee_condition": "低于100kg收取",
-  "document_fee_condition": "每票必收",
+  "minimum_ticket_fee_condition": 100.0,
+  "document_fee_condition": 0.0,
   "weight_range_operation_fee_rate": {
     "≤ 45公斤": 5.0,
     "45 - 100公斤（不含100）": 4.5,
@@ -40,7 +42,7 @@ new_docs = """
     "生鲜": 1.5,
     "锂电池": 2.0
   },
-  "settlement_cycle": "月结",
+  "settlement_cycle": 3,
   "is_invoiced": true
 }
 ```
@@ -54,14 +56,13 @@ new_docs = """
     "id": "1234567890",
     "customer_code": "QFAK20260601",
     "company_name": "千方航空",
-    "settlement_method": "月结",
     "rate": 15.5,
     "contact_person": "张三",
     "contact_phone": "13800138000",
     "minimum_ticket_fee": 100.0,
     "document_fee": 50.0,
-    "minimum_ticket_fee_condition": "低于100kg收取",
-    "document_fee_condition": "每票必收",
+    "minimum_ticket_fee_condition": 100.0,
+    "document_fee_condition": 0.0,
     "weight_range_operation_fee_rate": {
       "≤ 45公斤": 5.0,
       "45 - 100公斤（不含100）": 4.5,
@@ -77,7 +78,7 @@ new_docs = """
       "生鲜": 1.5,
       "锂电池": 2.0
     },
-    "settlement_cycle": "月结",
+    "settlement_cycle": 3,
     "is_invoiced": true,
     "created_at": "2026-06-01T12:00:00+08:00",
     "updated_at": "2026-06-01T12:00:00+08:00"
@@ -86,7 +87,10 @@ new_docs = """
 }
 ```
 
-**说明**：`customer_code` 由系统自动生成（规则：公司名拼音首字母大写 + 当日日期 YYYYMMDD）。
+**说明**：
+- `customer_code` 由系统自动生成（规则：公司名拼音首字母大写 + 当日日期 YYYYMMDD）。
+- `minimum_ticket_fee_condition` 与 `document_fee_condition` 已变更为数字类型（代表条件数值，例如重量阈值等）。
+- `settlement_cycle` 变更为数字选项：1=周结, 2=半月结, 3=月结, 4=现结。
 
 #### 14.2 编辑客户信息（三期扩展）
 
@@ -101,7 +105,6 @@ new_docs = """
 **响应示例**: 返回的数据体中增加了三期所有的字段（包含 `customer_code`, JSON 配置字典等），字段结构与新增时的请求体保持一致。
 """
 
-with open('API_DOCS.md', 'a', encoding='utf-8') as f:
-    f.write(new_docs)
-
-print("Successfully appended to API_DOCS.md")
+with open('API_DOCS.md', 'w', encoding='utf-8') as f:
+    f.write(content + new_docs)
+print('Updated API_DOCS.md')

@@ -101,7 +101,9 @@ def register_exception_handlers(app: FastAPI):
         errors = exc.errors()
         error_msg = "请求参数验证失败"
         if errors:
-            error_msg = errors[0].get("msg", error_msg)
+            error_loc = " -> ".join([str(x) for x in errors[0].get("loc", [])])
+            error_msg_detail = errors[0].get("msg", error_msg)
+            error_msg = f"参数验证失败 ({error_loc}): {error_msg_detail}"
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={

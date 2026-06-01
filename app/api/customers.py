@@ -37,7 +37,6 @@ async def create_customer(
     新增客户信息接口（仅 company_name 必填，其余字段可选）
 
     - **company_name**: 承运单位/公司名称（必填）
-    - **settlement_method**: 结算方式（可选）
     - **rate**: 费率(元/公斤)（可选，未传默认 0）
     - **contact_person**: 联系人（可选）
     - **contact_phone**: 联系电话（可选）
@@ -45,7 +44,6 @@ async def create_customer(
     new_customer = Customer(
         customer_code=generate_customer_code(customer.company_name),
         company_name=customer.company_name,
-        settlement_method=customer.settlement_method or "",
         rate=customer.rate if customer.rate is not None else Decimal("0"),
         contact_person=customer.contact_person or "",
         contact_phone=customer.contact_phone or "",
@@ -66,7 +64,6 @@ async def create_customer(
         "id": str(new_customer.id),
         "customer_code": new_customer.customer_code,
         "company_name": new_customer.company_name,
-        "settlement_method": new_customer.settlement_method,
         "rate": new_customer.rate,
         "contact_person": new_customer.contact_person,
         "contact_phone": new_customer.contact_phone,
@@ -97,7 +94,6 @@ async def update_customer(
 
     - **customer_id**: 客户ID（字符串格式）
     - **company_name**: 承运单位/公司名称（可选）
-    - **settlement_method**: 结算方式（可选）
     - **rate**: 费率(元/公斤)（可选）
     - **contact_person**: 联系人（可选）
     - **contact_phone**: 联系电话（可选）
@@ -132,7 +128,6 @@ async def update_customer(
         "id": str(customer.id),
         "customer_code": customer.customer_code,
         "company_name": customer.company_name,
-        "settlement_method": customer.settlement_method,
         "rate": customer.rate,
         "contact_person": customer.contact_person,
         "contact_phone": customer.contact_phone,
@@ -195,7 +190,6 @@ async def get_customers(
             "id": str(customer.id),
             "customer_code": customer.customer_code,
             "company_name": customer.company_name,
-            "settlement_method": customer.settlement_method,
             "rate": customer.rate,
             "contact_person": customer.contact_person,
             "contact_phone": customer.contact_phone,
@@ -238,7 +232,6 @@ async def get_customer(
         "id": str(customer.id),
         "customer_code": customer.customer_code,
         "company_name": customer.company_name,
-        "settlement_method": customer.settlement_method,
         "rate": customer.rate,
         "contact_person": customer.contact_person,
         "contact_phone": customer.contact_phone,
