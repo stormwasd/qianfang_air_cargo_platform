@@ -11,6 +11,7 @@ from app.models.rpa_task import RPATask
 from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
 from app.models.robot import Robot
 from app.models.company import CompanyAccount
+from app.models.agent import Agent
 from app.models.user_department import user_department  # 确保关联表被导入
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent"]
