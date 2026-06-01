@@ -2,23 +2,32 @@
 客户管理接口
 """
 from decimal import Decimal
+from typing import Any
+from pypinyin import lazy_pinyin
 
 from fastapi import APIRouter, Depends
 from app.core.exceptions import NotFoundException
-from app.core.response import success_response
+from app.core.response import success_response, ResponseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.customer import Customer
 from app.schemas.customer import (
-    CustomerCreate, CustomerQuery, CustomerUpdate
+    CustomerCreate, CustomerQuery, CustomerUpdate, CustomerResponse, CustomerListResponse
 )
 from app.api.deps import get_current_active_user
-from app.utils.helpers import format_datetime_china
+from app.utils.helpers import format_datetime_china, get_china_now
 
 router = APIRouter()
 
+def generate_customer_code(company_name: str) -> str:
+    """生成客户编码：公司名拼音首字母+当前日期"""
+    pinyin_list = lazy_pinyin(company_name)
+    initials = "".join([p[0].upper() for p in pinyin_list if p and p[0].isalpha()])
+    date_str = get_china_now().strftime("%Y%m%d")
+    return f"{initials}{date_str}"
 
-@router.post("", summary="新增客户信息")
+
+@router.post("", summary="新增客户信息", response_model=ResponseModel[CustomerResponse])
 async def create_customer(
     customer: CustomerCreate,
     current_user = Depends(get_current_active_user),
@@ -34,11 +43,20 @@ async def create_customer(
     - **contact_phone**: 联系电话（可选）
     """
     new_customer = Customer(
+        customer_code=generate_customer_code(customer.company_name),
         company_name=customer.company_name,
         settlement_method=customer.settlement_method or "",
         rate=customer.rate if customer.rate is not None else Decimal("0"),
         contact_person=customer.contact_person or "",
-        contact_phone=customer.contact_phone or ""
+        contact_phone=customer.contact_phone or "",
+        minimum_ticket_fee=customer.minimum_ticket_fee,
+        document_fee=customer.document_fee,
+        minimum_ticket_fee_condition=customer.minimum_ticket_fee_condition,
+        document_fee_condition=customer.document_fee_condition,
+        weight_range_operation_fee_rate=customer.weight_range_operation_fee_rate,
+        cargo_type_transit_fee_rate=customer.cargo_type_transit_fee_rate,
+        settlement_cycle=customer.settlement_cycle,
+        is_invoiced=customer.is_invoiced if customer.is_invoiced is not None else False
     )
     db.add(new_customer)
     db.commit()
@@ -46,11 +64,20 @@ async def create_customer(
     
     customer_data = {
         "id": str(new_customer.id),
+        "customer_code": new_customer.customer_code,
         "company_name": new_customer.company_name,
         "settlement_method": new_customer.settlement_method,
-        "rate": float(new_customer.rate),
+        "rate": new_customer.rate,
         "contact_person": new_customer.contact_person,
         "contact_phone": new_customer.contact_phone,
+        "minimum_ticket_fee": new_customer.minimum_ticket_fee,
+        "document_fee": new_customer.document_fee,
+        "minimum_ticket_fee_condition": new_customer.minimum_ticket_fee_condition,
+        "document_fee_condition": new_customer.document_fee_condition,
+        "weight_range_operation_fee_rate": new_customer.weight_range_operation_fee_rate,
+        "cargo_type_transit_fee_rate": new_customer.cargo_type_transit_fee_rate,
+        "settlement_cycle": new_customer.settlement_cycle,
+        "is_invoiced": new_customer.is_invoiced,
         "created_at": format_datetime_china(new_customer.created_at),
         "updated_at": format_datetime_china(new_customer.updated_at)
     }
@@ -58,7 +85,7 @@ async def create_customer(
     return success_response(data=customer_data, msg="客户创建成功")
 
 
-@router.put("/{customer_id}", summary="编辑客户信息")
+@router.put("/{customer_id}", summary="编辑客户信息", response_model=ResponseModel[CustomerResponse])
 async def update_customer(
     customer_id: str,
     payload: CustomerUpdate,
@@ -84,7 +111,16 @@ async def update_customer(
         if value is not None:
             setattr(customer, key, value)
         else:
-            if key == "rate":
+            nullable_fields = [
+                "minimum_ticket_fee", "document_fee", "minimum_ticket_fee_condition",
+                "document_fee_condition", "weight_range_operation_fee_rate",
+                "cargo_type_transit_fee_rate", "settlement_cycle"
+            ]
+            if key in nullable_fields:
+                setattr(customer, key, None)
+            elif key == "is_invoiced":
+                setattr(customer, key, False)
+            elif key == "rate":
                 setattr(customer, key, Decimal("0"))
             else:
                 setattr(customer, key, "")
@@ -94,18 +130,27 @@ async def update_customer(
 
     customer_data = {
         "id": str(customer.id),
+        "customer_code": customer.customer_code,
         "company_name": customer.company_name,
         "settlement_method": customer.settlement_method,
-        "rate": float(customer.rate),
+        "rate": customer.rate,
         "contact_person": customer.contact_person,
         "contact_phone": customer.contact_phone,
+        "minimum_ticket_fee": customer.minimum_ticket_fee,
+        "document_fee": customer.document_fee,
+        "minimum_ticket_fee_condition": customer.minimum_ticket_fee_condition,
+        "document_fee_condition": customer.document_fee_condition,
+        "weight_range_operation_fee_rate": customer.weight_range_operation_fee_rate,
+        "cargo_type_transit_fee_rate": customer.cargo_type_transit_fee_rate,
+        "settlement_cycle": customer.settlement_cycle,
+        "is_invoiced": customer.is_invoiced,
         "created_at": format_datetime_china(customer.created_at),
         "updated_at": format_datetime_china(customer.updated_at)
     }
     return success_response(data=customer_data, msg="客户信息更新成功")
 
 
-@router.get("", summary="客户信息查询")
+@router.get("", summary="客户信息查询", response_model=ResponseModel[CustomerListResponse])
 async def get_customers(
     query: CustomerQuery = Depends(),
     current_user = Depends(get_current_active_user),
@@ -148,11 +193,20 @@ async def get_customers(
     customer_list = [
         {
             "id": str(customer.id),
+            "customer_code": customer.customer_code,
             "company_name": customer.company_name,
             "settlement_method": customer.settlement_method,
-            "rate": float(customer.rate),
+            "rate": customer.rate,
             "contact_person": customer.contact_person,
             "contact_phone": customer.contact_phone,
+            "minimum_ticket_fee": customer.minimum_ticket_fee,
+            "document_fee": customer.document_fee,
+            "minimum_ticket_fee_condition": customer.minimum_ticket_fee_condition,
+            "document_fee_condition": customer.document_fee_condition,
+            "weight_range_operation_fee_rate": customer.weight_range_operation_fee_rate,
+            "cargo_type_transit_fee_rate": customer.cargo_type_transit_fee_rate,
+            "settlement_cycle": customer.settlement_cycle,
+            "is_invoiced": customer.is_invoiced,
             "created_at": format_datetime_china(customer.created_at),
             "updated_at": format_datetime_china(customer.updated_at)
         }
@@ -165,7 +219,7 @@ async def get_customers(
     )
 
 
-@router.get("/{customer_id}", summary="获取客户详情")
+@router.get("/{customer_id}", summary="获取客户详情", response_model=ResponseModel[CustomerResponse])
 async def get_customer(
     customer_id: str,
     current_user = Depends(get_current_active_user),
@@ -182,14 +236,44 @@ async def get_customer(
     
     customer_data = {
         "id": str(customer.id),
+        "customer_code": customer.customer_code,
         "company_name": customer.company_name,
         "settlement_method": customer.settlement_method,
-        "rate": float(customer.rate),
+        "rate": customer.rate,
         "contact_person": customer.contact_person,
         "contact_phone": customer.contact_phone,
+        "minimum_ticket_fee": customer.minimum_ticket_fee,
+        "document_fee": customer.document_fee,
+        "minimum_ticket_fee_condition": customer.minimum_ticket_fee_condition,
+        "document_fee_condition": customer.document_fee_condition,
+        "weight_range_operation_fee_rate": customer.weight_range_operation_fee_rate,
+        "cargo_type_transit_fee_rate": customer.cargo_type_transit_fee_rate,
+        "settlement_cycle": customer.settlement_cycle,
+        "is_invoiced": customer.is_invoiced,
         "created_at": format_datetime_china(customer.created_at),
         "updated_at": format_datetime_china(customer.updated_at)
     }
     
     return success_response(data=customer_data, msg="查询成功")
+
+
+@router.delete("/{customer_id}", summary="删除客户", response_model=ResponseModel[Any])
+async def delete_customer(
+    customer_id: str,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    删除客户接口
+    
+    - **customer_id**: 客户ID（字符串格式）
+    """
+    customer = db.query(Customer).filter(Customer.id == int(customer_id)).first()
+    if not customer:
+        raise NotFoundException("客户不存在")
+    
+    db.delete(customer)
+    db.commit()
+    
+    return success_response(msg="客户删除成功")
 
