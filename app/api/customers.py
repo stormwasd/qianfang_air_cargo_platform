@@ -54,7 +54,9 @@ async def create_customer(
         weight_range_operation_fee_rate=customer.weight_range_operation_fee_rate,
         cargo_type_transit_fee_rate=customer.cargo_type_transit_fee_rate,
         settlement_cycle=customer.settlement_cycle,
-        is_invoiced=customer.is_invoiced if customer.is_invoiced is not None else False
+        is_invoiced=customer.is_invoiced if customer.is_invoiced is not None else False,
+        creator_id=current_user.id,
+        creator_name=current_user.name
     )
     db.add(new_customer)
     db.commit()
@@ -75,6 +77,8 @@ async def create_customer(
         "cargo_type_transit_fee_rate": new_customer.cargo_type_transit_fee_rate,
         "settlement_cycle": new_customer.settlement_cycle,
         "is_invoiced": new_customer.is_invoiced,
+        "creator_id": str(new_customer.creator_id) if new_customer.creator_id else None,
+        "creator_name": new_customer.creator_name,
         "created_at": format_datetime_china(new_customer.created_at),
         "updated_at": format_datetime_china(new_customer.updated_at)
     }
@@ -139,6 +143,8 @@ async def update_customer(
         "cargo_type_transit_fee_rate": customer.cargo_type_transit_fee_rate,
         "settlement_cycle": customer.settlement_cycle,
         "is_invoiced": customer.is_invoiced,
+        "creator_id": str(customer.creator_id) if customer.creator_id else None,
+        "creator_name": customer.creator_name,
         "created_at": format_datetime_china(customer.created_at),
         "updated_at": format_datetime_china(customer.updated_at)
     }
@@ -201,6 +207,8 @@ async def get_customers(
             "cargo_type_transit_fee_rate": customer.cargo_type_transit_fee_rate,
             "settlement_cycle": customer.settlement_cycle,
             "is_invoiced": customer.is_invoiced,
+            "creator_id": str(customer.creator_id) if customer.creator_id else None,
+            "creator_name": customer.creator_name,
             "created_at": format_datetime_china(customer.created_at),
             "updated_at": format_datetime_china(customer.updated_at)
         }
@@ -243,6 +251,8 @@ async def get_customer(
         "cargo_type_transit_fee_rate": customer.cargo_type_transit_fee_rate,
         "settlement_cycle": customer.settlement_cycle,
         "is_invoiced": customer.is_invoiced,
+        "creator_id": str(customer.creator_id) if customer.creator_id else None,
+        "creator_name": customer.creator_name,
         "created_at": format_datetime_china(customer.created_at),
         "updated_at": format_datetime_china(customer.updated_at)
     }

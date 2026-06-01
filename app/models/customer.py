@@ -27,6 +27,9 @@ class Customer(Base):
     settlement_cycle = Column(Integer, nullable=True, comment="结算周期(1=周结, 2=半月结, 3=月结, 4=现结)")
     is_invoiced = Column(Boolean, nullable=True, default=False, comment="是否开票")
     
+    creator_id = Column(BigInteger, nullable=True, comment="创建人ID")
+    creator_name = Column(String(50), nullable=True, comment="创建人名称")
+    
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     

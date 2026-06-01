@@ -57,6 +57,8 @@ class CustomerResponse(BaseModel):
     cargo_type_transit_fee_rate: Optional[Dict[str, Any]] = None
     settlement_cycle: Optional[int] = None
     is_invoiced: Optional[bool] = False
+    creator_id: Optional[str] = None
+    creator_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
