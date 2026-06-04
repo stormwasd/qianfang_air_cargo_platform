@@ -45,7 +45,8 @@ class WaybillCreate(BaseModel):
         "pickup_fee": "",  // 上门提货费
         "delivery_fee": ""  // 派送费
       },
-      "oxygenated_aquatic_animal_goods_receipt_inspection_form_switch": ""  // 充氧类水生动物货物收运检查单开关（"0"=需要生成，"1"或不传=不需要生成）
+      "oxygenated_aquatic_animal_goods_receipt_inspection_form_switch": "",  // 充氧类水生动物货物收运检查单开关
+      "pickup_method": ""  // 提货方式（独立字段，不参与RPA开单）
     }
     
     南方航空字段结构（airline 可以是 "2" 或 "南方航空"）：
@@ -96,7 +97,8 @@ class WaybillCreate(BaseModel):
         "pickup_fee": "",  // 上门提货费
         "delivery_fee": ""  // 派送费
       },
-      "oxygenated_aquatic_animal_goods_receipt_inspection_form_switch": ""  // 充氧类水生动物货物收运检查单开关（"0"=需要生成，"1"或不传=不需要生成）
+      "oxygenated_aquatic_animal_goods_receipt_inspection_form_switch": "",  // 充氧类水生动物货物收运检查单开关
+      "pickup_method": ""  // 提货方式（独立字段，不参与RPA开单）
     }
     
     说明：

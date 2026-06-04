@@ -27,8 +27,6 @@ async def get_weather(
     """
     # 1. 映射三字码到城市名称
     city_name = get_city_name_by_code(query.airport_code)
-    if not city_name or city_name == query.airport_code:
-        raise NotFoundException(f"未找到机场三字码 {query.airport_code} 对应的城市")
     
     # 2. 调用高德天气接口
     # 重点：直接使用中文城市名称请求高德接口
