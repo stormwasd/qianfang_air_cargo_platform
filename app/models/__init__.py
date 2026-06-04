@@ -14,6 +14,7 @@ from app.models.company import CompanyAccount
 from app.models.agent import Agent
 from app.models.pickup_unit import PickupUnit
 from app.models.delivery_unit import DeliveryUnit
+from app.models.consignment_note import ConsignmentNote
 from app.models.user_department import user_department  # 确保关联表被导入
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote"]
