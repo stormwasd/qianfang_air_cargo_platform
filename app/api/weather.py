@@ -6,7 +6,7 @@ import httpx
 import urllib.parse
 
 from fastapi import APIRouter, Depends
-from app.core.exceptions import NotFoundException, BusinessException
+from app.core.exceptions import NotFoundException, BadRequestException
 from app.core.response import success_response, ResponseModel
 from app.api.deps import get_current_active_user
 from app.utils.airport_code_mapper import get_city_name_by_code
@@ -40,10 +40,10 @@ async def get_weather(
             response.raise_for_status()
             data = response.json()
     except Exception as e:
-        raise BusinessException(f"请求天气服务失败: {str(e)}")
+        raise BadRequestException(f"请求天气服务失败: {str(e)}")
         
     if data.get("status") != "1" or data.get("infocode") != "10000":
-        raise BusinessException(f"高德天气服务异常: {data.get('info')}")
+        raise BadRequestException(f"高德天气服务异常: {data.get('info')}")
         
     # 3. 筛选指定日期
     forecasts = data.get("forecasts", [])
