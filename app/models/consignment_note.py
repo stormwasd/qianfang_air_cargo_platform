@@ -4,13 +4,14 @@
 from sqlalchemy import Column, BigInteger, String, DateTime, Text, Date
 from app.database import Base
 from app.utils.helpers import get_china_now
+from app.utils.snowflake import generate_id
 
 
 class ConsignmentNote(Base):
     """托运书表"""
     __tablename__ = "consignment_notes"
     
-    id = Column(BigInteger, primary_key=True, autoincrement=True, index=True, comment="托运书ID")
+    id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="托运书ID")
     transport_type = Column(String(10), nullable=False, index=True, comment="托运方式：0=空运，1=汽运")
     company_name = Column(String(100), nullable=True, index=True, comment="代理公司名称")
     customer_name = Column(String(100), nullable=True, index=True, comment="客户名称")

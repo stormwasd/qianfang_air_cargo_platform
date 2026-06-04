@@ -1,6 +1,6 @@
 -- 创建托运书表 (Consignment Notes)
 CREATE TABLE IF NOT EXISTS `consignment_notes` (
-    `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '托运书ID',
+    `id` bigint(20) NOT NULL COMMENT '托运书ID',
     `transport_type` varchar(10) NOT NULL COMMENT '托运方式：0=空运，1=汽运',
     `company_name` varchar(100) DEFAULT NULL COMMENT '代理公司名称',
     `customer_name` varchar(100) DEFAULT NULL COMMENT '客户名称',
