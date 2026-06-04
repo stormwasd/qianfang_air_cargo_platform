@@ -60,7 +60,7 @@ async def create_consignment_note(
         airline=airline,
         form_data=form_data_json,
         creator_id=str(current_user.id),
-        creator_name=current_user.username
+        creator_name=current_user.name
     )
     db.add(new_note)
     db.commit()
