@@ -16,7 +16,7 @@ from app.services.rpa_task_service import rpa_task_service
 
 
 TRANSIT_LOADING_TARGET_TYPE = "transit_loading"
-BILLING_TIME_TARGET_TYPE = "shenzhen_air_booking_exports"
+BILLING_TIME_TARGET_TYPE = "booking_export"
 
 def _get_business_config_dict(db_session) -> Dict[str, Any]:
     config = db_session.query(BusinessConfig).first()
