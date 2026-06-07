@@ -2864,6 +2864,7 @@ class RPAWorker:
         params = json.loads(task.params) if task.params else {}
         
         try:
+            print(f"{self._log_prefix} [SHENZHEN_AIR_TRANSIT_LOADING] 实际发送给RPA的参数: {params}")
             rpa_response = await asyncio.wait_for(
                 rpa_service.create_rpa_job(
                     job_name="深航过机装机数据获取任务",
@@ -2944,10 +2945,11 @@ class RPAWorker:
                     print(f"{self._log_prefix} 创建队列失败: {queue_config['name']}, {_get_error_detail(e)}")
         
         if queues_info:
-            queue_names = {k: v["queueName"] for k, v in queues_info.items()}
+            queue_names = self._build_queue_names_for_flow(queues_info)
             params.update(queue_names)
 
         try:
+            print(f"{self._log_prefix} [SHENZHEN_AIR_BILLING_TIME_CONTAINER] 实际发送给RPA的参数: {params}")
             rpa_response = await asyncio.wait_for(
                 rpa_service.create_rpa_job(
                     job_name="深航计飞时间集装器获取任务",
