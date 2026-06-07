@@ -172,6 +172,7 @@ class TransitLoadingManager:
             node = business_config.get("shenzhen_air", {}).get("booking", {}).get("shenzhen_air_login", {})
             system_account = node.get("system_account", "szxfdh002")
 
+            seen_waybills = set()
             # 遍历行
             for index, row in df.iterrows():
                 # 读取全部31列（处理 NaN 为 None）
@@ -183,6 +184,11 @@ class TransitLoadingManager:
                 
                 if not waybill_number or waybill_number == 'None':
                     continue
+                
+                # 如果是首次遇到该单号，删除已存在的旧数据（覆盖模式）
+                if waybill_number not in seen_waybills:
+                    db.query(ShenzhenAirBookingExport).filter(ShenzhenAirBookingExport.waybill_number == waybill_number).delete()
+                    seen_waybills.add(waybill_number)
                 
                 # 入库
                 export_record = ShenzhenAirBookingExport(

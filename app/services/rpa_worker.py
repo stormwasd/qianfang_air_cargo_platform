@@ -3014,12 +3014,24 @@ class RPAWorker:
                     print(f"\n=======================================================")
                     print(f"[{self._log_prefix}] 计飞时间-集装器数据获取任务 {task.id} 消费成功！")
                     print(f"获取到的队列数据：{billing_data}")
-                    print(f"=======================================================\n")
+                    if billing_data:
+                        if isinstance(billing_data, str):
+                            try:
+                                billing_data = json.loads(billing_data)
+                            except json.JSONDecodeError:
+                                print(f"{self._log_prefix} 计飞时间数据不是有效的 JSON 字符串")
+                                billing_data = None
                     
                     if billing_data and isinstance(billing_data, list):
                         # 从 task.params 中获取 waybill_number_8
                         params = json.loads(task.params) if task.params else {}
                         waybill_number_8 = params.get("waybill_number_8", "")
+                        
+                        # 删除旧数据，实现覆盖而不是追加
+                        if waybill_number_8:
+                            db.query(ShenzhenAirBillingTimeContainer).filter(
+                                ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_number_8
+                            ).delete()
                         
                         # 解析并入库
                         records_to_insert = []
