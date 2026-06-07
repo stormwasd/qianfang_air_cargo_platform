@@ -190,6 +190,8 @@ async def get_task_types(
     task_type_descriptions = {
         "SHENZHEN_AIR_WAYBILL_EXECUTE": "深航开单",
         "SHENZHEN_AIR_WAYBILL_VOID": "深航作废",
+        "SHENZHEN_AIR_BILLING_TIME_CONTAINER": "深航计飞时间-集装器数据获取",
+        "SHENZHEN_AIR_TRANSIT_LOADING": "深航过机-装机数据获取",
         "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE": "南航订舱",
         "CHINA_SOUTHERN_AIR_BOOKING_CANCEL": "南航退舱",
         "CHINA_SOUTHERN_AIR_DIRECT_INVOICE": "南航直接开单",
