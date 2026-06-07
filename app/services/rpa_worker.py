@@ -420,6 +420,10 @@ class RPAWorker:
                     await self._execute_china_southern_air_keep_login(db, task)
                 elif task.task_type == RPATaskType.TANGYI_KEEP_LOGIN.value:
                     await self._execute_tangyi_keep_login(db, task)
+                elif task.task_type == RPATaskType.SHENZHEN_AIR_TRANSIT_LOADING.value:
+                    await self._execute_shenzhen_air_transit_loading(db, task)
+                elif task.task_type == RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value:
+                    await self._execute_shenzhen_air_billing_time_container(db, task)
                 else:
                     print(f"{self._log_prefix} 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -2854,6 +2858,166 @@ class RPAWorker:
                     print(f"{self._log_prefix} 识别到南航异常: 机型识别失败 (workUuid: {work_uuid})")
         except Exception as e:
             print(f"{self._log_prefix} 检查南航反馈详情失败: {str(e)}")
+
+    async def _execute_shenzhen_air_transit_loading(self, db, task: RPATask):
+        """执行深航过机装机数据获取任务（下载表格）"""
+        params = json.loads(task.params) if task.params else {}
+        
+        try:
+            rpa_response = await asyncio.wait_for(
+                rpa_service.create_rpa_job(
+                    job_name="深航过机装机数据获取任务",
+                    process_detail_uuid="f81468b2e2b6cbf262163ae8506159bb",
+                    bot_uuid="",  # 由 RPA 平台分配
+                    input_param=params,
+                    priority=task.priority,
+                    process_channel=1
+                ),
+                timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+            )
+            
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+            if not work_uuid:
+                raise Exception("RPA接口未返回workUuid")
+            
+            rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
+            await self._poll_shenzhen_air_transit_loading_status(db, task, work_uuid)
+            
+        except Exception as e:
+            raise e
+
+    async def _poll_shenzhen_air_transit_loading_status(self, db, task: RPATask, work_uuid: str):
+        """轮询下载表格 RPA 状态"""
+        poll_count = 0
+        while poll_count < settings.RPA_POLL_MAX_COUNT:
+            try:
+                status_response = await rpa_service.query_shenzhen_air_waybill_status(job_uuid=task.job_uuid)
+                status_info = rpa_service.extract_status_from_query_response(status_response, work_uuid)
+                
+                if status_info:
+                    status = status_info.get("status")
+                    if status == 1:
+                        print(f"{self._log_prefix} 下载表格任务 {task.id} 成功")
+                        rpa_task_service.complete_task(db, task.id, True)
+                        return
+                    elif status in [2, 3]:
+                        error_msg = status_info.get("statusDesc", "RPA执行失败")
+                        print(f"{self._log_prefix} 下载表格任务 {task.id} 失败: {error_msg}")
+                        rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+                        return
+            except Exception as e:
+                print(f"{self._log_prefix} 查询状态异常: {_get_error_detail(e)}")
+            
+            poll_count += 1
+            await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+            
+        print(f"{self._log_prefix} 下载表格任务 {task.id} 轮询超时")
+        rpa_task_service.timeout_task(db, task.id, "轮询超时")
+
+    async def _execute_shenzhen_air_billing_time_container(self, db, task: RPATask):
+        """执行深航计飞时间集装器获取任务"""
+        params = json.loads(task.params) if task.params else {}
+        queue_params = json.loads(task.queue_params) if task.queue_params else None
+        
+        queues_info = {}
+        if queue_params:
+            queue_configs = queue_params.get("queue_configs", [])
+            for queue_config in queue_configs:
+                try:
+                    queue_data = await asyncio.wait_for(
+                        rpa_service.create_queue(
+                            queue_name=queue_config["name"],
+                            max_queue_number=999,
+                            is_expire=False
+                        ),
+                        timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                    )
+                    queue_uuid = queue_data.get("queueUUID", "")
+                    queue_id = str(queue_data.get("queueID", ""))
+                    if queue_uuid:
+                        queues_info[queue_config["key"]] = {
+                            "queueUUID": queue_uuid,
+                            "queueID": queue_id,
+                            "queueName": queue_config["name"]
+                        }
+                except Exception as e:
+                    print(f"{self._log_prefix} 创建队列失败: {queue_config['name']}, {_get_error_detail(e)}")
+        
+        if queues_info:
+            queue_names = {k: v["queueName"] for k, v in queues_info.items()}
+            params.update(queue_names)
+
+        try:
+            rpa_response = await asyncio.wait_for(
+                rpa_service.create_rpa_job(
+                    job_name="深航计飞时间集装器获取任务",
+                    process_detail_uuid="fbf660cc3aa24ac7d664ce7ab55273e5",
+                    bot_uuid="", 
+                    input_param=params,
+                    priority=task.priority,
+                    process_channel=1
+                ),
+                timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+            )
+            
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+            if not work_uuid:
+                raise Exception("RPA接口未返回workUuid")
+            
+            rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
+            await self._poll_shenzhen_air_billing_time_container_status(db, task, work_uuid, queues_info)
+            
+        except Exception as e:
+            await self._cleanup_queues(queues_info)
+            raise e
+
+    async def _poll_shenzhen_air_billing_time_container_status(self, db, task: RPATask, work_uuid: str, queues_info: dict):
+        """轮询计飞时间集装器获取状态并消费队列"""
+        poll_count = 0
+        while poll_count < settings.RPA_POLL_MAX_COUNT:
+            try:
+                status_response = await rpa_service.query_shenzhen_air_waybill_status(job_uuid=task.job_uuid)
+                status_info = rpa_service.extract_status_from_query_response(status_response, work_uuid)
+                
+                if status_info:
+                    status = status_info.get("status")
+                    if status == 1:
+                        await self._handle_shenzhen_air_billing_time_container_success(db, task, queues_info)
+                        return
+                    elif status in [2, 3]:
+                        error_msg = status_info.get("statusDesc", "RPA执行失败")
+                        print(f"{self._log_prefix} 计飞集装器任务 {task.id} 失败: {error_msg}")
+                        rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+                        await self._cleanup_queues(queues_info)
+                        return
+            except Exception as e:
+                print(f"{self._log_prefix} 查询状态异常: {_get_error_detail(e)}")
+            
+            poll_count += 1
+            await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+            
+        print(f"{self._log_prefix} 计飞集装器任务 {task.id} 轮询超时")
+        rpa_task_service.timeout_task(db, task.id, "轮询超时")
+        await self._cleanup_queues(queues_info)
+
+    async def _handle_shenzhen_air_billing_time_container_success(self, db, task: RPATask, queues_info: dict):
+        """成功后，消费队列中的计飞时间与集装器数据并打印"""
+        try:
+            billing_data = None
+            if "billing_time_container" in queues_info:
+                queue_uuid = queues_info["billing_time_container"]["queueUUID"]
+                try:
+                    billing_data = await rpa_service.consume_queue_data(queue_uuid)
+                    print(f"\n=======================================================")
+                    print(f"[{self._log_prefix}] 计飞时间-集装器数据获取任务 {task.id} 消费成功！")
+                    print(f"获取到的队列数据：{billing_data}")
+                    print(f"=======================================================\n")
+                except Exception as e:
+                    print(f"{self._log_prefix} 消费队列失败: {_get_error_detail(e)}")
+            
+            rpa_task_service.complete_task(db, task.id, True)
+        finally:
+            await self._cleanup_queues(queues_info)
 
 
 # 全局Worker管理器

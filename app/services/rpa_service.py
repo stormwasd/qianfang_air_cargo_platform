@@ -405,6 +405,37 @@ class RPAService:
             except Exception as e:
                 raise BadRequestException(f"获取运单号异常: {repr(e)}")
     
+    async def consume_queue_data(self, queue_uuid: str) -> Optional[Any]:
+        """
+        通用获取队列数据接口（消费队列并返回原始数据）
+        
+        Args:
+            queue_uuid: 队列UUID
+        
+        Returns:
+            队列中的原始数据（通常是字符串或字典），获取失败则返回None
+        """
+        url = f"{self.base_url}/openAPI/queue/consume/queue-UUID/{queue_uuid}"
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(url, headers=self._get_headers())
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "获取队列数据失败")
+                    raise BadRequestException(f"获取队列数据失败: {error_msg}")
+                
+                data = result.get("data", {})
+                return data.get("data")
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"获取队列数据HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"获取队列数据请求失败: {repr(e)}")
+            except Exception as e:
+                raise BadRequestException(f"获取队列数据异常: {repr(e)}")
+    
     def format_shenzhen_air_waybill_number(self, waybill_suffix: str) -> str:
         """
         格式化深航运单号（加上前缀 "479-"）（仅适用于深圳航空）

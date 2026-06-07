@@ -127,6 +127,18 @@ class Settings(BaseSettings):
         description="唐翼保持登录执行间隔（秒），默认不启用"
     )
     
+    # ========== 定时获取数据类RPA配置 ==========
+    RPA_SHENZHEN_AIR_TRANSIT_LOADING_INTERVAL_SECONDS: Optional[int] = Field(
+        default=3600, ge=1, le=86400,
+        description="深航订舱-过机-装机数据获取任务执行间隔（秒），默认3600秒"
+    )
+    # 下载的表格存储目录（使用绝对路径，或者基于项目根目录的相对路径）
+    import os
+    RPA_GENERATED_FILES_DIR: str = Field(
+        default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "generated_files"),
+        description="后台扫描的RPA下载文件存放目录"
+    )
+    
     # RPA轮询配置
     RPA_POLL_INTERVAL: int = Field(default=5, ge=1, le=300, description="RPA状态轮询间隔（秒），默认5秒")
     RPA_POLL_MAX_COUNT: int = Field(default=60, ge=1, le=1000, description="RPA状态最大轮询次数，默认60次（即最多轮询5分钟）")
