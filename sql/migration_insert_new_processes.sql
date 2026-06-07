@@ -2,7 +2,7 @@
 -- 1. 深航订舱-计飞时间-集装器数据获取
 INSERT INTO `task_processes` (`id`, `task_name`, `chinese_name`, `process_detail_uuid`, `version`, `process_param`, `created_at`, `updated_at`)
 VALUES (
-    FLOOR(RAND() * 9000000000000000000 + 1000000000000000000),
+    FLOOR(RAND() * 900000000000000000 + 100000000000000000),
     'SHENZHEN_AIR_BILLING_TIME_CONTAINER',
     '深航订舱-计飞时间-集装器数据获取',
     'fbf660cc3aa24ac7d664ce7ab55273e5',
@@ -15,7 +15,7 @@ VALUES (
 -- 2. 深航订舱-过机-装机数据获取
 INSERT INTO `task_processes` (`id`, `task_name`, `chinese_name`, `process_detail_uuid`, `version`, `process_param`, `created_at`, `updated_at`)
 VALUES (
-    FLOOR(RAND() * 9000000000000000000 + 1000000000000000000),
+    FLOOR(RAND() * 900000000000000000 + 100000000000000000),
     'SHENZHEN_AIR_TRANSIT_LOADING',
     '深航订舱-过机-装机数据获取',
     'f81468b2e2b6cbf262163ae8506159bb',
