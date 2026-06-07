@@ -2865,14 +2865,14 @@ class RPAWorker:
         
         try:
             print(f"{self._log_prefix} [SHENZHEN_AIR_TRANSIT_LOADING] 实际发送给RPA的参数: {params}")
+            
+            if not task.job_uuid:
+                raise Exception("未找到绑定的 job_uuid，无法触发 RPA 任务")
+                
             rpa_response = await asyncio.wait_for(
-                rpa_service.create_rpa_job(
-                    job_name="深航过机装机数据获取任务",
-                    process_detail_uuid="f81468b2e2b6cbf262163ae8506159bb",
-                    bot_uuid="",  # 由 RPA 平台分配
-                    input_param=params,
-                    priority=task.priority,
-                    process_channel=1
+                rpa_service.trigger_rpa_job(
+                    job_uuid=task.job_uuid,
+                    input_param=params
                 ),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
@@ -2950,14 +2950,14 @@ class RPAWorker:
 
         try:
             print(f"{self._log_prefix} [SHENZHEN_AIR_BILLING_TIME_CONTAINER] 实际发送给RPA的参数: {params}")
+            
+            if not task.job_uuid:
+                raise Exception("未找到绑定的 job_uuid，无法触发 RPA 任务")
+                
             rpa_response = await asyncio.wait_for(
-                rpa_service.create_rpa_job(
-                    job_name="深航计飞时间集装器获取任务",
-                    process_detail_uuid="fbf660cc3aa24ac7d664ce7ab55273e5",
-                    bot_uuid="", 
-                    input_param=params,
-                    priority=task.priority,
-                    process_channel=1
+                rpa_service.trigger_rpa_job(
+                    job_uuid=task.job_uuid,
+                    input_param=params
                 ),
                 timeout=settings.RPA_QUEUE_TASK_TIMEOUT
             )
