@@ -5,6 +5,7 @@
 from typing import List, Dict, Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field
+import os
 
 
 class Settings(BaseSettings):
@@ -133,7 +134,6 @@ class Settings(BaseSettings):
         description="深航订舱-过机-装机数据获取任务执行间隔（秒），默认3600秒"
     )
     # 下载的表格存储目录（使用绝对路径，或者基于项目根目录的相对路径）
-    import os
     RPA_GENERATED_FILES_DIR: str = Field(
         default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "generated_files"),
         description="后台扫描的RPA下载文件存放目录"
