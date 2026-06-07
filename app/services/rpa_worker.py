@@ -17,6 +17,7 @@ from app.models.waybill import Waybill
 from app.models.booking import Booking
 from app.models.settlement import Settlement
 from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
+from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.services.rpa_service import rpa_service
 from app.services.rpa_task_service import rpa_task_service, PRINT_TASK_TYPES, PRINT_TYPE_REVERSE_MAPPING, PRINT_TYPE_MAPPING
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
@@ -3014,7 +3015,47 @@ class RPAWorker:
                     print(f"[{self._log_prefix}] 计飞时间-集装器数据获取任务 {task.id} 消费成功！")
                     print(f"获取到的队列数据：{billing_data}")
                     print(f"=======================================================\n")
+                    
+                    if billing_data and isinstance(billing_data, list):
+                        # 从 task.params 中获取 waybill_number_8
+                        params = json.loads(task.params) if task.params else {}
+                        waybill_number_8 = params.get("waybill_number_8", "")
+                        
+                        # 解析并入库
+                        records_to_insert = []
+                        for row in billing_data:
+                            # 过滤空行或不合规的行
+                            if not row or not isinstance(row, list) or len(row) < 9:
+                                continue
+                            
+                            seq = str(row[0]).strip()
+                            # 跳过表头和合计行
+                            if seq == "序号" or seq == "" or "合计" in str(row[1]):
+                                continue
+                                
+                            record = ShenzhenAirBillingTimeContainer(
+                                waybill_number_8=waybill_number_8,
+                                sequence=seq,
+                                flight_number=str(row[1]).strip(),
+                                flight_date=str(row[2]).strip(),
+                                billing_time=str(row[3]).strip(),
+                                origin=str(row[4]).strip(),
+                                destination=str(row[5]).strip(),
+                                quantity=str(row[6]).strip(),
+                                weight=str(row[7]).strip(),
+                                container=str(row[8]).strip()
+                            )
+                            records_to_insert.append(record)
+                            
+                        if records_to_insert:
+                            db.add_all(records_to_insert)
+                            db.commit()
+                            print(f"{self._log_prefix} 成功将 {len(records_to_insert)} 条计飞时间数据入库！")
+                        else:
+                            print(f"{self._log_prefix} 未解析到有效的计飞时间数据行")
+
                 except Exception as e:
+                    db.rollback()
                     print(f"{self._log_prefix} 消费队列失败: {_get_error_detail(e)}")
             
             rpa_task_service.complete_task(db, task.id, True)

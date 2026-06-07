@@ -18,5 +18,6 @@ from app.models.consignment_note import ConsignmentNote
 from app.models.user_department import user_department  # 确保关联表被导入
 
 from app.models.transit_loading import ShenzhenAirBookingExport
+from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport", "ShenzhenAirBillingTimeContainer"]
