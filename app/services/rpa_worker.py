@@ -2897,11 +2897,11 @@ class RPAWorker:
                 
                 if status_info:
                     status = status_info.get("status")
-                    if status == 1:
+                    if status == 5:
                         print(f"{self._log_prefix} 下载表格任务 {task.id} 成功")
                         rpa_task_service.complete_task(db, task.id, True)
                         return
-                    elif status in [2, 3]:
+                    elif status == 3:
                         error_msg = status_info.get("statusDesc", "RPA执行失败")
                         print(f"{self._log_prefix} 下载表格任务 {task.id} 失败: {error_msg}")
                         rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
@@ -2983,10 +2983,10 @@ class RPAWorker:
                 
                 if status_info:
                     status = status_info.get("status")
-                    if status == 1:
+                    if status == 5:
                         await self._handle_shenzhen_air_billing_time_container_success(db, task, queues_info)
                         return
-                    elif status in [2, 3]:
+                    elif status == 3:
                         error_msg = status_info.get("statusDesc", "RPA执行失败")
                         print(f"{self._log_prefix} 计飞集装器任务 {task.id} 失败: {error_msg}")
                         rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
