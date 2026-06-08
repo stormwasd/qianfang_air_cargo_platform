@@ -97,11 +97,17 @@ async def get_shenzhen_air_departures(
     # 构造返回列表
     items = []
     for export in exports:
-        export_dict = export.__dict__.copy()
+        export_dict = {k: v for k, v in export.__dict__.items() if k != '_sa_instance_state'}
         export_dict["id"] = str(export.id)  # 转字符串防止精度丢失
-        export_dict["billing_time_containers"] = [
-            {**c.__dict__, "id": str(c.id)} for c in containers_by_export_id[export.id]
-        ]
+        
+        # 组装子表并剔除 _sa_instance_state
+        containers_data = []
+        for c in containers_by_export_id[export.id]:
+            c_dict = {k: v for k, v in c.__dict__.items() if k != '_sa_instance_state'}
+            c_dict["id"] = str(c.id)
+            containers_data.append(c_dict)
+            
+        export_dict["billing_time_containers"] = containers_data
         items.append(export_dict)
 
     return success_response(
