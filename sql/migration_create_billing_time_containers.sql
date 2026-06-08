@@ -1,5 +1,5 @@
 CREATE TABLE `shenzhen_air_billing_time_containers` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `id` bigint(20) NOT NULL COMMENT '主键ID',
   `waybill_number_8` varchar(50) DEFAULT NULL COMMENT '运单号(8位)',
   `sequence` varchar(50) DEFAULT NULL COMMENT '序号',
   `flight_number` varchar(50) DEFAULT NULL COMMENT '航班号',

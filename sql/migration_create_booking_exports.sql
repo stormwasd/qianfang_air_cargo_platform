@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS `shenzhen_air_booking_exports` (
-    `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `id` BIGINT PRIMARY KEY COMMENT '主键ID',
     `prefix` VARCHAR(20) DEFAULT NULL COMMENT '前缀',
     `waybill_number` VARCHAR(50) DEFAULT NULL COMMENT '单号',
     `waybill_status` VARCHAR(50) DEFAULT NULL COMMENT '运单状态',

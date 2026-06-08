@@ -1,11 +1,12 @@
 from sqlalchemy import Column, String, BigInteger, DateTime, func
 from sqlalchemy.orm import declarative_base
 from app.database import Base
+from app.utils.snowflake import generate_id
 
 class ShenzhenAirBillingTimeContainer(Base):
     __tablename__ = "shenzhen_air_billing_time_containers"
 
-    id = Column(BigInteger, primary_key=True, index=True, autoincrement=True, comment="主键ID")
+    id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
     waybill_number_8 = Column(String(50), index=True, comment="运单号(8位)")
     sequence = Column(String(50), comment="序号")
     flight_number = Column(String(50), comment="航班号")
