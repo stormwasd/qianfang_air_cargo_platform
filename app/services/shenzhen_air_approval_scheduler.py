@@ -10,11 +10,14 @@ import threading
 import traceback
 from datetime import datetime, timedelta
 from typing import Optional
+import os
+import pandas as pd
 
 from app.database import SessionLocal
 from app.config import settings
 from app.models.rpa_task import RPATaskType
 from app.models.robot import TaskProcess
+from app.models.shenzhen_air_approval import ShenzhenAirApprovalData
 from app.services.rpa_task_service import rpa_task_service
 
 
@@ -25,6 +28,7 @@ class ShenzhenAirApprovalScheduler:
     def __init__(self):
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self.watch_dir = settings.RPA_GENERATED_FILES_DIR
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -77,6 +81,13 @@ class ShenzhenAirApprovalScheduler:
                 # 分段 sleep，以支持及时 stop
                 while seconds_to_wait > 0 and not self._stop_event.is_set():
                     step = min(5.0, seconds_to_wait)
+                    
+                    # 在休眠间隙轮询文件
+                    try:
+                        self._check_for_new_files()
+                    except Exception as ex:
+                        print(f"[ShenzhenAirApprovalScheduler] 文件监控异常: {repr(ex)}\n{traceback.format_exc()}")
+                        
                     await asyncio.sleep(step)
                     seconds_to_wait -= step
                 
@@ -129,6 +140,82 @@ class ShenzhenAirApprovalScheduler:
                 robot_id=None,  # 允许任何有权限的机器人执行
             )
             print(f"[ShenzhenAirApprovalScheduler] 已生成深航订舱批复数据获取任务, flight_date={tomorrow}")
+        finally:
+            db.close()
+
+    def _check_for_new_files(self) -> None:
+        if not os.path.exists(self.watch_dir):
+            return
+            
+        for filename in os.listdir(self.watch_dir):
+            if "订舱查询导出" in filename and filename.endswith(".xlsx"):
+                filepath = os.path.join(self.watch_dir, filename)
+                
+                # 简单防抖：确保文件不再被写入
+                try:
+                    os.rename(filepath, filepath)
+                except OSError:
+                    continue  # 文件仍在使用中
+                
+                print(f"[ShenzhenAirApprovalScheduler] 发现新的批复数据文件: {filename}，开始解析入库...")
+                self._process_file(filepath)
+
+    def _process_file(self, filepath: str) -> None:
+        db = SessionLocal()
+        try:
+            df = pd.read_excel(filepath)
+            
+            seen_flight_pairs = set()
+            
+            for index, row in df.iterrows():
+                row_dict = row.where(pd.notnull(row), None).to_dict()
+                
+                flight_number = str(row_dict.get("航班号", ""))
+                flight_date = str(row_dict.get("航班日期", ""))
+                
+                if not flight_number or not flight_date or flight_number == 'None' or flight_date == 'None':
+                    continue
+                    
+                pair_key = f"{flight_number}_{flight_date}"
+                
+                # 防重策略：相同航班号+航班日期，先删除旧数据再插入新数据
+                if pair_key not in seen_flight_pairs:
+                    db.query(ShenzhenAirApprovalData).filter(
+                        ShenzhenAirApprovalData.flight_number == flight_number,
+                        ShenzhenAirApprovalData.flight_date == flight_date
+                    ).delete()
+                    seen_flight_pairs.add(pair_key)
+                    
+                export_record = ShenzhenAirApprovalData(
+                    flight_number=flight_number,
+                    flight_date=flight_date,
+                    aircraft_type=str(row_dict.get("机型", "")),
+                    departure_time=str(row_dict.get("起飞", "")),
+                    routing=str(row_dict.get("航程", "")),
+                    agent=str(row_dict.get("代理人", "")),
+                    f_booking=str(row_dict.get("F订", "")),
+                    f_approval=str(row_dict.get("F批", "")),
+                    c_booking=str(row_dict.get("C订", "")),
+                    c_approval=str(row_dict.get("C批", "")),
+                    other_booking=str(row_dict.get("其他订", "")),
+                    other_approval=str(row_dict.get("其他批", "")),
+                    status=str(row_dict.get("状态", "")),
+                    type=str(row_dict.get("类型", "")),
+                    control=str(row_dict.get("控制", "")),
+                    open_status=str(row_dict.get("开放", "")),
+                    remark=str(row_dict.get("备注", ""))
+                )
+                db.add(export_record)
+                
+            db.commit()
+            print(f"[ShenzhenAirApprovalScheduler] 文件 {os.path.basename(filepath)} 解析入库完成。")
+            
+            # 重命名防重处理，防止被再次处理
+            os.rename(filepath, filepath + ".processed")
+            
+        except Exception as e:
+            db.rollback()
+            print(f"[ShenzhenAirApprovalScheduler] 处理文件 {filepath} 失败: {repr(e)}\n{traceback.format_exc()}")
         finally:
             db.close()
 
