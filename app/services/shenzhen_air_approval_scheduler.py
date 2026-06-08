@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.database import SessionLocal
+from app.config import settings
 from app.models.rpa_task import RPATaskType
 from app.models.robot import TaskProcess
 from app.services.rpa_task_service import rpa_task_service
@@ -55,12 +56,19 @@ class ShenzhenAirApprovalScheduler:
             except Exception as e:
                 print(f"[ShenzhenAirApprovalScheduler] 启动时入队失败: {repr(e)}")
 
-        # 2. 定时每天18:00执行
+        # 2. 定时每天指定时间执行（可配置，默认18:00）
         while not self._stop_event.is_set():
             try:
                 now = datetime.now()
-                # 计算下一个 18:00
-                target = now.replace(hour=18, minute=0, second=0, microsecond=0)
+                # 从配置读取执行时间，例如 "18:00"
+                time_str = getattr(settings, "RPA_SHENZHEN_AIR_APPROVAL_DATA_TIME", "18:00")
+                try:
+                    hour, minute = map(int, time_str.split(':'))
+                except ValueError:
+                    hour, minute = 18, 0
+
+                # 计算下一个目标时间
+                target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
                 if now >= target:
                     target += timedelta(days=1)
                 

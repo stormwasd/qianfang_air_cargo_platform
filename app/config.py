@@ -133,6 +133,10 @@ class Settings(BaseSettings):
         default=3600, ge=1, le=86400,
         description="深航订舱-过机-装机数据获取任务执行间隔（秒），默认3600秒"
     )
+    RPA_SHENZHEN_AIR_APPROVAL_DATA_TIME: str = Field(
+        default="18:00",
+        description="深航订舱-批复数据获取任务定时执行时间，格式HH:MM"
+    )
     # 下载的表格存储目录（使用绝对路径，或者基于项目根目录的相对路径）
     RPA_GENERATED_FILES_DIR: str = Field(
         default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "generated_files"),
