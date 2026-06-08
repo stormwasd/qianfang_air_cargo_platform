@@ -100,14 +100,20 @@ async def get_shenzhen_air_departures(
     # 构造返回列表
     items = []
     for export in exports:
+        export_dict = {k: v for k, v in export.__dict__.items() if not k.startswith('_')}
+        export_dict["id"] = str(export.id)  # 转字符串防止精度丢失
+        
         # 使用 Pydantic 严格按照 Schema 定义的顺序和类型进行序列化
-        item_schema = ShenzhenAirDepartureItem.model_validate(export)
+        item_schema = ShenzhenAirDepartureItem(**export_dict)
         
         # 组装子表数据
-        item_schema.billing_time_containers = [
-            ShenzhenAirBillingTimeContainerDTO.model_validate(c)
-            for c in containers_by_export_id[export.id]
-        ]
+        containers_data = []
+        for c in containers_by_export_id[export.id]:
+            c_dict = {k: v for k, v in c.__dict__.items() if not k.startswith('_')}
+            c_dict["id"] = str(c.id)
+            containers_data.append(ShenzhenAirBillingTimeContainerDTO(**c_dict))
+            
+        item_schema.billing_time_containers = containers_data
         
         # 转换为字典，保持键顺序一致
         items.append(item_schema.model_dump(mode="json"))
