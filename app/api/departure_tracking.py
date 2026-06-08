@@ -51,9 +51,12 @@ async def get_shenzhen_air_departures(
     # 计算总数
     total = query.count()
 
-    # 分页查询主表数据
+    # 分页查询主表数据，修复由于 created_at 相同导致的分页乱序问题
     offset = (page - 1) * page_size
-    exports = query.order_by(ShenzhenAirBookingExport.created_at.desc()).offset(offset).limit(page_size).all()
+    exports = query.order_by(
+        ShenzhenAirBookingExport.creation_time.desc(), 
+        ShenzhenAirBookingExport.id.desc()
+    ).offset(offset).limit(page_size).all()
 
     # 如果当前页没有数据，直接返回
     if not exports:
@@ -97,18 +100,17 @@ async def get_shenzhen_air_departures(
     # 构造返回列表
     items = []
     for export in exports:
-        export_dict = {k: v for k, v in export.__dict__.items() if k != '_sa_instance_state'}
-        export_dict["id"] = str(export.id)  # 转字符串防止精度丢失
+        # 使用 Pydantic 严格按照 Schema 定义的顺序和类型进行序列化
+        item_schema = ShenzhenAirDepartureItem.model_validate(export)
         
-        # 组装子表并剔除 _sa_instance_state
-        containers_data = []
-        for c in containers_by_export_id[export.id]:
-            c_dict = {k: v for k, v in c.__dict__.items() if k != '_sa_instance_state'}
-            c_dict["id"] = str(c.id)
-            containers_data.append(c_dict)
-            
-        export_dict["billing_time_containers"] = containers_data
-        items.append(export_dict)
+        # 组装子表数据
+        item_schema.billing_time_containers = [
+            ShenzhenAirBillingTimeContainerDTO.model_validate(c)
+            for c in containers_by_export_id[export.id]
+        ]
+        
+        # 转换为字典，保持键顺序一致
+        items.append(item_schema.model_dump(mode="json"))
 
     return success_response(
         data={"total": total, "items": items},
