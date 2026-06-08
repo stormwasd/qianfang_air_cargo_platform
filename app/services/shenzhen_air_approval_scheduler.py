@@ -165,57 +165,101 @@ class ShenzhenAirApprovalScheduler:
         try:
             df = pd.read_excel(filepath)
             
-            # 解决合并单元格导致子项(Child rows)缺少航班信息的问题
-            # 向下填充航班标识列
-            fill_columns = ["航班号", "航班日期", "机型", "起飞"]
-            for col in fill_columns:
-                if col in df.columns:
-                    df[col] = df[col].ffill()
-            
             seen_flight_pairs = set()
+            current_parent_id = None
+            
+            def _get_val(r_dict, k):
+                val = r_dict.get(k)
+                if val is None or str(val).strip() == '' or str(val) == 'nan':
+                    return None
+                return str(val)
             
             for index, row in df.iterrows():
                 row_dict = row.where(pd.notnull(row), None).to_dict()
                 
-                flight_number = str(row_dict.get("航班号", ""))
-                flight_date = str(row_dict.get("航班日期", ""))
+                flight_number = _get_val(row_dict, "航班号")
+                flight_date = _get_val(row_dict, "航班日期")
                 
-                if "总计" in flight_number:
+                if flight_number and "总计" in flight_number:
                     continue
                 
-                if not flight_number or not flight_date or flight_number == 'None' or flight_date == 'None':
-                    continue
-                    
-                pair_key = f"{flight_number}_{flight_date}"
+                # 判断是否是父级（汇总）行：有航班号且有航班日期
+                is_parent = bool(flight_number and flight_date)
                 
-                # 防重策略：相同航班号+航班日期，先删除旧数据再插入新数据
-                if pair_key not in seen_flight_pairs:
-                    db.query(ShenzhenAirApprovalData).filter(
-                        ShenzhenAirApprovalData.flight_number == flight_number,
-                        ShenzhenAirApprovalData.flight_date == flight_date
-                    ).delete()
-                    seen_flight_pairs.add(pair_key)
+                if is_parent:
+                    pair_key = f"{flight_number}_{flight_date}"
                     
-                export_record = ShenzhenAirApprovalData(
-                    flight_number=flight_number,
-                    flight_date=flight_date,
-                    aircraft_type=str(row_dict.get("机型", "")),
-                    departure_time=str(row_dict.get("起飞", "")),
-                    routing=str(row_dict.get("航程", "")),
-                    agent=str(row_dict.get("代理人", "")),
-                    f_booking=str(row_dict.get("F订", "")),
-                    f_approval=str(row_dict.get("F批", "")),
-                    c_booking=str(row_dict.get("C订", "")),
-                    c_approval=str(row_dict.get("C批", "")),
-                    other_booking=str(row_dict.get("其他订", "")),
-                    other_approval=str(row_dict.get("其他批", "")),
-                    status=str(row_dict.get("状态", "")),
-                    type=str(row_dict.get("类型", "")),
-                    control=str(row_dict.get("控制", "")),
-                    open_status=str(row_dict.get("开放", "")),
-                    remark=str(row_dict.get("备注", ""))
-                )
-                db.add(export_record)
+                    # 防重策略：如果遇到新的航班组合，先清空数据库中已有的父级和子级记录
+                    if pair_key not in seen_flight_pairs:
+                        existing_parents = db.query(ShenzhenAirApprovalData).filter(
+                            ShenzhenAirApprovalData.flight_number == flight_number,
+                            ShenzhenAirApprovalData.flight_date == flight_date,
+                            ShenzhenAirApprovalData.parent_id == None
+                        ).all()
+                        
+                        parent_ids = [p.id for p in existing_parents]
+                        if parent_ids:
+                            # 删子项
+                            db.query(ShenzhenAirApprovalData).filter(
+                                ShenzhenAirApprovalData.parent_id.in_(parent_ids)
+                            ).delete(synchronize_session=False)
+                            # 删父项
+                            db.query(ShenzhenAirApprovalData).filter(
+                                ShenzhenAirApprovalData.id.in_(parent_ids)
+                            ).delete(synchronize_session=False)
+                            
+                        seen_flight_pairs.add(pair_key)
+                    
+                    export_record = ShenzhenAirApprovalData(
+                        flight_number=flight_number,
+                        flight_date=flight_date,
+                        parent_id=None,
+                        aircraft_type=_get_val(row_dict, "机型"),
+                        departure_time=_get_val(row_dict, "起飞"),
+                        routing=_get_val(row_dict, "航程"),
+                        agent=_get_val(row_dict, "代理人"),
+                        f_booking=_get_val(row_dict, "F订"),
+                        f_approval=_get_val(row_dict, "F批"),
+                        c_booking=_get_val(row_dict, "C订"),
+                        c_approval=_get_val(row_dict, "C批"),
+                        other_booking=_get_val(row_dict, "其他订"),
+                        other_approval=_get_val(row_dict, "其他批"),
+                        status=_get_val(row_dict, "状态"),
+                        type=_get_val(row_dict, "类型"),
+                        control=_get_val(row_dict, "控制"),
+                        open_status=_get_val(row_dict, "开放"),
+                        remark=_get_val(row_dict, "备注")
+                    )
+                    db.add(export_record)
+                    db.flush() # 获取自增的主键ID
+                    current_parent_id = export_record.id
+                    
+                else:
+                    # 子项（细节）行：没有航班号
+                    if current_parent_id is None:
+                        continue # 孤儿行，忽略
+                        
+                    export_record = ShenzhenAirApprovalData(
+                        flight_number=None,
+                        flight_date=None,
+                        parent_id=current_parent_id,
+                        aircraft_type=None,
+                        departure_time=None,
+                        routing=_get_val(row_dict, "航程"),
+                        agent=_get_val(row_dict, "代理人"),
+                        f_booking=_get_val(row_dict, "F订"),
+                        f_approval=_get_val(row_dict, "F批"),
+                        c_booking=_get_val(row_dict, "C订"),
+                        c_approval=_get_val(row_dict, "C批"),
+                        other_booking=_get_val(row_dict, "其他订"),
+                        other_approval=_get_val(row_dict, "其他批"),
+                        status=_get_val(row_dict, "状态"),
+                        type=_get_val(row_dict, "类型"),
+                        control=_get_val(row_dict, "控制"),
+                        open_status=_get_val(row_dict, "开放"),
+                        remark=_get_val(row_dict, "备注")
+                    )
+                    db.add(export_record)
                 
             db.commit()
             print(f"[ShenzhenAirApprovalScheduler] 文件 {os.path.basename(filepath)} 解析入库完成。")

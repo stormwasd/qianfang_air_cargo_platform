@@ -1,0 +1,1 @@
+CREATE INDEX `ix_shenzhen_air_approval_data_parent_id` ON `shenzhen_air_approval_data` (`parent_id`);

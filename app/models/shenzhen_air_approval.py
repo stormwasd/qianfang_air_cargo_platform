@@ -7,8 +7,9 @@ class ShenzhenAirApprovalData(Base):
     __tablename__ = "shenzhen_air_approval_data"
 
     id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
-    flight_number = Column(String(50), index=True, comment="航班号")
-    flight_date = Column(String(50), index=True, comment="航班日期")
+    parent_id = Column(BigInteger, index=True, nullable=True, default=None, comment="父级ID，用于关联子项到父项")
+    flight_number = Column(String(50), index=True, nullable=True, comment="航班号")
+    flight_date = Column(String(50), index=True, nullable=True, comment="航班日期")
     aircraft_type = Column(String(50), comment="机型")
     departure_time = Column(String(50), comment="起飞")
     routing = Column(String(100), comment="航程")
