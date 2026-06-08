@@ -11,7 +11,7 @@ from app.schemas.departure_tracking import ShenzhenAirDepartureListResponse, She
 
 router = APIRouter()
 
-@router.get("/shenzhen-air", summary="深航出港列表", response_model=ShenzhenAirDepartureListResponse)
+@router.get("/shenzhen-air", summary="深航出港列表")
 async def get_shenzhen_air_departures(
     waybill_number: Optional[str] = Query(None, description="运单号，多个用逗号隔开"),
     flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-03-10"),
