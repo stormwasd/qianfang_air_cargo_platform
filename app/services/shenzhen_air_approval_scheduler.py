@@ -165,6 +165,13 @@ class ShenzhenAirApprovalScheduler:
         try:
             df = pd.read_excel(filepath)
             
+            # 解决合并单元格导致子项(Child rows)缺少航班信息的问题
+            # 向下填充航班标识列
+            fill_columns = ["航班号", "航班日期", "机型", "起飞"]
+            for col in fill_columns:
+                if col in df.columns:
+                    df[col] = df[col].ffill()
+            
             seen_flight_pairs = set()
             
             for index, row in df.iterrows():
