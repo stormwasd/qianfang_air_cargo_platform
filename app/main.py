@@ -30,6 +30,9 @@ async def lifespan(app: FastAPI):
         # 启动深航过机装机数据获取任务调度与监控器
         from app.services.transit_loading_manager import transit_loading_manager
         transit_loading_manager.start()
+        # 启动深航订舱批复数据获取调度器
+        from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
+        shenzhen_air_approval_scheduler.start()
     else:
         print("RPA任务队列已禁用")
     
@@ -44,6 +47,8 @@ async def lifespan(app: FastAPI):
         rpa_keep_login_scheduler.stop()
         from app.services.transit_loading_manager import transit_loading_manager
         transit_loading_manager.stop()
+        from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
+        shenzhen_air_approval_scheduler.stop()
 
 
 def create_application() -> FastAPI:
