@@ -180,6 +180,9 @@ class ShenzhenAirApprovalScheduler:
                 flight_number = str(row_dict.get("航班号", ""))
                 flight_date = str(row_dict.get("航班日期", ""))
                 
+                if "总计" in flight_number:
+                    continue
+                
                 if not flight_number or not flight_date or flight_number == 'None' or flight_date == 'None':
                     continue
                     
