@@ -3,7 +3,7 @@ API路由统一注册
 """
 from fastapi import APIRouter
 from app.config import settings
-from app.api import auth, users, departments, customers, config, user_center, waybills, bookings, settlements, rpa_tasks, notifications, waybill_stocks, robots, companies, agents, pickup_units, delivery_units, weather, consignment_notes
+from app.api import auth, users, departments, customers, config, user_center, waybills, bookings, settlements, rpa_tasks, notifications, waybill_stocks, robots, companies, agents, pickup_units, delivery_units, weather, consignment_notes, departure_tracking
 
 # 创建API v1路由器
 api_router = APIRouter(prefix=settings.API_V1_PREFIX)
@@ -28,6 +28,7 @@ api_router.include_router(waybill_stocks.router, prefix="/waybill-stocks", tags=
 api_router.include_router(robots.router, prefix="/robots", tags=["机器人管理"])
 api_router.include_router(weather.router, prefix="/weather", tags=["天气服务"])
 api_router.include_router(consignment_notes.router, prefix="/consignment-notes", tags=["托运书管理"])
+api_router.include_router(departure_tracking.router, prefix="/departure-tracking", tags=["出港跟踪模块"])
 
 __all__ = ["api_router"]
 
