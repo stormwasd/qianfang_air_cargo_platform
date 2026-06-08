@@ -18,7 +18,7 @@ from app.models.robot import TaskProcess
 from app.services.rpa_task_service import rpa_task_service
 
 
-TARGET_TYPE = "shenzhen_air_approval_data"
+TARGET_TYPE = "approval_data"
 
 
 class ShenzhenAirApprovalScheduler:
