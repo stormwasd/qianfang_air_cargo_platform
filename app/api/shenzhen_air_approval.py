@@ -1,0 +1,79 @@
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from typing import Optional
+from app.database import get_db
+from app.api.deps import get_current_active_user
+from app.core.response import success_response
+from app.models.shenzhen_air_approval import ShenzhenAirApprovalData, ShenzhenAirApprovalWideBodyData
+from app.schemas.shenzhen_air_approval import ShenzhenAirApprovalListResponse, ShenzhenAirApprovalNarrowItem, ShenzhenAirApprovalWideItem
+
+router = APIRouter()
+
+@router.get("", summary="深航订舱批复跟踪列表")
+async def get_shenzhen_air_approvals(
+    flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-03-10"),
+    flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-03-15"),
+    flight_number: Optional[str] = Query(None, description="航班号"),
+    cabin_type: int = Query(0, description="仓位类型(0=散仓(非宽体), 1=版/箱/散卡(宽体))"),
+    page: int = Query(1, description="页码", ge=1),
+    page_size: int = Query(10, description="每页数量", ge=1, le=500),
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    查询深航订舱批复数据，支持根据 cabin_type 切换数据源：
+    - cabin_type=0 对应 shenzhen_air_approval_data 表
+    - cabin_type=1 对应 shenzhen_air_approval_wide_body_data 表
+    """
+    # 动态选择 Model
+    if cabin_type == 1:
+        model = ShenzhenAirApprovalWideBodyData
+        schema_class = ShenzhenAirApprovalWideItem
+    else:
+        model = ShenzhenAirApprovalData
+        schema_class = ShenzhenAirApprovalNarrowItem
+        
+    query = db.query(model)
+
+    # 1. 航班号查询 (模糊匹配)
+    if flight_number:
+        query = query.filter(model.flight_number.like(f"%{flight_number}%"))
+        
+    # 2. 航班日期区间查询
+    if flight_date_start:
+        query = query.filter(model.flight_date >= flight_date_start)
+    if flight_date_end:
+        query = query.filter(model.flight_date <= flight_date_end)
+
+    # 计算总数
+    total = query.count()
+
+    # 分页查询数据
+    offset = (page - 1) * page_size
+    records = query.order_by(
+        model.created_at.desc(), 
+        model.id.desc()
+    ).offset(offset).limit(page_size).all()
+
+    # 如果当前页没有数据，直接返回
+    if not records:
+        return success_response(
+            data={"total": total, "items": []},
+            msg="查询成功"
+        )
+
+    # 构造返回列表
+    items = []
+    for record in records:
+        record_dict = {k: v for k, v in record.__dict__.items() if not k.startswith('_')}
+        record_dict["id"] = str(record.id)  # 转字符串防止精度丢失
+        
+        # 序列化
+        item_schema = schema_class(**record_dict)
+        items.append(item_schema.model_dump(mode="json"))
+
+    return success_response(
+        data={"total": total, "items": items},
+        msg="查询成功"
+    )
