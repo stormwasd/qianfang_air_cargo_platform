@@ -425,6 +425,8 @@ class RPAWorker:
                     await self._execute_shenzhen_air_transit_loading(db, task)
                 elif task.task_type == RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value:
                     await self._execute_shenzhen_air_approval_data(db, task)
+                elif task.task_type == RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value:
+                    await self._execute_shenzhen_air_approval_data(db, task)
                 elif task.task_type == RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value:
                     await self._execute_shenzhen_air_billing_time_container(db, task)
                 else:
