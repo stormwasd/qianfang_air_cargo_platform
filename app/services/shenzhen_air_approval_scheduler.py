@@ -102,44 +102,50 @@ class ShenzhenAirApprovalScheduler:
         """创建任务"""
         db = SessionLocal()
         try:
-            # 检查是否有未处理完的相同任务，避免重复下发
-            existing = rpa_task_service.get_pending_task_for_target(
-                db,
-                target_type=TARGET_TYPE,
-                target_id=1,
-                task_type=RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value,
-            )
-            if existing:
-                return
+            task_types_to_enqueue = [
+                RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value,
+                RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value
+            ]
+            
+            for task_type in task_types_to_enqueue:
+                # 检查是否有未处理完的相同任务，避免重复下发
+                existing = rpa_task_service.get_pending_task_for_target(
+                    db,
+                    target_type=TARGET_TYPE,
+                    target_id=1,
+                    task_type=task_type,
+                )
+                if existing:
+                    continue
 
-            # 查询数据库里的基础参数
-            task_process = db.query(TaskProcess).filter(
-                TaskProcess.task_name == RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value
-            ).first()
-            
-            params = {}
-            if task_process and task_process.process_param:
-                try:
-                    params = json.loads(task_process.process_param)
-                except Exception:
-                    pass
-            
-            # 动态覆盖 flight_date (明天的日期)
-            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-            params["flight_date"] = tomorrow
-            
-            rpa_task_service.create_task(
-                db=db,
-                task_type=RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value,
-                target_type=TARGET_TYPE,
-                target_id=1,
-                params=params,
-                job_uuid=None,
-                priority=2,
-                created_by=None,
-                robot_id=None,  # 允许任何有权限的机器人执行
-            )
-            print(f"[ShenzhenAirApprovalScheduler] 已生成深航订舱批复数据获取任务, flight_date={tomorrow}")
+                # 查询数据库里的基础参数
+                task_process = db.query(TaskProcess).filter(
+                    TaskProcess.task_name == task_type
+                ).first()
+                
+                params = {}
+                if task_process and task_process.process_param:
+                    try:
+                        params = json.loads(task_process.process_param)
+                    except Exception:
+                        pass
+                
+                # 动态覆盖 flight_date (明天的日期)
+                tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                params["flight_date"] = tomorrow
+                
+                rpa_task_service.create_task(
+                    db=db,
+                    task_type=task_type,
+                    target_type=TARGET_TYPE,
+                    target_id=1,
+                    params=params,
+                    job_uuid=None,
+                    priority=2,
+                    created_by=None,
+                    robot_id=None,  # 允许任何有权限的机器人执行
+                )
+                print(f"[ShenzhenAirApprovalScheduler] 已生成深航订舱批复数据获取任务({task_type}), flight_date={tomorrow}")
         finally:
             db.close()
 

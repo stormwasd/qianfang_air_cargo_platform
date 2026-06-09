@@ -5,7 +5,7 @@ VALUES (
     '深航订舱-批复数据获取-宽体',
     '4965f72ad9c53cb5a7db0542e3bb6f4e',
     '0.0.1',
-    NULL,
+    '{"system_url":"https://www.kinggo.com/main","system_account":"szxfdh002","login_password":"fengde123456..","flight_date":"2026-06-10"}',
     NOW(),
     NOW()
 );
