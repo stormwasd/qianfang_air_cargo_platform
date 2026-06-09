@@ -49,11 +49,12 @@ async def get_shenzhen_air_approvals(
     # 计算总数
     total = query.count()
 
+    from sqlalchemy import func
     # 分页查询数据
     offset = (page - 1) * page_size
     records = query.order_by(
-        model.created_at.desc(), 
-        model.id.desc()
+        func.coalesce(model.parent_id, model.id).desc(),
+        model.id.asc()
     ).offset(offset).limit(page_size).all()
 
     # 如果当前页没有数据，直接返回
