@@ -68,6 +68,8 @@ async def get_shenzhen_air_approvals(
     for record in records:
         record_dict = {k: v for k, v in record.__dict__.items() if not k.startswith('_')}
         record_dict["id"] = str(record.id)  # 转字符串防止精度丢失
+        if record_dict.get("parent_id") is not None:
+            record_dict["parent_id"] = str(record_dict["parent_id"])
         
         # 序列化
         item_schema = schema_class(**record_dict)
