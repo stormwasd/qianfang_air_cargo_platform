@@ -28,3 +28,29 @@ class ShenzhenAirApprovalData(Base):
     
     created_at = Column(DateTime, default=func.now(), comment="记录创建时间")
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment="记录更新时间")
+
+
+class ShenzhenAirApprovalWideBodyData(Base):
+    """深航订舱批复数据(宽体机)"""
+    __tablename__ = "shenzhen_air_approval_wide_body_data"
+
+    id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
+    parent_id = Column(BigInteger, index=True, nullable=True, default=None, comment="父级ID，用于关联子项到父项")
+    flight_number = Column(String(50), index=True, nullable=True, comment="航班号")
+    flight_date = Column(String(50), index=True, nullable=True, comment="航班日期")
+    aircraft_type = Column(String(50), comment="机型")
+    departure_time = Column(String(50), comment="起飞")
+    routing = Column(String(100), comment="航程")
+    agent = Column(String(100), comment="代理人")
+    board_booking = Column(String(50), comment="板订")
+    board_approval = Column(String(50), comment="板批")
+    backup_board = Column(String(50), comment="备份板")
+    box_booking = Column(String(50), comment="箱订")
+    box_approval = Column(String(50), comment="箱批")
+    backup_box = Column(String(50), comment="备份箱")
+    status = Column(String(50), comment="状态")
+    type = Column(String(50), comment="类型")
+    remark = Column(Text, comment="备注")
+    
+    created_at = Column(DateTime, default=func.now(), comment="记录创建时间")
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment="记录更新时间")

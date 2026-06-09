@@ -17,7 +17,7 @@ from app.database import SessionLocal
 from app.config import settings
 from app.models.rpa_task import RPATaskType
 from app.models.robot import TaskProcess
-from app.models.shenzhen_air_approval import ShenzhenAirApprovalData
+from app.models.shenzhen_air_approval import ShenzhenAirApprovalData, ShenzhenAirApprovalWideBodyData
 from app.services.rpa_task_service import rpa_task_service
 
 
@@ -154,7 +154,13 @@ class ShenzhenAirApprovalScheduler:
             return
             
         for filename in os.listdir(self.watch_dir):
-            if "订舱查询导出" in filename and filename.endswith(".xlsx"):
+            if filename.endswith(".xlsx"):
+                is_wide_body = "宽体机订舱查询与修改导出" in filename
+                is_narrow_body = "订舱查询导出" in filename and not is_wide_body
+                
+                if not (is_wide_body or is_narrow_body):
+                    continue
+
                 filepath = os.path.join(self.watch_dir, filename)
                 
                 # 简单防抖：确保文件不再被写入
@@ -164,7 +170,10 @@ class ShenzhenAirApprovalScheduler:
                     continue  # 文件仍在使用中
                 
                 print(f"[ShenzhenAirApprovalScheduler] 发现新的批复数据文件: {filename}，开始解析入库...")
-                self._process_file(filepath)
+                if is_wide_body:
+                    self._process_wide_body_file(filepath)
+                else:
+                    self._process_file(filepath)
 
     def _process_file(self, filepath: str) -> None:
         db = SessionLocal()
@@ -276,6 +285,115 @@ class ShenzhenAirApprovalScheduler:
         except Exception as e:
             db.rollback()
             print(f"[ShenzhenAirApprovalScheduler] 处理文件 {filepath} 失败: {repr(e)}\n{traceback.format_exc()}")
+        finally:
+            db.close()
+
+    def _process_wide_body_file(self, filepath: str) -> None:
+        db = SessionLocal()
+        try:
+            df = pd.read_excel(filepath)
+            
+            seen_flight_pairs = set()
+            current_parent_id = None
+            
+            def _get_val(r_dict, k):
+                val = r_dict.get(k)
+                if val is None or str(val).strip() == '' or str(val) == 'nan':
+                    return None
+                return str(val)
+            
+            for index, row in df.iterrows():
+                row_dict = row.where(pd.notnull(row), None).to_dict()
+                
+                flight_number = _get_val(row_dict, "航班号")
+                flight_date = _get_val(row_dict, "航班日期")
+                
+                if flight_number and "总计" in flight_number:
+                    continue
+                
+                # 判断是否是父级（汇总）行：有航班号且有航班日期
+                is_parent = bool(flight_number and flight_date)
+                
+                if is_parent:
+                    pair_key = f"{flight_number}_{flight_date}"
+                    
+                    # 防重策略：如果遇到新的航班组合，先清空数据库中已有的父级和子级记录
+                    if pair_key not in seen_flight_pairs:
+                        existing_parents = db.query(ShenzhenAirApprovalWideBodyData).filter(
+                            ShenzhenAirApprovalWideBodyData.flight_number == flight_number,
+                            ShenzhenAirApprovalWideBodyData.flight_date == flight_date,
+                            ShenzhenAirApprovalWideBodyData.parent_id == None
+                        ).all()
+                        
+                        parent_ids = [p.id for p in existing_parents]
+                        if parent_ids:
+                            # 删子项
+                            db.query(ShenzhenAirApprovalWideBodyData).filter(
+                                ShenzhenAirApprovalWideBodyData.parent_id.in_(parent_ids)
+                            ).delete(synchronize_session=False)
+                            # 删父项
+                            db.query(ShenzhenAirApprovalWideBodyData).filter(
+                                ShenzhenAirApprovalWideBodyData.id.in_(parent_ids)
+                            ).delete(synchronize_session=False)
+                            
+                        seen_flight_pairs.add(pair_key)
+                    
+                    export_record = ShenzhenAirApprovalWideBodyData(
+                        flight_number=flight_number,
+                        flight_date=flight_date,
+                        parent_id=None,
+                        aircraft_type=_get_val(row_dict, "机型"),
+                        departure_time=_get_val(row_dict, "起飞"),
+                        routing=_get_val(row_dict, "航程"),
+                        agent=_get_val(row_dict, "代理人"),
+                        board_booking=_get_val(row_dict, "板订"),
+                        board_approval=_get_val(row_dict, "板批"),
+                        backup_board=_get_val(row_dict, "备份板"),
+                        box_booking=_get_val(row_dict, "箱订"),
+                        box_approval=_get_val(row_dict, "箱批"),
+                        backup_box=_get_val(row_dict, "备份箱"),
+                        status=_get_val(row_dict, "状态"),
+                        type=_get_val(row_dict, "类型"),
+                        remark=_get_val(row_dict, "备注")
+                    )
+                    db.add(export_record)
+                    db.flush() # 获取自增的主键ID
+                    current_parent_id = export_record.id
+                    
+                else:
+                    # 子项（细节）行：没有航班号
+                    if current_parent_id is None:
+                        continue # 孤儿行，忽略
+                        
+                    export_record = ShenzhenAirApprovalWideBodyData(
+                        flight_number=None,
+                        flight_date=None,
+                        parent_id=current_parent_id,
+                        aircraft_type=None,
+                        departure_time=None,
+                        routing=_get_val(row_dict, "航程"),
+                        agent=_get_val(row_dict, "代理人"),
+                        board_booking=_get_val(row_dict, "板订"),
+                        board_approval=_get_val(row_dict, "板批"),
+                        backup_board=_get_val(row_dict, "备份板"),
+                        box_booking=_get_val(row_dict, "箱订"),
+                        box_approval=_get_val(row_dict, "箱批"),
+                        backup_box=_get_val(row_dict, "备份箱"),
+                        status=_get_val(row_dict, "状态"),
+                        type=_get_val(row_dict, "类型"),
+                        remark=_get_val(row_dict, "备注")
+                    )
+                    db.add(export_record)
+                
+            db.commit()
+            print(f"[ShenzhenAirApprovalScheduler] 宽体机文件 {os.path.basename(filepath)} 解析入库完成。")
+            
+            # 重命名防重处理，防止被再次处理
+            os.rename(filepath, filepath + ".processed")
+            
+        except Exception as e:
+            db.rollback()
+            print(f"[ShenzhenAirApprovalScheduler] 处理宽体机文件 {filepath} 失败: {repr(e)}\n{traceback.format_exc()}")
         finally:
             db.close()
 
