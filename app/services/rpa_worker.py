@@ -427,6 +427,8 @@ class RPAWorker:
                     await self._execute_shenzhen_air_approval_data(db, task)
                 elif task.task_type == RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value:
                     await self._execute_shenzhen_air_approval_data(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_APPROVAL_DATA.value:
+                    await self._execute_china_southern_air_approval_data(db, task)
                 elif task.task_type == RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value:
                     await self._execute_shenzhen_air_billing_time_container(db, task)
                 else:
@@ -2922,6 +2924,66 @@ class RPAWorker:
             await asyncio.sleep(settings.RPA_POLL_INTERVAL)
             
         print(f"{self._log_prefix} 批复数据获取任务 {task.id} 查询超时")
+        rpa_task_service.timeout_task(db, task.id, "查询超时")
+
+    async def _execute_china_southern_air_approval_data(self, db, task: RPATask):
+        """执行南航订舱-批复数据获取任务"""
+        params = json.loads(task.params) if task.params else {}
+        
+        try:
+            print(f"{self._log_prefix} [CHINA_SOUTHERN_AIR_APPROVAL_DATA] 实际发送给RPA的参数: {params}")
+            
+            if not task.job_uuid:
+                raise Exception("未找到绑定的 job_uuid，无法发起 RPA 调用")
+                
+            rpa_response = await asyncio.wait_for(
+                rpa_service.trigger_rpa_job(
+                    job_uuid=task.job_uuid,
+                    input_param=params
+                ),
+                timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+            )
+            
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+            if not work_uuid:
+                raise Exception("RPA接口未返回workUuid")
+                
+            rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
+            await self._poll_china_southern_air_approval_data_status(db, task, work_uuid)
+            
+        except Exception as e:
+            raise e
+
+    async def _poll_china_southern_air_approval_data_status(self, db, task: RPATask, work_uuid: str):
+        """轮询南航批复数据获取任务的 RPA 状态"""
+        poll_count = 0
+        while poll_count < settings.RPA_POLL_MAX_COUNT:
+            try:
+                status_response = await rpa_service.query_shenzhen_air_waybill_status(job_uuid=task.job_uuid)
+                status_info = rpa_service.extract_status_from_query_response(status_response, work_uuid)
+                
+                if not status_info:
+                    poll_count += 1
+                    await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+                    continue
+                    
+                status = status_info.get("status")
+                if status == 2:
+                    print(f"{self._log_prefix} 南航批复数据获取任务 {task.id} 执行成功")
+                    rpa_task_service.complete_task(db, task.id, True)
+                    return
+                elif status == 3:
+                    error_msg = status_info.get("statusDesc", "RPA执行失败")
+                    print(f"{self._log_prefix} 南航批复数据获取任务 {task.id} 失败: {error_msg}")
+                    rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+                    return
+            except Exception as e:
+                print(f"{self._log_prefix} 查询南航批复状态异常: {_get_error_detail(e)}")
+                
+            poll_count += 1
+            await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+            
+        print(f"{self._log_prefix} 南航批复数据获取任务 {task.id} 查询超时")
         rpa_task_service.timeout_task(db, task.id, "查询超时")
 
     async def _execute_shenzhen_air_transit_loading(self, db, task: RPATask):
