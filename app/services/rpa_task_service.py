@@ -33,7 +33,7 @@ PRINT_TASK_TYPES = set(PRINT_TYPE_MAPPING.values())
 # 只有以下任务类型需要 RPA 队列，其他任务类型（作废、打印、保持登录等）不使用队列
 TASK_QUEUE_CONFIGS = {
     "SHENZHEN_AIR_WAYBILL_EXECUTE": ["waybill_number", "freight_rate", "freight", "delivery_fee"],
-    "SHENZHEN_AIR_BILLING_TIME_CONTAINER": ["billing_time_container"],
+    "SHENZHEN_AIR_BILLING_TIME_CONTAINER": ["billing_time_container", "change_order_information"],
     # 南航订舱不再需要队列（运单号改为从单号库预分配）
     "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE": ["freight_rate", "freight", "fuel_costs", "extended_service_fee"],
     "CHINA_SOUTHERN_AIR_DIRECT_INVOICE": ["rate", "freight", "fuel_costs", "extended_service_fee"],

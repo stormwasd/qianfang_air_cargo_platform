@@ -3132,7 +3132,17 @@ class RPAWorker:
 
                 except Exception as e:
                     db.rollback()
-                    print(f"{self._log_prefix} 消费队列失败: {_get_error_detail(e)}")
+                    print(f"{self._log_prefix} 消费计飞时间集装器队列失败: {_get_error_detail(e)}")
+
+            if "change_order_information" in queues_info:
+                queue_uuid = queues_info["change_order_information"]["queueUUID"]
+                try:
+                    change_order_data = await rpa_service.consume_queue_data(queue_uuid)
+                    print(f"\n=======================================================")
+                    print(f"[{self._log_prefix}] 改单信息队列 {task.id} 消费成功！")
+                    print(f"获取到的改单信息队列数据：{change_order_data}")
+                except Exception as e:
+                    print(f"{self._log_prefix} 消费改单信息队列失败: {_get_error_detail(e)}")
             
             rpa_task_service.complete_task(db, task.id, True)
         finally:
