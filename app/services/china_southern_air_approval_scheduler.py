@@ -19,7 +19,7 @@ from app.models.robot import TaskProcess
 from app.services.rpa_task_service import rpa_task_service
 
 
-TARGET_TYPE = "china_southern_approval_data"
+TARGET_TYPE = "approval_data"
 
 
 class ChinaSouthernAirApprovalScheduler:
@@ -117,7 +117,9 @@ class ChinaSouthernAirApprovalScheduler:
                 except Exception:
                     pass
             
-            # 如果需要也可以动态加一些参数，暂时不需要，RPA 只是启动获取而已
+            # 动态覆盖 flight_date (明天的日期)
+            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            params["flight_date"] = tomorrow
             
             rpa_task_service.create_task(
                 db=db,
