@@ -82,14 +82,21 @@ async def get_shenzhen_air_departures(
 
     # 5. 批量查询关联的从表数据
     containers = []
+    manual_datas = []
     if waybill_8_list:
         containers = db.query(ShenzhenAirBillingTimeContainer).filter(
             ShenzhenAirBillingTimeContainer.waybill_number_8.in_(waybill_8_list)
+        ).all()
+        
+        from app.models.departure_manual_data import ShenzhenAirDepartureManualData
+        manual_datas = db.query(ShenzhenAirDepartureManualData).filter(
+            ShenzhenAirDepartureManualData.waybill_number_8.in_(waybill_8_list)
         ).all()
 
     # 6. 在内存中组装数据
     # 按主表对象的ID初始化空列表
     containers_by_export_id = {export.id: [] for export in exports}
+    manual_data_by_wb8 = {md.waybill_number_8: md for md in manual_datas}
     
     for container in containers:
         wb8 = container.waybill_number_8
@@ -99,6 +106,7 @@ async def get_shenzhen_air_departures(
 
     # 构造返回列表
     items = []
+    from app.schemas.departure_tracking import ShenzhenAirDepartureManualDataDTO
     for export in exports:
         export_dict = {k: v for k, v in export.__dict__.items() if not k.startswith('_')}
         export_dict["id"] = str(export.id)  # 转字符串防止精度丢失
@@ -115,6 +123,14 @@ async def get_shenzhen_air_departures(
             
         item_schema.billing_time_containers = containers_data
         
+        # 组装手动扩展数据
+        wb8 = export.waybill_number[-8:] if export.waybill_number and len(export.waybill_number) >= 8 else export.waybill_number
+        if wb8 and wb8 in manual_data_by_wb8:
+            md = manual_data_by_wb8[wb8]
+            md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
+            md_dict["id"] = str(md.id)
+            item_schema.manual_data = ShenzhenAirDepartureManualDataDTO(**md_dict)
+        
         # 转换为字典，保持键顺序一致
         items.append(item_schema.model_dump(mode="json"))
 
@@ -122,3 +138,35 @@ async def get_shenzhen_air_departures(
         data={"total": total, "items": items},
         msg="查询成功"
     )
+
+from app.schemas.departure_tracking import ShenzhenAirDepartureManualDataUpsert
+
+@router.post("/shenzhen-air/manual-data", summary="保存或更新深航出港列表手动录入数据")
+async def upsert_shenzhen_air_manual_data(
+    data: ShenzhenAirDepartureManualDataUpsert,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    from app.models.departure_manual_data import ShenzhenAirDepartureManualData
+    
+    # 根据 waybill_number_8 查询是否已存在
+    manual_data = db.query(ShenzhenAirDepartureManualData).filter(
+        ShenzhenAirDepartureManualData.waybill_number_8 == data.waybill_number_8
+    ).first()
+    
+    if manual_data:
+        # 更新
+        update_data = data.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(manual_data, key, value)
+        msg = "更新成功"
+    else:
+        # 插入
+        manual_data = ShenzhenAirDepartureManualData(**data.model_dump())
+        db.add(manual_data)
+        msg = "保存成功"
+        
+    db.commit()
+    
+    return success_response(msg=msg)
+

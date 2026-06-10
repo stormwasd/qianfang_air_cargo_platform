@@ -21,6 +21,48 @@ class ShenzhenAirBillingTimeContainerDTO(BaseModel):
         from_attributes = True
 
 
+class ShenzhenAirDepartureManualDataDTO(BaseModel):
+    id: str
+    waybill_number_8: Optional[str] = Field(None, description="单号后8位")
+    customer_name: Optional[str] = Field(None, description="客户名称")
+    packaging_fee: Optional[str] = Field(None, description="包装费")
+    telegram_fee: Optional[str] = Field(None, description="电报费")
+    cca: Optional[str] = Field(None, description="CCA")
+    door_pickup_fee: Optional[str] = Field(None, description="上门提货费")
+    door_pickup_company: Optional[str] = Field(None, description="上门提货单位")
+    airport_pickup_fee: Optional[str] = Field(None, description="机场提货费")
+    airport_pickup_company: Optional[str] = Field(None, description="机场提货单位")
+    delivery_fee: Optional[str] = Field(None, description="派送费")
+    delivery_company: Optional[str] = Field(None, description="派送单位")
+    carrier_deduction: Optional[str] = Field(None, description="承运扣款")
+    other_fees: Optional[str] = Field(None, description="其他费用")
+    manual_total_amount: Optional[str] = Field(None, description="总金额")
+    remark: Optional[str] = Field(None, description="备注")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ShenzhenAirDepartureManualDataUpsert(BaseModel):
+    waybill_number_8: str = Field(..., description="单号后8位")
+    customer_name: Optional[str] = Field(None, description="客户名称")
+    packaging_fee: Optional[str] = Field(None, description="包装费")
+    telegram_fee: Optional[str] = Field(None, description="电报费")
+    cca: Optional[str] = Field(None, description="CCA")
+    door_pickup_fee: Optional[str] = Field(None, description="上门提货费")
+    door_pickup_company: Optional[str] = Field(None, description="上门提货单位")
+    airport_pickup_fee: Optional[str] = Field(None, description="机场提货费")
+    airport_pickup_company: Optional[str] = Field(None, description="机场提货单位")
+    delivery_fee: Optional[str] = Field(None, description="派送费")
+    delivery_company: Optional[str] = Field(None, description="派送单位")
+    carrier_deduction: Optional[str] = Field(None, description="承运扣款")
+    other_fees: Optional[str] = Field(None, description="其他费用")
+    manual_total_amount: Optional[str] = Field(None, description="总金额")
+    remark: Optional[str] = Field(None, description="备注")
+
+
 class ShenzhenAirDepartureItem(BaseModel):
     id: str
     prefix: Optional[str] = Field(None, description="前缀")
@@ -58,6 +100,7 @@ class ShenzhenAirDepartureItem(BaseModel):
     updated_at: Optional[datetime] = None
     
     billing_time_containers: List[ShenzhenAirBillingTimeContainerDTO] = Field(default_factory=list, description="关联的计飞时间集装器数据")
+    manual_data: Optional[ShenzhenAirDepartureManualDataDTO] = Field(None, description="手动录入的数据")
 
     class Config:
         from_attributes = True
