@@ -9,10 +9,14 @@ from app.schemas.china_southern_air_approval import ChinaSouthernAirApprovalItem
 
 router = APIRouter()
 
+from sqlalchemy import or_, func
+
 @router.get("", summary="南航订舱批复跟踪列表")
 async def get_china_southern_air_approvals(
-    flight_info: Optional[str] = Query(None, description="订舱航班(模糊匹配)"),
-    waybill_number: Optional[str] = Query(None, description="运单号"),
+    flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-03-10"),
+    flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-04-20"),
+    flight_number: Optional[str] = Query(None, description="航班号"),
+    waybill_number: Optional[str] = Query(None, description="运单号，支持多个用逗号分隔"),
     page: int = Query(1, description="页码", ge=1),
     page_size: int = Query(10, description="每页数量", ge=1, le=500),
     current_user = Depends(get_current_active_user),
@@ -24,13 +28,27 @@ async def get_china_southern_air_approvals(
     model = ChinaSouthernAirApprovalData
     query = db.query(model)
 
-    # 1. 航班号查询 (模糊匹配)
-    if flight_info:
-        query = query.filter(model.flight_info.like(f"%{flight_info}%"))
+    # 1. 航班号查询
+    if flight_number:
+        # 从 flight_info 的第一个部分中匹配航班号，如 CZ3649
+        flight_no_str = func.trim(func.substring_index(model.flight_info, ' / ', 1))
+        query = query.filter(flight_no_str.like(f"%{flight_number}%"))
         
-    # 2. 运单号查询
+    # 2. 航班日期区间查询
+    if flight_date_start or flight_date_end:
+        # 从 flight_info 中截取第二部分作为日期，如 2026-06-10
+        date_str = func.trim(func.substring_index(func.substring_index(model.flight_info, ' / ', 2), ' / ', -1))
+        if flight_date_start:
+            query = query.filter(date_str >= flight_date_start)
+        if flight_date_end:
+            query = query.filter(date_str <= flight_date_end)
+            
+    # 3. 运单号查询 (支持多单号逗号分隔)
     if waybill_number:
-        query = query.filter(model.waybill_number.like(f"%{waybill_number}%"))
+        waybills = [w.strip() for w in waybill_number.split(',') if w.strip()]
+        if waybills:
+            conditions = [model.waybill_number.like(f"%{w}%") for w in waybills]
+            query = query.filter(or_(*conditions))
 
     # 计算总数
     total = query.count()
