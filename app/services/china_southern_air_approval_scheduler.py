@@ -193,6 +193,11 @@ class ChinaSouthernAirApprovalScheduler:
                 # 确保有基本的航班或单号数据，避免空行
                 flight_info = _get_val(row_dict, 0)
                 waybill_number = _get_val(row_dict, 7)
+                
+                # 过滤掉“总计”行
+                if flight_info and "总计" in flight_info:
+                    continue
+                    
                 if not flight_info and not waybill_number:
                     continue
                     
