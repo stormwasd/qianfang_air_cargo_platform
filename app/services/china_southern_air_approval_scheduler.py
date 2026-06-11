@@ -63,12 +63,6 @@ class ChinaSouthernAirApprovalScheduler:
 
         # 2. 定时每天指定时间执行（可配置，默认18:00）
         while not self._stop_event.is_set():
-            # 优先检查本地生成的 Excel 文件并入库
-            try:
-                self._check_for_new_files()
-            except Exception as e:
-                print(f"[ChinaSouthernAirApprovalScheduler] 检查新文件异常: {repr(e)}\n{traceback.format_exc()}")
-                
             try:
                 now = datetime.now()
                 # 从配置读取执行时间，例如 "18:00"
@@ -88,6 +82,13 @@ class ChinaSouthernAirApprovalScheduler:
                 # 分段 sleep，以支持及时 stop
                 while seconds_to_wait > 0 and not self._stop_event.is_set():
                     step = min(5.0, seconds_to_wait)
+                    
+                    # 在休眠间隙轮询文件
+                    try:
+                        self._check_for_new_files()
+                    except Exception as e:
+                        print(f"[ChinaSouthernAirApprovalScheduler] 检查新文件异常: {repr(e)}\n{traceback.format_exc()}")
+                        
                     await asyncio.sleep(step)
                     seconds_to_wait -= step
                 
