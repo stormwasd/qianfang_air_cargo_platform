@@ -33,5 +33,6 @@ from app.models.user_department import user_department  # 确保关联表被导�
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.shenzhen_air_approval import ShenzhenAirApprovalData
+from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport", "ShenzhenAirBillingTimeContainer", "ShenzhenAirApprovalData"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport", "ShenzhenAirBillingTimeContainer", "ShenzhenAirApprovalData", "ChinaSouthernAirApprovalData"]

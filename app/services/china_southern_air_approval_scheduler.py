@@ -17,6 +17,9 @@ from app.config import settings
 from app.models.rpa_task import RPATaskType
 from app.models.robot import TaskProcess
 from app.services.rpa_task_service import rpa_task_service
+from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
+import pandas as pd
+import math
 
 
 TARGET_TYPE = "approval_data"
@@ -60,6 +63,12 @@ class ChinaSouthernAirApprovalScheduler:
 
         # 2. 定时每天指定时间执行（可配置，默认18:00）
         while not self._stop_event.is_set():
+            # 优先检查本地生成的 Excel 文件并入库
+            try:
+                self._check_for_new_files()
+            except Exception as e:
+                print(f"[ChinaSouthernAirApprovalScheduler] 检查新文件异常: {repr(e)}\n{traceback.format_exc()}")
+                
             try:
                 now = datetime.now()
                 # 从配置读取执行时间，例如 "18:00"
@@ -133,6 +142,123 @@ class ChinaSouthernAirApprovalScheduler:
                 robot_id=None,  # 允许任何有权限的机器人执行
             )
             print(f"[ChinaSouthernAirApprovalScheduler] 已生成南航订舱批复数据获取任务({task_type})")
+        finally:
+            db.close()
+
+    def _check_for_new_files(self) -> None:
+        if not os.path.exists(self.watch_dir):
+            return
+            
+        for filename in os.listdir(self.watch_dir):
+            if filename.endswith(".xlsx") and "订舱查询与处理" in filename:
+                filepath = os.path.join(self.watch_dir, filename)
+                
+                # 简单防抖：确保文件不再被写入
+                try:
+                    os.rename(filepath, filepath)
+                except OSError:
+                    continue  # 文件仍在使用中
+                
+                print(f"[ChinaSouthernAirApprovalScheduler] 发现新的批复数据文件: {filename}，开始解析入库...")
+                self._process_file(filepath)
+
+    def _process_file(self, filepath: str) -> None:
+        db = SessionLocal()
+        try:
+            df = pd.read_excel(filepath)
+            
+            def _get_val(r_dict, index):
+                try:
+                    val = r_dict.get(list(r_dict.keys())[index])
+                    if val is None or str(val).strip() == '' or str(val) == 'nan' or (isinstance(val, float) and math.isnan(val)):
+                        return None
+                    return str(val)
+                except Exception:
+                    return None
+            
+            # 从第4行（索引为3）开始是真正的表头和数据
+            # 索引对应：0->订舱航班, 1->机型, 2->飞机号 ... 49->计费重量
+            for index, row in df.iterrows():
+                # 跳过表头和无用行
+                if index < 3:
+                    continue
+                    
+                row_dict = row.to_dict()
+                aircraft_type = _get_val(row_dict, 1)
+                
+                # 过滤掉“小计”行，只存明细
+                if aircraft_type == "小计":
+                    continue
+                    
+                # 确保有基本的航班或单号数据，避免空行
+                flight_info = _get_val(row_dict, 0)
+                waybill_number = _get_val(row_dict, 7)
+                if not flight_info and not waybill_number:
+                    continue
+                    
+                export_record = ChinaSouthernAirApprovalData(
+                    flight_info=flight_info,
+                    aircraft_type=aircraft_type,
+                    aircraft_no=_get_val(row_dict, 2),
+                    aircraft_limit=_get_val(row_dict, 3),
+                    planned_takeoff=_get_val(row_dict, 4),
+                    expected_takeoff=_get_val(row_dict, 5),
+                    flight_status=_get_val(row_dict, 6),
+                    waybill_number=waybill_number,
+                    agent_code=_get_val(row_dict, 8),
+                    key_account_code=_get_val(row_dict, 9),
+                    key_account_name=_get_val(row_dict, 10),
+                    sales_channel=_get_val(row_dict, 11),
+                    booking_no=_get_val(row_dict, 12),
+                    guarantee_level=_get_val(row_dict, 13),
+                    cabin_level=_get_val(row_dict, 14),
+                    product_code=_get_val(row_dict, 15),
+                    booking_pieces=_get_val(row_dict, 16),
+                    booking_weight=_get_val(row_dict, 17),
+                    booking_volume=_get_val(row_dict, 18),
+                    goods_name=_get_val(row_dict, 19),
+                    commercial_danger_class=_get_val(row_dict, 20),
+                    self_use_material_class=_get_val(row_dict, 21),
+                    aviation_oil_sample_class=_get_val(row_dict, 22),
+                    booking_uld=_get_val(row_dict, 23),
+                    booking_remark=_get_val(row_dict, 24),
+                    ad_remark=_get_val(row_dict, 25),
+                    load_guidance=_get_val(row_dict, 26),
+                    booking_routing=_get_val(row_dict, 27),
+                    special_cargo_code=_get_val(row_dict, 28),
+                    billing_qty=_get_val(row_dict, 29),
+                    goods_qty=_get_val(row_dict, 30),
+                    actual_qty=_get_val(row_dict, 31),
+                    actual_flight=_get_val(row_dict, 32),
+                    container=_get_val(row_dict, 33),
+                    cargo_code=_get_val(row_dict, 34),
+                    routing_country=_get_val(row_dict, 35),
+                    department=_get_val(row_dict, 36),
+                    booking_time=_get_val(row_dict, 37),
+                    ref_rate=_get_val(row_dict, 38),
+                    ref_freight=_get_val(row_dict, 39),
+                    currency=_get_val(row_dict, 40),
+                    other_fee=_get_val(row_dict, 41),
+                    total_control=_get_val(row_dict, 42),
+                    auto_approval=_get_val(row_dict, 43),
+                    level_auto_k=_get_val(row_dict, 44),
+                    size=_get_val(row_dict, 45),
+                    settlement_discount_no=_get_val(row_dict, 46),
+                    customs_clearance_status=_get_val(row_dict, 47),
+                    single_window_check=_get_val(row_dict, 48),
+                    chargeable_weight=_get_val(row_dict, 49)
+                )
+                db.add(export_record)
+            
+            db.commit()
+            print(f"[ChinaSouthernAirApprovalScheduler] 文件 {os.path.basename(filepath)} 解析入库完成。")
+            
+            # 重命名防重处理，防止被再次处理
+            os.rename(filepath, filepath + ".processed")
+            
+        except Exception as e:
+            db.rollback()
+            print(f"[ChinaSouthernAirApprovalScheduler] 处理文件 {filepath} 失败: {repr(e)}\n{traceback.format_exc()}")
         finally:
             db.close()
 
