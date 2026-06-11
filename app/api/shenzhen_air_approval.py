@@ -12,7 +12,8 @@ router = APIRouter()
 
 @router.get("", summary="深航订舱批复跟踪列表")
 async def get_shenzhen_air_approvals(
-    flight_date: Optional[str] = Query(None, description="航班日期区间，如2026-03-10,2026-04-20"),
+    flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-03-10"),
+    flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-03-15"),
     flight_number: Optional[str] = Query(None, description="航班号"),
     cabin_type: int = Query(0, description="仓位类型(0=散仓(非宽体), 1=版/箱/散卡(宽体))"),
     page: int = Query(1, description="页码", ge=1),
@@ -40,12 +41,10 @@ async def get_shenzhen_air_approvals(
         query = query.filter(model.flight_number.like(f"%{flight_number}%"))
         
     # 2. 航班日期区间查询
-    if flight_date:
-        dates = [d.strip() for d in flight_date.split(',') if d.strip()]
-        if len(dates) == 1:
-            query = query.filter(model.flight_date == dates[0])
-        elif len(dates) >= 2:
-            query = query.filter(model.flight_date >= dates[0], model.flight_date <= dates[1])
+    if flight_date_start:
+        query = query.filter(model.flight_date >= flight_date_start)
+    if flight_date_end:
+        query = query.filter(model.flight_date <= flight_date_end)
 
     # 计算总数
     total = query.count()

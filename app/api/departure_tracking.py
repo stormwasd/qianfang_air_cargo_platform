@@ -14,7 +14,8 @@ router = APIRouter()
 @router.get("/shenzhen-air", summary="深航出港列表")
 async def get_shenzhen_air_departures(
     waybill_number: Optional[str] = Query(None, description="运单号，多个用逗号隔开"),
-    flight_date: Optional[str] = Query(None, description="航班日期区间，如2026-03-10,2026-04-20"),
+    flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-03-10"),
+    flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-03-15"),
     flight_number: Optional[str] = Query(None, description="航班号"),
     page: int = Query(1, description="页码", ge=1),
     page_size: int = Query(10, description="每页数量", ge=1, le=500),
@@ -36,15 +37,10 @@ async def get_shenzhen_air_departures(
         )
         
     # 2. 航班日期区间查询
-    if flight_date:
-        dates = [d.strip() for d in flight_date.split(',') if d.strip()]
-        if len(dates) == 1:
-            query = query.filter(ShenzhenAirBookingExport.flight_date == dates[0])
-        elif len(dates) >= 2:
-            query = query.filter(
-                ShenzhenAirBookingExport.flight_date >= dates[0],
-                ShenzhenAirBookingExport.flight_date <= dates[1]
-            )
+    if flight_date_start:
+        query = query.filter(ShenzhenAirBookingExport.flight_date >= flight_date_start)
+    if flight_date_end:
+        query = query.filter(ShenzhenAirBookingExport.flight_date <= flight_date_end)
 
     # 3. 运单号多单号查询
     if waybill_number:
