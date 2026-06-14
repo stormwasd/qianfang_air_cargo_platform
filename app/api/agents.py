@@ -45,8 +45,22 @@ async def create_agent(
     db: Session = Depends(get_db)
 ):
     """新增代理"""
+    agent_code = agent_in.agent_code
+    if not agent_code:
+        # 获取当前最大的代理编码
+        latest_agent = db.query(Agent).filter(Agent.agent_code.like("KCYS%")).order_by(Agent.agent_code.desc()).first()
+        if latest_agent and latest_agent.agent_code:
+            try:
+                # 提取末尾的数字部分
+                num = int(latest_agent.agent_code[4:])
+                agent_code = f"KCYS{(num + 1):03d}"
+            except ValueError:
+                agent_code = "KCYS001"
+        else:
+            agent_code = "KCYS001"
+
     new_agent = Agent(
-        agent_code=agent_in.agent_code,
+        agent_code=agent_code,
         agent_type=agent_in.agent_type,
         agent_name=agent_in.agent_name,
         contact_person=agent_in.contact_person,
