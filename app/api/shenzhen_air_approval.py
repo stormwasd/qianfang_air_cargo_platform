@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from typing import Optional
 from app.database import get_db
 from app.api.deps import get_current_active_user
@@ -42,9 +42,9 @@ async def get_shenzhen_air_approvals(
         
     # 2. 航班日期区间查询
     if flight_date_start:
-        query = query.filter(model.flight_date >= flight_date_start)
+        query = query.filter(func.replace(model.flight_date, '/', '-') >= flight_date_start)
     if flight_date_end:
-        query = query.filter(model.flight_date <= flight_date_end)
+        query = query.filter(func.replace(model.flight_date, '/', '-') <= f"{flight_date_end} 23:59:59")
 
     # 计算总数
     total = query.count()

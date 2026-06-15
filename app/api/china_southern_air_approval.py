@@ -39,9 +39,9 @@ async def get_china_southern_air_approvals(
         # 从 flight_info 中截取第二部分作为日期，如 2026-06-10
         date_str = func.trim(func.substring_index(func.substring_index(model.flight_info, ' / ', 2), ' / ', -1))
         if flight_date_start:
-            query = query.filter(date_str >= flight_date_start)
+            query = query.filter(func.replace(date_str, '/', '-') >= flight_date_start)
         if flight_date_end:
-            query = query.filter(date_str <= flight_date_end)
+            query = query.filter(func.replace(date_str, '/', '-') <= f"{flight_date_end} 23:59:59")
             
     # 3. 运单号查询 (支持多单号逗号分隔)
     if waybill_number:

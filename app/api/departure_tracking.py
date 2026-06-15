@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from typing import Optional, List
 from app.database import get_db
 from app.api.deps import get_current_active_user
@@ -38,9 +38,9 @@ async def get_shenzhen_air_departures(
         
     # 2. 航班日期区间查询
     if flight_date_start:
-        query = query.filter(ShenzhenAirBookingExport.flight_date >= flight_date_start)
+        query = query.filter(func.replace(ShenzhenAirBookingExport.flight_date, '/', '-') >= flight_date_start)
     if flight_date_end:
-        query = query.filter(ShenzhenAirBookingExport.flight_date <= flight_date_end)
+        query = query.filter(func.replace(ShenzhenAirBookingExport.flight_date, '/', '-') <= f"{flight_date_end} 23:59:59")
 
     # 3. 运单号多单号查询
     if waybill_number:
@@ -54,9 +54,10 @@ async def get_shenzhen_air_departures(
     # 分页查询主表数据，修复由于 created_at 相同导致的分页乱序问题
     offset = (page - 1) * page_size
     exports = query.order_by(
-        ShenzhenAirBookingExport.creation_time.desc(), 
+        ShenzhenAirBookingExport.flight_date.desc(), 
         ShenzhenAirBookingExport.id.desc()
     ).offset(offset).limit(page_size).all()
+
 
     # 如果当前页没有数据，直接返回
     if not exports:
