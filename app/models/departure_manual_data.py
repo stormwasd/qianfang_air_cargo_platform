@@ -8,6 +8,7 @@ class ShenzhenAirDepartureManualData(Base):
     id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
     waybill_number_8 = Column(String(50), unique=True, index=True, comment="单号后8位")
     customer_name = Column(String(255), comment="客户名称")
+    cargo_type = Column(String(50), comment="货物类型")
     packaging_fee = Column(String(50), comment="包装费")
     telegram_fee = Column(String(50), comment="电报费")
     cca = Column(String(50), comment="CCA")
