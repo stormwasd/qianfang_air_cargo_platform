@@ -49,7 +49,6 @@ async def get_shenzhen_air_approvals(
     # 计算总数
     total = query.count()
 
-    from sqlalchemy import func
     # 分页查询数据
     offset = (page - 1) * page_size
     records = query.order_by(
