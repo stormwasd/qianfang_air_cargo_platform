@@ -3351,7 +3351,7 @@ class RPAWorker:
                         print(f"{self._log_prefix} 南航出港跟踪任务 {task.id} (workUuid: {work_uuid}) 执行成功")
                         await self._handle_china_southern_air_departure_tracking_success(db, task, queues_info)
                         return
-                    elif status in [6, 7]:  # 失败或异常
+                    elif status == 3:  # 失败
                         error_msg = f"RPA返回异常状态: {status} ({status_desc})"
                         print(f"{self._log_prefix} 南航出港跟踪任务 {task.id} (workUuid: {work_uuid}) 执行失败: {error_msg}")
                         await self._cleanup_queues(queues_info)
