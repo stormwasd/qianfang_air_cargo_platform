@@ -59,7 +59,7 @@ async def get_shenzhen_air_approvals(
     # 如果当前页没有数据，直接返回
     if not records:
         return success_response(
-            data={"total": total, "items": []},
+            data={"total": total, "items": [], "data_update_time": None},
             msg="查询成功"
         )
 
@@ -75,7 +75,12 @@ async def get_shenzhen_air_approvals(
         item_schema = schema_class(**record_dict)
         items.append(item_schema.model_dump(mode="json"))
 
+    # 提取数据更新时间（第一条记录的 updated_at，格式化到分钟）
+    data_update_time = None
+    if records and hasattr(records[0], 'updated_at') and records[0].updated_at:
+        data_update_time = records[0].updated_at.strftime("%Y-%m-%d %H:%M")
+
     return success_response(
-        data={"total": total, "items": items},
+        data={"total": total, "items": items, "data_update_time": data_update_time},
         msg="查询成功"
     )
