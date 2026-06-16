@@ -3259,7 +3259,8 @@ class RPAWorker:
             params = json.loads(task.params) if task.params else {}
             
             # 使用默认账号覆盖逻辑（如果没有特别指定的参数）
-            business_config = _get_business_config_dict(db)
+            config = db.query(BusinessConfig).first()
+            business_config = json.loads(config.config_data) if config else {}
             csa_node = business_config.get("china_southern_air", {}).get("booking", {}).get("china_southern_air_login", {})
             
             address_of_the_application_executable_file_tangyi = params.get("address_of_the_application_executable_file_tangyi")
