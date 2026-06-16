@@ -60,36 +60,21 @@ class ShenzhenAirApprovalScheduler:
             except Exception as e:
                 print(f"[ShenzhenAirApprovalScheduler] 启动时入队失败: {repr(e)}")
 
-        # 2. 定时每天指定时间执行（可配置，默认18:00）
+        # 2. 定期执行
         while not self._stop_event.is_set():
             try:
-                now = datetime.now()
-                # 从配置读取执行时间，例如 "18:00"
-                time_str = getattr(settings, "RPA_SHENZHEN_AIR_APPROVAL_DATA_TIME", "18:00")
-                try:
-                    hour, minute = map(int, time_str.split(':'))
-                except ValueError:
-                    hour, minute = 18, 0
-
-                # 计算下一个目标时间
-                target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                if now >= target:
-                    target += timedelta(days=1)
+                interval = getattr(settings, "RPA_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS", 900)
+                remaining = interval if interval and interval > 0 else 900
                 
-                seconds_to_wait = (target - now).total_seconds()
-                
-                # 分段 sleep，以支持及时 stop
-                while seconds_to_wait > 0 and not self._stop_event.is_set():
-                    step = min(5.0, seconds_to_wait)
-                    
-                    # 在休眠间隙轮询文件
+                # 分段 sleep，以支持及时 stop 并在休眠间隙轮询文件
+                while remaining > 0 and not self._stop_event.is_set():
+                    step = min(5.0, remaining)
                     try:
                         self._check_for_new_files()
                     except Exception as ex:
                         print(f"[ShenzhenAirApprovalScheduler] 文件监控异常: {repr(ex)}\n{traceback.format_exc()}")
-                        
                     await asyncio.sleep(step)
-                    seconds_to_wait -= step
+                    remaining -= step
                 
                 if not self._stop_event.is_set():
                     await self._enqueue_task()
