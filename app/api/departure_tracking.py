@@ -209,11 +209,14 @@ async def get_china_southern_air_departures(
             ChinaSouthernAirApprovalData.flight_info.like(f"%{flight_number}%")
         )
     
-    # 2. 航班日期区间查询（从 flight_info 中提取日期进行比较）
-    if flight_date_start:
-        query = query.filter(ChinaSouthernAirApprovalData.flight_info >= flight_date_start)
-    if flight_date_end:
-        query = query.filter(ChinaSouthernAirApprovalData.flight_info <= f"{flight_date_end}~")
+    # 2. 航班日期区间查询（从 flight_info 中提取日期部分进行比较）
+    # flight_info 格式如: "CZ8577 / 2026-06-16 / SZX - WUH"，第二段是日期
+    if flight_date_start or flight_date_end:
+        date_str = func.trim(func.substring_index(func.substring_index(ChinaSouthernAirApprovalData.flight_info, ' / ', 2), ' / ', -1))
+        if flight_date_start:
+            query = query.filter(func.replace(date_str, '/', '-') >= flight_date_start)
+        if flight_date_end:
+            query = query.filter(func.replace(date_str, '/', '-') <= f"{flight_date_end} 23:59:59")
 
     # 3. 运单号多单号查询
     if waybill_number:
