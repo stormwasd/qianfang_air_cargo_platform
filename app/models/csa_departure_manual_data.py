@@ -7,7 +7,7 @@ class CsaDepartureManualData(Base):
     __tablename__ = "csa_departure_manual_data"
 
     id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
-    booking_no = Column(String(100), unique=True, index=True, comment="订舱号（关联键）")
+    approval_data_id = Column(BigInteger, unique=True, index=True, nullable=False, comment="关联 china_southern_air_approval_data.id")
     customer_name = Column(String(255), comment="客户名称")
     cargo_type = Column(String(50), comment="货物类型")
     packaging_fee = Column(String(50), comment="包装费")

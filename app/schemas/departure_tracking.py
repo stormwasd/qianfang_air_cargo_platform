@@ -156,7 +156,7 @@ class CsaLalamoveInformationDTO(BaseModel):
 
 class CsaDepartureManualDataDTO(BaseModel):
     id: str
-    booking_no: Optional[str] = Field(None, description="订舱号")
+    approval_data_id: Optional[str] = Field(None, description="关联批复数据ID")
     customer_name: Optional[str] = Field(None, description="客户名称")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")
@@ -180,7 +180,7 @@ class CsaDepartureManualDataDTO(BaseModel):
 
 
 class CsaDepartureManualDataUpsert(BaseModel):
-    booking_no: str = Field(..., description="订舱号")
+    approval_data_id: str = Field(..., description="关联批复数据ID（china_southern_air_approval_data.id）")
     customer_name: Optional[str] = Field(None, description="客户名称")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")

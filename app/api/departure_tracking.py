@@ -253,13 +253,10 @@ async def get_china_southern_air_departures(
         CsaLalamoveInformation.approval_data_id.in_(record_ids)
     ).all()
 
-    # 提取所有 booking_no 用于批量查询手动数据
-    booking_nos = [r.booking_no for r in records if r.booking_no]
-    manual_datas = []
-    if booking_nos:
-        manual_datas = db.query(CsaDepartureManualData).filter(
-            CsaDepartureManualData.booking_no.in_(booking_nos)
-        ).all()
+    # 批量查询手动数据（通过 approval_data_id 关联）
+    manual_datas = db.query(CsaDepartureManualData).filter(
+        CsaDepartureManualData.approval_data_id.in_(record_ids)
+    ).all()
 
     # 5. 在内存中组装数据
     products_by_id = {}
@@ -270,7 +267,7 @@ async def get_china_southern_air_departures(
     for l in lalamove_infos:
         lalamove_by_id.setdefault(l.approval_data_id, []).append(l)
 
-    manual_data_by_booking_no = {md.booking_no: md for md in manual_datas}
+    manual_data_by_id = {md.approval_data_id: md for md in manual_datas}
 
     # 6. 构造返回列表
     items = []
@@ -295,10 +292,11 @@ async def get_china_southern_air_departures(
             item_schema.lalamove_information.append(CsaLalamoveInformationDTO(**l_dict))
 
         # 组装手动录入数据
-        if record.booking_no and record.booking_no in manual_data_by_booking_no:
-            md = manual_data_by_booking_no[record.booking_no]
+        if record.id in manual_data_by_id:
+            md = manual_data_by_id[record.id]
             md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
             md_dict["id"] = str(md.id)
+            md_dict["approval_data_id"] = str(md.approval_data_id)
             item_schema.manual_data = CsaDepartureManualDataDTO(**md_dict)
 
         items.append(item_schema.model_dump(mode="json"))
@@ -324,20 +322,22 @@ async def upsert_china_southern_air_manual_data(
 ):
     from app.models.csa_departure_manual_data import CsaDepartureManualData
     
-    # 根据 booking_no 查询是否已存在
+    # 根据 approval_data_id 查询是否已存在
     manual_data = db.query(CsaDepartureManualData).filter(
-        CsaDepartureManualData.booking_no == data.booking_no
+        CsaDepartureManualData.approval_data_id == int(data.approval_data_id)
     ).first()
     
     if manual_data:
         # 更新
-        update_data = data.model_dump(exclude_unset=True)
+        update_data = data.model_dump(exclude_unset=True, exclude={"approval_data_id"})
         for key, value in update_data.items():
             setattr(manual_data, key, value)
         msg = "更新成功"
     else:
         # 插入
-        manual_data = CsaDepartureManualData(**data.model_dump())
+        insert_data = data.model_dump()
+        insert_data["approval_data_id"] = int(insert_data["approval_data_id"])
+        manual_data = CsaDepartureManualData(**insert_data)
         db.add(manual_data)
         msg = "保存成功"
         
