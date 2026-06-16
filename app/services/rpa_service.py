@@ -745,7 +745,7 @@ class RPAService:
             login_password: 登录密码
             booking_number: 订舱号
             job_uuid: 任务的 UUID
-            queue_names: 队列名称字典
+            queue_names: 队列名称字典，如 {"queue_product_information_on_this_site": "xxx", "queue_lalamove_information": "yyy"}
         
         Returns:
             RPA接口返回的数据，包含workUuid等信息
