@@ -17,7 +17,7 @@ from app.services.rpa_task_service import rpa_task_service
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 
 
-TARGET_TYPE = "china_southern_departure_tracking"
+TARGET_TYPE = "csa_dep_tracking"
 
 
 class ChinaSouthernAirDepartureTrackingScheduler:
