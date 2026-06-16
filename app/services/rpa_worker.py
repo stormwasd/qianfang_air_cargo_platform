@@ -3253,7 +3253,7 @@ class RPAWorker:
         try:
             # 1. 创建队列
             queues_info = await self._create_queues_for_task(db, task)
-            queue_names = {k: v["queueName"] for k, v in queues_info.items()}
+            queue_names = self._build_queue_names_for_flow(queues_info)
             
             # 2. 准备业务参数
             params = json.loads(task.params) if task.params else {}
