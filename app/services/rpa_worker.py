@@ -2970,11 +2970,11 @@ class RPAWorker:
                     continue
                     
                 status = status_info.get("status")
-                if status == 2:
+                if status in [2, 5]:
                     print(f"{self._log_prefix} 南航批复数据获取任务 {task.id} 执行成功")
                     rpa_task_service.complete_task(db, task.id, True)
                     return
-                elif status == 3:
+                elif status in [3, 6, 7]:
                     error_msg = status_info.get("statusDesc", "RPA执行失败")
                     print(f"{self._log_prefix} 南航批复数据获取任务 {task.id} 失败: {error_msg}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
