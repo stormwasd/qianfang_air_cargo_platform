@@ -3270,17 +3270,20 @@ class RPAWorker:
             booking_number = params.get("booking_number")
 
             if not address_of_the_application_executable_file_tangyi:
-                address_of_the_application_executable_file_tangyi = self.extra_config.get("address_of_the_application_executable_file_tangyi") if self.extra_config else None
+                tangyi_config = self.extra_config.get("tangyi_program", {}) if self.extra_config else {}
+                address_of_the_application_executable_file_tangyi = tangyi_config.get("executable_path")
                 if not address_of_the_application_executable_file_tangyi:
                     address_of_the_application_executable_file_tangyi = csa_node.get("address_of_the_application_executable_file_tangyi", "")
             
             if not system_account:
-                system_account = self.extra_config.get("china_southern_air_account") if self.extra_config else None
+                csa_account = self.extra_config.get("china_southern_air_account", {}) if self.extra_config else {}
+                system_account = csa_account.get("account")
                 if not system_account:
                     system_account = csa_node.get("system_account", "")
 
             if not login_password:
-                login_password = self.extra_config.get("china_southern_air_password") if self.extra_config else None
+                csa_account = self.extra_config.get("china_southern_air_account", {}) if self.extra_config else {}
+                login_password = csa_account.get("password")
                 if not login_password:
                     login_password = csa_node.get("login_password", "")
                     
