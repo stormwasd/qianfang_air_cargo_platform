@@ -3258,7 +3258,16 @@ class RPAWorker:
             # 2. 准备业务参数
             params = json.loads(task.params) if task.params else {}
             
-            # 使用默认账号覆盖逻辑（如果没有特别指定的参数）
+            # 获取该机器人的 extra_config（包含唐翼路径、南航账号等机器人级别配置）
+            robot = db.query(Robot).filter(Robot.id == task.robot_id).first()
+            extra_config = {}
+            if robot and robot.extra_config:
+                try:
+                    extra_config = json.loads(robot.extra_config) if isinstance(robot.extra_config, str) else robot.extra_config
+                except (json.JSONDecodeError, TypeError):
+                    extra_config = {}
+            
+            # 全局 BusinessConfig 作为最终兜底
             from app.models.config import BusinessConfig
             config = db.query(BusinessConfig).first()
             business_config = json.loads(config.config_data) if config else {}
@@ -3269,21 +3278,25 @@ class RPAWorker:
             login_password = params.get("login_password")
             booking_number = params.get("booking_number")
 
+            # 优先级：task.params > robot.extra_config > BusinessConfig 全局配置
             if not address_of_the_application_executable_file_tangyi:
-                tangyi_config = self.extra_config.get("tangyi_program", {}) if self.extra_config else {}
-                address_of_the_application_executable_file_tangyi = tangyi_config.get("executable_path")
+                tangyi_config = extra_config.get("tangyi_program", {})
+                if isinstance(tangyi_config, dict):
+                    address_of_the_application_executable_file_tangyi = tangyi_config.get("executable_path")
                 if not address_of_the_application_executable_file_tangyi:
                     address_of_the_application_executable_file_tangyi = csa_node.get("address_of_the_application_executable_file_tangyi", "")
             
             if not system_account:
-                csa_account = self.extra_config.get("china_southern_air_account", {}) if self.extra_config else {}
-                system_account = csa_account.get("account")
+                csa_account = extra_config.get("china_southern_air_account", {})
+                if isinstance(csa_account, dict):
+                    system_account = csa_account.get("account")
                 if not system_account:
                     system_account = csa_node.get("system_account", "")
 
             if not login_password:
-                csa_account = self.extra_config.get("china_southern_air_account", {}) if self.extra_config else {}
-                login_password = csa_account.get("password")
+                csa_account = extra_config.get("china_southern_air_account", {})
+                if isinstance(csa_account, dict):
+                    login_password = csa_account.get("password")
                 if not login_password:
                     login_password = csa_node.get("login_password", "")
                     
