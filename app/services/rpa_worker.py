@@ -2385,6 +2385,31 @@ class RPAWorker:
             await self._cleanup_queues(queues_info)
             booking.rpa_queue_uuids = None
             db.commit()
+
+    async def _create_queues_for_task(self, db, task: RPATask) -> dict:
+        """为任务创建所有需要的队列"""
+        queues_info = {}
+        queue_params = json.loads(task.queue_params) if task.queue_params else None
+        if queue_params:
+            queue_configs = queue_params.get("queue_configs", [])
+            for queue_config in queue_configs:
+                try:
+                    queue_data = await asyncio.wait_for(
+                        rpa_service.create_queue(
+                            queue_name=queue_config["name"],
+                            max_queue_number=999,
+                            is_expire=False
+                        ),
+                        timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+                    )
+                    queues_info[queue_config["key"]] = {
+                        "queueUUID": queue_data.get("queueUUID", ""),
+                        "queueID": str(queue_data.get("queueID", "")),
+                        "queueName": queue_config["name"]
+                    }
+                except Exception as e:
+                    print(f"{self._log_prefix} 创建队列失败 ({queue_config['name']}): {_get_error_detail(e)}")
+        return queues_info
     
     async def _cleanup_queues(self, queues_info: dict):
         """清理队列"""
@@ -3227,26 +3252,7 @@ class RPAWorker:
         queues_info = {}
         try:
             # 1. 创建队列
-            queue_params = json.loads(task.queue_params) if task.queue_params else None
-            if queue_params:
-                queue_configs = queue_params.get("queue_configs", [])
-                for queue_config in queue_configs:
-                    try:
-                        queue_data = await asyncio.wait_for(
-                            rpa_service.create_queue(
-                                queue_name=queue_config["name"],
-                                max_queue_number=999,
-                                is_expire=False
-                            ),
-                            timeout=settings.RPA_QUEUE_TASK_TIMEOUT
-                        )
-                        queues_info[queue_config["key"]] = {
-                            "queueUUID": queue_data.get("queueUUID", ""),
-                            "queueID": str(queue_data.get("queueID", "")),
-                            "queueName": queue_config["name"]
-                        }
-                    except Exception as e:
-                        print(f"{self._log_prefix} 创建队列失败 ({queue_config['name']}): {_get_error_detail(e)}")
+            queues_info = await self._create_queues_for_task(db, task)
             queue_names = {k: v["queueName"] for k, v in queues_info.items()}
             
             # 2. 准备业务参数
