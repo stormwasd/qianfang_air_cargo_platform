@@ -163,6 +163,8 @@ class ChinaSouthernAirApprovalScheduler:
                 except Exception:
                     return None
             
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            
             # 从第4行（索引为3）开始是真正的表头和数据
             # 索引对应：0->订舱航班, 1->机型, 2->飞机号 ... 49->计费重量
             for index, row in df.iterrows():
@@ -173,7 +175,7 @@ class ChinaSouthernAirApprovalScheduler:
                 row_dict = row.to_dict()
                 aircraft_type = _get_val(row_dict, 1)
                 
-                # 过滤掉“小计”行，只存明细
+                # 过滤掉"小计"行，只存明细
                 if aircraft_type == "小计":
                     continue
                     
@@ -181,14 +183,23 @@ class ChinaSouthernAirApprovalScheduler:
                 flight_info = _get_val(row_dict, 0)
                 waybill_number = _get_val(row_dict, 7)
                 
-                # 过滤掉“总计”行
+                # 过滤掉"总计"行
                 if flight_info and "总计" in flight_info:
                     continue
                     
                 if not flight_info and not waybill_number:
                     continue
-                    
-                export_record = ChinaSouthernAirApprovalData(
+                
+                # === booking_no 去重（UPSERT）===
+                booking_no_raw = _get_val(row_dict, 12)
+                existing_record = None
+                if booking_no_raw:
+                    existing_record = db.query(ChinaSouthernAirApprovalData).filter(
+                        ChinaSouthernAirApprovalData.booking_no == booking_no_raw
+                    ).first()
+                
+                # 构造字段映射
+                field_values = dict(
                     flight_info=flight_info,
                     aircraft_type=aircraft_type,
                     aircraft_no=_get_val(row_dict, 2),
@@ -201,7 +212,7 @@ class ChinaSouthernAirApprovalScheduler:
                     key_account_code=_get_val(row_dict, 9),
                     key_account_name=_get_val(row_dict, 10),
                     sales_channel=_get_val(row_dict, 11),
-                    booking_no=_get_val(row_dict, 12),
+                    booking_no=booking_no_raw,
                     guarantee_level=_get_val(row_dict, 13),
                     cabin_level=_get_val(row_dict, 14),
                     product_code=_get_val(row_dict, 15),
@@ -240,33 +251,54 @@ class ChinaSouthernAirApprovalScheduler:
                     single_window_check=_get_val(row_dict, 48),
                     chargeable_weight=_get_val(row_dict, 49)
                 )
-                db.add(export_record)
+                
+                if existing_record:
+                    # 已存在：更新所有字段
+                    for k, v in field_values.items():
+                        setattr(existing_record, k, v)
+                    export_record = existing_record
+                else:
+                    # 不存在：新增
+                    export_record = ChinaSouthernAirApprovalData(**field_values)
+                    db.add(export_record)
+                
                 db.flush()
                 
-                # 提取订舱号并下发出港跟踪任务
-                booking_no_raw = _get_val(row_dict, 12)
-                if booking_no_raw:
-                    # 提取左括号前的纯数字订舱号
-                    match = re.match(r'^(\d+)', str(booking_no_raw).strip())
-                    if match:
-                        booking_number = match.group(1)
-                        
-                        params = {
-                            "booking_number": booking_number
-                        }
-                        
-                        # 记录作为 tracking 目标
-                        rpa_task_service.create_task(
-                            db=db,
-                            task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value,
-                            target_type="csa_dep_tracking",
-                            target_id=export_record.id,
-                            params=params,
-                            job_uuid=None,  # 等待分配时从 extra_config/默认配置读取
-                            priority=2,
-                            created_by=None,
-                            robot_id=None
-                        )
+                # === 下发出港跟踪任务（仅当天航班 + 去重）===
+                if booking_no_raw and flight_info:
+                    # 提取航班日期，格式如：CZ8577 / 2026-06-16 / SZX - WUH
+                    flight_date_match = re.search(r'(\d{4}-\d{2}-\d{2})', str(flight_info))
+                    flight_date = flight_date_match.group(1) if flight_date_match else None
+                    
+                    # 仅当航班日期是当天时才下发出港跟踪任务
+                    if flight_date == today_str:
+                        # 提取左括号前的纯数字订舱号
+                        match = re.match(r'^(\d+)', str(booking_no_raw).strip())
+                        if match:
+                            booking_number = match.group(1)
+                            
+                            # 检查是否已有 pending/running 的出港跟踪任务（基于同一 approval_data_id）
+                            existing_task = rpa_task_service.get_pending_task_for_target(
+                                db,
+                                target_type="csa_dep_tracking",
+                                target_id=export_record.id,
+                                task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value
+                            )
+                            if not existing_task:
+                                params = {
+                                    "booking_number": booking_number
+                                }
+                                rpa_task_service.create_task(
+                                    db=db,
+                                    task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value,
+                                    target_type="csa_dep_tracking",
+                                    target_id=export_record.id,
+                                    params=params,
+                                    job_uuid=None,
+                                    priority=2,
+                                    created_by=None,
+                                    robot_id=None
+                                )
             
             db.commit()
             print(f"[ChinaSouthernAirApprovalScheduler] 文件 {os.path.basename(filepath)} 解析入库完成。")

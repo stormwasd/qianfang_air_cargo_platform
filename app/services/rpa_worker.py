@@ -3370,8 +3370,16 @@ class RPAWorker:
         rpa_task_service.timeout_task(db, task.id, "查询超时")
             
     async def _handle_china_southern_air_departure_tracking_success(self, db, task: RPATask, queues_info: dict):
-        """成功后，消费队列并打印结果（第一阶段不存库）"""
+        """成功后，消费队列数据并存入数据库，关联到 china_southern_air_approval_data"""
+        from app.models.csa_departure_tracking import CsaProductInformation, CsaLalamoveInformation
+        
+        approval_data_id = task.target_id  # 关联的 china_southern_air_approval_data.id
+        
         try:
+            product_data = None
+            lalamove_data = None
+            
+            # 1. 消费本站货物队列
             if "product_information_on_this_site" in queues_info:
                 queue_uuid = queues_info["product_information_on_this_site"]["queueUUID"]
                 try:
@@ -3382,6 +3390,7 @@ class RPAWorker:
                 except Exception as e:
                     print(f"{self._log_prefix} 消费本站货物信息队列失败: {_get_error_detail(e)}")
 
+            # 2. 消费货拉队列
             if "lalamove_information" in queues_info:
                 queue_uuid = queues_info["lalamove_information"]["queueUUID"]
                 try:
@@ -3392,6 +3401,68 @@ class RPAWorker:
                 except Exception as e:
                     print(f"{self._log_prefix} 消费货拉信息队列失败: {_get_error_detail(e)}")
             
+            # 3. 持久化本站货物数据（清除旧数据后写入最新快照）
+            if product_data and isinstance(product_data, list) and len(product_data) > 0 and isinstance(product_data[0], list):
+                # 是二维列表，有数据
+                db.query(CsaProductInformation).filter(
+                    CsaProductInformation.approval_data_id == approval_data_id
+                ).delete()
+                
+                for row in product_data:
+                    if not isinstance(row, list) or len(row) < 14:
+                        continue
+                    # 原始15项：跳过第[8]项(无用数字)和第[14]项(最后空项)
+                    # [0]航段 [1]件数 [2]重量 [3]体积 [4]非正常备注 [5]存放备注
+                    # [6]所上航班/日期 [7]航段状态 [8]跳过 [9]是否READY [10]预定航班
+                    # [11]预定航班日期 [12]安检状态 [13]货物状态 [14]跳过
+                    record = CsaProductInformation(
+                        approval_data_id=approval_data_id,
+                        segment=str(row[0]) if row[0] else None,
+                        pieces=str(row[1]) if row[1] else None,
+                        weight=str(row[2]) if row[2] else None,
+                        volume=str(row[3]) if row[3] else None,
+                        abnormal_remark=str(row[4]) if row[4] else None,
+                        storage_remark=str(row[5]) if row[5] else None,
+                        flight_date_info=str(row[6]) if row[6] else None,
+                        segment_status=str(row[7]) if row[7] else None,
+                        is_ready=str(row[9]) if len(row) > 9 and row[9] else None,
+                        booked_flight=str(row[10]) if len(row) > 10 and row[10] else None,
+                        booked_flight_date=str(row[11]) if len(row) > 11 and row[11] else None,
+                        security_status=str(row[12]) if len(row) > 12 and row[12] else None,
+                        cargo_status=str(row[13]) if len(row) > 13 and row[13] else None,
+                    )
+                    db.add(record)
+                
+                print(f"{self._log_prefix} 本站货物数据已入库，共 {len(product_data)} 条记录 (approval_data_id={approval_data_id})")
+            
+            # 4. 持久化货拉数据
+            if lalamove_data and isinstance(lalamove_data, list) and len(lalamove_data) > 0 and isinstance(lalamove_data[0], list):
+                # 是二维列表，有数据
+                db.query(CsaLalamoveInformation).filter(
+                    CsaLalamoveInformation.approval_data_id == approval_data_id
+                ).delete()
+                
+                for row in lalamove_data:
+                    if not isinstance(row, list) or len(row) < 8:
+                        continue
+                    # [0]容量/货拉 [1]保证/预拉 [2]容器类型 [3]容器位置
+                    # [4]件数 [5]重量 [6]预配航班 [7]所在舱单号
+                    record = CsaLalamoveInformation(
+                        approval_data_id=approval_data_id,
+                        capacity_lalamove=str(row[0]) if row[0] else None,
+                        guarantee_pre_pull=str(row[1]) if row[1] else None,
+                        container_type=str(row[2]) if row[2] else None,
+                        container_position=str(row[3]) if row[3] else None,
+                        pieces=str(row[4]) if row[4] else None,
+                        weight=str(row[5]) if row[5] else None,
+                        pre_assigned_flight=str(row[6]) if row[6] else None,
+                        manifest_number=str(row[7]) if row[7] else None,
+                    )
+                    db.add(record)
+                
+                print(f"{self._log_prefix} 货拉数据已入库，共 {len(lalamove_data)} 条记录 (approval_data_id={approval_data_id})")
+            
+            db.flush()
             rpa_task_service.complete_task(db, task.id, True)
         finally:
             await self._cleanup_queues(queues_info)
