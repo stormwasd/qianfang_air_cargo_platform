@@ -3333,18 +3333,11 @@ class RPAWorker:
 
     async def _poll_china_southern_air_departure_tracking_status(self, db, task: RPATask, work_uuid: str, queues_info: dict):
         """轮询南航出港跟踪任务状态"""
-        job_uuid = task.job_uuid
-        poll_interval = settings.RPA_POLL_INTERVAL
-        timeout = settings.RPA_POLL_TIMEOUT
-        start_time = asyncio.get_event_loop().time()
-        
-        while not self._stop_event.is_set():
-            if asyncio.get_event_loop().time() - start_time > timeout:
-                raise asyncio.TimeoutError()
-                
+        poll_count = 0
+        while poll_count < settings.RPA_POLL_MAX_COUNT:
             try:
                 response_data = await rpa_service.query_china_southern_air_booking_status(
-                    job_uuid=job_uuid,
+                    job_uuid=task.job_uuid,
                     start_time=task.created_at.strftime("%Y-%m-%d %H:%M:%S") if task.created_at else None
                 )
                 
@@ -3368,7 +3361,13 @@ class RPAWorker:
             except Exception as e:
                 print(f"{self._log_prefix} 轮询任务状态时发生异常: {_get_error_detail(e)}")
                 
-            await asyncio.sleep(poll_interval)
+            poll_count += 1
+            await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+        
+        # 超时处理
+        print(f"{self._log_prefix} 南航出港跟踪任务 {task.id} 查询超时")
+        await self._cleanup_queues(queues_info)
+        rpa_task_service.timeout_task(db, task.id, "查询超时")
             
     async def _handle_china_southern_air_departure_tracking_success(self, db, task: RPATask, queues_info: dict):
         """成功后，消费队列并打印结果（第一阶段不存库）"""
