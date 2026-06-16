@@ -727,6 +727,64 @@ class RPAService:
             except Exception as e:
                 raise BadRequestException(f"RPA订舱接口调用异常: {repr(e)}")
     
+    async def create_china_southern_air_departure_tracking(
+        self,
+        address_of_the_application_executable_file_tangyi: str,
+        system_account: str,
+        login_password: str,
+        booking_number: str,
+        job_uuid: str,
+        queue_names: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        调用南航出港跟踪任务RPA接口（本站货物+货拉信息获取）
+        
+        Args:
+            address_of_the_application_executable_file_tangyi: 唐翼应用可执行文件地址
+            system_account: 系统账号
+            login_password: 登录密码
+            booking_number: 订舱号
+            job_uuid: 任务的 UUID
+            queue_names: 队列名称字典
+        
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        
+        input_param = {
+            "address_of_the_application_executable_file_tangyi": address_of_the_application_executable_file_tangyi,
+            "system_account": system_account,
+            "login_password": login_password,
+            "booking_number": booking_number
+        }
+        if queue_names:
+            input_param.update(queue_names)
+        
+        payload = {
+            "jobUuid": job_uuid,
+            "operation": 1,
+            "inputParam": input_param
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "RPA出港跟踪数据获取调用失败")
+                    raise BadRequestException(f"RPA出港跟踪数据获取调用失败: {error_msg}")
+                
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"RPA出港跟踪接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"RPA出港跟踪接口请求失败: {repr(e)}")
+            except Exception as e:
+                raise BadRequestException(f"RPA出港跟踪接口调用异常: {repr(e)}")
+    
     async def query_china_southern_air_booking_status(
         self,
         job_uuid: str,

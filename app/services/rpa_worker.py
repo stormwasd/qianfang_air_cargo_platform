@@ -431,6 +431,8 @@ class RPAWorker:
                     await self._execute_china_southern_air_approval_data(db, task)
                 elif task.task_type == RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value:
                     await self._execute_shenzhen_air_billing_time_container(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value:
+                    await self._execute_china_southern_air_departure_tracking(db, task)
                 else:
                     print(f"{self._log_prefix} 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -3205,6 +3207,148 @@ class RPAWorker:
                     print(f"获取到的改单信息队列数据：{change_order_data}")
                 except Exception as e:
                     print(f"{self._log_prefix} 消费改单信息队列失败: {_get_error_detail(e)}")
+            
+            rpa_task_service.complete_task(db, task.id, True)
+        finally:
+            await self._cleanup_queues(queues_info)
+
+
+    async def _execute_china_southern_air_departure_tracking(self, db, task: RPATask):
+        """执行南航订舱-本站货物+货拉数据获取任务"""
+        print(f"{self._log_prefix} 准备执行南航出港跟踪任务: {task.id}")
+        
+        job_uuid = self._get_job_uuid(task)
+        if not job_uuid:
+            error_msg = f"未找到南航出港跟踪任务 (task_type={task.task_type}) 对应的 job_uuid"
+            print(f"{self._log_prefix} {error_msg}")
+            rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+            return
+
+        queues_info = {}
+        try:
+            # 1. 创建队列
+            queues_info = await self._create_queues_for_task(db, task)
+            queue_names = {k: v["queueName"] for k, v in queues_info.items()}
+            
+            # 2. 准备业务参数
+            params = json.loads(task.params) if task.params else {}
+            
+            # 使用默认账号覆盖逻辑（如果没有特别指定的参数）
+            business_config = _get_business_config_dict(db)
+            csa_node = business_config.get("china_southern_air", {}).get("booking", {}).get("china_southern_air_login", {})
+            
+            address_of_the_application_executable_file_tangyi = params.get("address_of_the_application_executable_file_tangyi")
+            system_account = params.get("system_account")
+            login_password = params.get("login_password")
+            booking_number = params.get("booking_number")
+
+            if not address_of_the_application_executable_file_tangyi:
+                address_of_the_application_executable_file_tangyi = self.extra_config.get("address_of_the_application_executable_file_tangyi") if self.extra_config else None
+                if not address_of_the_application_executable_file_tangyi:
+                    address_of_the_application_executable_file_tangyi = csa_node.get("address_of_the_application_executable_file_tangyi", "")
+            
+            if not system_account:
+                system_account = self.extra_config.get("china_southern_air_account") if self.extra_config else None
+                if not system_account:
+                    system_account = csa_node.get("system_account", "")
+
+            if not login_password:
+                login_password = self.extra_config.get("china_southern_air_password") if self.extra_config else None
+                if not login_password:
+                    login_password = csa_node.get("login_password", "")
+                    
+            if not booking_number:
+                raise ValueError("缺少必要的入参: booking_number")
+
+            print(f"{self._log_prefix} [CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING] 实际发送给RPA的参数: booking_number={booking_number}, queues={queue_names}")
+
+            # 3. 调用 RPA 接口创建任务
+            response_data = await rpa_service.create_china_southern_air_departure_tracking(
+                address_of_the_application_executable_file_tangyi=address_of_the_application_executable_file_tangyi,
+                system_account=system_account,
+                login_password=login_password,
+                booking_number=booking_number,
+                job_uuid=job_uuid,
+                queue_names=queue_names
+            )
+            
+            # 提取 workUuid
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(response_data)
+            if not work_uuid:
+                raise ValueError("RPA 接口未返回有效的 workUuid")
+
+            print(f"{self._log_prefix} 成功创建南航出港跟踪任务, workUuid: {work_uuid}")
+            
+            # 4. 轮询状态并提取数据
+            await self._poll_china_southern_air_departure_tracking_status(db, task, work_uuid, queues_info)
+
+        except Exception as e:
+            error_msg = _get_error_detail(e)
+            print(f"{self._log_prefix} 执行南航出港跟踪任务异常: {error_msg}\n{traceback.format_exc()}")
+            await self._cleanup_queues(queues_info)
+            rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+
+    async def _poll_china_southern_air_departure_tracking_status(self, db, task: RPATask, work_uuid: str, queues_info: dict):
+        """轮询南航出港跟踪任务状态"""
+        job_uuid = self._get_job_uuid(task)
+        poll_interval = settings.RPA_POLL_INTERVAL
+        timeout = settings.RPA_POLL_TIMEOUT
+        start_time = asyncio.get_event_loop().time()
+        
+        while not self._stop_event.is_set():
+            if asyncio.get_event_loop().time() - start_time > timeout:
+                raise asyncio.TimeoutError()
+                
+            try:
+                response_data = await rpa_service.query_china_southern_air_booking_status(
+                    job_uuid=job_uuid,
+                    start_time=task.created_at.strftime("%Y-%m-%d %H:%M:%S") if task.created_at else None
+                )
+                
+                status_info = rpa_service.extract_status_from_query_response(response_data, work_uuid)
+                
+                if status_info:
+                    status = status_info.get("status")
+                    status_desc = status_info.get("statusDesc", "未知状态")
+                    
+                    if status == 5:  # 成功
+                        print(f"{self._log_prefix} 南航出港跟踪任务 {task.id} (workUuid: {work_uuid}) 执行成功")
+                        await self._handle_china_southern_air_departure_tracking_success(db, task, queues_info)
+                        return
+                    elif status in [6, 7]:  # 失败或异常
+                        error_msg = f"RPA返回异常状态: {status} ({status_desc})"
+                        print(f"{self._log_prefix} 南航出港跟踪任务 {task.id} (workUuid: {work_uuid}) 执行失败: {error_msg}")
+                        await self._cleanup_queues(queues_info)
+                        rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+                        return
+                
+            except Exception as e:
+                print(f"{self._log_prefix} 轮询任务状态时发生异常: {_get_error_detail(e)}")
+                
+            await asyncio.sleep(poll_interval)
+            
+    async def _handle_china_southern_air_departure_tracking_success(self, db, task: RPATask, queues_info: dict):
+        """成功后，消费队列并打印结果（第一阶段不存库）"""
+        try:
+            if "product_information_on_this_site" in queues_info:
+                queue_uuid = queues_info["product_information_on_this_site"]["queueUUID"]
+                try:
+                    product_data = await rpa_service.consume_queue_data(queue_uuid)
+                    print(f"\n=======================================================")
+                    print(f"[{self._log_prefix}] 南航出港跟踪任务 {task.id} -> 本站货物信息消费成功！")
+                    print(f"获取到的本站货物数据：{product_data}")
+                except Exception as e:
+                    print(f"{self._log_prefix} 消费本站货物信息队列失败: {_get_error_detail(e)}")
+
+            if "lalamove_information" in queues_info:
+                queue_uuid = queues_info["lalamove_information"]["queueUUID"]
+                try:
+                    lalamove_data = await rpa_service.consume_queue_data(queue_uuid)
+                    print(f"\n=======================================================")
+                    print(f"[{self._log_prefix}] 南航出港跟踪任务 {task.id} -> 货拉信息消费成功！")
+                    print(f"获取到的货拉数据：{lalamove_data}")
+                except Exception as e:
+                    print(f"{self._log_prefix} 消费货拉信息队列失败: {_get_error_detail(e)}")
             
             rpa_task_service.complete_task(db, task.id, True)
         finally:

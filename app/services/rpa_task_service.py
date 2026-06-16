@@ -38,6 +38,7 @@ TASK_QUEUE_CONFIGS = {
     "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE": ["freight_rate", "freight", "fuel_costs", "extended_service_fee"],
     "CHINA_SOUTHERN_AIR_DIRECT_INVOICE": ["rate", "freight", "fuel_costs", "extended_service_fee"],
     "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA": ["rate", "freight", "fuel_costs", "extended_service_fee"],
+    "CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING": ["product_information_on_this_site", "lalamove_information"],
 }
 
 # 全局单例任务类型：同一时刻整个系统只允许一个机器人执行的任务类型。
