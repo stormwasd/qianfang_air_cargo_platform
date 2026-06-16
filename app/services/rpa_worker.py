@@ -3383,7 +3383,13 @@ class RPAWorker:
             if "product_information_on_this_site" in queues_info:
                 queue_uuid = queues_info["product_information_on_this_site"]["queueUUID"]
                 try:
-                    product_data = await rpa_service.consume_queue_data(queue_uuid)
+                    raw_product = await rpa_service.consume_queue_data(queue_uuid)
+                    # consume_queue_data 返回的 data.data 是 JSON 字符串，需要解析
+                    if raw_product and isinstance(raw_product, str):
+                        import json as _json
+                        product_data = _json.loads(raw_product)
+                    elif isinstance(raw_product, list):
+                        product_data = raw_product
                     print(f"\n=======================================================")
                     print(f"[{self._log_prefix}] 南航出港跟踪任务 {task.id} -> 本站货物信息消费成功！")
                     print(f"获取到的本站货物数据：{product_data}")
@@ -3394,7 +3400,13 @@ class RPAWorker:
             if "lalamove_information" in queues_info:
                 queue_uuid = queues_info["lalamove_information"]["queueUUID"]
                 try:
-                    lalamove_data = await rpa_service.consume_queue_data(queue_uuid)
+                    raw_lalamove = await rpa_service.consume_queue_data(queue_uuid)
+                    # consume_queue_data 返回的 data.data 是 JSON 字符串，需要解析
+                    if raw_lalamove and isinstance(raw_lalamove, str):
+                        import json as _json
+                        lalamove_data = _json.loads(raw_lalamove)
+                    elif isinstance(raw_lalamove, list):
+                        lalamove_data = raw_lalamove
                     print(f"\n=======================================================")
                     print(f"[{self._log_prefix}] 南航出港跟踪任务 {task.id} -> 货拉信息消费成功！")
                     print(f"获取到的货拉数据：{lalamove_data}")
