@@ -3217,7 +3217,7 @@ class RPAWorker:
         """执行南航订舱-本站货物+货拉数据获取任务"""
         print(f"{self._log_prefix} 准备执行南航出港跟踪任务: {task.id}")
         
-        job_uuid = self._get_job_uuid(task)
+        job_uuid = task.job_uuid
         if not job_uuid:
             error_msg = f"未找到南航出港跟踪任务 (task_type={task.task_type}) 对应的 job_uuid"
             print(f"{self._log_prefix} {error_msg}")
@@ -3290,7 +3290,7 @@ class RPAWorker:
 
     async def _poll_china_southern_air_departure_tracking_status(self, db, task: RPATask, work_uuid: str, queues_info: dict):
         """轮询南航出港跟踪任务状态"""
-        job_uuid = self._get_job_uuid(task)
+        job_uuid = task.job_uuid
         poll_interval = settings.RPA_POLL_INTERVAL
         timeout = settings.RPA_POLL_TIMEOUT
         start_time = asyncio.get_event_loop().time()
