@@ -20,6 +20,7 @@ from app.services.rpa_task_service import rpa_task_service
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 import pandas as pd
 import math
+import re
 
 
 TARGET_TYPE = "approval_data"
@@ -240,6 +241,32 @@ class ChinaSouthernAirApprovalScheduler:
                     chargeable_weight=_get_val(row_dict, 49)
                 )
                 db.add(export_record)
+                db.flush()
+                
+                # 提取订舱号并下发出港跟踪任务
+                booking_no_raw = _get_val(row_dict, 12)
+                if booking_no_raw:
+                    # 提取左括号前的纯数字订舱号
+                    match = re.match(r'^(\d+)', str(booking_no_raw).strip())
+                    if match:
+                        booking_number = match.group(1)
+                        
+                        params = {
+                            "booking_number": booking_number
+                        }
+                        
+                        # 记录作为 tracking 目标
+                        rpa_task_service.create_task(
+                            db=db,
+                            task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value,
+                            target_type="csa_dep_tracking",
+                            target_id=export_record.id,
+                            params=params,
+                            job_uuid=None,  # 等待分配时从 extra_config/默认配置读取
+                            priority=2,
+                            created_by=None,
+                            robot_id=None
+                        )
             
             db.commit()
             print(f"[ChinaSouthernAirApprovalScheduler] 文件 {os.path.basename(filepath)} 解析入库完成。")
