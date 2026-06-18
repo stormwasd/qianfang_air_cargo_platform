@@ -147,7 +147,8 @@ async def get_shenzhen_air_departures(
 
 from app.schemas.departure_tracking import ShenzhenAirDepartureManualDataUpsert
 
-@router.post("/shenzhen-air/manual-data", summary="保存或更新深航出港列表手动录入数据")
+@router.post("/shenzhen-air/manual-data", summary="保存深航出港列表手动录入数据")
+@router.put("/shenzhen-air/manual-data", summary="更新深航出港列表手动录入数据")
 async def upsert_shenzhen_air_manual_data(
     data: ShenzhenAirDepartureManualDataUpsert,
     current_user = Depends(get_current_active_user),
@@ -314,7 +315,8 @@ async def get_china_southern_air_departures(
 
 from app.schemas.departure_tracking import CsaDepartureManualDataUpsert
 
-@router.post("/china-southern-air/manual-data", summary="保存或更新南航出港列表手动录入数据")
+@router.post("/china-southern-air/manual-data", summary="保存南航出港列表手动录入数据")
+@router.put("/china-southern-air/manual-data", summary="更新南航出港列表手动录入数据")
 async def upsert_china_southern_air_manual_data(
     data: CsaDepartureManualDataUpsert,
     current_user = Depends(get_current_active_user),
