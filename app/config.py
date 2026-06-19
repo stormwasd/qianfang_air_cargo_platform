@@ -163,6 +163,19 @@ class Settings(BaseSettings):
     RPA_QUEUE_TASK_TIMEOUT: int = Field(default=30, ge=10, le=300, description="RPA接口调用超时时间（秒），默认30秒，超时则任务失败")
     RPA_QUEUE_CLEANUP_DAYS: int = Field(default=7, ge=1, le=365, description="已完成任务保留天数，默认7天")
     
+    # ========== 预警配置 ==========
+    WECHAT_WEBHOOK_URL: str = Field(
+        default="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=05b6c4d8-5058-4706-8a96-27724683e46e",
+        description="企业微信群机器人Webhook地址"
+    )
+    ALERT_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS: int = Field(
+        default=600, ge=60, le=86400,
+        description="深航订舱批复预警-按间隔触发（秒），默认600秒（10分钟），设0则禁用间隔触发"
+    )
+    ALERT_SHENZHEN_AIR_APPROVAL_FIXED_TIMES: str = Field(
+        default="18:00",
+        description="深航订舱批复预警-按时间点触发（HH:MM格式，多个用逗号分隔，如'09:00,14:00,18:00'），为空则禁用定时触发"
+    )
     
     # 航司单号前缀映射（航司名称 -> 单号前缀）
     AIRLINE_NUMBER_PREFIX: Dict[str, str] = {

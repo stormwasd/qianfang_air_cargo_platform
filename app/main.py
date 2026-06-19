@@ -36,6 +36,9 @@ async def lifespan(app: FastAPI):
         # 启动南航订舱批复数据获取调度器
         from app.services.china_southern_air_approval_scheduler import china_southern_air_approval_scheduler
         china_southern_air_approval_scheduler.start()
+        # 启动深航订舱批复预警服务
+        from app.services.shenzhen_air_approval_alert import shenzhen_air_approval_alert
+        shenzhen_air_approval_alert.start()
     else:
         print("RPA任务队列已禁用")
     
@@ -54,6 +57,8 @@ async def lifespan(app: FastAPI):
         shenzhen_air_approval_scheduler.stop()
         from app.services.china_southern_air_approval_scheduler import china_southern_air_approval_scheduler
         china_southern_air_approval_scheduler.stop()
+        from app.services.shenzhen_air_approval_alert import shenzhen_air_approval_alert
+        shenzhen_air_approval_alert.stop()
 
 
 def create_application() -> FastAPI:
