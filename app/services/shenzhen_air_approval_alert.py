@@ -96,14 +96,23 @@ class ShenzhenAirApprovalAlertService:
         db = SessionLocal()
         try:
             from app.models.shenzhen_air_approval import ShenzhenAirApprovalData, ShenzhenAirApprovalWideBodyData
+            from datetime import timedelta
 
             total_count = 0
             abnormal_count = 0
             abnormal_details: List[str] = []
+            
+            tomorrow_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
             # ===== 1. 扫描窄体机表 (shenzhen_air_approval_data) =====
+            # 先找明天航班的父级ID
+            narrow_parent_ids = db.query(ShenzhenAirApprovalData.id).filter(
+                ShenzhenAirApprovalData.parent_id.is_(None),
+                ShenzhenAirApprovalData.flight_date == tomorrow_str
+            ).subquery()
+
             narrow_records = db.query(ShenzhenAirApprovalData).filter(
-                ShenzhenAirApprovalData.parent_id.isnot(None),
+                ShenzhenAirApprovalData.parent_id.in_(narrow_parent_ids),
                 ShenzhenAirApprovalData.status == "ss"
             ).all()
 
@@ -111,20 +120,29 @@ class ShenzhenAirApprovalAlertService:
                 total_count += 1
                 if self._is_narrow_body_abnormal(record):
                     abnormal_count += 1
-                    # 获取父级信息（航班号+日期）用于展示
+                    # 获取父级信息（航班号）用于展示
                     parent = db.query(ShenzhenAirApprovalData).filter(
                         ShenzhenAirApprovalData.id == record.parent_id
                     ).first()
-                    flight_info = f"{parent.flight_number}/{parent.flight_date}" if parent else "未知航班"
-                    agent_info = record.agent or "未知代理"
-                    abnormal_details.append(f"   [{flight_info}] {agent_info} - "
-                                            f"F订/批:{record.f_booking}/{record.f_approval}, "
-                                            f"C订/批:{record.c_booking}/{record.c_approval}, "
-                                            f"其他订/批:{record.other_booking}/{record.other_approval}")
+                    flight_number = parent.flight_number if parent else "未知航班"
+                    
+                    pairs_info = [
+                        ("F订/批", record.f_booking, record.f_approval),
+                        ("C订/批", record.c_booking, record.c_approval),
+                        ("其他订/批", record.other_booking, record.other_approval)
+                    ]
+                    detail_str = self._build_detail_string(pairs_info)
+                    if detail_str:
+                        abnormal_details.append(f"   [{flight_number}] - {detail_str}")
 
             # ===== 2. 扫描宽体机表 (shenzhen_air_approval_wide_body_data) =====
+            wide_parent_ids = db.query(ShenzhenAirApprovalWideBodyData.id).filter(
+                ShenzhenAirApprovalWideBodyData.parent_id.is_(None),
+                ShenzhenAirApprovalWideBodyData.flight_date == tomorrow_str
+            ).subquery()
+
             wide_records = db.query(ShenzhenAirApprovalWideBodyData).filter(
-                ShenzhenAirApprovalWideBodyData.parent_id.isnot(None),
+                ShenzhenAirApprovalWideBodyData.parent_id.in_(wide_parent_ids),
                 ShenzhenAirApprovalWideBodyData.status == "ss"
             ).all()
 
@@ -135,11 +153,15 @@ class ShenzhenAirApprovalAlertService:
                     parent = db.query(ShenzhenAirApprovalWideBodyData).filter(
                         ShenzhenAirApprovalWideBodyData.id == record.parent_id
                     ).first()
-                    flight_info = f"{parent.flight_number}/{parent.flight_date}" if parent else "未知航班"
-                    agent_info = record.agent or "未知代理"
-                    abnormal_details.append(f"  ⚠ [{flight_info}] {agent_info}(宽体) - "
-                                            f"板订/批:{record.board_booking}/{record.board_approval}, "
-                                            f"箱订/批:{record.box_booking}/{record.box_approval}")
+                    flight_number = parent.flight_number if parent else "未知航班"
+                    
+                    pairs_info = [
+                        ("板订/批", record.board_booking, record.board_approval),
+                        ("箱订/批", record.box_booking, record.box_approval)
+                    ]
+                    detail_str = self._build_detail_string(pairs_info)
+                    if detail_str:
+                        abnormal_details.append(f"   [{flight_number}] - {detail_str}")
 
             normal_count = total_count - abnormal_count
 
@@ -181,6 +203,25 @@ class ShenzhenAirApprovalAlertService:
             return float(str(value).strip())
         except (ValueError, TypeError):
             return None
+
+    @staticmethod
+    def _is_zero(val) -> bool:
+        """判断值是否为0或空"""
+        if val is None or str(val).strip() == "":
+            return True
+        try:
+            return float(str(val).strip()) == 0
+        except ValueError:
+            return False
+
+    def _build_detail_string(self, pairs_info: List[Tuple[str, str, str]]) -> str:
+        """构造非 0/0 的详情字符串"""
+        parts = []
+        for label, b, a in pairs_info:
+            if self._is_zero(b) and self._is_zero(a):
+                continue
+            parts.append(f"{label}:{b}/{a}")
+        return ", ".join(parts)
 
     def _is_narrow_body_abnormal(self, record) -> bool:
         """
