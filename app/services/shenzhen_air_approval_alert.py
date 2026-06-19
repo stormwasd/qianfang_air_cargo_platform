@@ -117,7 +117,7 @@ class ShenzhenAirApprovalAlertService:
                     ).first()
                     flight_info = f"{parent.flight_number}/{parent.flight_date}" if parent else "未知航班"
                     agent_info = record.agent or "未知代理"
-                    abnormal_details.append(f"  ⚠ [{flight_info}] {agent_info} - "
+                    abnormal_details.append(f"   [{flight_info}] {agent_info} - "
                                             f"F订/批:{record.f_booking}/{record.f_approval}, "
                                             f"C订/批:{record.c_booking}/{record.c_approval}, "
                                             f"其他订/批:{record.other_booking}/{record.other_approval}")
@@ -146,7 +146,7 @@ class ShenzhenAirApprovalAlertService:
             # ===== 3. 构造消息并发送 =====
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
             message_lines = [
-                f"📋 深航订舱批复预警 ({now_str})",
+                f"深航订舱批复预警 ({now_str})",
                 f"━━━━━━━━━━━━━━━━━━━━",
                 f"订舱数量：{total_count}单",
                 f"批复正常：{normal_count}单",
