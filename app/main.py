@@ -39,6 +39,9 @@ async def lifespan(app: FastAPI):
         # 启动深航订舱批复预警服务
         from app.services.shenzhen_air_approval_alert import shenzhen_air_approval_alert
         shenzhen_air_approval_alert.start()
+        # 启动深航出港跟踪预警服务
+        from app.services.shenzhen_air_departure_alert import shenzhen_air_departure_alert_manager
+        shenzhen_air_departure_alert_manager.start()
     else:
         print("RPA任务队列已禁用")
     

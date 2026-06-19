@@ -176,6 +176,14 @@ class Settings(BaseSettings):
         default="18:00",
         description="深航订舱批复预警-按时间点触发（HH:MM格式，多个用逗号分隔，如'09:00,14:00,18:00'），为空则禁用定时触发"
     )
+    ALERT_SHENZHEN_AIR_DEPARTURE_SYNC_INTERVAL_SECONDS: int = Field(
+        default=300, ge=60, le=86400,
+        description="深航出港跟踪预警-同步任务执行间隔（秒），默认300秒（5分钟），负责发现新单及获取计飞时间"
+    )
+    ALERT_SHENZHEN_AIR_DEPARTURE_EXEC_INTERVAL_SECONDS: int = Field(
+        default=60, ge=10, le=3600,
+        description="深航出港跟踪预警-到点预警执行间隔（秒），默认60秒（1分钟），负责准点触发预警消息"
+    )
     
     # 航司单号前缀映射（航司名称 -> 单号前缀）
     AIRLINE_NUMBER_PREFIX: Dict[str, str] = {
