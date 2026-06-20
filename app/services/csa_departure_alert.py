@@ -1,0 +1,366 @@
+import asyncio
+import httpx
+from datetime import datetime, timedelta
+from typing import List, Optional
+import traceback
+import re
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
+from app.database import SessionLocal
+from app.config import settings
+from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
+from app.models.csa_departure_tracking import CsaLalamoveInformation
+from app.models.waybill import Waybill
+from app.models.csa_departure_alert_task import CsaDepartureAlertTask
+from app.utils.ctrip_client import ctrip_client
+
+
+def extract_base_qty(qty_str: str) -> str:
+    """
+    剥离体积和差异数据，例如：
+    "139 / 2530 / 15.15 (1 / -110 / -0.66)" -> "139 / 2530 (1 / -110)"
+    "10 / 87 / 0.52 (3 / 37 / 0.22)" -> "10 / 87 (3 / 37)"
+    """
+    if not qty_str or str(qty_str).strip() == "":
+        return "/"
+    
+    qty_str = str(qty_str).strip()
+    
+    # 拆分开括号内外
+    if "(" in qty_str and qty_str.endswith(")"):
+        part1, part2 = qty_str.split("(", 1)
+        part2 = part2.rstrip(")")
+        
+        # 截取 part1 的前两项
+        p1_parts = [x.strip() for x in part1.split("/")]
+        if len(p1_parts) >= 2:
+            base_str = f"{p1_parts[0]} /{p1_parts[1]}"
+        else:
+            base_str = part1.strip()
+            
+        # 截取 part2 的前两项
+        p2_parts = [x.strip() for x in part2.split("/")]
+        if len(p2_parts) >= 2:
+            diff_str = f"{p2_parts[0]} / {p2_parts[1]}"
+        else:
+            diff_str = part2.strip()
+            
+        return f"{base_str} ({diff_str})"
+    else:
+        # 如果没有括号，也截取前两项
+        parts = [x.strip() for x in qty_str.split("/")]
+        if len(parts) >= 2:
+            return f"{parts[0]} /{parts[1]}"
+        return qty_str
+
+
+class CsaDepartureAlertManager:
+    """南航出港跟踪预警服务"""
+
+    def __init__(self):
+        self._sync_task = None
+        self._exec_task = None
+        self._running = False
+
+    def start(self):
+        """启动后台调度器"""
+        if self._running:
+            return
+        self._running = True
+        self._sync_task = asyncio.create_task(self._sync_loop())
+        self._exec_task = asyncio.create_task(self._exec_loop())
+        print("南航出港跟踪预警服务已启动")
+
+    def stop(self):
+        """停止后台调度器"""
+        self._running = False
+        if self._sync_task:
+            self._sync_task.cancel()
+        if self._exec_task:
+            self._exec_task.cancel()
+        print("南航出港跟踪预警服务已停止")
+
+    async def _sync_loop(self):
+        """同步任务：每 N 分钟扫描新运单并加入待办队列表"""
+        interval = getattr(settings, "ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_SYNC_INTERVAL_SECONDS", 300)
+        while self._running:
+            try:
+                await self._sync_tasks()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"南航出港跟踪同步任务异常: {e}")
+                traceback.print_exc()
+            finally:
+                await asyncio.sleep(interval)
+
+    async def _exec_loop(self):
+        """执行任务：每 1 分钟扫描到点的任务并执行"""
+        interval = getattr(settings, "ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_EXEC_INTERVAL_SECONDS", 60)
+        while self._running:
+            try:
+                await self._exec_tasks()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"南航出港跟踪执行任务异常: {e}")
+                traceback.print_exc()
+            finally:
+                await asyncio.sleep(interval)
+
+    # ========================== 同步逻辑 ==========================
+
+    async def _sync_tasks(self):
+        """扫描当天 china_southern_air_approval_data 表，更新队列表"""
+        db = SessionLocal()
+        try:
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            
+            # 使用 contains 来匹配当天的 flight_info (比如 CZ8165 / 2026-06-19 / SZX - MIG)
+            approvals = db.query(ChinaSouthernAirApprovalData).filter(
+                ChinaSouthernAirApprovalData.flight_info.contains(today_str)
+            ).all()
+
+            for appv in approvals:
+                waybill_num = appv.waybill_number
+                flight_info = appv.flight_info
+                if not waybill_num or not flight_info:
+                    continue
+                
+                # 提取航次、日期、航程
+                parts = [p.strip() for p in flight_info.split("/")]
+                if len(parts) < 3:
+                    continue
+                flight_no = parts[0]
+                flight_date = parts[1]
+                routing = parts[2].replace(" ", "")  # e.g. SZX-MIG
+
+                # 只处理当天的航班
+                if flight_date != today_str:
+                    continue
+
+                # 检查是否已在任务表中
+                existing_task = db.query(CsaDepartureAlertTask).filter(
+                    CsaDepartureAlertTask.waybill_number == waybill_num,
+                    CsaDepartureAlertTask.flight_date == today_str
+                ).first()
+
+                if existing_task:
+                    continue  # 已加入任务表，跳过
+
+                planned_dt = None
+                
+                # 尝试从表里读 planned_takeoff (例如 1925)
+                takeoff_str = appv.planned_takeoff
+                if takeoff_str and str(takeoff_str).strip():
+                    bt_clean = str(takeoff_str).strip().replace(":", "")
+                    if len(bt_clean) >= 4:
+                        try:
+                            hour = int(bt_clean[:2])
+                            minute = int(bt_clean[2:4])
+                            planned_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
+                        except ValueError:
+                            pass
+                
+                # 如果数据库中没有计飞时间，用 ctrip API 查兜底
+                if not planned_dt:
+                    ctrip_time_str = await ctrip_client.get_planned_departure_time(
+                        flight_no=flight_no,
+                        flight_date=today_str,
+                        routing=routing
+                    )
+                    if ctrip_time_str:
+                        # 返回格式："2026-06-12 17:05"
+                        try:
+                            planned_dt = datetime.strptime(ctrip_time_str, "%Y-%m-%d %H:%M")
+                        except ValueError:
+                            pass
+                
+                # 最终拿不到时间，跳过
+                if not planned_dt:
+                    continue
+
+                # 创建任务
+                trigger_dt = planned_dt - timedelta(minutes=135)
+                new_task = CsaDepartureAlertTask(
+                    waybill_number=waybill_num,
+                    flight_date=today_str,
+                    planned_time=planned_dt.strftime("%Y-%m-%d %H:%M"),
+                    trigger_time=trigger_dt,
+                    status="pending"
+                )
+                db.add(new_task)
+            
+            db.commit()
+
+        finally:
+            db.close()
+
+    # ========================== 执行逻辑 ==========================
+
+    async def _exec_tasks(self):
+        """拉取到点的 pending 任务，执行预警逻辑"""
+        db = SessionLocal()
+        try:
+            now = datetime.now()
+            tasks = db.query(CsaDepartureAlertTask).filter(
+                CsaDepartureAlertTask.status == "pending",
+                CsaDepartureAlertTask.trigger_time <= now
+            ).with_for_update(skip_locked=True).all()
+
+            if not tasks:
+                return
+
+            # 先把状态标记为 processing，防止重复执行
+            for t in tasks:
+                t.status = "processing"
+            db.commit()
+
+            # 并发执行每个任务的判断逻辑
+            coros = [self._process_single_task(t.id) for t in tasks]
+            await asyncio.gather(*coros)
+
+        finally:
+            db.close()
+
+    async def _process_single_task(self, task_id: int):
+        db = SessionLocal()
+        try:
+            task = db.query(CsaDepartureAlertTask).filter(CsaDepartureAlertTask.id == task_id).first()
+            if not task:
+                return
+
+            waybill_num = task.waybill_number
+            flight_date = task.flight_date
+
+            # 取最新的 approval_data
+            appv_record = db.query(ChinaSouthernAirApprovalData).filter(
+                ChinaSouthernAirApprovalData.waybill_number == waybill_num,
+                ChinaSouthernAirApprovalData.flight_info.contains(flight_date)
+            ).order_by(ChinaSouthernAirApprovalData.id.desc()).first()
+
+            if not appv_record:
+                task.status = "ignored"
+                db.commit()
+                return
+
+            # 联表获取集装器 lalamove 数据
+            containers = db.query(CsaLalamoveInformation).filter(
+                CsaLalamoveInformation.approval_data_id == appv_record.id
+            ).all()
+
+            # 发送预警
+            await self._evaluate_and_send_alert(db, task, appv_record, containers)
+
+            task.status = "processed"
+            db.commit()
+        except Exception as e:
+            print(f"处理南航出港跟踪预警单({task_id})异常: {e}")
+            traceback.print_exc()
+            task.status = "pending" # 失败重试
+            db.commit()
+        finally:
+            db.close()
+
+    async def _evaluate_and_send_alert(self, db: Session, task: CsaDepartureAlertTask, appv_record: ChinaSouthernAirApprovalData, containers: List[CsaLalamoveInformation]):
+        """核心业务逻辑：分析数据，判断场景，发送模板"""
+        
+        # 1. 查客户名称
+        customer_name = "未知客户"
+        waybill_record = db.query(Waybill).filter(Waybill.waybill_number == appv_record.waybill_number).first()
+        if waybill_record and waybill_record.form_data:
+            shipper_info = waybill_record.form_data.get("shipper_consignee_info", {})
+            customer_name = shipper_info.get("shipper_unit", "未知客户")
+        
+        # 2. 开单数据解析
+        flight_parts = [p.strip() for p in (appv_record.flight_info or "").split("/")]
+        billing_flight = flight_parts[0] if len(flight_parts) > 0 else "未知航班"
+        routing = flight_parts[2] if len(flight_parts) > 2 else "未知航程"
+        
+        def _safe_float(val):
+            if val is None or str(val).strip() == "": return 0.0
+            try: return float(str(val).strip())
+            except ValueError: return 0.0
+
+        booking_pieces = _safe_float(appv_record.booking_pieces)
+        booking_weight = _safe_float(appv_record.booking_weight)
+        
+        billing_str = extract_base_qty(appv_record.billing_qty)
+
+        # 3. 集装器统计
+        valid_containers = []
+        sum_qty = 0.0
+        sum_wt = 0.0
+        container_details = []
+        
+        for c in containers:
+            raw_container = c.capacity_lalamove or ""
+            # 取 "/" 前面的内容
+            c_code = raw_container.split("/")[0].strip()
+            
+            if c_code:
+                c_qty = _safe_float(c.pieces)
+                c_wt = _safe_float(c.weight)
+                sum_qty += c_qty
+                sum_wt += c_wt
+                valid_containers.append(c)
+                container_details.append(f"{c_code}({int(c_qty)} / {int(c_wt)})")
+
+        # 4. 场景判断
+        # 场景2: 超时未获取到集装器编码
+        if not valid_containers:
+            alert_title = "过机时间超时预警"
+            machine_data_str = "/"
+            containers_str = "/"
+        else:
+            goods_str = extract_base_qty(appv_record.goods_qty)
+            machine_data_str = goods_str if goods_str != "/" else "/"
+            containers_str = "\n".join(container_details)
+
+            # 场景1 or 场景3: 比较件数/重量
+            if sum_qty >= booking_pieces and sum_wt >= booking_weight:
+                alert_title = "过机正常"
+            else:
+                alert_title = "少货/取消货预警"
+
+        # 5. 拼装消息模板
+        planned_time_display = task.planned_time.replace(" ", "  ") # 匹配用户模板的空格格式 "2026-06-09  09:45"
+        
+        message = (
+            f"过机状态通知（南方航空）\n"
+            f"{alert_title}\n\n"
+            f"客户名称：{customer_name}\n"
+            f"运单号：{task.waybill_number}\n"
+            f"开单航班/航程：{billing_flight}  / {routing}\n"
+            f"计飞时间：{planned_time_display}\n"
+            f"制单数据：{billing_str}\n"
+            f"过机数据：{machine_data_str}\n"
+            f"集装器：\n"
+            f"{containers_str}"
+        )
+
+        # 6. 发送微信消息
+        await self._send_wechat_msg(message)
+
+    async def _send_wechat_msg(self, text: str):
+        url = settings.WECHAT_WEBHOOK_URL
+        if not url:
+            print("WECHAT_WEBHOOK_URL 未配置")
+            return
+        
+        payload = {
+            "msgtype": "text",
+            "text": {
+                "content": text
+            }
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload, timeout=10)
+                resp.raise_for_status()
+                print("南航出港跟踪预警消息发送成功")
+        except Exception as e:
+            print(f"南航出港跟踪预警消息发送失败: {e}")
+
+csa_departure_alert_manager = CsaDepartureAlertManager()
