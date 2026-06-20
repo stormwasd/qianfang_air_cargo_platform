@@ -259,8 +259,8 @@ class ShenzhenAirDepartureAlertManager:
             c_wt = _safe_float(c.weight)
             sum_qty += c_qty
             sum_wt += c_wt
-            flight_no = c.flight_number or "未知航班"
-            container_details.append(f"{flight_no} ({int(c_qty)} / {int(c_wt)})")
+            container_code = c.container or "未知集装器"
+            container_details.append(f"{container_code} ({int(c_qty)} / {int(c_wt)})")
 
         # 4. 判断场景
         # 场景2: 超时未获取到集装器编码
