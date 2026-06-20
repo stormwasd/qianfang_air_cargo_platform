@@ -122,16 +122,17 @@ class CsaDepartureAlertManager:
                 ChinaSouthernAirApprovalData.flight_info.contains(today_str)
             ).all()
 
-            added_waybills = set()
+            added_approval_ids = set()
 
             for appv in approvals:
+                appv_id = appv.id
                 waybill_num = appv.waybill_number
                 flight_info = appv.flight_info
                 if not waybill_num or not flight_info:
                     continue
                 
                 # 防止在同一次提交中插入重复单号导致 IntegrityError
-                if waybill_num in added_waybills:
+                if appv_id in added_approval_ids:
                     continue
                 
                 # 提取航次、日期、航程
@@ -148,8 +149,7 @@ class CsaDepartureAlertManager:
 
                 # 检查是否已在任务表中
                 existing_task = db.query(CsaDepartureAlertTask).filter(
-                    CsaDepartureAlertTask.waybill_number == waybill_num,
-                    CsaDepartureAlertTask.flight_date == today_str
+                    CsaDepartureAlertTask.approval_data_id == appv_id
                 ).first()
 
                 if existing_task:
@@ -190,6 +190,7 @@ class CsaDepartureAlertManager:
                 # 创建任务
                 trigger_dt = planned_dt - timedelta(minutes=135)
                 new_task = CsaDepartureAlertTask(
+                    approval_data_id=appv_id,
                     waybill_number=waybill_num,
                     flight_date=today_str,
                     planned_time=planned_dt.strftime("%Y-%m-%d %H:%M"),
@@ -197,7 +198,7 @@ class CsaDepartureAlertManager:
                     status="pending"
                 )
                 db.add(new_task)
-                added_waybills.add(waybill_num)
+                added_approval_ids.add(appv_id)
             
             db.commit()
 
@@ -238,14 +239,14 @@ class CsaDepartureAlertManager:
             if not task:
                 return
 
+            approval_data_id = task.approval_data_id
             waybill_num = task.waybill_number
             flight_date = task.flight_date
 
-            # 取最新的 approval_data
+            # 精准捞取关联的批复数据
             appv_record = db.query(ChinaSouthernAirApprovalData).filter(
-                ChinaSouthernAirApprovalData.waybill_number == waybill_num,
-                ChinaSouthernAirApprovalData.flight_info.contains(flight_date)
-            ).order_by(ChinaSouthernAirApprovalData.id.desc()).first()
+                ChinaSouthernAirApprovalData.id == approval_data_id
+            ).first()
 
             if not appv_record:
                 task.status = "ignored"

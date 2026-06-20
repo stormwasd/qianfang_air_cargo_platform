@@ -7,6 +7,7 @@ class CsaDepartureAlertTask(Base):
     __tablename__ = "csa_departure_alert_tasks"
 
     id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
+    approval_data_id = Column(BigInteger, index=True, unique=True, nullable=False, comment="关联 china_southern_air_approval_data.id")
     waybill_number = Column(String(50), index=True, comment="运单号")
     flight_date = Column(String(50), index=True, comment="航班日期")
     planned_time = Column(String(50), comment="计飞时间")
@@ -15,8 +16,3 @@ class CsaDepartureAlertTask(Base):
     
     created_at = Column(DateTime, default=func.now(), comment="记录创建时间")
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment="记录更新时间")
-
-    # 复合索引：保证同一天的同一运单不被重复写入
-    __table_args__ = (
-        Index("ix_csa_departure_alert_waybill_date", "waybill_number", "flight_date", unique=True),
-    )
