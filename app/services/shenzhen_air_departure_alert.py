@@ -259,7 +259,7 @@ class ShenzhenAirDepartureAlertManager:
             c_wt = _safe_float(c.weight)
             sum_qty += c_qty
             sum_wt += c_wt
-            container_code = c.container or "未知集装器"
+            container_code = c.container or "/"
             container_details.append(f"{container_code} ({int(c_qty)} / {int(c_wt)})")
 
         # 4. 判断场景
