@@ -122,10 +122,16 @@ class CsaDepartureAlertManager:
                 ChinaSouthernAirApprovalData.flight_info.contains(today_str)
             ).all()
 
+            added_waybills = set()
+
             for appv in approvals:
                 waybill_num = appv.waybill_number
                 flight_info = appv.flight_info
                 if not waybill_num or not flight_info:
+                    continue
+                
+                # 防止在同一次提交中插入重复单号导致 IntegrityError
+                if waybill_num in added_waybills:
                     continue
                 
                 # 提取航次、日期、航程
@@ -191,6 +197,7 @@ class CsaDepartureAlertManager:
                     status="pending"
                 )
                 db.add(new_task)
+                added_waybills.add(waybill_num)
             
             db.commit()
 

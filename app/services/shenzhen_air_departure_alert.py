@@ -81,10 +81,16 @@ class ShenzhenAirDepartureAlertManager:
                 ShenzhenAirBookingExport.flight_date == today_str
             ).all()
 
+            added_waybills = set()
+
             for export in exports:
                 waybill_num = export.waybill_number
                 if not waybill_num:
                     continue
+                
+                if waybill_num in added_waybills:
+                    continue
+
 
                 # 检查是否已在任务表中
                 existing_task = db.query(ShenzhenAirDepartureAlertTask).filter(
@@ -153,6 +159,7 @@ class ShenzhenAirDepartureAlertManager:
                     status="pending"
                 )
                 db.add(new_task)
+                added_waybills.add(waybill_num)
             
             db.commit()
 
