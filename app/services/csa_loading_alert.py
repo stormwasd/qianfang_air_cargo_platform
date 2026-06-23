@@ -69,7 +69,7 @@ class CsaLoadingAlertManager:
         
         self._sync_task = asyncio.create_task(self._sync_loop())
         self._exec_task = asyncio.create_task(self._exec_loop())
-        print("[CsaLoadingAlertManager] 已启动南航装机状态预警双引擎")
+        print("[CsaLoadingAlertManager] 已启动南航装机状态预警服务")
 
     def stop(self):
         self._running = False

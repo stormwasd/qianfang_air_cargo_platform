@@ -27,7 +27,7 @@ class ShenzhenAirLoadingAlertManager:
         # 即使配了0也启动协程，里面会判断是否跳过
         self._sync_task = asyncio.create_task(self._sync_loop())
         self._exec_task = asyncio.create_task(self._exec_loop())
-        print("[ShenzhenAirLoadingAlertManager] 已启动深航装机状态预警双引擎")
+        print("[ShenzhenAirLoadingAlertManager] 已启动深航装机状态预警服务")
 
     def stop(self):
         self._running = False
