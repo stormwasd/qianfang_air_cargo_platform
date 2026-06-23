@@ -9,8 +9,8 @@ from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.shenzhen_air_loading_alert_task import ShenzhenAirLoadingAlertTask
 from app.models.waybill import Waybill
 from app.config import settings
-from app.utils.wechat import send_wechat_webhook
 from app.api.clients.ctrip_client import ctrip_client
+import httpx
 
 class ShenzhenAirLoadingAlertManager:
     """深航装机状态预警（100分钟）双定时任务引擎"""
@@ -310,7 +310,26 @@ class ShenzhenAirLoadingAlertManager:
         lines.extend(container_texts)
 
         msg = "\n".join(lines)
-        if settings.WECHAT_WEBHOOK_URL:
-            await send_wechat_webhook(settings.WECHAT_WEBHOOK_URL, msg)
+        await self._send_wechat_msg(msg)
+
+    async def _send_wechat_msg(self, text: str):
+        url = settings.WECHAT_WEBHOOK_URL
+        if not url:
+            print("WECHAT_WEBHOOK_URL 未配置")
+            return
+        
+        payload = {
+            "msgtype": "markdown",
+            "markdown": {
+                "content": text
+            }
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload, timeout=10)
+                resp.raise_for_status()
+                print("深航装机预警消息发送成功")
+        except Exception as e:
+            print(f"深航装机预警发微信异常: {e}")
 
 shenzhen_air_loading_alert_manager = ShenzhenAirLoadingAlertManager()
