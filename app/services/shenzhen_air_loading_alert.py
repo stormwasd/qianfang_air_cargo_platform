@@ -295,7 +295,7 @@ class ShenzhenAirLoadingAlertManager:
         
         # 拼装消息
         lines = [
-            "过机状态通知（深圳航空）",
+            "装机状态通知（深圳航空）",
             f"<font color=\"{'info' if alert_type == '装机正常' else 'warning'}\">{alert_type}</font>",
             "",
             f"客户名称：{shipper_unit}",
