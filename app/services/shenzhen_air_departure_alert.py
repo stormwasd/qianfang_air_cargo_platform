@@ -133,15 +133,18 @@ class ShenzhenAirDepartureAlertManager:
                     if not actual_flight:
                         continue  # 没航班查不了携程，跳过
 
-                    ctrip_time_str = await ctrip_client.get_planned_departure_time(
+                    ctrip_times = await ctrip_client.get_flight_times(
                         flight_no=actual_flight,
                         flight_date=today_str,
                         routing=export.routing
                     )
-                    if ctrip_time_str:
-                        # "2026-06-12 17:05"
+                    if ctrip_times and ctrip_times.get("ready_time"):
                         try:
-                            planned_dt = datetime.strptime(ctrip_time_str, "%Y-%m-%d %H:%M")
+                            ready_time_str = ctrip_times.get("ready_time")
+                            if len(ready_time_str) > 16:
+                                planned_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
+                            else:
+                                planned_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
                         except ValueError:
                             pass
                 

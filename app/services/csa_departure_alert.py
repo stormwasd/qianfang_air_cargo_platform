@@ -171,15 +171,18 @@ class CsaDepartureAlertManager:
                 
                 # 如果数据库中没有计飞时间，用 ctrip API 查兜底
                 if not planned_dt:
-                    ctrip_time_str = await ctrip_client.get_planned_departure_time(
+                    ctrip_times = await ctrip_client.get_flight_times(
                         flight_no=flight_no,
                         flight_date=today_str,
                         routing=routing
                     )
-                    if ctrip_time_str:
-                        # 返回格式："2026-06-12 17:05"
+                    if ctrip_times and ctrip_times.get("ready_time"):
                         try:
-                            planned_dt = datetime.strptime(ctrip_time_str, "%Y-%m-%d %H:%M")
+                            ready_time_str = ctrip_times.get("ready_time")
+                            if len(ready_time_str) > 16:
+                                planned_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
+                            else:
+                                planned_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
                         except ValueError:
                             pass
                 

@@ -6,13 +6,13 @@ class CtripClient:
     """携程航班接口客户端"""
 
     @staticmethod
-    async def get_planned_departure_time(flight_no: str, flight_date: str, routing: str) -> Optional[str]:
+    async def get_flight_times(flight_no: str, flight_date: str, routing: str) -> Optional[Dict[str, str]]:
         """
-        获取计飞时间
+        获取航班的各维度的起飞时间
         :param flight_no: 航班号 (例如: ZH9947)
         :param flight_date: 航班日期 (例如: 2026-06-12)
         :param routing: 航程 (例如: SZX-HFE)
-        :return: 计飞时间字符串 (例如: 2026-06-12 17:05), 获取失败返回 None
+        :return: 包含 planned_time(预飞时间) 和 ready_time(计飞时间) 的字典, 获取失败返回 None
         """
         try:
             # 解析 routing 获取起降点
@@ -49,14 +49,16 @@ class CtripClient:
                 data = response.json()
                 
                 # 尝试解析计飞时间
-                # detailItem -> basicItemInfo -> dItemInfo -> dateTimeForRecord -> ReadyDateTime
+                # detailItem -> basicItemInfo -> dItemInfo -> dateTimeForRecord -> plannedDateTime / ReadyDateTime
                 detail_item = data.get("detailItem", {})
                 basic_item_info = detail_item.get("basicItemInfo", {})
                 d_item_info = basic_item_info.get("dItemInfo", {})
                 date_time_record = d_item_info.get("dateTimeForRecord", {})
-                planned_time = date_time_record.get("ReadyDateTime")
                 
-                return planned_time
+                planned_time = date_time_record.get("plannedDateTime")
+                ready_time = date_time_record.get("ReadyDateTime")
+                
+                return {"planned_time": planned_time, "ready_time": ready_time}
         except Exception as e:
             print(f"Error fetching Ctrip flight time for {flight_no} {flight_date}: {e}")
             return None

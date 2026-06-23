@@ -90,47 +90,57 @@ class ShenzhenAirLoadingAlertManager:
                     ShenzhenAirBillingTimeContainer.flight_date == today_str
                 ).first()
 
-                planned_dt = None
+                ready_dt = None
                 
-                # 1. 尝试从过机表里拿
+                # 1. 尝试从过机表里拿计飞时间 (ReadyDateTime)
                 if container and container.billing_time and str(container.billing_time).strip():
                     bt_clean = str(container.billing_time).strip().replace(":", "")
                     if len(bt_clean) >= 4:
                         try:
                             hour = int(bt_clean[:2])
                             minute = int(bt_clean[2:4])
-                            planned_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
+                            ready_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
                         except ValueError:
                             pass
                 
-                # 2. 从携程兜底拿
-                if not planned_dt:
-                    actual_flight = export.actual_flight
-                    routing = export.routing
-                    if not actual_flight or not routing:
-                        continue # 没有走货航班则不需要处理
-                    
-                    ctrip_time_str = await ctrip_client.get_planned_departure_time(
+                # 2. 从携程拿预飞时间(plannedDateTime) 和 兜底计飞时间(ReadyDateTime)
+                display_planned_time = ""
+                actual_flight = export.actual_flight
+                routing = export.routing
+                if actual_flight and routing:
+                    ctrip_times = await ctrip_client.get_flight_times(
                         flight_no=actual_flight,
                         flight_date=today_str,
                         routing=routing
                     )
-                    if ctrip_time_str:
-                        try:
-                            planned_dt = datetime.strptime(ctrip_time_str, "%Y-%m-%d %H:%M:%S")
-                        except ValueError:
-                            pass
+                    if ctrip_times:
+                        # 预飞时间用于展示
+                        display_planned_time = ctrip_times.get("planned_time") or ""
+                        # 如果过机表里没拿到计飞时间，用携程的兜底
+                        if not ready_dt and ctrip_times.get("ready_time"):
+                            try:
+                                ready_time_str = ctrip_times.get("ready_time")
+                                if len(ready_time_str) > 16:
+                                    ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
+                                else:
+                                    ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
+                            except ValueError:
+                                pass
                 
-                # 最终拿不到时间，跳过
-                if not planned_dt:
+                # 如果没有获取到展示的预飞时间，尽量回退
+                if not display_planned_time:
+                    display_planned_time = ready_dt.strftime("%Y-%m-%d %H:%M") if ready_dt else "未知预飞时间"
+                
+                # 最终拿不到计飞时间，跳过
+                if not ready_dt:
                     continue
 
-                # 创建任务 (提前 100 分钟触发)
-                trigger_dt = planned_dt - timedelta(minutes=100)
+                # 创建任务 (计飞时间提前 100 分钟触发)
+                trigger_dt = ready_dt - timedelta(minutes=100)
                 new_task = ShenzhenAirLoadingAlertTask(
                     waybill_number=waybill_num,
                     flight_date=today_str,
-                    planned_time=planned_dt.strftime("%Y-%m-%d %H:%M"),
+                    planned_time=display_planned_time,  # 用于模板中展示“预飞时间”
                     trigger_time=trigger_dt,
                     status="pending"
                 )
