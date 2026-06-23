@@ -19,7 +19,7 @@ class ShenzhenAirLoadingAlertManager:
         self._sync_task: asyncio.Task = None
         self._exec_task: asyncio.Task = None
 
-    async def start(self):
+    def start(self):
         if self._running:
             return
         self._running = True
@@ -29,7 +29,7 @@ class ShenzhenAirLoadingAlertManager:
         self._exec_task = asyncio.create_task(self._exec_loop())
         print("[ShenzhenAirLoadingAlertManager] 已启动深航装机状态预警双引擎")
 
-    async def stop(self):
+    def stop(self):
         self._running = False
         if self._sync_task:
             self._sync_task.cancel()
