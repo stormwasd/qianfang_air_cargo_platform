@@ -39,5 +39,6 @@ from app.models.csa_departure_manual_data import CsaDepartureManualData
 from app.models.shenzhen_air_departure_alert_task import ShenzhenAirDepartureAlertTask
 from app.models.csa_departure_alert_task import CsaDepartureAlertTask
 from app.models.shenzhen_air_loading_alert_task import ShenzhenAirLoadingAlertTask
+from app.models.csa_loading_alert_task import CsaLoadingAlertTask
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport", "ShenzhenAirBillingTimeContainer", "ShenzhenAirApprovalData", "ChinaSouthernAirApprovalData", "CsaProductInformation", "CsaLalamoveInformation", "CsaDepartureManualData", "ShenzhenAirDepartureAlertTask", "CsaDepartureAlertTask", "ShenzhenAirLoadingAlertTask"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport", "ShenzhenAirBillingTimeContainer", "ShenzhenAirApprovalData", "ChinaSouthernAirApprovalData", "CsaProductInformation", "CsaLalamoveInformation", "CsaDepartureManualData", "ShenzhenAirDepartureAlertTask", "CsaDepartureAlertTask", "ShenzhenAirLoadingAlertTask", "CsaLoadingAlertTask"]

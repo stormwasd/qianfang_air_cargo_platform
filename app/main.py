@@ -48,6 +48,9 @@ async def lifespan(app: FastAPI):
         # 启动深航装机状态预警服务
         from app.services.shenzhen_air_loading_alert import shenzhen_air_loading_alert_manager
         shenzhen_air_loading_alert_manager.start()
+        # 启动南航装机状态预警服务
+        from app.services.csa_loading_alert import csa_loading_alert_manager
+        csa_loading_alert_manager.start()
     else:
         print("RPA任务队列已禁用")
     
@@ -74,6 +77,8 @@ async def lifespan(app: FastAPI):
         csa_departure_alert_manager.stop()
         from app.services.shenzhen_air_loading_alert import shenzhen_air_loading_alert_manager
         shenzhen_air_loading_alert_manager.stop()
+        from app.services.csa_loading_alert import csa_loading_alert_manager
+        csa_loading_alert_manager.stop()
 
 def create_application() -> FastAPI:
     """
