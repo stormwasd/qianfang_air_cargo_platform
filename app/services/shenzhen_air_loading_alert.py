@@ -9,7 +9,7 @@ from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.shenzhen_air_loading_alert_task import ShenzhenAirLoadingAlertTask
 from app.models.waybill import Waybill
 from app.config import settings
-from app.api.clients.ctrip_client import ctrip_client
+from app.utils.ctrip_client import ctrip_client
 import httpx
 
 class ShenzhenAirLoadingAlertManager:
