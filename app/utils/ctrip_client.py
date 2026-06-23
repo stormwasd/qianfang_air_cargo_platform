@@ -14,6 +14,9 @@ class CtripClient:
         :param routing: 航程 (例如: SZX-HFE)
         :return: 包含 planned_time(预飞时间) 和 ready_time(计飞时间) 的字典, 获取失败返回 None
         """
+        if not flight_no or not routing:
+            return None
+        
         try:
             # 解析 routing 获取起降点
             ports = routing.split("-") if routing else []
@@ -48,12 +51,14 @@ class CtripClient:
                 response.raise_for_status()
                 data = response.json()
                 
-                # 尝试解析计飞时间
+                if not data:
+                    return None
+                
                 # detailItem -> basicItemInfo -> dItemInfo -> dateTimeForRecord -> plannedDateTime / ReadyDateTime
-                detail_item = data.get("detailItem", {})
-                basic_item_info = detail_item.get("basicItemInfo", {})
-                d_item_info = basic_item_info.get("dItemInfo", {})
-                date_time_record = d_item_info.get("dateTimeForRecord", {})
+                detail_item = data.get("detailItem") or {}
+                basic_item_info = detail_item.get("basicItemInfo") or {}
+                d_item_info = basic_item_info.get("dItemInfo") or {}
+                date_time_record = d_item_info.get("dateTimeForRecord") or {}
                 
                 planned_time = date_time_record.get("plannedDateTime")
                 ready_time = date_time_record.get("ReadyDateTime")
