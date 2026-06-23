@@ -49,12 +49,12 @@ class CtripClient:
                 data = response.json()
                 
                 # 尝试解析计飞时间
-                # detailItem -> basicItemInfo -> dItemInfo -> dateTimeForRecord -> plannedDateTime
+                # detailItem -> basicItemInfo -> dItemInfo -> dateTimeForRecord -> ReadyDateTime
                 detail_item = data.get("detailItem", {})
                 basic_item_info = detail_item.get("basicItemInfo", {})
                 d_item_info = basic_item_info.get("dItemInfo", {})
                 date_time_record = d_item_info.get("dateTimeForRecord", {})
-                planned_time = date_time_record.get("plannedDateTime")
+                planned_time = date_time_record.get("ReadyDateTime")
                 
                 return planned_time
         except Exception as e:
