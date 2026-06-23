@@ -107,20 +107,20 @@ class CsaLoadingAlertManager:
                 ChinaSouthernAirApprovalData.flight_info.like(f"%{today_str}%")
             ).all()
 
-            added_waybills = set()
+            added_approvals = set()
 
             for appv in approvals:
+                appv_id = appv.id
                 waybill_num = appv.waybill_number
                 if not waybill_num:
                     continue
                 
-                if waybill_num in added_waybills:
+                if appv_id in added_approvals:
                     continue
 
                 # 检查是否已在任务表中
                 existing_task = db.query(CsaLoadingAlertTask).filter(
-                    CsaLoadingAlertTask.waybill_number == waybill_num,
-                    CsaLoadingAlertTask.flight_date == today_str
+                    CsaLoadingAlertTask.approval_data_id == appv_id
                 ).first()
 
                 if existing_task:
@@ -177,6 +177,7 @@ class CsaLoadingAlertManager:
                 # 创建任务 (计飞时间提前 100 分钟触发)
                 trigger_dt = ready_dt - timedelta(minutes=100)
                 new_task = CsaLoadingAlertTask(
+                    approval_data_id=appv_id,
                     waybill_number=waybill_num,
                     flight_date=today_str,
                     planned_time=display_planned_time,
@@ -184,7 +185,7 @@ class CsaLoadingAlertManager:
                     status="pending"
                 )
                 db.add(new_task)
-                added_waybills.add(waybill_num)
+                added_approvals.add(appv_id)
             
             db.commit()
 
@@ -240,14 +241,14 @@ class CsaLoadingAlertManager:
         except ValueError: return 0.0
 
     async def _process_single_task(self, task: CsaLoadingAlertTask, db: Session):
+        approval_data_id = task.approval_data_id
         waybill_num = task.waybill_number
         flight_date = task.flight_date
 
-        # 取批复数据
+        # 精确取批复数据
         appv = db.query(ChinaSouthernAirApprovalData).filter(
-            ChinaSouthernAirApprovalData.waybill_number == waybill_num,
-            ChinaSouthernAirApprovalData.flight_info.like(f"%{flight_date}%")
-        ).order_by(ChinaSouthernAirApprovalData.id.desc()).first()
+            ChinaSouthernAirApprovalData.id == approval_data_id
+        ).first()
 
         if not appv:
             task.status = "ignored"

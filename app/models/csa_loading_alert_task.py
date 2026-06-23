@@ -7,6 +7,7 @@ class CsaLoadingAlertTask(Base):
     __tablename__ = "csa_loading_alert_tasks"
 
     id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
+    approval_data_id = Column(BigInteger, index=True, unique=True, nullable=False, comment="关联 china_southern_air_approval_data.id")
     waybill_number = Column(String(100), index=True, nullable=False, comment="运单号")
     flight_date = Column(String(50), index=True, nullable=False, comment="航班日期")
     planned_time = Column(String(50), comment="预飞时间")
