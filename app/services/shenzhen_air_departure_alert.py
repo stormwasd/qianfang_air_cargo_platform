@@ -30,7 +30,7 @@ class ShenzhenAirDepartureAlertManager:
         self._running = True
         self._sync_task = asyncio.create_task(self._sync_loop())
         self._exec_task = asyncio.create_task(self._exec_loop())
-        print("[ShenzhenAirDepartureAlertManager] 已启动深航出港跟踪预警服务")
+        print("[ShenzhenAirDepartureAlertManager] 已启动深航过机状态与卡号预警服务")
 
     def stop(self):
         """停止后台调度器"""
