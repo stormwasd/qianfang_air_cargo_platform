@@ -13,7 +13,7 @@ from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.csa_departure_tracking import CsaLalamoveInformation, CsaProductInformation
 from app.models.waybill import Waybill
 from app.models.csa_loading_alert_task import CsaLoadingAlertTask
-from app.api.clients.ctrip_client import ctrip_client
+from app.utils.ctrip_client import ctrip_client
 
 
 def extract_base_qty(qty_str: str) -> str:
