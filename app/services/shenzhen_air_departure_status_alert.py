@@ -28,7 +28,8 @@ class ShenzhenAirDepartureStatusAlertService:
         self._load_phone_excel()
 
     def _load_phone_excel(self):
-        excel_path = os.path.join(settings.BASE_DIR, "深航提货电话.xlsx")
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        excel_path = os.path.join(base_dir, "深航提货电话.xlsx")
         try:
             if os.path.exists(excel_path):
                 df = pd.read_excel(excel_path)
