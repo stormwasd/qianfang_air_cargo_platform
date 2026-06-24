@@ -28,8 +28,30 @@ class CtripClient:
             
             headers = {
                 "accept": "*/*",
+                "accept-language": "zh-CN,zh;q=0.9",
+                "cache-control": "no-cache",
                 "content-type": "application/json",
+                "cookieorigin": "https://flights.ctrip.com",
+                "locale": "zh-CN",
+                "origin": "https://flights.ctrip.com",
+                "pragma": "no-cache",
+                "priority": "u=1, i",
+                "referer": "https://flights.ctrip.com/",
+                "sec-ch-ua": '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-site",
                 "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+                "w-payload-source": "1.0.9@102!Tagc96NWqXkbG2Kn9rhl+ENlGl4ZGrtRK29VKSbI9lCV9rTLOST/K6AbOrK2+ET5+rApbbbpOSkpKlqLKrbZKrTSbEkbKtb5+rbSKrALOr4pOSbZOSk5OEVn+tbpOSkpKlqLKEtIOrV/QPALOP91NuOB9rjcK5b=",
+                "x-ctx-locale": "zh-CN",
+                "x-ctx-ubt-pageid": "10650045004",
+                "x-ctx-ubt-pvid": "2",
+                "x-ctx-ubt-sid": "1",
+                "x-ctx-ubt-vid": "1781254049595.a46fWFsGe2j3",
+                "x-ctx-wclient-req": "7a3186bbdf44e4755e831b6916b1b85c",
+                "Cookie": "GUID=09031145217077804929; UBT_VID=1781254049595.a46fWFsGe2j3; _bfa=1.1781254049595.a46fWFsGe2j3.1.1781254049618.1781254106283.1.2.10650045004"
             }
             
             payload = {
@@ -41,8 +63,18 @@ class CtripClient:
                 },
                 "head": {
                     "cid": "09031145217077804929",
+                    "ctok": "",
                     "cver": "1.0",
-                    "syscode": "09"
+                    "lang": "01",
+                    "sid": "8888",
+                    "syscode": "09",
+                    "auth": "",
+                    "xsid": "",
+                    "extension": [{"name": "i18n.locale", "value": "zh_CN"}, {"name": "source", "value": "online"}],
+                    "Locale": "zh-CN",
+                    "Language": "",
+                    "Currency": "",
+                    "ClientID": "09031145217077804929"
                 }
             }
 
@@ -54,7 +86,7 @@ class CtripClient:
                 if not data:
                     return None
                 
-                # detailItem -> basicItemInfo -> dItemInfo -> dateTimeForRecord -> plannedDateTime / ReadyDateTime
+                # detailItem -> basicItemInfo -> dItemInfo -> dateTimeForRecord -> plannedDateTime / ReadyDateTime / actualDateTime
                 detail_item = data.get("detailItem") or {}
                 basic_item_info = detail_item.get("basicItemInfo") or {}
                 d_item_info = basic_item_info.get("dItemInfo") or {}
@@ -62,8 +94,9 @@ class CtripClient:
                 
                 planned_time = date_time_record.get("plannedDateTime")
                 ready_time = date_time_record.get("ReadyDateTime")
+                actual_time = date_time_record.get("actualDateTime")
                 
-                return {"planned_time": planned_time, "ready_time": ready_time}
+                return {"planned_time": planned_time, "ready_time": ready_time, "actual_time": actual_time}
         except Exception as e:
             print(f"Error fetching Ctrip flight time for {flight_no} {flight_date}: {e}")
             return None
