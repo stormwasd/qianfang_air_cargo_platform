@@ -10,7 +10,7 @@ from typing import Optional, List
 
 from app.config import settings
 from app.database import SessionLocal
-from app.utils.wechat import WeChatClient
+import httpx
 from app.utils.ctrip_client import ctrip_client
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
@@ -235,14 +235,28 @@ class ShenzhenAirDepartureStatusAlertService:
 落地两小时后联系提货（收货人携带好身份证）"""
 
         # 调用微信接口
-        await WeChatClient.send_app_message(
-            title=f"深航出港状态通知 - {status_text}",
-            description=msg,
-            url="",
-            agent_id=settings.WECHAT_AGENT_ID
-        )
+        await self._send_wechat_message(msg)
         
         self._alerted_states[waybill_num] = state_hash
         print(f"[ShenzhenAirDepartureStatusAlert] 已发送单号 {waybill_num} 状态: {status_text}")
+
+    async def _send_wechat_message(self, text: str) -> None:
+        url = settings.WECHAT_WEBHOOK_URL
+        if not url:
+            print("[ShenzhenAirDepartureStatusAlert] WECHAT_WEBHOOK_URL 未配置")
+            return
+        
+        payload = {
+            "msgtype": "text",
+            "text": {
+                "content": text
+            }
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+        except Exception as e:
+            print(f"[ShenzhenAirDepartureStatusAlert] 发送企业微信消息失败: {e}")
 
 shenzhen_air_departure_status_alert = ShenzhenAirDepartureStatusAlertService()
