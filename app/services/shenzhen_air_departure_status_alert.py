@@ -15,13 +15,12 @@ from app.utils.ctrip_client import ctrip_client
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.waybill import Waybill
+from app.models.alert_notification_record import AlertNotificationRecord
 
 class ShenzhenAirDepartureStatusAlertService:
     def __init__(self):
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
-        self._alerted_states = {} # waybill_number -> hash(state) 内存防重
-        self._last_date = ""
 
         # 加载提货电话 Excel
         self._phone_dict = {}
@@ -82,11 +81,6 @@ class ShenzhenAirDepartureStatusAlertService:
                 now = datetime.now()
                 current_time_str = now.strftime("%H:%M")
                 current_date_str = now.strftime("%Y-%m-%d")
-
-                if self._last_date != current_date_str:
-                    triggered_fixed_times.clear()
-                    self._alerted_states.clear()
-                    self._last_date = current_date_str
 
                 if current_time_str in fixed_times and current_time_str not in triggered_fixed_times:
                     triggered_fixed_times.add(current_time_str)
@@ -191,9 +185,15 @@ class ShenzhenAirDepartureStatusAlertService:
         is_abnormal = qty_diff > 0 or wt_diff > 0 or is_delayed
         status_text = "出港异常" if is_abnormal else "出港正常"
         
-        # State hash to avoid duplicate push
-        state_hash = f"{qty_diff}_{wt_diff}_{is_delayed}_{','.join(actual_time_displays)}"
-        if self._alerted_states.get(waybill_num) == state_hash:
+        # State hash to avoid duplicate push (精简哈希，剔除时间文本)
+        state_hash = f"{qty_diff}_{wt_diff}_{is_delayed}"
+        
+        alert_record = db.query(AlertNotificationRecord).filter(
+            AlertNotificationRecord.module_name == "shenzhen_air_departure_status",
+            AlertNotificationRecord.target_id == waybill_num
+        ).first()
+
+        if alert_record and alert_record.state_hash == state_hash:
             return
         
         # 查客户名称
@@ -238,7 +238,18 @@ class ShenzhenAirDepartureStatusAlertService:
         # 调用微信接口
         await self._send_wechat_message(msg)
         
-        self._alerted_states[waybill_num] = state_hash
+        # 更新防重记录
+        if alert_record:
+            alert_record.state_hash = state_hash
+        else:
+            new_record = AlertNotificationRecord(
+                module_name="shenzhen_air_departure_status",
+                target_id=waybill_num,
+                state_hash=state_hash
+            )
+            db.add(new_record)
+        db.commit()
+        
         print(f"[ShenzhenAirDepartureStatusAlert] 已发送单号 {waybill_num} 状态: {status_text}")
 
     async def _send_wechat_message(self, text: str) -> None:

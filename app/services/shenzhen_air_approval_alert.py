@@ -16,6 +16,7 @@ from typing import Optional, List, Tuple
 
 from app.config import settings
 from app.database import SessionLocal
+from app.models.alert_notification_record import AlertNotificationRecord
 
 
 class ShenzhenAirApprovalAlertService:
@@ -184,8 +185,40 @@ class ShenzhenAirApprovalAlertService:
                 if len(abnormal_details) > 20:
                     message_lines.append(f"  ...等共{len(abnormal_details)}条")
 
+            # 构造防重特征码 (去除了易变的时间戳)
+            hash_lines = [
+                f"订舱数量：{total_count}单",
+                f"批复正常：{normal_count}单",
+                f"批复异常：{abnormal_count}单",
+            ]
+            if abnormal_count > 0:
+                hash_lines.extend(abnormal_details[:20])
+            state_hash = "|".join(hash_lines)
+
+            # 查防重记录表
+            alert_record = db.query(AlertNotificationRecord).filter(
+                AlertNotificationRecord.module_name == "shenzhen_air_approval",
+                AlertNotificationRecord.target_id == "daily_summary"
+            ).first()
+
+            if alert_record and alert_record.state_hash == state_hash:
+                print(f"[ShenzhenAirApprovalAlert] 扫描完成，数据无变化，拦截重发")
+                return
+
             message = "\n".join(message_lines)
             await self._send_wechat_message(message)
+            
+            # 记录防重
+            if alert_record:
+                alert_record.state_hash = state_hash
+            else:
+                new_record = AlertNotificationRecord(
+                    module_name="shenzhen_air_approval",
+                    target_id="daily_summary",
+                    state_hash=state_hash
+                )
+                db.add(new_record)
+            db.commit()
 
             print(f"[ShenzhenAirApprovalAlert] 扫描完成 - 总计:{total_count}, 正常:{normal_count}, 异常:{abnormal_count}")
 

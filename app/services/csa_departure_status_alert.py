@@ -15,13 +15,13 @@ from app.utils.ctrip_client import ctrip_client
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.waybill import Waybill
 from app.utils.airport_code_mapper import get_city_name_by_code
+from app.models.csa_departure_alert_task import CsaDepartureAlertTask
+from app.models.alert_notification_record import AlertNotificationRecord
 
 class CsaDepartureStatusAlertService:
     def __init__(self):
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
-        self._alerted_states = {} # waybill_number -> hash(state) 内存防重
-        self._last_date = ""
 
         # 加载提货电话 Excel
         self._phone_dict = {}
@@ -85,11 +85,6 @@ class CsaDepartureStatusAlertService:
                 now = datetime.now()
                 current_time_str = now.strftime("%H:%M")
                 current_date_str = now.strftime("%Y-%m-%d")
-
-                if self._last_date != current_date_str:
-                    triggered_fixed_times.clear()
-                    self._alerted_states.clear()
-                    self._last_date = current_date_str
 
                 if current_time_str in fixed_times and current_time_str not in triggered_fixed_times:
                     triggered_fixed_times.add(current_time_str)
@@ -211,13 +206,20 @@ class CsaDepartureStatusAlertService:
         is_abnormal = diff_pieces > 0 or diff_weight > 0 or is_delayed
         status_text = "出港异常" if is_abnormal else "出港正常"
         
-        # 防重哈希
+        # 防重哈希 (精简哈希，剔除容易波动的携程实际时间字符串)
         actual_time_text = "；".join(actual_time_displays) if actual_time_displays else "/"
         actual_flight_display = "；".join(actual_flights) if actual_flights else "/"
         
-        state_hash = f"{diff_pieces}_{diff_weight}_{is_delayed}_{actual_time_text}"
-        if self._alerted_states.get(waybill_num) == state_hash:
-            return
+        state_hash = f"{diff_pieces}_{diff_weight}_{is_delayed}"
+        
+        # 持久化防重检查
+        alert_record = db.query(AlertNotificationRecord).filter(
+            AlertNotificationRecord.module_name == "csa_departure_status",
+            AlertNotificationRecord.target_id == waybill_num
+        ).first()
+        
+        if alert_record and alert_record.state_hash == state_hash:
+            return # 状态未改变，拦截重发
             
         # 查询 Waybill 取客户名称和收货人 (条件: airline_record_status == 3)
         customer_name = "未知客户"
@@ -258,7 +260,18 @@ class CsaDepartureStatusAlertService:
 
         await self._send_wechat_message(msg)
         
-        self._alerted_states[waybill_num] = state_hash
+        # 更新或插入防重记录
+        if alert_record:
+            alert_record.state_hash = state_hash
+        else:
+            new_record = AlertNotificationRecord(
+                module_name="csa_departure_status",
+                target_id=waybill_num,
+                state_hash=state_hash
+            )
+            db.add(new_record)
+        db.commit()
+        
         print(f"[CsaDepartureStatusAlert] 已发送单号 {waybill_num} 状态: {status_text}")
 
     async def _send_wechat_message(self, text: str) -> None:
