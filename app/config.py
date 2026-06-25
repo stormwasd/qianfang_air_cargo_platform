@@ -196,6 +196,14 @@ class Settings(BaseSettings):
         default=300, ge=60, le=86400,
         description="南航出港跟踪预警-同步任务执行间隔（秒），默认300秒（5分钟），负责发现新单及获取计飞时间"
     )
+    ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_STATUS_INTERVAL_SECONDS: int = Field(
+        default=600, ge=60, le=86400,
+        description="南航出港状态通知-同步任务执行间隔（秒），默认600秒（10分钟），负责定时监控和推送"
+    )
+    ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_STATUS_FIXED_TIMES: str = Field(
+        default="",
+        description="南航出港状态通知-按时间点触发（HH:MM格式，多个用逗号分隔），为空则只依赖间隔触发"
+    )
     ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_EXEC_INTERVAL_SECONDS: int = Field(
         default=60, ge=10, le=3600,
         description="南航出港跟踪预警-到点预警执行间隔（秒），默认60秒（1分钟），负责准点触发预警消息"
