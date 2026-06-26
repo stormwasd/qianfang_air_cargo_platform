@@ -228,8 +228,14 @@ class CsaDepartureAlertManager:
                 t.status = "processing"
             db.commit()
 
-            # 并发执行每个任务的判断逻辑
-            coros = [self._process_single_task(t.id) for t in tasks]
+            # 并发执行每个任务的判断逻辑（加入 Semaphore 限流，防止瞬间耗尽 DB 连接池）
+            sem = asyncio.Semaphore(5)
+            
+            async def _bounded_process(task_id: int):
+                async with sem:
+                    await self._process_single_task(task_id)
+
+            coros = [_bounded_process(t.id) for t in tasks]
             await asyncio.gather(*coros)
 
         finally:
