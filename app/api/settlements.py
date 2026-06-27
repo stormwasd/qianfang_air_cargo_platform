@@ -266,10 +266,10 @@ async def get_settlements(
     total = query_obj.distinct().count()
     
     # 分页
-    offset = (query.page - 1) * query.page_size
+    offset = (query.page - 1) * query.pageSize
     settlements = query_obj.distinct().order_by(
         Settlement.created_at.desc(), Settlement.id.desc()
-    ).offset(offset).limit(query.page_size).all()
+    ).offset(offset).limit(query.pageSize).all()
     
     # 批量查询关联的运单信息（优化性能，避免N+1查询）
     # 收集所有主单号

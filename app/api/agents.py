@@ -147,8 +147,8 @@ async def get_agent_list(
     
     total = query_obj.count()
     
-    offset = (query.page - 1) * query.page_size
-    agents = query_obj.order_by(Agent.created_at.desc(), Agent.id.desc()).offset(offset).limit(query.page_size).all()
+    offset = (query.page - 1) * query.pageSize
+    agents = query_obj.order_by(Agent.created_at.desc(), Agent.id.desc()).offset(offset).limit(query.pageSize).all()
     
     items = [_format_agent_response(a) for a in agents]
     

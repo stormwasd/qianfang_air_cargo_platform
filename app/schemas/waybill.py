@@ -137,7 +137,7 @@ class WaybillQuery(BaseModel):
     shipper: Optional[str] = Field(None, description="托运单位（模糊搜索）")
     waybill_number: Optional[str] = Field(None, description="运单号（模糊搜索）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")
+    pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 
 
 class WaybillResponse(BaseModel):

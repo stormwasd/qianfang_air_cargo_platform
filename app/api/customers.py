@@ -186,10 +186,10 @@ async def get_customers(
     total = query_obj.count()
     
     # 分页
-    offset = (query.page - 1) * query.page_size
+    offset = (query.page - 1) * query.pageSize
     customers = query_obj.order_by(
         Customer.created_at.desc(), Customer.id.desc()
-    ).offset(offset).limit(query.page_size).all()
+    ).offset(offset).limit(query.pageSize).all()
     
     customer_list = [
         {

@@ -46,4 +46,4 @@ class DictTypeQuery(BaseModel):
     type: Optional[str] = Field(None, description="类型标识筛选（唯一标识，如：freight_code）")
     status: Optional[int] = Field(None, description="状态筛选（0=禁用，1=开启）", ge=0, le=1)
     page: Optional[int] = Field(None, ge=1, description="页码（不传则不分页，返回全部）")
-    page_size: Optional[int] = Field(None, ge=1, le=200, alias="pageSize", description="每页数量（不传则不分页，返回全部）")
+    pageSize: Optional[int] = Field(None, ge=1, le=200, description="每页数量（不传则不分页，返回全部）")

@@ -371,8 +371,8 @@ async def get_waybill_stock_items(
     if query.is_all:
         items = order_query.all()
     else:
-        offset = (query.page - 1) * query.page_size
-        items = order_query.offset(offset).limit(query.page_size).all()
+        offset = (query.page - 1) * query.pageSize
+        items = order_query.offset(offset).limit(query.pageSize).all()
     
     item_list = [_format_item_response(item) for item in items]
     
@@ -556,10 +556,10 @@ async def get_waybill_stock_batches(
     total = query_obj.count()
     
     # 分页（按创建时间倒序）
-    offset = (query.page - 1) * query.page_size
+    offset = (query.page - 1) * query.pageSize
     batches = query_obj.order_by(
         WaybillStockBatch.created_at.desc(), WaybillStockBatch.id.desc()
-    ).offset(offset).limit(query.page_size).all()
+    ).offset(offset).limit(query.pageSize).all()
     
     # 统计单号使用情况
     batch_ids = [b.id for b in batches]

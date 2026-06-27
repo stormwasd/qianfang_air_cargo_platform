@@ -140,8 +140,8 @@ async def get_delivery_unit_list(
     
     total = query_obj.count()
     
-    offset = (query.page - 1) * query.page_size
-    units = query_obj.order_by(DeliveryUnit.created_at.desc(), DeliveryUnit.id.desc()).offset(offset).limit(query.page_size).all()
+    offset = (query.page - 1) * query.pageSize
+    units = query_obj.order_by(DeliveryUnit.created_at.desc(), DeliveryUnit.id.desc()).offset(offset).limit(query.pageSize).all()
     
     items = [_format_delivery_response(u) for u in units]
     

@@ -92,7 +92,7 @@ class ConsignmentNoteQuery(BaseModel):
     flight_number: Optional[str] = Field(None, description="航班号（模糊搜索，仅空运）")
     airline: Optional[str] = Field(None, description="航司（模糊搜索，仅空运）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")
+    pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 
 
 class ConsignmentNoteResponse(BaseModel):

@@ -446,7 +446,7 @@ class RPATaskService:
         target_id: Optional[int] = None,
         status: Optional[str] = None,
         page: int = 1,
-        page_size: int = 10
+        pageSize: int = 10
     ) -> Dict[str, Any]:
         """
         分页查询任务列表
@@ -458,7 +458,7 @@ class RPATaskService:
             target_id: 目标ID（可选）
             status: 任务状态（可选）
             page: 页码
-            page_size: 每页数量
+            pageSize: 每页数量
         
         Returns:
             包含列表和分页信息的字典
@@ -480,12 +480,12 @@ class RPATaskService:
         # 分页查询
         tasks = query.order_by(
             RPATask.created_at.desc()
-        ).offset((page - 1) * page_size).limit(page_size).all()
+        ).offset((page - 1) * pageSize).limit(pageSize).all()
         
         return {
             "total": total,
             "page": page,
-            "page_size": page_size,
+            "pageSize": pageSize,
             "items": tasks
         }
     

@@ -107,8 +107,8 @@ async def get_consignment_notes(
         query_obj = query_obj.filter(ConsignmentNote.airline.like(f"%{query.airline}%"))
 
     total = query_obj.count()
-    offset = (query.page - 1) * query.page_size
-    notes = query_obj.order_by(ConsignmentNote.created_at.desc(), ConsignmentNote.id.desc()).offset(offset).limit(query.page_size).all()
+    offset = (query.page - 1) * query.pageSize
+    notes = query_obj.order_by(ConsignmentNote.created_at.desc(), ConsignmentNote.id.desc()).offset(offset).limit(query.pageSize).all()
     
     items = []
     for note in notes:

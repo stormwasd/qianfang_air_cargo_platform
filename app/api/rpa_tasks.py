@@ -71,7 +71,7 @@ async def get_tasks(
     target_id: str = Query(None, description="目标ID"),
     status: str = Query(None, description="任务状态（pending/running/success/failed/timeout）"),
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(10, ge=1, le=200, alias="pageSize", description="每页数量"),
+    pageSize: int = Query(10, ge=1, le=200, description="每页数量"),
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -93,7 +93,7 @@ async def get_tasks(
         target_id=int(target_id) if target_id else None,
         status=status,
         page=page,
-        page_size=page_size
+        pageSize=pageSize
     )
     
     tasks_data = []
@@ -123,7 +123,7 @@ async def get_tasks(
         data={
             "total": result["total"],
             "page": result["page"],
-            "pageSize": result["page_size"],
+            "pageSize": result["pageSize"],
             "list": tasks_data
         },
         msg="查询成功"

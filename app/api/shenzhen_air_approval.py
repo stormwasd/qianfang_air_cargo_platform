@@ -17,7 +17,7 @@ async def get_shenzhen_air_approvals(
     flight_number: Optional[str] = Query(None, description="航班号"),
     cabin_type: int = Query(0, description="仓位类型(0=散仓(非宽体), 1=版/箱/散卡(宽体))"),
     page: int = Query(1, description="页码", ge=1),
-    page_size: int = Query(10, description="每页数量", ge=1, le=500),
+    pageSize: int = Query(10, description="每页数量", ge=1, le=500),
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -50,11 +50,11 @@ async def get_shenzhen_air_approvals(
     total = query.count()
 
     # 分页查询数据
-    offset = (page - 1) * page_size
+    offset = (page - 1) * pageSize
     records = query.order_by(
         func.coalesce(model.parent_id, model.id).desc(),
         model.id.asc()
-    ).offset(offset).limit(page_size).all()
+    ).offset(offset).limit(pageSize).all()
 
     # 如果当前页没有数据，直接返回
     if not records:

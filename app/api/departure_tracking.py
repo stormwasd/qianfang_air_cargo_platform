@@ -18,7 +18,7 @@ async def get_shenzhen_air_departures(
     flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-03-15"),
     flight_number: Optional[str] = Query(None, description="航班号"),
     page: int = Query(1, description="页码", ge=1),
-    page_size: int = Query(10, description="每页数量", ge=1, le=500),
+    pageSize: int = Query(10, description="每页数量", ge=1, le=500),
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -52,11 +52,11 @@ async def get_shenzhen_air_departures(
     total = query.count()
 
     # 分页查询主表数据，修复由于 created_at 相同导致的分页乱序问题
-    offset = (page - 1) * page_size
+    offset = (page - 1) * pageSize
     exports = query.order_by(
         ShenzhenAirBookingExport.flight_date.desc(), 
         ShenzhenAirBookingExport.id.desc()
-    ).offset(offset).limit(page_size).all()
+    ).offset(offset).limit(pageSize).all()
 
 
     # 如果当前页没有数据，直接返回
@@ -189,7 +189,7 @@ async def get_china_southern_air_departures(
     flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-06-20"),
     flight_number: Optional[str] = Query(None, description="航班号"),
     page: int = Query(1, description="页码", ge=1),
-    page_size: int = Query(10, description="每页数量", ge=1, le=500),
+    pageSize: int = Query(10, description="每页数量", ge=1, le=500),
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -229,11 +229,11 @@ async def get_china_southern_air_departures(
     total = query.count()
 
     # 分页查询
-    offset = (page - 1) * page_size
+    offset = (page - 1) * pageSize
     records = query.order_by(
         ChinaSouthernAirApprovalData.flight_info.desc(),
         ChinaSouthernAirApprovalData.id.desc()
-    ).offset(offset).limit(page_size).all()
+    ).offset(offset).limit(pageSize).all()
 
     if not records:
         return success_response(

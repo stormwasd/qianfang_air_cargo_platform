@@ -178,9 +178,9 @@ async def get_dict_types(
     query_obj = query_obj.order_by(DictType.created_at.desc())
     
     # 分页（只有同时传了page和pageSize才分页）
-    if query.page is not None and query.page_size is not None:
-        offset = (query.page - 1) * query.page_size
-        dict_types = query_obj.offset(offset).limit(query.page_size).all()
+    if query.page is not None and query.pageSize is not None:
+        offset = (query.page - 1) * query.pageSize
+        dict_types = query_obj.offset(offset).limit(query.pageSize).all()
     else:
         # 不分页，返回全部
         dict_types = query_obj.all()
@@ -463,9 +463,9 @@ async def get_dict_options(
         )
     
     # 分页（只有同时传了page和pageSize才分页）
-    if query.page is not None and query.page_size is not None:
-        offset = (query.page - 1) * query.page_size
-        dict_options = dict_options[offset:offset + query.page_size]
+    if query.page is not None and query.pageSize is not None:
+        offset = (query.page - 1) * query.pageSize
+        dict_options = dict_options[offset:offset + query.pageSize]
     
     # 构建响应
     items = []

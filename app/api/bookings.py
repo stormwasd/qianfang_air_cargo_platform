@@ -673,10 +673,10 @@ async def get_bookings(
     total = query_obj.count()
     
     # 分页
-    offset = (query.page - 1) * query.page_size
+    offset = (query.page - 1) * query.pageSize
     bookings = query_obj.order_by(
         Booking.created_at.desc(), Booking.id.desc()
-    ).offset(offset).limit(query.page_size).all()
+    ).offset(offset).limit(query.pageSize).all()
     
     booking_list = []
     for booking in bookings:

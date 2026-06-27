@@ -53,4 +53,4 @@ class PickupUnitQuery(BaseModel):
 
     pickup_name: Optional[str] = Field(None, validation_alias=AliasChoices("pickup_name", "pickupName"), description="提货单位名称（模糊搜索）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")
+    pageSize: int = Field(10, ge=1, le=200, description="每页数量")
