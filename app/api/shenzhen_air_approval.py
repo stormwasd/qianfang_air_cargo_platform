@@ -36,15 +36,25 @@ async def get_shenzhen_air_approvals(
         
     query = db.query(model)
 
+    filters = []
     # 1. 航班号查询 (模糊匹配)
     if flight_number:
-        query = query.filter(model.flight_number.like(f"%{flight_number}%"))
+        filters.append(model.flight_number.like(f"%{flight_number}%"))
         
     # 2. 航班日期区间查询
     if flight_date_start:
-        query = query.filter(func.replace(model.flight_date, '/', '-') >= flight_date_start)
+        filters.append(func.replace(model.flight_date, '/', '-') >= flight_date_start)
     if flight_date_end:
-        query = query.filter(func.replace(model.flight_date, '/', '-') <= f"{flight_date_end} 23:59:59")
+        filters.append(func.replace(model.flight_date, '/', '-') <= f"{flight_date_end} 23:59:59")
+
+    if filters:
+        parent_query = db.query(model.id).filter(model.parent_id == None, *filters)
+        query = query.filter(
+            or_(
+                model.id.in_(parent_query),
+                model.parent_id.in_(parent_query)
+            )
+        )
 
     # 计算总数
     total = query.count()
