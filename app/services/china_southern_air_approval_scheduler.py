@@ -194,9 +194,16 @@ class ChinaSouthernAirApprovalScheduler:
                 booking_no_raw = _get_val(row_dict, 12)
                 existing_record = None
                 if booking_no_raw:
-                    existing_record = db.query(ChinaSouthernAirApprovalData).filter(
-                        ChinaSouthernAirApprovalData.booking_no == booking_no_raw
-                    ).first()
+                    match = re.match(r'^(\d+)', str(booking_no_raw).strip())
+                    if match:
+                        booking_number = match.group(1)
+                        existing_record = db.query(ChinaSouthernAirApprovalData).filter(
+                            ChinaSouthernAirApprovalData.booking_no.like(f"{booking_number}%")
+                        ).first()
+                    else:
+                        existing_record = db.query(ChinaSouthernAirApprovalData).filter(
+                            ChinaSouthernAirApprovalData.booking_no == booking_no_raw
+                        ).first()
                 
                 # 构造字段映射
                 field_values = dict(
