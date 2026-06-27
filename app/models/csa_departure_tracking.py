@@ -7,6 +7,7 @@
 from sqlalchemy import Column, String, BigInteger, DateTime, func
 from app.database import Base
 from app.utils.snowflake import generate_id
+from app.utils.helpers import get_china_now
 
 
 class CsaProductInformation(Base):
@@ -29,7 +30,7 @@ class CsaProductInformation(Base):
     security_status = Column(String(100), nullable=True, comment="安检状态")
     cargo_status = Column(String(100), nullable=True, comment="货物状态")
 
-    created_at = Column(DateTime, default=func.now(), comment="记录创建时间")
+    created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
 
 
 class CsaLalamoveInformation(Base):
@@ -47,4 +48,4 @@ class CsaLalamoveInformation(Base):
     pre_assigned_flight = Column(String(255), nullable=True, comment="预配航班")
     manifest_number = Column(String(255), nullable=True, comment="所在舱单号")
 
-    created_at = Column(DateTime, default=func.now(), comment="记录创建时间")
+    created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")

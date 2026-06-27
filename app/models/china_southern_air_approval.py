@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, BigInteger, DateTime, Text, func
 from app.database import Base
 from app.utils.snowflake import generate_id
+from app.utils.helpers import get_china_now
 
 class ChinaSouthernAirApprovalData(Base):
     """南航订舱批复数据"""
@@ -58,5 +59,5 @@ class ChinaSouthernAirApprovalData(Base):
     single_window_check = Column(String(100), comment="单一窗口查验")
     chargeable_weight = Column(String(100), comment="计费重量")
     
-    created_at = Column(DateTime, default=func.now(), comment="记录创建时间")
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment="记录更新时间")
+    created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
+    updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")

@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, BigInteger, DateTime, Text, func
 from app.database import Base
 from app.utils.snowflake import generate_id
+from app.utils.helpers import get_china_now
 
 class ShenzhenAirApprovalData(Base):
     """深航订舱批复数据"""
@@ -26,8 +27,8 @@ class ShenzhenAirApprovalData(Base):
     open_status = Column(String(50), comment="开放")
     remark = Column(Text, comment="备注")
     
-    created_at = Column(DateTime, default=func.now(), comment="记录创建时间")
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment="记录更新时间")
+    created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
+    updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")
 
 
 class ShenzhenAirApprovalWideBodyData(Base):
@@ -52,5 +53,5 @@ class ShenzhenAirApprovalWideBodyData(Base):
     type = Column(String(50), comment="类型")
     remark = Column(Text, comment="备注")
     
-    created_at = Column(DateTime, default=func.now(), comment="记录创建时间")
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment="记录更新时间")
+    created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
+    updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")

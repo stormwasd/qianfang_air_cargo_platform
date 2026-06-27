@@ -2,6 +2,7 @@ from sqlalchemy import Column, String, BigInteger, DateTime, Float, func
 from sqlalchemy.orm import declarative_base
 from app.database import Base
 from app.utils.snowflake import generate_id
+from app.utils.helpers import get_china_now
 
 class ShenzhenAirBookingExport(Base):
     __tablename__ = "shenzhen_air_booking_exports"
@@ -39,5 +40,5 @@ class ShenzhenAirBookingExport(Base):
     weight_difference = Column(String(50), comment="运输重量差额")
     container = Column(String(255), comment="集装器")
     
-    created_at = Column(DateTime, default=func.now(), comment="记录创建时间")
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment="记录更新时间")
+    created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
+    updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")
