@@ -165,6 +165,31 @@ class ChinaSouthernAirApprovalScheduler:
             
             today_str = datetime.now().strftime("%Y-%m-%d")
             
+            # --- 按业务范围先清空后插入 (Zombie Data 防护) ---
+            unique_dates = set()
+            for idx, r in df.iterrows():
+                if idx < 3:
+                    continue
+                r_dict = r.to_dict()
+                try:
+                    # 索引 0 是订舱航班
+                    f_info = str(r_dict.get(list(r_dict.keys())[0]))
+                    if f_info and f_info.strip() and f_info != 'nan':
+                        parts = f_info.split('/')
+                        if len(parts) >= 2:
+                            f_date = parts[1].strip()
+                            if f_date:
+                                unique_dates.add(f_date)
+                except Exception:
+                    pass
+            
+            if unique_dates:
+                from sqlalchemy import or_
+                conditions = [ChinaSouthernAirApprovalData.flight_info.like(f"%{date_str}%") for date_str in unique_dates]
+                db.query(ChinaSouthernAirApprovalData).filter(or_(*conditions)).delete(synchronize_session=False)
+                db.commit()
+            # ------------------------------------------------
+            
             # 从第4行（索引为3）开始是真正的表头和数据
             # 索引对应：0->订舱航班, 1->机型, 2->飞机号 ... 49->计费重量
             for index, row in df.iterrows():
