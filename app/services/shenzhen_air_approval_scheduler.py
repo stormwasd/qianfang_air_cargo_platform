@@ -165,6 +165,30 @@ class ShenzhenAirApprovalScheduler:
         try:
             df = pd.read_excel(filepath)
             
+            # --- 按业务范围先清空后插入 (Zombie Data 防护) ---
+            if "航班日期" in df.columns:
+                unique_dates = df["航班日期"].dropna().unique().tolist()
+                date_strs = [str(d).strip() for d in unique_dates if str(d).strip() and str(d) != 'nan']
+                if date_strs:
+                    # 1. 查询这些日期对应的父级 ID
+                    parent_records = db.query(ShenzhenAirApprovalData.id).filter(
+                        ShenzhenAirApprovalData.flight_date.in_(date_strs),
+                        ShenzhenAirApprovalData.parent_id == None
+                    ).all()
+                    
+                    parent_ids = [p[0] for p in parent_records]
+                    if parent_ids:
+                        # 2. 批量级联删除子级
+                        db.query(ShenzhenAirApprovalData).filter(
+                            ShenzhenAirApprovalData.parent_id.in_(parent_ids)
+                        ).delete(synchronize_session=False)
+                        # 3. 批量删除父级
+                        db.query(ShenzhenAirApprovalData).filter(
+                            ShenzhenAirApprovalData.id.in_(parent_ids)
+                        ).delete(synchronize_session=False)
+                        db.commit()
+            # ------------------------------------------------
+            
             seen_flight_pairs = set()
             current_parent_id = None
             
@@ -277,6 +301,30 @@ class ShenzhenAirApprovalScheduler:
         db = SessionLocal()
         try:
             df = pd.read_excel(filepath)
+            
+            # --- 按业务范围先清空后插入 (Zombie Data 防护) ---
+            if "航班日期" in df.columns:
+                unique_dates = df["航班日期"].dropna().unique().tolist()
+                date_strs = [str(d).strip() for d in unique_dates if str(d).strip() and str(d) != 'nan']
+                if date_strs:
+                    # 1. 查询这些日期对应的父级 ID
+                    parent_records = db.query(ShenzhenAirApprovalWideBodyData.id).filter(
+                        ShenzhenAirApprovalWideBodyData.flight_date.in_(date_strs),
+                        ShenzhenAirApprovalWideBodyData.parent_id == None
+                    ).all()
+                    
+                    parent_ids = [p[0] for p in parent_records]
+                    if parent_ids:
+                        # 2. 批量级联删除子级
+                        db.query(ShenzhenAirApprovalWideBodyData).filter(
+                            ShenzhenAirApprovalWideBodyData.parent_id.in_(parent_ids)
+                        ).delete(synchronize_session=False)
+                        # 3. 批量删除父级
+                        db.query(ShenzhenAirApprovalWideBodyData).filter(
+                            ShenzhenAirApprovalWideBodyData.id.in_(parent_ids)
+                        ).delete(synchronize_session=False)
+                        db.commit()
+            # ------------------------------------------------
             
             seen_flight_pairs = set()
             current_parent_id = None

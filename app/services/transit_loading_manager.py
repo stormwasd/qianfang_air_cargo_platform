@@ -168,6 +168,17 @@ class TransitLoadingManager:
         try:
             df = pd.read_excel(filepath)
             
+            # --- 按业务范围先清空后插入 (Zombie Data 防护) ---
+            if "航班日期" in df.columns:
+                unique_dates = df["航班日期"].dropna().unique().tolist()
+                date_strs = [str(d).strip() for d in unique_dates if str(d).strip() and str(d) != 'nan']
+                if date_strs:
+                    db.query(ShenzhenAirBookingExport).filter(
+                        ShenzhenAirBookingExport.flight_date.in_(date_strs)
+                    ).delete(synchronize_session=False)
+                    db.commit()
+            # ------------------------------------------------
+
             business_config = _get_business_config_dict(db)
             node = business_config.get("shenzhen_air", {}).get("booking", {}).get("shenzhen_air_login", {})
             system_account = node.get("system_account", "szxfdh002")
