@@ -184,9 +184,18 @@ class ChinaSouthernAirApprovalScheduler:
                     pass
             
             if unique_dates:
-                from sqlalchemy import or_
+                from sqlalchemy import or_, and_
                 conditions = [ChinaSouthernAirApprovalData.flight_info.like(f"%{date_str}%") for date_str in unique_dates]
-                db.query(ChinaSouthernAirApprovalData).filter(or_(*conditions)).delete(synchronize_session=False)
+                
+                # 批量清理时保护 container 字段：仅删除 container 为空或 nan 的记录
+                db.query(ChinaSouthernAirApprovalData).filter(
+                    or_(*conditions),
+                    or_(
+                        ChinaSouthernAirApprovalData.container == None,
+                        ChinaSouthernAirApprovalData.container == "",
+                        ChinaSouthernAirApprovalData.container == "nan"
+                    )
+                ).delete(synchronize_session=False)
                 db.commit()
             # ------------------------------------------------
             
@@ -285,8 +294,13 @@ class ChinaSouthernAirApprovalScheduler:
                 )
                 
                 if existing_record:
-                    # 已存在：更新所有字段
+                    # 已存在：更新字段（保护已有的 container）
+                    existing_container = existing_record.container
+                    has_container = existing_container and str(existing_container).strip() and str(existing_container) != "nan"
+                    
                     for k, v in field_values.items():
+                        if k == "container" and has_container:
+                            continue  # 坚守原有 container，不被新值覆盖
                         setattr(existing_record, k, v)
                     export_record = existing_record
                 else:
