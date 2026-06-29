@@ -26,6 +26,11 @@ class CtripClient:
 
             url = "https://m.ctrip.com/restapi/soa2/14566/FlightVarDetailSearchV2"
             
+            params = {
+                "_fxpcqlniredt": "09031145217077804929",
+                "x-traceID": "09031145217077804929-1782312914489-8957979"
+            }
+            
             headers = {
                 "accept": "*/*",
                 "accept-language": "zh-CN,zh;q=0.9",
@@ -44,14 +49,9 @@ class CtripClient:
                 "sec-fetch-mode": "cors",
                 "sec-fetch-site": "same-site",
                 "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-                "w-payload-source": "1.0.9@102!Tagc96NWqXkbG2Kn9rhl+ENlGl4ZGrtRK29VKSbI9lCV9rTLOST/K6AbOrK2+ET5+rApbbbpOSkpKlqLKrbZKrTSbEkbKtb5+rbSKrALOr4pOSbZOSk5OEVn+tbpOSkpKlqLKEtIOrV/QPALOP91NuOB9rjcK5b=",
                 "x-ctx-locale": "zh-CN",
-                "x-ctx-ubt-pageid": "10650045004",
-                "x-ctx-ubt-pvid": "2",
-                "x-ctx-ubt-sid": "1",
-                "x-ctx-ubt-vid": "1781254049595.a46fWFsGe2j3",
-                "x-ctx-wclient-req": "7a3186bbdf44e4755e831b6916b1b85c",
-                "Cookie": "GUID=09031145217077804929; UBT_VID=1781254049595.a46fWFsGe2j3; _bfa=1.1781254049595.a46fWFsGe2j3.1.1781254049618.1781254106283.1.2.10650045004"
+                "x-ctx-wclient-req": "cb71d51832f5a4da4db52b280a323a8d",
+                "Cookie": "GUID=09031145217077804929;DUID=u=D725C5916DD1E07C5BF791B5774572C6&v=0;"
             }
             
             payload = {
@@ -79,7 +79,7 @@ class CtripClient:
             }
 
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(url, headers=headers, json=payload)
+                response = await client.post(url, params=params, headers=headers, json=payload)
                 response.raise_for_status()
                 data = response.json()
                 
