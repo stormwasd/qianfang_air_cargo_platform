@@ -168,22 +168,25 @@ class TransitLoadingManager:
         try:
             df = pd.read_excel(filepath)
             
-            # --- 按业务范围先清空后插入 (Zombie Data 防护) ---
+            # --- Upsert 前期准备 (精准防僵尸) ---
+            existing_records = []
             if "航班日期" in df.columns:
                 unique_dates = df["航班日期"].dropna().unique().tolist()
                 date_strs = [str(d).strip() for d in unique_dates if str(d).strip() and str(d) != 'nan']
                 if date_strs:
-                    db.query(ShenzhenAirBookingExport).filter(
+                    existing_records = db.query(ShenzhenAirBookingExport).filter(
                         ShenzhenAirBookingExport.flight_date.in_(date_strs)
-                    ).delete(synchronize_session=False)
-                    db.commit()
+                    ).all()
+            
+            # 用 运单号+日期 作为内存字典的 key
+            existing_map = {(r.waybill_number, r.flight_date): r for r in existing_records}
+            processed_keys = set()
             # ------------------------------------------------
 
             business_config = _get_business_config_dict(db)
             node = business_config.get("shenzhen_air", {}).get("booking", {}).get("shenzhen_air_login", {})
             system_account = node.get("system_account", "szxfdh002")
 
-            seen_waybills = set()
             # 遍历行
             for index, row in df.iterrows():
                 # 读取全部31列（处理 NaN 为 None）
@@ -196,47 +199,59 @@ class TransitLoadingManager:
                 if not waybill_number or waybill_number == 'None':
                     continue
                 
-                # 如果是首次遇到该单号，删除已存在的旧数据（覆盖模式）
-                if waybill_number not in seen_waybills:
-                    db.query(ShenzhenAirBookingExport).filter(ShenzhenAirBookingExport.waybill_number == waybill_number).delete()
-                    seen_waybills.add(waybill_number)
+                flight_date = str(row_dict.get("航班日期", ""))
+                key = (waybill_number, flight_date)
+                processed_keys.add(key)
                 
-                # 入库
-                export_record = ShenzhenAirBookingExport(
-                    prefix=str(row_dict.get("前缀", "")),
-                    waybill_number=waybill_number,
-                    waybill_status=str(row_dict.get("运单状态", "")),
-                    creation_time=str(row_dict.get("制单时间", "")),
-                    creator=str(row_dict.get("制单人", "")),
-                    agent=str(row_dict.get("代理人", "")),
-                    routing=str(row_dict.get("航程", "")),
-                    flight_date=str(row_dict.get("航班日期", "")),
-                    billing_flight=str(row_dict.get("开单航班", "")),
-                    actual_flight=str(row_dict.get("走货航班", "")),
-                    shipper=str(row_dict.get("发货人", "")),
-                    consignee=str(row_dict.get("收货人", "")),
-                    carrier=str(row_dict.get("承运人", "")),
-                    storage_precautions=str(row_dict.get("储运事项", "")),
-                    cargo_name=str(row_dict.get("品名", "")),
-                    cabin=str(row_dict.get("舱位", "")),
-                    quantity=str(row_dict.get("件数", "")),
-                    weight=str(row_dict.get("重量", "")),
-                    chargeable_weight=str(row_dict.get("计费重量", "")),
-                    freight_rate=str(row_dict.get("费率", "")),
-                    air_freight=str(row_dict.get("航空运费", "")),
-                    fuel_surcharge=str(row_dict.get("燃油费", "")),
-                    airport_management_fee=str(row_dict.get("机管费", "")),
-                    total_amount=str(row_dict.get("总金额", "")),
-                    price_code=str(row_dict.get("运价代码", "")),
-                    handling_code=str(row_dict.get("处理代码", "")),
-                    payment_method=str(row_dict.get("支付方式", "")),
-                    waybill_type=str(row_dict.get("运单类型", "")),
-                    quantity_difference=str(row_dict.get("运输件数差额", "")),
-                    weight_difference=str(row_dict.get("运输重量差额", "")),
-                    container=str(row_dict.get("集装器", ""))
-                )
-                db.add(export_record)
-                db.flush()  # 获取 export_record.id
+                # 提取数据映射
+                field_values = {
+                    "prefix": str(row_dict.get("前缀", "")),
+                    "waybill_status": str(row_dict.get("运单状态", "")),
+                    "creation_time": str(row_dict.get("制单时间", "")),
+                    "creator": str(row_dict.get("制单人", "")),
+                    "agent": str(row_dict.get("代理人", "")),
+                    "routing": str(row_dict.get("航程", "")),
+                    "billing_flight": str(row_dict.get("开单航班", "")),
+                    "actual_flight": str(row_dict.get("走货航班", "")),
+                    "shipper": str(row_dict.get("发货人", "")),
+                    "consignee": str(row_dict.get("收货人", "")),
+                    "carrier": str(row_dict.get("承运人", "")),
+                    "storage_precautions": str(row_dict.get("储运事项", "")),
+                    "cargo_name": str(row_dict.get("品名", "")),
+                    "cabin": str(row_dict.get("舱位", "")),
+                    "quantity": str(row_dict.get("件数", "")),
+                    "weight": str(row_dict.get("重量", "")),
+                    "chargeable_weight": str(row_dict.get("计费重量", "")),
+                    "freight_rate": str(row_dict.get("费率", "")),
+                    "air_freight": str(row_dict.get("航空运费", "")),
+                    "fuel_surcharge": str(row_dict.get("燃油费", "")),
+                    "airport_management_fee": str(row_dict.get("机管费", "")),
+                    "total_amount": str(row_dict.get("总金额", "")),
+                    "price_code": str(row_dict.get("运价代码", "")),
+                    "handling_code": str(row_dict.get("处理代码", "")),
+                    "payment_method": str(row_dict.get("支付方式", "")),
+                    "waybill_type": str(row_dict.get("运单类型", "")),
+                    "quantity_difference": str(row_dict.get("运输件数差额", "")),
+                    "weight_difference": str(row_dict.get("运输重量差额", "")),
+                    "container": str(row_dict.get("集装器", ""))
+                }
+                
+                if key in existing_map:
+                    # Upsert: 更新记录 (保持原有的 id 稳定不变)
+                    export_record = existing_map[key]
+                    for k, v in field_values.items():
+                        setattr(export_record, k, v)
+                else:
+                    # Upsert: 新增记录
+                    export_record = ShenzhenAirBookingExport(
+                        waybill_number=waybill_number,
+                        flight_date=flight_date,
+                        **field_values
+                    )
+                    db.add(export_record)
+                    existing_map[key] = export_record # 防止 Excel 内部的重复单号插入
+                
+                db.flush()  # 获取或锁定 export_record.id
                 
                 # 下发子任务：计飞时间与集装器获取
                 params = {
@@ -257,6 +272,13 @@ class TransitLoadingManager:
                     robot_id=None
                 )
                 
+            # --- 击杀真正的僵尸数据 ---
+            # 任何在 original 集合中但不在 processed_keys 中的单据，说明航司已将其删除
+            for key, existing_record in existing_map.items():
+                if key not in processed_keys:
+                    db.delete(existing_record)
+            # ---------------------------
+            
             db.commit()
             print(f"[TransitLoadingManager] 文件 {os.path.basename(filepath)} 解析入库及子任务下发完成。")
             

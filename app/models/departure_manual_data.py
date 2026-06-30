@@ -7,7 +7,7 @@ class ShenzhenAirDepartureManualData(Base):
     __tablename__ = "shenzhen_air_departure_manual_data"
 
     id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
-    waybill_number_8 = Column(String(50), unique=True, index=True, comment="单号后8位")
+    booking_export_id = Column(BigInteger, unique=True, index=True, nullable=False, comment="关联 shenzhen_air_booking_exports.id")
     customer_name = Column(String(255), comment="客户名称")
     cargo_type = Column(String(50), comment="货物类型")
     packaging_fee = Column(String(50), comment="包装费")

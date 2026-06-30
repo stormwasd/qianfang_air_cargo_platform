@@ -215,7 +215,7 @@ class CsaDepartureStatusAlertService:
         # 持久化防重检查
         alert_record = db.query(AlertNotificationRecord).filter(
             AlertNotificationRecord.module_name == "csa_departure_status",
-            AlertNotificationRecord.target_id == waybill_num
+            AlertNotificationRecord.target_id == str(record.id)
         ).first()
         
         if alert_record and alert_record.state_hash == state_hash:
@@ -266,7 +266,7 @@ class CsaDepartureStatusAlertService:
         else:
             new_record = AlertNotificationRecord(
                 module_name="csa_departure_status",
-                target_id=waybill_num,
+                target_id=str(record.id),
                 state_hash=state_hash
             )
             db.add(new_record)

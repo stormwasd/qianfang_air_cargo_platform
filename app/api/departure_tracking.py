@@ -17,6 +17,11 @@ async def get_shenzhen_air_departures(
     flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-03-10"),
     flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-03-15"),
     flight_number: Optional[str] = Query(None, description="航班号"),
+    audit_status: Optional[int] = Query(None, description="审核状态(0:未审, 1:暂存, 2:已审)"),
+    origin: Optional[str] = Query(None, description="始发站"),
+    destination: Optional[str] = Query(None, description="目的站"),
+    customer_name: Optional[str] = Query(None, description="客户名称"),
+    is_suspected_abnormal: Optional[bool] = Query(None, description="疑似异常"),
     page: int = Query(1, description="页码", ge=1),
     pageSize: int = Query(10, description="每页数量", ge=1, le=500),
     current_user = Depends(get_current_active_user),
@@ -27,14 +32,31 @@ async def get_shenzhen_air_departures(
     """
     query = db.query(ShenzhenAirBookingExport)
 
+    # 0. 关联手动表进行查询 (审核状态、客户名称)
+    if audit_status is not None or customer_name:
+        from app.models.departure_manual_data import ShenzhenAirDepartureManualData
+        query = query.outerjoin(
+            ShenzhenAirDepartureManualData,
+            ShenzhenAirDepartureManualData.booking_export_id == ShenzhenAirBookingExport.id
+        )
+        
+        if audit_status is not None:
+            if audit_status == 0:
+                query = query.filter(
+                    or_(
+                        ShenzhenAirDepartureManualData.audit_status == 0,
+                        ShenzhenAirDepartureManualData.audit_status.is_(None)
+                    )
+                )
+            else:
+                query = query.filter(ShenzhenAirDepartureManualData.audit_status == audit_status)
+                
+        if customer_name:
+            query = query.filter(ShenzhenAirDepartureManualData.customer_name.like(f"%{customer_name}%"))
+
     # 1. 航班号查询
     if flight_number:
-        query = query.filter(
-            or_(
-                ShenzhenAirBookingExport.billing_flight.like(f"%{flight_number}%"),
-                ShenzhenAirBookingExport.actual_flight.like(f"%{flight_number}%")
-            )
-        )
+        query = query.filter(ShenzhenAirBookingExport.billing_flight.like(f"%{flight_number}%"))
         
     # 2. 航班日期区间查询
     if flight_date_start:
@@ -47,6 +69,25 @@ async def get_shenzhen_air_departures(
         waybill_numbers = [wn.strip() for wn in waybill_number.split(",") if wn.strip()]
         if waybill_numbers:
             query = query.filter(ShenzhenAirBookingExport.waybill_number.in_(waybill_numbers))
+
+    # 4. 始发站/目的站
+    if origin:
+        query = query.filter(ShenzhenAirBookingExport.routing.like(f"{origin}-%"))
+    if destination:
+        query = query.filter(ShenzhenAirBookingExport.routing.like(f"%-{destination}"))
+        
+    # 5. 疑似异常
+    if is_suspected_abnormal:
+        from app.models.alert_notification_record import AlertNotificationRecord
+        query = query.filter(
+            func.cast(ShenzhenAirBookingExport.id, String).in_(
+                db.query(AlertNotificationRecord.target_id)
+                .filter(
+                    AlertNotificationRecord.module_name == "shenzhen_air_departure_status",
+                    AlertNotificationRecord.state_hash != "0.0_0.0_False"
+                )
+            )
+        )
 
     # 计算总数
     total = query.count()
@@ -84,20 +125,22 @@ async def get_shenzhen_air_departures(
     # 5. 批量查询关联的从表数据
     containers = []
     manual_datas = []
+    export_ids = [export.id for export in exports]
     if waybill_8_list:
         containers = db.query(ShenzhenAirBillingTimeContainer).filter(
             ShenzhenAirBillingTimeContainer.waybill_number_8.in_(waybill_8_list)
         ).all()
         
+    if export_ids:
         from app.models.departure_manual_data import ShenzhenAirDepartureManualData
         manual_datas = db.query(ShenzhenAirDepartureManualData).filter(
-            ShenzhenAirDepartureManualData.waybill_number_8.in_(waybill_8_list)
+            ShenzhenAirDepartureManualData.booking_export_id.in_(export_ids)
         ).all()
 
     # 6. 在内存中组装数据
     # 按主表对象的ID初始化空列表
     containers_by_export_id = {export.id: [] for export in exports}
-    manual_data_by_wb8 = {md.waybill_number_8: md for md in manual_datas}
+    manual_data_by_export_id = {md.booking_export_id: md for md in manual_datas}
     
     for container in containers:
         wb8 = container.waybill_number_8
@@ -125,9 +168,8 @@ async def get_shenzhen_air_departures(
         item_schema.billing_time_containers = containers_data
         
         # 组装手动扩展数据
-        wb8 = export.waybill_number[-8:] if export.waybill_number and len(export.waybill_number) >= 8 else export.waybill_number
-        if wb8 and wb8 in manual_data_by_wb8:
-            md = manual_data_by_wb8[wb8]
+        if export.id in manual_data_by_export_id:
+            md = manual_data_by_export_id[export.id]
             md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
             md_dict["id"] = str(md.id)
             item_schema.manual_data = ShenzhenAirDepartureManualDataDTO(**md_dict)
@@ -156,9 +198,9 @@ async def upsert_shenzhen_air_manual_data(
 ):
     from app.models.departure_manual_data import ShenzhenAirDepartureManualData
     
-    # 根据 waybill_number_8 查询是否已存在
+    # 根据 booking_export_id 查询是否已存在
     manual_data = db.query(ShenzhenAirDepartureManualData).filter(
-        ShenzhenAirDepartureManualData.waybill_number_8 == data.waybill_number_8
+        ShenzhenAirDepartureManualData.booking_export_id == data.booking_export_id
     ).first()
     
     if manual_data:
@@ -190,7 +232,7 @@ async def audit_shenzhen_air_departure(
     from app.models.departure_manual_data import ShenzhenAirDepartureManualData
     
     manual_data = db.query(ShenzhenAirDepartureManualData).filter(
-        ShenzhenAirDepartureManualData.waybill_number_8 == data.waybill_number_8
+        ShenzhenAirDepartureManualData.booking_export_id == data.booking_export_id
     ).first()
     
     update_data = data.model_dump(exclude={"action"}, exclude_unset=True)
@@ -227,6 +269,11 @@ async def get_china_southern_air_departures(
     flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-06-16"),
     flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-06-20"),
     flight_number: Optional[str] = Query(None, description="航班号"),
+    audit_status: Optional[int] = Query(None, description="审核状态(0:未审, 1:暂存, 2:已审)"),
+    origin: Optional[str] = Query(None, description="始发站"),
+    destination: Optional[str] = Query(None, description="目的站"),
+    customer_name: Optional[str] = Query(None, description="客户名称"),
+    is_suspected_abnormal: Optional[bool] = Query(None, description="疑似异常"),
     page: int = Query(1, description="页码", ge=1),
     pageSize: int = Query(10, description="每页数量", ge=1, le=500),
     current_user = Depends(get_current_active_user),
@@ -242,6 +289,27 @@ async def get_china_southern_air_departures(
     import re as _re
 
     query = db.query(ChinaSouthernAirApprovalData)
+
+    # 0. 关联手动表进行查询 (审核状态、客户名称)
+    if audit_status is not None or customer_name:
+        query = query.outerjoin(
+            CsaDepartureManualData,
+            ChinaSouthernAirApprovalData.id == CsaDepartureManualData.approval_data_id
+        )
+        
+        if audit_status is not None:
+            if audit_status == 0:
+                query = query.filter(
+                    or_(
+                        CsaDepartureManualData.audit_status == 0,
+                        CsaDepartureManualData.audit_status.is_(None)
+                    )
+                )
+            else:
+                query = query.filter(CsaDepartureManualData.audit_status == audit_status)
+                
+        if customer_name:
+            query = query.filter(CsaDepartureManualData.customer_name.like(f"%{customer_name}%"))
 
     # 1. 航班号查询（从 flight_info 中匹配，如 "CZ8577 / 2026-06-16 / SZX - WUH"）
     if flight_number:
@@ -263,6 +331,25 @@ async def get_china_southern_air_departures(
         waybill_numbers = [wn.strip() for wn in waybill_number.split(",") if wn.strip()]
         if waybill_numbers:
             query = query.filter(ChinaSouthernAirApprovalData.waybill_number.in_(waybill_numbers))
+
+    # 4. 始发站/目的站
+    if origin:
+        query = query.filter(ChinaSouthernAirApprovalData.flight_info.like(f"%{origin} -%"))
+    if destination:
+        query = query.filter(ChinaSouthernAirApprovalData.flight_info.like(f"%- {destination}%"))
+        
+    # 5. 疑似异常
+    if is_suspected_abnormal:
+        from app.models.alert_notification_record import AlertNotificationRecord
+        query = query.filter(
+            func.cast(ChinaSouthernAirApprovalData.id, String).in_(
+                db.query(AlertNotificationRecord.target_id)
+                .filter(
+                    AlertNotificationRecord.module_name == "csa_departure_status",
+                    AlertNotificationRecord.state_hash != "0.0_0.0_False"
+                )
+            )
+        )
 
     # 计算总数
     total = query.count()

@@ -183,21 +183,18 @@ class ChinaSouthernAirApprovalScheduler:
                 except Exception:
                     pass
             
+            existing_ids = set()
             if unique_dates:
                 from sqlalchemy import or_, and_
                 conditions = [ChinaSouthernAirApprovalData.flight_info.like(f"%{date_str}%") for date_str in unique_dates]
                 
-                # 批量清理时保护 container 字段：仅删除 container 为空或 nan 的记录
-                db.query(ChinaSouthernAirApprovalData).filter(
-                    or_(*conditions),
-                    or_(
-                        ChinaSouthernAirApprovalData.container == None,
-                        ChinaSouthernAirApprovalData.container == "",
-                        ChinaSouthernAirApprovalData.container == "nan"
-                    )
-                ).delete(synchronize_session=False)
-                db.commit()
+                # --- 获取该日期范围内的所有现有记录 ID (用于后续对比抓僵尸) ---
+                existing_records = db.query(ChinaSouthernAirApprovalData.id).filter(or_(*conditions)).all()
+                existing_ids = {r[0] for r in existing_records}
+                # 不再执行野蛮的提前删除，保住所有记录的原始自增 ID
             # ------------------------------------------------
+            
+            processed_ids = set()
             
             # 从第4行（索引为3）开始是真正的表头和数据
             # 索引对应：0->订舱航班, 1->机型, 2->飞机号 ... 49->计费重量
@@ -295,12 +292,9 @@ class ChinaSouthernAirApprovalScheduler:
                 
                 if existing_record:
                     # 已存在：更新字段（保护已有的 container）
-                    existing_container = existing_record.container
-                    has_container = existing_container and str(existing_container).strip() and str(existing_container) != "nan"
-                    
                     for k, v in field_values.items():
-                        if k == "container" and has_container:
-                            continue  # 坚守原有 container，不被新值覆盖
+                        if k == "container" and getattr(existing_record, k):
+                            continue
                         setattr(existing_record, k, v)
                     export_record = existing_record
                 else:
@@ -309,6 +303,7 @@ class ChinaSouthernAirApprovalScheduler:
                     db.add(export_record)
                 
                 db.flush()
+                processed_ids.add(export_record.id)
                 
                 # === 下发出港跟踪任务（仅当天航班 + 去重）===
                 if booking_no_raw and flight_info:
@@ -345,6 +340,22 @@ class ChinaSouthernAirApprovalScheduler:
                                     created_by=None,
                                     robot_id=None
                                 )
+            
+            # --- 击杀真正的僵尸数据 ---
+            if unique_dates and existing_ids:
+                zombie_ids = existing_ids - processed_ids
+                if zombie_ids:
+                    from sqlalchemy import or_
+                    # 保护已配集装器的记录，只删未配集装器且航司也删掉的纯僵尸
+                    db.query(ChinaSouthernAirApprovalData).filter(
+                        ChinaSouthernAirApprovalData.id.in_(zombie_ids),
+                        or_(
+                            ChinaSouthernAirApprovalData.container == None,
+                            ChinaSouthernAirApprovalData.container == "",
+                            ChinaSouthernAirApprovalData.container == "nan"
+                        )
+                    ).delete(synchronize_session=False)
+            # ---------------------------
             
             db.commit()
             print(f"[ChinaSouthernAirApprovalScheduler] 文件 {os.path.basename(filepath)} 解析入库完成。")
