@@ -172,6 +172,7 @@ async def get_shenzhen_air_departures(
             md = manual_data_by_export_id[export.id]
             md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
             md_dict["id"] = str(md.id)
+            md_dict["booking_export_id"] = str(md.booking_export_id)
             item_schema.manual_data = ShenzhenAirDepartureManualDataDTO(**md_dict)
         
         # 转换为字典，保持键顺序一致
