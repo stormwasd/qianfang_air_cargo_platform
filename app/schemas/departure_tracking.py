@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import datetime
 
 class ShenzhenAirBillingTimeContainerDTO(BaseModel):
@@ -39,6 +39,10 @@ class ShenzhenAirDepartureManualDataDTO(BaseModel):
     other_fees: Optional[str] = Field(None, description="其他费用")
     manual_total_amount: Optional[str] = Field(None, description="总金额")
     remark: Optional[str] = Field(None, description="备注")
+    audit_status: Optional[int] = Field(0, description="审核状态(0=未审, 1=暂存, 2=已审)")
+    auditor_id: Optional[int] = Field(None, description="审核人ID")
+    auditor_name: Optional[str] = Field(None, description="审核人名称")
+    audit_time: Optional[datetime] = Field(None, description="审核时间")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -63,6 +67,10 @@ class ShenzhenAirDepartureManualDataUpsert(BaseModel):
     other_fees: Optional[str] = Field(None, description="其他费用")
     manual_total_amount: Optional[str] = Field(None, description="总金额")
     remark: Optional[str] = Field(None, description="备注")
+
+
+class ShenzhenAirDepartureAuditRequest(ShenzhenAirDepartureManualDataUpsert):
+    action: Literal["draft", "submit"] = Field(..., description="操作类型: draft (暂存) 或 submit (提交审核)")
 
 
 class ShenzhenAirDepartureItem(BaseModel):
@@ -172,6 +180,10 @@ class CsaDepartureManualDataDTO(BaseModel):
     other_fees: Optional[str] = Field(None, description="其他费用")
     manual_total_amount: Optional[str] = Field(None, description="总金额")
     remark: Optional[str] = Field(None, description="备注")
+    audit_status: Optional[int] = Field(0, description="审核状态(0=未审, 1=暂存, 2=已审)")
+    auditor_id: Optional[int] = Field(None, description="审核人ID")
+    auditor_name: Optional[str] = Field(None, description="审核人名称")
+    audit_time: Optional[datetime] = Field(None, description="审核时间")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -196,6 +208,10 @@ class CsaDepartureManualDataUpsert(BaseModel):
     other_fees: Optional[str] = Field(None, description="其他费用")
     manual_total_amount: Optional[str] = Field(None, description="总金额")
     remark: Optional[str] = Field(None, description="备注")
+
+
+class CsaDepartureAuditRequest(CsaDepartureManualDataUpsert):
+    action: Literal["draft", "submit"] = Field(..., description="操作类型: draft (暂存) 或 submit (提交审核)")
 
 
 class CsaDepartureItem(BaseModel):

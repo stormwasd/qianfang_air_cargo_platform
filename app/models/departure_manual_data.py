@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, BigInteger, DateTime, Float, func
+from sqlalchemy import Column, String, BigInteger, DateTime, Float, func, Integer
 from app.database import Base
 from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
@@ -23,6 +23,11 @@ class ShenzhenAirDepartureManualData(Base):
     other_fees = Column(String(50), comment="其他费用")
     manual_total_amount = Column(String(50), comment="总金额")
     remark = Column(String(500), comment="备注")
+    
+    audit_status = Column(Integer, default=0, comment="审核状态: 0=未审, 1=暂存, 2=已审")
+    auditor_id = Column(BigInteger, comment="审核人ID")
+    auditor_name = Column(String(255), comment="审核人")
+    audit_time = Column(DateTime, comment="审核时间")
     
     created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")

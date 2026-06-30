@@ -178,6 +178,45 @@ async def upsert_shenzhen_air_manual_data(
     return success_response(msg=msg)
 
 
+from app.schemas.departure_tracking import ShenzhenAirDepartureAuditRequest
+from app.utils.helpers import get_china_now
+
+@router.post("/shenzhen-air/audit", summary="深航出港运单单据审核与暂存")
+async def audit_shenzhen_air_departure(
+    data: ShenzhenAirDepartureAuditRequest,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    from app.models.departure_manual_data import ShenzhenAirDepartureManualData
+    
+    manual_data = db.query(ShenzhenAirDepartureManualData).filter(
+        ShenzhenAirDepartureManualData.waybill_number_8 == data.waybill_number_8
+    ).first()
+    
+    update_data = data.model_dump(exclude={"action"}, exclude_unset=True)
+    
+    if manual_data:
+        for key, value in update_data.items():
+            setattr(manual_data, key, value)
+    else:
+        manual_data = ShenzhenAirDepartureManualData(**update_data)
+        db.add(manual_data)
+
+    if data.action == "draft":
+        manual_data.audit_status = 1
+        msg = "暂存成功"
+    elif data.action == "submit":
+        manual_data.audit_status = 2
+        manual_data.auditor_id = current_user.id
+        manual_data.auditor_name = current_user.username
+        manual_data.audit_time = get_china_now()
+        msg = "审核成功"
+    else:
+        return success_response(code=400, msg="未知的操作类型")
+
+    db.commit()
+    return success_response(msg=msg)
+
 # ========== 南航出港跟踪接口 ==========
 
 from app.schemas.departure_tracking import CsaDepartureItem, CsaProductInformationDTO, CsaLalamoveInformationDTO, CsaDepartureManualDataDTO
@@ -346,3 +385,45 @@ async def upsert_china_southern_air_manual_data(
     db.commit()
     
     return success_response(msg=msg)
+
+
+from app.schemas.departure_tracking import CsaDepartureAuditRequest
+
+@router.post("/china-southern-air/audit", summary="南航出港运单单据审核与暂存")
+async def audit_china_southern_air_departure(
+    data: CsaDepartureAuditRequest,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    from app.models.csa_departure_manual_data import CsaDepartureManualData
+    
+    manual_data = db.query(CsaDepartureManualData).filter(
+        CsaDepartureManualData.approval_data_id == int(data.approval_data_id)
+    ).first()
+    
+    update_data = data.model_dump(exclude={"action", "approval_data_id"}, exclude_unset=True)
+    
+    if manual_data:
+        for key, value in update_data.items():
+            setattr(manual_data, key, value)
+    else:
+        insert_data = data.model_dump(exclude={"action"})
+        insert_data["approval_data_id"] = int(insert_data["approval_data_id"])
+        manual_data = CsaDepartureManualData(**insert_data)
+        db.add(manual_data)
+
+    if data.action == "draft":
+        manual_data.audit_status = 1
+        msg = "暂存成功"
+    elif data.action == "submit":
+        manual_data.audit_status = 2
+        manual_data.auditor_id = current_user.id
+        manual_data.auditor_name = current_user.username
+        manual_data.audit_time = get_china_now()
+        msg = "审核成功"
+    else:
+        return success_response(code=400, msg="未知的操作类型")
+
+    db.commit()
+    return success_response(msg=msg)
+
