@@ -23,7 +23,7 @@ class ShenzhenAirBillingTimeContainerDTO(BaseModel):
 
 class ShenzhenAirDepartureManualDataDTO(BaseModel):
     id: str
-    booking_export_id: int = Field(..., description="关联深航主表ID")
+    booking_export_id: str = Field(..., description="关联深航主表ID")
     customer_name: Optional[str] = Field(None, description="客户名称")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")
@@ -51,7 +51,7 @@ class ShenzhenAirDepartureManualDataDTO(BaseModel):
 
 
 class ShenzhenAirDepartureManualDataUpsert(BaseModel):
-    booking_export_id: int = Field(..., description="关联深航主表ID")
+    booking_export_id: str = Field(..., description="关联深航主表ID")
     customer_name: Optional[str] = Field(None, description="客户名称")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")
