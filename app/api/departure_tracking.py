@@ -208,7 +208,7 @@ async def audit_shenzhen_air_departure(
     elif data.action == "submit":
         manual_data.audit_status = 2
         manual_data.auditor_id = current_user.id
-        manual_data.auditor_name = current_user.username
+        manual_data.auditor_name = current_user.name
         manual_data.audit_time = get_china_now()
         msg = "审核成功"
     else:
@@ -418,7 +418,7 @@ async def audit_china_southern_air_departure(
     elif data.action == "submit":
         manual_data.audit_status = 2
         manual_data.auditor_id = current_user.id
-        manual_data.auditor_name = current_user.username
+        manual_data.auditor_name = current_user.name
         manual_data.audit_time = get_china_now()
         msg = "审核成功"
     else:
