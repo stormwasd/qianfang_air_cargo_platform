@@ -273,6 +273,7 @@ async def get_china_southern_air_departures(
     origin: Optional[str] = Query(None, description="始发站"),
     destination: Optional[str] = Query(None, description="目的站"),
     customer_name: Optional[str] = Query(None, description="客户名称"),
+    waybill_status: Optional[str] = Query(None, description="运单状态(例如 UU, KK), 对应 booking_no 中的标识"),
     is_suspected_abnormal: Optional[bool] = Query(None, description="疑似异常"),
     page: int = Query(1, description="页码", ge=1),
     pageSize: int = Query(10, description="每页数量", ge=1, le=500),
@@ -315,6 +316,12 @@ async def get_china_southern_air_departures(
     if flight_number:
         query = query.filter(
             ChinaSouthernAirApprovalData.flight_info.like(f"%{flight_number}%")
+        )
+        
+    # 1.5 运单状态查询 (从 booking_no 中匹配，如 "63821575 ( UU )")
+    if waybill_status:
+        query = query.filter(
+            ChinaSouthernAirApprovalData.booking_no.like(f"%{waybill_status}%")
         )
     
     # 2. 航班日期区间查询（从 flight_info 中提取日期部分进行比较）
