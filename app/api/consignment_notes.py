@@ -80,23 +80,26 @@ async def get_consignment_notes(
     """
     query_obj = db.query(ConsignmentNote)
     
-    # 0. 审核状态过滤 (关联手动表)
-    if query.audit_status is not None:
+    # 0. 审核状态 / 主单号 过滤 (关联手动数据表)
+    if query.audit_status is not None or query.waybill_number:
         from app.models.peer_air_manual_data import PeerAirDepartureManualData
         from sqlalchemy import or_
         query_obj = query_obj.outerjoin(
             PeerAirDepartureManualData,
             PeerAirDepartureManualData.consignment_note_id == ConsignmentNote.id
         )
-        if query.audit_status == 0:
-            query_obj = query_obj.filter(
-                or_(
-                    PeerAirDepartureManualData.audit_status == 0,
-                    PeerAirDepartureManualData.audit_status.is_(None)
+        if query.audit_status is not None:
+            if query.audit_status == 0:
+                query_obj = query_obj.filter(
+                    or_(
+                        PeerAirDepartureManualData.audit_status == 0,
+                        PeerAirDepartureManualData.audit_status.is_(None)
+                    )
                 )
-            )
-        else:
-            query_obj = query_obj.filter(PeerAirDepartureManualData.audit_status == query.audit_status)
+            else:
+                query_obj = query_obj.filter(PeerAirDepartureManualData.audit_status == query.audit_status)
+        if query.waybill_number:
+            query_obj = query_obj.filter(PeerAirDepartureManualData.waybill_number.like(f"%{query.waybill_number}%"))
             
     # 类型过滤
     if query.transport_type:
@@ -123,6 +126,20 @@ async def get_consignment_notes(
         query_obj = query_obj.filter(ConsignmentNote.flight_number.like(f"%{query.flight_number}%"))
     if query.airline:
         query_obj = query_obj.filter(ConsignmentNote.airline.like(f"%{query.airline}%"))
+
+    # 始发站过滤 (从 form_data JSON 中提取并匹配)
+    if query.origin_station:
+        from sqlalchemy import or_
+        query_obj = query_obj.filter(
+            or_(
+                func.json_unquote(func.json_extract(ConsignmentNote.form_data, '$.origin_station')).like(f"%{query.origin_station}%"),
+                func.json_unquote(func.json_extract(ConsignmentNote.form_data, '$.origin_city')).like(f"%{query.origin_station}%")
+            )
+        )
+        
+    # 航班日期/托运日期 精确匹配过滤
+    if query.flight_date:
+        query_obj = query_obj.filter(ConsignmentNote.consignment_date == query.flight_date)
 
     total = query_obj.count()
     offset = (query.page - 1) * query.pageSize
@@ -434,6 +451,7 @@ async def audit_consignment_note(
         db.add(manual_data)
         
     # 覆盖填写字段
+    manual_data.waybill_number = data.waybill_number
     manual_data.customer_name = data.customer_name
     manual_data.cargo_type = data.cargo_type
     manual_data.packaging_fee = data.packaging_fee

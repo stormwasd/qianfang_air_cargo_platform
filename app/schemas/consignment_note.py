@@ -92,6 +92,9 @@ class ConsignmentNoteQuery(BaseModel):
     flight_number: Optional[str] = Field(None, description="航班号（模糊搜索，仅空运）")
     airline: Optional[str] = Field(None, description="航司（模糊搜索，仅空运）")
     audit_status: Optional[int] = Field(None, description="审核状态(0:未审, 1:暂存, 2:已审，仅空运审核列表有效)")
+    flight_date: Optional[date] = Field(None, description="航班日期/托运日期（精确匹配，格式：YYYY-MM-DD）")
+    origin_station: Optional[str] = Field(None, description="始发站（模糊搜索，仅空运）")
+    waybill_number: Optional[str] = Field(None, description="主单号（模糊搜索，仅空运）")
     page: int = Field(1, ge=1, description="页码")
     pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 
@@ -100,6 +103,7 @@ class PeerAirDepartureManualDataDTO(BaseModel):
     """同行空运出港扩展（手动/审核）数据出参"""
     id: str
     consignment_note_id: str = Field(..., description="关联托运书ID")
+    waybill_number: Optional[str] = Field(None, description="主单号")
     customer_name: Optional[str] = Field(None, description="客户名称")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")
@@ -129,6 +133,7 @@ class PeerAirDepartureManualDataDTO(BaseModel):
 class PeerAirDepartureManualDataUpsert(BaseModel):
     """同行空运出港扩展数据暂存/审核入参"""
     consignment_note_id: str = Field(..., description="关联托运书ID")
+    waybill_number: Optional[str] = Field(None, description="主单号")
     customer_name: Optional[str] = Field(None, description="客户名称")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")

@@ -1,6 +1,7 @@
 CREATE TABLE `peer_air_departure_manual_data` (
   `id` bigint(20) NOT NULL COMMENT '主键ID',
   `consignment_note_id` bigint(20) NOT NULL COMMENT '关联 consignment_notes.id',
+  `waybill_number` varchar(100) DEFAULT NULL COMMENT '主单号',
   `customer_name` varchar(255) DEFAULT NULL COMMENT '客户名称',
   `cargo_type` varchar(50) DEFAULT NULL COMMENT '货物类型',
   `packaging_fee` varchar(50) DEFAULT NULL COMMENT '包装费',
