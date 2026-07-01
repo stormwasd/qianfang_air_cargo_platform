@@ -91,8 +91,59 @@ class ConsignmentNoteQuery(BaseModel):
     destination: Optional[str] = Field(None, description="目的站（模糊搜索，仅空运）")
     flight_number: Optional[str] = Field(None, description="航班号（模糊搜索，仅空运）")
     airline: Optional[str] = Field(None, description="航司（模糊搜索，仅空运）")
+    audit_status: Optional[int] = Field(None, description="审核状态(0:未审, 1:暂存, 2:已审，仅空运审核列表有效)")
     page: int = Field(1, ge=1, description="页码")
     pageSize: int = Field(10, ge=1, le=200, description="每页数量")
+
+
+class PeerAirDepartureManualDataDTO(BaseModel):
+    """同行空运出港扩展（手动/审核）数据出参"""
+    id: str
+    consignment_note_id: str = Field(..., description="关联托运书ID")
+    customer_name: Optional[str] = Field(None, description="客户名称")
+    cargo_type: Optional[str] = Field(None, description="货物类型")
+    packaging_fee: Optional[str] = Field(None, description="包装费")
+    telegram_fee: Optional[str] = Field(None, description="电报费")
+    cca: Optional[str] = Field(None, description="CCA")
+    door_pickup_fee: Optional[str] = Field(None, description="上门提货费")
+    door_pickup_company: Optional[str] = Field(None, description="上门提货单位")
+    airport_pickup_fee: Optional[str] = Field(None, description="机场提货费")
+    airport_pickup_company: Optional[str] = Field(None, description="机场提货单位")
+    delivery_fee: Optional[str] = Field(None, description="派送费")
+    delivery_company: Optional[str] = Field(None, description="派送单位")
+    carrier_deduction: Optional[str] = Field(None, description="承运扣款")
+    other_fees: Optional[str] = Field(None, description="其他费用")
+    manual_total_amount: Optional[str] = Field(None, description="总金额")
+    remark: Optional[str] = Field(None, description="备注")
+    audit_status: Optional[int] = Field(0, description="审核状态")
+    auditor_id: Optional[int] = Field(None, description="审核人ID")
+    auditor_name: Optional[str] = Field(None, description="审核人")
+    audit_time: Optional[datetime] = Field(None, description="审核时间")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PeerAirDepartureManualDataUpsert(BaseModel):
+    """同行空运出港扩展数据暂存/审核入参"""
+    consignment_note_id: str = Field(..., description="关联托运书ID")
+    customer_name: Optional[str] = Field(None, description="客户名称")
+    cargo_type: Optional[str] = Field(None, description="货物类型")
+    packaging_fee: Optional[str] = Field(None, description="包装费")
+    telegram_fee: Optional[str] = Field(None, description="电报费")
+    cca: Optional[str] = Field(None, description="CCA")
+    door_pickup_fee: Optional[str] = Field(None, description="上门提货费")
+    door_pickup_company: Optional[str] = Field(None, description="上门提货单位")
+    airport_pickup_fee: Optional[str] = Field(None, description="机场提货费")
+    airport_pickup_company: Optional[str] = Field(None, description="机场提货单位")
+    delivery_fee: Optional[str] = Field(None, description="派送费")
+    delivery_company: Optional[str] = Field(None, description="派送单位")
+    carrier_deduction: Optional[str] = Field(None, description="承运扣款")
+    other_fees: Optional[str] = Field(None, description="其他费用")
+    manual_total_amount: Optional[str] = Field(None, description="总金额")
+    remark: Optional[str] = Field(None, description="备注")
 
 
 class ConsignmentNoteResponse(BaseModel):
@@ -108,6 +159,7 @@ class ConsignmentNoteResponse(BaseModel):
     form_data: Dict[str, Any]
     creator_id: Optional[str]
     creator_name: Optional[str]
+    manual_data: Optional[PeerAirDepartureManualDataDTO] = None
     created_at: datetime
     updated_at: datetime
     
