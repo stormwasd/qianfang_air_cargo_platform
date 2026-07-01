@@ -99,28 +99,11 @@ class ConsignmentNoteQuery(BaseModel):
     destination_city: Optional[str] = Field(None, description="目的城市（模糊搜索，仅汽运）")
     page: int = Field(1, ge=1, description="页码")
     pageSize: int = Field(10, ge=1, le=200, description="每页数量")
-
-
-class ConsignmentNoteFinancialQuery(BaseModel):
-    """财务单据审核列表查询入参"""
-    model_config = ConfigDict(populate_by_name=True)
-
-    transport_type: Optional[str] = Field(None, description="托运方式筛选：0=空运，1=汽运")
-    date_start: Optional[date] = Field(None, description="托运日期范围-开始（格式：YYYY-MM-DD）")
-    date_end: Optional[date] = Field(None, description="托运日期范围-结束（格式：YYYY-MM-DD）")
-    company_name: Optional[str] = Field(None, description="代理公司（模糊搜索）")
-    customer_name: Optional[str] = Field(None, description="客户名称（模糊搜索，仅汽运）")
-    destination: Optional[str] = Field(None, description="目的站（模糊搜索，仅空运）")
-    flight_number: Optional[str] = Field(None, description="航班号（模糊搜索，仅空运）")
-    airline: Optional[str] = Field(None, description="航司（模糊搜索，仅空运）")
+    is_financial: Optional[bool] = Field(False, description="是否是财务审核列表（若为True，则固定过滤运单已审数据）")
     financial_audit_status: Optional[int] = Field(None, description="财务审核状态(0:未审, 1:暂存, 2:已审)")
-    flight_date: Optional[date] = Field(None, description="航班日期/托运日期（精确匹配，格式：YYYY-MM-DD）")
-    origin_station: Optional[str] = Field(None, description="始发站（模糊搜索，仅空运）")
-    waybill_number: Optional[str] = Field(None, description="主单号（模糊搜索，仅空运）")
-    origin_city: Optional[str] = Field(None, description="始发城市（模糊搜索，仅汽运）")
-    destination_city: Optional[str] = Field(None, description="目的城市（模糊搜索，仅汽运）")
-    page: int = Field(1, ge=1, description="页码")
-    pageSize: int = Field(10, ge=1, le=200, description="每页数量")
+
+
+
 
 
 class PeerAirDepartureManualDataDTO(BaseModel):
