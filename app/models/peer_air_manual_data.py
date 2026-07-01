@@ -30,5 +30,10 @@ class PeerAirDepartureManualData(Base):
     auditor_name = Column(String(255), comment="审核人")
     audit_time = Column(DateTime, comment="审核时间")
     
+    financial_audit_status = Column(Integer, default=0, comment="财务审核状态: 0=未审, 1=暂存, 2=已审")
+    financial_auditor_id = Column(BigInteger, comment="财务审核人ID")
+    financial_auditor_name = Column(String(255), comment="财务审核人")
+    financial_audit_time = Column(DateTime, comment="财务审核时间")
+    
     created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")

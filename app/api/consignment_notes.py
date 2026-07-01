@@ -11,7 +11,8 @@ from app.core.response import success_response
 from app.database import get_db
 from app.models.consignment_note import ConsignmentNote
 from app.schemas.consignment_note import (
-    ConsignmentNoteCreate, ConsignmentNoteUpdate, ConsignmentNoteQuery
+    ConsignmentNoteCreate, ConsignmentNoteUpdate, ConsignmentNoteQuery,
+    ConsignmentNoteFinancialQuery, ConsignmentNoteFinancialAudit
 )
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china
@@ -559,4 +560,234 @@ async def audit_consignment_note(
         
     db.commit()
     return success_response(msg=msg)
+
+
+@router.get("/financial/list", summary="查询财务单据审核列表")
+async def get_financial_consignment_notes(
+    query: ConsignmentNoteFinancialQuery = Depends(),
+    current_user=Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    财务单据审核列表接口（只展示已通过运单审核的单据）
+    """
+    if not query.transport_type:
+        return success_response(code=400, msg="参数错误：transport_type 必填")
+        
+    query_obj = db.query(ConsignmentNote).filter(ConsignmentNote.transport_type == query.transport_type)
+    
+    from sqlalchemy import or_
+    if query.transport_type == "1":
+        # 汽运
+        from app.models.peer_road_manual_data import PeerRoadDepartureManualData
+        query_obj = query_obj.join(
+            PeerRoadDepartureManualData,
+            PeerRoadDepartureManualData.consignment_note_id == ConsignmentNote.id
+        ).filter(
+            PeerRoadDepartureManualData.audit_status == 2
+        )
+        
+        if query.financial_audit_status is not None:
+            if query.financial_audit_status == 0:
+                query_obj = query_obj.filter(
+                    or_(
+                        PeerRoadDepartureManualData.financial_audit_status == 0,
+                        PeerRoadDepartureManualData.financial_audit_status.is_(None)
+                    )
+                )
+            else:
+                query_obj = query_obj.filter(PeerRoadDepartureManualData.financial_audit_status == query.financial_audit_status)
+    else:
+        # 空运
+        from app.models.peer_air_manual_data import PeerAirDepartureManualData
+        query_obj = query_obj.join(
+            PeerAirDepartureManualData,
+            PeerAirDepartureManualData.consignment_note_id == ConsignmentNote.id
+        ).filter(
+            PeerAirDepartureManualData.audit_status == 2
+        )
+        
+        if query.financial_audit_status is not None:
+            if query.financial_audit_status == 0:
+                query_obj = query_obj.filter(
+                    or_(
+                        PeerAirDepartureManualData.financial_audit_status == 0,
+                        PeerAirDepartureManualData.financial_audit_status.is_(None)
+                    )
+                )
+            else:
+                query_obj = query_obj.filter(PeerAirDepartureManualData.financial_audit_status == query.financial_audit_status)
+        if query.waybill_number:
+            query_obj = query_obj.filter(PeerAirDepartureManualData.waybill_number.like(f"%{query.waybill_number}%"))
+
+    # 公共过滤
+    if query.date_start:
+        query_obj = query_obj.filter(ConsignmentNote.consignment_date >= query.date_start)
+    if query.date_end:
+        query_obj = query_obj.filter(ConsignmentNote.consignment_date <= query.date_end)
+    if query.flight_date:
+        query_obj = query_obj.filter(ConsignmentNote.consignment_date == query.flight_date)
+    if query.company_name:
+        query_obj = query_obj.filter(ConsignmentNote.company_name.like(f"%{query.company_name}%"))
+    if query.customer_name:
+        query_obj = query_obj.filter(ConsignmentNote.customer_name.like(f"%{query.customer_name}%"))
+
+    # 空运特有
+    if query.transport_type == "0":
+        if query.destination:
+            query_obj = query_obj.filter(ConsignmentNote.destination.like(f"%{query.destination}%"))
+        if query.flight_number:
+            query_obj = query_obj.filter(ConsignmentNote.flight_number.like(f"%{query.flight_number}%"))
+        if query.airline:
+            query_obj = query_obj.filter(ConsignmentNote.airline.like(f"%{query.airline}%"))
+        if query.origin_station:
+            query_obj = query_obj.filter(
+                func.json_unquote(func.json_extract(ConsignmentNote.form_data, '$.origin_station')).like(f"%{query.origin_station}%")
+            )
+
+    # 汽运特有
+    if query.transport_type == "1":
+        if query.origin_city:
+            query_obj = query_obj.filter(
+                or_(
+                    func.json_unquote(func.json_extract(ConsignmentNote.form_data, '$.origin_station')).like(f"%{query.origin_city}%"),
+                    func.json_unquote(func.json_extract(ConsignmentNote.form_data, '$.origin_city')).like(f"%{query.origin_city}%")
+                )
+            )
+        if query.destination_city:
+            query_obj = query_obj.filter(ConsignmentNote.destination.like(f"%{query.destination_city}%"))
+
+    total = query_obj.count()
+    offset = (query.page - 1) * query.pageSize
+    notes = query_obj.order_by(ConsignmentNote.created_at.desc(), ConsignmentNote.id.desc()).offset(offset).limit(query.pageSize).all()
+    
+    # 批量拉取审核数据挂载
+    manual_data_by_note_id = {}
+    road_manual_data_by_note_id = {}
+    
+    note_ids = [note.id for note in notes]
+    if note_ids:
+        if query.transport_type == "0":
+            from app.models.peer_air_manual_data import PeerAirDepartureManualData
+            mds = db.query(PeerAirDepartureManualData).filter(
+                PeerAirDepartureManualData.consignment_note_id.in_(note_ids)
+            ).all()
+            manual_data_by_note_id = {md.consignment_note_id: md for md in mds}
+        else:
+            from app.models.peer_road_manual_data import PeerRoadDepartureManualData
+            rmds = db.query(PeerRoadDepartureManualData).filter(
+                PeerRoadDepartureManualData.consignment_note_id.in_(note_ids)
+            ).all()
+            road_manual_data_by_note_id = {md.consignment_note_id: md for md in rmds}
+
+    from app.schemas.consignment_note import PeerAirDepartureManualDataDTO, PeerRoadDepartureManualDataDTO
+    
+    items = []
+    for note in notes:
+        item_dict = {
+            "id": str(note.id),
+            "transport_type": note.transport_type,
+            "company_name": note.company_name,
+            "customer_name": note.customer_name,
+            "consignment_date": note.consignment_date.isoformat() if note.consignment_date else None,
+            "destination": note.destination,
+            "flight_number": note.flight_number,
+            "airline": note.airline,
+            "form_data": json.loads(note.form_data),
+            "creator_id": note.creator_id,
+            "creator_name": note.creator_name,
+            "created_at": format_datetime_china(note.created_at),
+            "updated_at": format_datetime_china(note.updated_at),
+            "manual_data": None
+        }
+        
+        if note.transport_type == "0" and note.id in manual_data_by_note_id:
+            md = manual_data_by_note_id[note.id]
+            md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
+            md_dict["id"] = str(md.id)
+            md_dict["consignment_note_id"] = str(md.consignment_note_id)
+            item_dict["manual_data"] = PeerAirDepartureManualDataDTO(**md_dict).model_dump(mode="json")
+            
+        elif note.transport_type == "1" and note.id in road_manual_data_by_note_id:
+            md = road_manual_data_by_note_id[note.id]
+            md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
+            md_dict["id"] = str(md.id)
+            md_dict["consignment_note_id"] = str(md.consignment_note_id)
+            item_dict["manual_data"] = PeerRoadDepartureManualDataDTO(**md_dict).model_dump(mode="json")
+            
+        items.append(item_dict)
+        
+    return success_response(data={"total": total, "items": items}, msg="查询成功")
+
+
+@router.post("/financial/audit", summary="财务单据暂存/确认审核")
+async def financial_audit_consignment_note(
+    payload: ConsignmentNoteFinancialAudit,
+    action: str = Query(..., description="操作类型: save (暂存), submit (审核提交)"),
+    current_user=Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    财务单据暂存/确认审核接口
+    """
+    from app.utils.helpers import get_china_now
+    
+    # 检查托运书是否存在
+    note = db.query(ConsignmentNote).filter(ConsignmentNote.id == int(payload.consignment_note_id)).first()
+    if not note:
+        return success_response(code=404, msg="托运书不存在")
+        
+    if note.transport_type == "0":
+        # 空运
+        from app.models.peer_air_manual_data import PeerAirDepartureManualData
+        manual_data = db.query(PeerAirDepartureManualData).filter(
+            PeerAirDepartureManualData.consignment_note_id == int(payload.consignment_note_id)
+        ).first()
+        
+        # 必须先通过运单审核
+        if not manual_data or manual_data.audit_status != 2:
+            return success_response(code=400, msg="该单据未通过运单审核，无法进行财务审核")
+            
+        if action == "save":
+            if manual_data.financial_audit_status == 0 or manual_data.financial_audit_status is None:
+                manual_data.financial_audit_status = 1
+            msg = "暂存成功"
+        elif action == "submit":
+            manual_data.financial_audit_status = 2
+            manual_data.financial_auditor_id = current_user.id
+            manual_data.financial_auditor_name = current_user.name
+            manual_data.financial_audit_time = get_china_now()
+            msg = "审核成功"
+        else:
+            return success_response(code=400, msg="未知的操作类型")
+            
+    elif note.transport_type == "1":
+        # 汽运
+        from app.models.peer_road_manual_data import PeerRoadDepartureManualData
+        manual_data = db.query(PeerRoadDepartureManualData).filter(
+            PeerRoadDepartureManualData.consignment_note_id == int(payload.consignment_note_id)
+        ).first()
+        
+        # 必须先通过运单审核
+        if not manual_data or manual_data.audit_status != 2:
+            return success_response(code=400, msg="该单据未通过运单审核，无法进行财务审核")
+            
+        if action == "save":
+            if manual_data.financial_audit_status == 0 or manual_data.financial_audit_status is None:
+                manual_data.financial_audit_status = 1
+            msg = "暂存成功"
+        elif action == "submit":
+            manual_data.financial_audit_status = 2
+            manual_data.financial_auditor_id = current_user.id
+            manual_data.financial_auditor_name = current_user.name
+            manual_data.financial_audit_time = get_china_now()
+            msg = "审核成功"
+        else:
+            return success_response(code=400, msg="未知的操作类型")
+    else:
+        return success_response(code=400, msg="不支持的托运类型")
+        
+    db.commit()
+    return success_response(msg=msg)
+
 

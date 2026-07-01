@@ -101,6 +101,28 @@ class ConsignmentNoteQuery(BaseModel):
     pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 
 
+class ConsignmentNoteFinancialQuery(BaseModel):
+    """财务单据审核列表查询入参"""
+    model_config = ConfigDict(populate_by_name=True)
+
+    transport_type: Optional[str] = Field(None, description="托运方式筛选：0=空运，1=汽运")
+    date_start: Optional[date] = Field(None, description="托运日期范围-开始（格式：YYYY-MM-DD）")
+    date_end: Optional[date] = Field(None, description="托运日期范围-结束（格式：YYYY-MM-DD）")
+    company_name: Optional[str] = Field(None, description="代理公司（模糊搜索）")
+    customer_name: Optional[str] = Field(None, description="客户名称（模糊搜索，仅汽运）")
+    destination: Optional[str] = Field(None, description="目的站（模糊搜索，仅空运）")
+    flight_number: Optional[str] = Field(None, description="航班号（模糊搜索，仅空运）")
+    airline: Optional[str] = Field(None, description="航司（模糊搜索，仅空运）")
+    financial_audit_status: Optional[int] = Field(None, description="财务审核状态(0:未审, 1:暂存, 2:已审)")
+    flight_date: Optional[date] = Field(None, description="航班日期/托运日期（精确匹配，格式：YYYY-MM-DD）")
+    origin_station: Optional[str] = Field(None, description="始发站（模糊搜索，仅空运）")
+    waybill_number: Optional[str] = Field(None, description="主单号（模糊搜索，仅空运）")
+    origin_city: Optional[str] = Field(None, description="始发城市（模糊搜索，仅汽运）")
+    destination_city: Optional[str] = Field(None, description="目的城市（模糊搜索，仅汽运）")
+    page: int = Field(1, ge=1, description="页码")
+    pageSize: int = Field(10, ge=1, le=200, description="每页数量")
+
+
 class PeerAirDepartureManualDataDTO(BaseModel):
     """同行空运出港扩展（手动/审核）数据出参"""
     id: str
@@ -125,6 +147,10 @@ class PeerAirDepartureManualDataDTO(BaseModel):
     auditor_id: Optional[int] = Field(None, description="审核人ID")
     auditor_name: Optional[str] = Field(None, description="审核人")
     audit_time: Optional[datetime] = Field(None, description="审核时间")
+    financial_audit_status: Optional[int] = Field(0, description="财务审核状态")
+    financial_auditor_id: Optional[int] = Field(None, description="财务审核人ID")
+    financial_auditor_name: Optional[str] = Field(None, description="财务审核人")
+    financial_audit_time: Optional[datetime] = Field(None, description="财务审核时间")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -140,6 +166,10 @@ class PeerRoadDepartureManualDataDTO(BaseModel):
     auditor_id: Optional[int] = Field(None, description="审核人ID")
     auditor_name: Optional[str] = Field(None, description="审核人")
     audit_time: Optional[datetime] = Field(None, description="审核时间")
+    financial_audit_status: Optional[int] = Field(0, description="财务审核状态")
+    financial_auditor_id: Optional[int] = Field(None, description="财务审核人ID")
+    financial_auditor_name: Optional[str] = Field(None, description="财务审核人")
+    financial_audit_time: Optional[datetime] = Field(None, description="财务审核时间")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -193,3 +223,9 @@ class ConsignmentNoteListResponse(BaseModel):
     """托运书列表响应 schema"""
     total: int
     items: List[ConsignmentNoteResponse]
+
+
+class ConsignmentNoteFinancialAudit(BaseModel):
+    """财务暂存/审核入参"""
+    consignment_note_id: str = Field(..., description="关联托运书ID")
+
