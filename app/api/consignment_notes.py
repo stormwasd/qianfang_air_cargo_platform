@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.consignment_note import ConsignmentNote
 from app.schemas.consignment_note import (
     ConsignmentNoteCreate, ConsignmentNoteUpdate, ConsignmentNoteQuery,
-    ConsignmentNoteFinancialAudit
+    ConsignmentNoteFinancialAudit, PeerAirDepartureManualDataUpsert
 )
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china
@@ -521,8 +521,8 @@ async def generate_consignment_pdf(
 
 @router.post("/audit", summary="同行空运/汽运承运单据暂存/审核")
 async def audit_consignment_note(
+    data: PeerAirDepartureManualDataUpsert,
     action: str = Query(..., description="操作类型: save (暂存), submit (审核提交)"),
-    data: __import__('app.schemas.consignment_note', fromlist=['PeerAirDepartureManualDataUpsert']).PeerAirDepartureManualDataUpsert = Depends(),
     current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
