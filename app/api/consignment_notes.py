@@ -3,7 +3,7 @@
 """
 import json
 from io import BytesIO
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.exceptions import NotFoundException
