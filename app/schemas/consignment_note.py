@@ -2,7 +2,7 @@
 托运书相关的 Pydantic schemas
 """
 from pydantic import BaseModel, ConfigDict, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime, date
 
 
@@ -95,6 +95,8 @@ class ConsignmentNoteQuery(BaseModel):
     flight_date: Optional[date] = Field(None, description="航班日期/托运日期（精确匹配，格式：YYYY-MM-DD）")
     origin_station: Optional[str] = Field(None, description="始发站（模糊搜索，仅空运）")
     waybill_number: Optional[str] = Field(None, description="主单号（模糊搜索，仅空运）")
+    origin_city: Optional[str] = Field(None, description="始发城市（模糊搜索，仅汽运）")
+    destination_city: Optional[str] = Field(None, description="目的城市（模糊搜索，仅汽运）")
     page: int = Field(1, ge=1, description="页码")
     pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 
@@ -119,6 +121,21 @@ class PeerAirDepartureManualDataDTO(BaseModel):
     other_fees: Optional[str] = Field(None, description="其他费用")
     manual_total_amount: Optional[str] = Field(None, description="总金额")
     remark: Optional[str] = Field(None, description="备注")
+    audit_status: Optional[int] = Field(0, description="审核状态")
+    auditor_id: Optional[int] = Field(None, description="审核人ID")
+    auditor_name: Optional[str] = Field(None, description="审核人")
+    audit_time: Optional[datetime] = Field(None, description="审核时间")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PeerRoadDepartureManualDataDTO(BaseModel):
+    """同行汽运出港审核数据出参"""
+    id: str
+    consignment_note_id: str = Field(..., description="关联托运书ID")
     audit_status: Optional[int] = Field(0, description="审核状态")
     auditor_id: Optional[int] = Field(None, description="审核人ID")
     auditor_name: Optional[str] = Field(None, description="审核人")
@@ -164,7 +181,7 @@ class ConsignmentNoteResponse(BaseModel):
     form_data: Dict[str, Any]
     creator_id: Optional[str]
     creator_name: Optional[str]
-    manual_data: Optional[PeerAirDepartureManualDataDTO] = None
+    manual_data: Optional[Union[PeerAirDepartureManualDataDTO, PeerRoadDepartureManualDataDTO]] = None
     created_at: datetime
     updated_at: datetime
     
