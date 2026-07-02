@@ -32,22 +32,11 @@ async def create_consignment_note(
     # 提取核心搜索列
     form_data = payload.form_data
     
-    # 解析动态列用于搜索
-    consignment_date = None
-    destination = None
-    flight_number = None
-    airline = None
-    
-    if payload.transport_type == "0":  # 空运
-        if "flight_date" in form_data and form_data["flight_date"]:
-            consignment_date = form_data["flight_date"]
-        destination = form_data.get("destination_station")
-        flight_number = form_data.get("flight_number")
-        airline = form_data.get("airline")
-    else:  # 汽运
-        if "transport_date" in form_data and form_data["transport_date"]:
-            consignment_date = form_data["transport_date"]
-        destination = form_data.get("destination_city")
+    # 解析动态列用于搜索，并做兼容性回退
+    consignment_date = form_data.get("transport_date") or form_data.get("flight_date")
+    destination = form_data.get("destination_city") or form_data.get("destination_station")
+    flight_number = form_data.get("flight_number")
+    airline = form_data.get("airline")
 
     form_data_json = json.dumps(form_data, ensure_ascii=False)
     
@@ -91,11 +80,9 @@ async def get_consignment_notes(
         if query.transport_type == "1":
             # 汽运财务审核
             from app.models.peer_road_manual_data import PeerRoadDepartureManualData
-            query_obj = query_obj.join(
+            query_obj = query_obj.outerjoin(
                 PeerRoadDepartureManualData,
                 PeerRoadDepartureManualData.consignment_note_id == ConsignmentNote.id
-            ).filter(
-                PeerRoadDepartureManualData.audit_status == 2
             )
             if query.financial_audit_status is not None:
                 if query.financial_audit_status == 0:
@@ -110,11 +97,9 @@ async def get_consignment_notes(
         else:
             # 空运财务审核
             from app.models.peer_air_manual_data import PeerAirDepartureManualData
-            query_obj = query_obj.join(
+            query_obj = query_obj.outerjoin(
                 PeerAirDepartureManualData,
                 PeerAirDepartureManualData.consignment_note_id == ConsignmentNote.id
-            ).filter(
-                PeerAirDepartureManualData.audit_status == 2
             )
             if query.financial_audit_status is not None:
                 if query.financial_audit_status == 0:
@@ -326,21 +311,10 @@ async def update_consignment_note(
         raise NotFoundException("托运书不存在")
         
     form_data = payload.form_data
-    consignment_date = None
-    destination = None
-    flight_number = None
-    airline = None
-    
-    if payload.transport_type == "0":
-        if "flight_date" in form_data and form_data["flight_date"]:
-            consignment_date = form_data["flight_date"]
-        destination = form_data.get("destination_station")
-        flight_number = form_data.get("flight_number")
-        airline = form_data.get("airline")
-    else:
-        if "transport_date" in form_data and form_data["transport_date"]:
-            consignment_date = form_data["transport_date"]
-        destination = form_data.get("destination_city")
+    consignment_date = form_data.get("transport_date") or form_data.get("flight_date")
+    destination = form_data.get("destination_city") or form_data.get("destination_station")
+    flight_number = form_data.get("flight_number")
+    airline = form_data.get("airline")
 
     note.transport_type = payload.transport_type
     note.company_name = payload.company_name
@@ -632,10 +606,11 @@ async def financial_audit_consignment_note(
         manual_data = db.query(PeerAirDepartureManualData).filter(
             PeerAirDepartureManualData.consignment_note_id == int(payload.consignment_note_id)
         ).first()
-        
-        # 必须先通过运单审核
-        if not manual_data or manual_data.audit_status != 2:
-            return success_response(code=400, msg="该单据未通过运单审核，无法进行财务审核")
+        if not manual_data:
+            manual_data = PeerAirDepartureManualData(
+                consignment_note_id=int(payload.consignment_note_id)
+            )
+            db.add(manual_data)
             
         if action == "save":
             if manual_data.financial_audit_status == 0 or manual_data.financial_audit_status is None:
@@ -657,9 +632,11 @@ async def financial_audit_consignment_note(
             PeerRoadDepartureManualData.consignment_note_id == int(payload.consignment_note_id)
         ).first()
         
-        # 必须先通过运单审核
-        if not manual_data or manual_data.audit_status != 2:
-            return success_response(code=400, msg="该单据未通过运单审核，无法进行财务审核")
+        if not manual_data:
+            manual_data = PeerRoadDepartureManualData(
+                consignment_note_id=int(payload.consignment_note_id)
+            )
+            db.add(manual_data)
             
         if action == "save":
             if manual_data.financial_audit_status == 0 or manual_data.financial_audit_status is None:
