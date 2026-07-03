@@ -12,6 +12,7 @@ class ShenzhenAirDepartureManualData(Base):
     cargo_type = Column(String(50), comment="货物类型")
     packaging_fee = Column(String(50), comment="包装费")
     telegram_fee = Column(String(50), comment="电报费")
+    telegram_code = Column(String(100), comment="电报号")
     cca = Column(String(50), comment="CCA")
     door_pickup_fee = Column(String(50), comment="上门提货费")
     door_pickup_company = Column(String(255), comment="上门提货单位")
