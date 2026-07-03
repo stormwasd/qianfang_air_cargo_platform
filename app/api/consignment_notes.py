@@ -526,6 +526,7 @@ async def audit_consignment_note(
         manual_data.cargo_type = data.cargo_type
         manual_data.packaging_fee = data.packaging_fee
         manual_data.telegram_fee = data.telegram_fee
+        manual_data.telegram_code = data.telegram_code
         manual_data.cca = data.cca
         manual_data.door_pickup_fee = data.door_pickup_fee
         manual_data.door_pickup_company = data.door_pickup_company
