@@ -936,7 +936,7 @@ async def audit_air_financial(
     target_status = 1 if action == "save" else 2
     fa_data.financial_audit_status = target_status
     fa_data.financial_auditor_id = current_user.id
-    fa_data.financial_auditor_name = current_user.nickname or current_user.username
+    fa_data.financial_auditor_name = current_user.name
     fa_data.financial_audit_time = datetime.now()
 
     db.commit()
