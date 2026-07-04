@@ -69,3 +69,18 @@ async def reset_current_user_password(
     
     return success_response(data=None, msg="密码重置成功")
 
+
+@router.get("/username", summary="获取当前登录用户姓名")
+async def get_current_user_name(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取当前登录用户姓名接口，供前端渲染时获取当前操作的财务人员姓名。
+    """
+    return success_response(data={
+        "username": current_user.name,
+        "name": current_user.name,
+        "phone": current_user.phone
+    })
+
+
