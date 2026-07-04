@@ -3,19 +3,9 @@ CREATE TABLE `air_financial_audit_data` (
   `source_type` varchar(20) NOT NULL COMMENT '来源类型: shenzhen_air / china_southern_air / peer_air',
   `source_id` bigint(20) NOT NULL COMMENT '来源主表ID',
   
-  -- 人工填写字段（应付）
-  `payable_telegraph_cost` varchar(50) DEFAULT NULL COMMENT '电报费/电报成本(应付-人工填写)',
-  `payable_other_fee_remark` varchar(500) DEFAULT NULL COMMENT '其他费用说明(应付-人工填写)',
-  
-  -- 人工填写字段（应收）
-  `receivable_consignee_phone` varchar(100) DEFAULT NULL COMMENT '收货电话(应收-人工填写, 仅同行空运)',
-  `receivable_consignee_unit` varchar(255) DEFAULT NULL COMMENT '收货单位(应收-人工填写, 仅同行空运)',
-  `receivable_other_fee_remark` varchar(500) DEFAULT NULL COMMENT '其他费用说明(应收-人工填写)',
-  `receivable_pickup_fee` varchar(50) DEFAULT NULL COMMENT '上门提货费(应收-人工填写)',
-  `receivable_carrier_deduction` varchar(50) DEFAULT NULL COMMENT '承运扣款(应收-人工填写)',
-  `receivable_pickup_method` varchar(100) DEFAULT NULL COMMENT '提货方式(应收-人工填写)',
-  `receivable_collection_payment` varchar(50) DEFAULT NULL COMMENT '代收货款(应收-人工填写)',
-  `receivable_remark` varchar(500) DEFAULT NULL COMMENT '备注(应收-人工填写)',
+  -- 应收与应付板块的自定义修改覆盖数据JSON
+  `payable_data` json DEFAULT NULL COMMENT '应付修改后的全部数据 JSON',
+  `receivable_data` json DEFAULT NULL COMMENT '应收修改后的全部数据 JSON',
   
   -- 财务审核状态
   `financial_audit_status` int(11) DEFAULT '0' COMMENT '财务审核状态: 0=未审, 1=暂存, 2=已审',

@@ -42,7 +42,6 @@ def safe_float(val: Any) -> float:
     if isinstance(val, (int, float)):
         return float(val)
     try:
-        # 移除非数字字符（保留小数点、负号）
         cleaned = re.sub(r'[^\d\.\-]', '', str(val))
         return float(cleaned) if cleaned else 0.0
     except ValueError:
@@ -66,10 +65,6 @@ def format_decimal(val: float) -> str:
     return f"{val:.2f}"
 
 def parse_csa_qty_weight(billing_qty: str):
-    """
-    解析南航制单数量，格式如 '25 / 236 / 1.41 (0 / 0 / 0)'
-    返回 (pieces_str, weight_str)
-    """
     if not billing_qty:
         return "", ""
     parts = [p.strip() for p in billing_qty.split('/')]
@@ -78,10 +73,6 @@ def parse_csa_qty_weight(billing_qty: str):
     return pieces, weight
 
 def parse_csa_flight_info(flight_info: str):
-    """
-    解析南航航班信息，格式如 'CZ8577 / 2026-06-16 / SZX - WUH'
-    返回 (flight_number, flight_date, origin, destination)
-    """
     if not flight_info:
         return "", "", "", ""
     parts = [p.strip() for p in flight_info.split('/')]
@@ -96,13 +87,8 @@ def parse_csa_flight_info(flight_info: str):
     return flight_number, flight_date, origin, destination
 
 def parse_consignee_phone_name(consignee: str):
-    """
-    提取深航收货人字符串中的电话和收货人名字，如 '高云0755-85273907'
-    返回 (phone, name)
-    """
     if not consignee:
         return "", ""
-    # 查找末尾的电话号码/手机号格式
     match = re.search(r'([0-9\-+]{7,20})$', consignee.strip())
     if match:
         phone = match.group(1)
@@ -111,7 +97,6 @@ def parse_consignee_phone_name(consignee: str):
     return "", consignee
 
 def get_customer_transit_rate(customer: Optional[Customer], cargo_type: str) -> float:
-    """从客户的 JSON 费率配置中寻找对应货物类型的过站费率"""
     if not customer or not cargo_type:
         return 0.0
     rates = customer.cargo_type_transit_fee_rate
@@ -137,15 +122,10 @@ async def get_air_financial_audits(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    """
-    统一查询深航、南航、同行空运的财务单据审核列表，并按照航班日期降序排序、分页返回。
-    """
-    # 代理名称过滤限制：如果传了代理名称，直接限制只查同行空运，深航/南航直接不查询
     query_shenzhen = not bool(query.agent_name)
     query_southern = not bool(query.agent_name)
     query_peer = True
 
-    # 如果指定了航司类型
     if query.airline_type:
         if query.airline_type == "shenzhen_air":
             query_southern = False
@@ -157,15 +137,11 @@ async def get_air_financial_audits(
             query_shenzhen = False
             query_southern = False
         else:
-            # 未知的航司类型
             query_shenzhen = False
             query_southern = False
             query_peer = False
 
-    # 存储三个渠道返回的候选项目 (基本属性，用于排序分页)
     candidate_items = []
-
-    # 1. 提取公共筛选
     waybill_list = [w.strip() for w in query.waybill_number.split(',') if w.strip()] if query.waybill_number else []
 
     # ================= 1.1 查询深航 =================
@@ -185,7 +161,6 @@ async def get_air_financial_audits(
             )
         )
 
-        # 运单号过滤
         if waybill_list:
             or_filters = []
             for wb in waybill_list:
@@ -201,35 +176,29 @@ async def get_air_financial_audits(
                     or_filters.append(ShenzhenAirBookingExport.waybill_number == wb)
             sz_q = sz_q.filter(or_(*or_filters))
 
-        # 航班日期过滤
         if query.flight_date_start:
             sz_q = sz_q.filter(func.replace(ShenzhenAirBookingExport.flight_date, '/', '-') >= str(query.flight_date_start))
         if query.flight_date_end:
             sz_q = sz_q.filter(func.replace(ShenzhenAirBookingExport.flight_date, '/', '-') <= str(query.flight_date_end))
 
-        # 目的站过滤
         if query.destination:
             sz_q = sz_q.filter(ShenzhenAirBookingExport.routing.like(f"%{query.destination}%"))
 
-        # 航班号过滤
         if query.flight_number:
             sz_q = sz_q.filter(ShenzhenAirBookingExport.billing_flight.like(f"%{query.flight_number}%"))
 
-        # 业务审核状态
         if query.audit_status is not None:
             if query.audit_status == 0:
                 sz_q = sz_q.filter(or_(ShenzhenAirDepartureManualData.audit_status == 0, ShenzhenAirDepartureManualData.audit_status.is_(None)))
             else:
                 sz_q = sz_q.filter(ShenzhenAirDepartureManualData.audit_status == query.audit_status)
 
-        # 财务审核状态
         if query.financial_audit_status is not None:
             if query.financial_audit_status == 0:
                 sz_q = sz_q.filter(or_(AirFinancialAuditData.financial_audit_status == 0, AirFinancialAuditData.financial_audit_status.is_(None)))
             else:
                 sz_q = sz_q.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
 
-        # 电报状态过滤
         if query.telegram_status:
             if query.telegram_status == "有电报":
                 sz_q = sz_q.filter(
@@ -246,19 +215,16 @@ async def get_air_financial_audits(
                     )
                 )
 
-        # CCA状态过滤
         if query.cca_status:
             if query.cca_status == "有CCA":
                 sz_q = sz_q.filter(and_(ShenzhenAirDepartureManualData.cca != None, ShenzhenAirDepartureManualData.cca != ""))
             elif query.cca_status == "无CCA":
                 sz_q = sz_q.filter(or_(ShenzhenAirDepartureManualData.cca == None, ShenzhenAirDepartureManualData.cca == ""))
 
-        # 提取候选
         for export, md, fa in sz_q.all():
             f_date = safe_str(export.flight_date).replace('/', '-')
             waybill_full = f"{safe_str(export.prefix)}-{safe_str(export.waybill_number)}" if export.prefix else safe_str(export.waybill_number)
             
-            # 解析路由起终点
             routing = safe_str(export.routing)
             origin, dest = "", ""
             if '-' in routing:
@@ -284,7 +250,6 @@ async def get_air_financial_audits(
                 "billing_weight": safe_str(export.weight),
                 "creator": safe_str(export.creator),
                 "creation_time": safe_str(export.creation_time),
-                # 附带的db对象，方便直接使用，避免二次查库
                 "_main": export,
                 "_md": md,
                 "_fa": fa
@@ -307,40 +272,27 @@ async def get_air_financial_audits(
             )
         )
 
-        # 运单号过滤
         if waybill_list:
             csa_q = csa_q.filter(ChinaSouthernAirApprovalData.waybill_number.in_(waybill_list))
 
-        # 航班信息字段关联的日期范围过滤
-        if query.flight_date_start or query.flight_date_end:
-            # 正常南航结构 CZ8577 / 2026-06-16 / SZX - WUH，需要用到 like 或者 trim 提取
-            # 由于不能直接用 substring_index 在不同数据库上做无缝兼容，这里用 like '%YYYY-MM-DD%' 批量匹配，或加载到内存过滤
-            # 为了确保查询稳妥，我们在 python 过滤或者使用 DB 的 substring_index
-            pass # 后面用 python 内存过滤
-
-        # 目的站过滤
         if query.destination:
             csa_q = csa_q.filter(ChinaSouthernAirApprovalData.flight_info.like(f"%{query.destination}%"))
 
-        # 航班号过滤
         if query.flight_number:
             csa_q = csa_q.filter(ChinaSouthernAirApprovalData.flight_info.like(f"%{query.flight_number}%"))
 
-        # 业务审核状态
         if query.audit_status is not None:
             if query.audit_status == 0:
                 csa_q = csa_q.filter(or_(CsaDepartureManualData.audit_status == 0, CsaDepartureManualData.audit_status.is_(None)))
             else:
                 csa_q = csa_q.filter(CsaDepartureManualData.audit_status == query.audit_status)
 
-        # 财务审核状态
         if query.financial_audit_status is not None:
             if query.financial_audit_status == 0:
                 csa_q = csa_q.filter(or_(AirFinancialAuditData.financial_audit_status == 0, AirFinancialAuditData.financial_audit_status.is_(None)))
             else:
                 csa_q = csa_q.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
 
-        # 电报状态过滤
         if query.telegram_status:
             if query.telegram_status == "有电报":
                 csa_q = csa_q.filter(
@@ -357,18 +309,15 @@ async def get_air_financial_audits(
                     )
                 )
 
-        # CCA状态过滤
         if query.cca_status:
             if query.cca_status == "有CCA":
                 csa_q = csa_q.filter(and_(CsaDepartureManualData.cca != None, CsaDepartureManualData.cca != ""))
             elif query.cca_status == "无CCA":
                 csa_q = csa_q.filter(or_(CsaDepartureManualData.cca == None, CsaDepartureManualData.cca == ""))
 
-        # 提取候选
         for approval, md, fa in csa_q.all():
             fl_num, fl_date, orig, dest = parse_csa_flight_info(approval.flight_info)
             
-            # 日期内存过滤
             if query.flight_date_start and fl_date < str(query.flight_date_start):
                 continue
             if query.flight_date_end and fl_date > str(query.flight_date_end):
@@ -418,43 +367,35 @@ async def get_air_financial_audits(
             ConsignmentNote.transport_type == "0"
         )
 
-        # 运单号过滤
         if waybill_list:
             peer_q = peer_q.filter(PeerAirDepartureManualData.waybill_number.in_(waybill_list))
 
-        # 航班日期过滤
         if query.flight_date_start:
             peer_q = peer_q.filter(ConsignmentNote.consignment_date >= query.flight_date_start)
         if query.flight_date_end:
             peer_q = peer_q.filter(ConsignmentNote.consignment_date <= query.flight_date_end)
 
-        # 代理名称模糊匹配
         if query.agent_name:
             peer_q = peer_q.filter(ConsignmentNote.company_name.like(f"%{query.agent_name}%"))
 
-        # 目的站过滤
         if query.destination:
             peer_q = peer_q.filter(ConsignmentNote.destination.like(f"%{query.destination}%"))
 
-        # 航班号过滤
         if query.flight_number:
             peer_q = peer_q.filter(ConsignmentNote.flight_number.like(f"%{query.flight_number}%"))
 
-        # 业务审核状态
         if query.audit_status is not None:
             if query.audit_status == 0:
                 peer_q = peer_q.filter(or_(PeerAirDepartureManualData.audit_status == 0, PeerAirDepartureManualData.audit_status.is_(None)))
             else:
                 peer_q = peer_q.filter(PeerAirDepartureManualData.audit_status == query.audit_status)
 
-        # 财务审核状态
         if query.financial_audit_status is not None:
             if query.financial_audit_status == 0:
                 peer_q = peer_q.filter(or_(AirFinancialAuditData.financial_audit_status == 0, AirFinancialAuditData.financial_audit_status.is_(None)))
             else:
                 peer_q = peer_q.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
 
-        # 电报状态过滤
         if query.telegram_status:
             if query.telegram_status == "有电报":
                 peer_q = peer_q.filter(
@@ -471,18 +412,15 @@ async def get_air_financial_audits(
                     )
                 )
 
-        # CCA状态过滤
         if query.cca_status:
             if query.cca_status == "有CCA":
                 peer_q = peer_q.filter(and_(PeerAirDepartureManualData.cca != None, PeerAirDepartureManualData.cca != ""))
             elif query.cca_status == "无CCA":
                 peer_q = peer_q.filter(or_(PeerAirDepartureManualData.cca == None, PeerAirDepartureManualData.cca == ""))
 
-        # 提取候选
         for note, md, fa in peer_q.all():
             f_date = note.consignment_date.isoformat() if note.consignment_date else ""
             
-            # 解析 form_data 为 dict
             form_dict = {}
             if note.form_data:
                 try:
@@ -514,23 +452,17 @@ async def get_air_financial_audits(
                 "_fa": fa
             })
 
-    # ================= 2. 内存全局排序 (按航班日期降序，若日期相同，按主表主键降序) =================
+    # ================= 2. 内存全局排序 =================
     candidate_items.sort(key=lambda x: (x["flight_date"] or "", x["source_id"]), reverse=True)
-
-    # 3. 统计总数
     total = len(candidate_items)
 
-    # 4. 执行内存分页切片
     offset = (query.page - 1) * query.pageSize
     paged_items = candidate_items[offset : offset + query.pageSize]
 
-    # ================= 5. 为本页切片数据批量提取/组装详细子表与财务数据 =================
-    
-    # 5.1 加载过站费用计算依赖的客户费率映射字典
+    # ================= 3. 批量提取/组装本页详细数据 =================
     customers = db.query(Customer).all()
     customer_map = {c.company_name: c for c in customers if c.company_name}
 
-    # 5.2 提取本页所有的运单号、审批表ID以批量查询子项 (避免N+1查询)
     sz_waybill_8s = []
     csa_approval_ids = []
     csa_waybills = []
@@ -545,7 +477,6 @@ async def get_air_financial_audits(
             if item["waybill_number"]:
                 csa_waybills.append(item["waybill_number"])
 
-    # 批量拉取深航的集装器数据
     sz_containers_map = {}
     if sz_waybill_8s:
         containers = db.query(ShenzhenAirBillingTimeContainer).filter(
@@ -554,7 +485,6 @@ async def get_air_financial_audits(
         for cont in containers:
             sz_containers_map.setdefault(cont.waybill_number_8, []).append(cont)
 
-    # 批量拉取南航的 Lalamove 数据
     csa_lalamoves_map = {}
     if csa_approval_ids:
         lalamoves = db.query(CsaLalamoveInformation).filter(
@@ -563,14 +493,12 @@ async def get_air_financial_audits(
         for lm in lalamoves:
             csa_lalamoves_map.setdefault(lm.approval_data_id, []).append(lm)
 
-    # 批量拉取南航匹配的运单 Waybill 数据
     csa_waybill_map = {}
     if csa_waybills:
         wb_records = db.query(Waybill).filter(Waybill.waybill_number.in_(csa_waybills)).all()
         for wb in wb_records:
             csa_waybill_map[wb.waybill_number] = wb
 
-    # 5.3 迭代组装每个结果项
     result_items = []
     for item in paged_items:
         source_type = item["source_type"]
@@ -579,34 +507,29 @@ async def get_air_financial_audits(
         cust_name = item["customer_name"]
         customer = customer_map.get(cust_name)
 
-        # 预定义应付、应收结构
-        payable_data = {}
-        receivable_data = {}
+        payable_data = None
+        receivable_data = None
 
         if source_type == "shenzhen_air":
             export = item["_main"]
-            # 取深航相关的子表 pieces/weight
             wb_8 = export.waybill_number[-8:] if export.waybill_number and len(export.waybill_number) >= 8 else ""
             related_conts = sz_containers_map.get(wb_8, [])
             
             gate_pieces_val = sum(safe_int(c.quantity) for c in related_conts)
             transit_weight_val = sum(safe_float(c.weight) for c in related_conts)
             
-            # 过站费率与费用
             cargo_type = md.cargo_type if md else ""
             transit_rate = get_customer_transit_rate(customer, cargo_type)
             transit_fee_val = transit_weight_val * transit_rate
 
-            # 电报成本：优先人工录入，无则使用 md 中的电报费
-            telegraph_cost_val = fa.payable_telegraph_cost if (fa and fa.payable_telegraph_cost is not None) else (md.telegram_fee if md else "")
+            telegraph_cost_val = md.telegram_fee if md else ""
 
-            # 成本合计 (air_freight + fuel_surcharge + transit_fee + cca + packaging_fee + other_fees + door_pickup_fee + airport_pickup_fee + delivery_cost)
             cca_cost = safe_float(md.cca if md else 0.0)
             pack_fee = safe_float(md.packaging_fee if md else 0.0)
             oth_fee = safe_float(md.other_fees if md else 0.0)
             door_fee = safe_float(md.door_pickup_fee if md else 0.0)
             airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
-            delivery_cost = safe_float(md.airport_pickup_fee if md else 0.0) # 深航派送成本对应 airport_pickup_fee
+            delivery_cost = safe_float(md.airport_pickup_fee if md else 0.0)
 
             total_cost_val = (
                 safe_float(export.air_freight) +
@@ -636,7 +559,7 @@ async def get_air_financial_audits(
                 telegraph_cost=safe_str(telegraph_cost_val),
                 packaging_fee=safe_str(md.packaging_fee if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
-                other_fee_remark=safe_str(fa.payable_other_fee_remark if fa else ""),
+                other_fee_remark="",
                 door_pickup_company=safe_str(md.door_pickup_company if md else ""),
                 door_pickup_fee=safe_str(md.door_pickup_fee if md else ""),
                 delivery_company=safe_str(md.delivery_company if md else ""),
@@ -645,32 +568,18 @@ async def get_air_financial_audits(
                 total_cost=format_decimal(total_cost_val)
             )
 
-            # 应收板块组装
             consignee_phone, consignee_name = parse_consignee_phone_name(export.consignee)
-            
-            # 收货人与收货电话：若是手工表中填写过则优先使用，但由于深航目前不开放人工修改电话，所以还是直接取解析值
-            phone_final = consignee_phone
-            consignee_final = consignee_name
-
-            # 运费
             receivable_freight = safe_float(export.chargeable_weight) * safe_float(export.freight_rate)
 
-            # 应收中的提货方式、代收货款、上门提货费、承运扣款等：使用财务扩展表
-            carrier_deduction_val = fa.receivable_carrier_deduction if (fa and fa.receivable_carrier_deduction is not None) else (md.carrier_deduction if md else "")
-            door_pickup_fee_val = fa.receivable_pickup_fee if (fa and fa.receivable_pickup_fee is not None) else (md.door_pickup_fee if md else "")
-            pickup_method_val = fa.receivable_pickup_method if (fa and fa.receivable_pickup_method is not None) else ""
-            collection_val = fa.receivable_collection_payment if (fa and fa.receivable_collection_payment is not None) else ""
-
-            # 应收总金额合计
             total_amount_val = (
                 safe_float(md.telegram_fee if md else 0.0) +
                 safe_float(md.airport_pickup_fee if md else 0.0) +
                 safe_float(md.packaging_fee if md else 0.0) +
-                safe_float(door_pickup_fee_val) +
+                safe_float(md.door_pickup_fee if md else 0.0) +
                 receivable_freight +
                 safe_float(md.cca if md else 0.0) +
                 safe_float(md.other_fees if md else 0.0) +
-                safe_float(md.airport_pickup_fee if md else 0.0) # 派送费对应 airport_pickup_fee
+                safe_float(md.airport_pickup_fee if md else 0.0)
             )
 
             gross_profit_val = total_amount_val - total_cost_val
@@ -678,7 +587,7 @@ async def get_air_financial_audits(
             receivable_data = ReceivableResponse(
                 flight_date=item["flight_date"],
                 customer_name=cust_name,
-                consignee_phone=phone_final,
+                consignee_phone=consignee_phone,
                 origin=item["origin"],
                 airline=item["airline"],
                 flight_number=item["flight_number"],
@@ -690,48 +599,44 @@ async def get_air_financial_audits(
                 packaging_fee=safe_str(md.packaging_fee if md else ""),
                 telegram_fee=safe_str(md.telegram_fee if md else ""),
                 telegram_code=safe_str(md.telegram_code if md else ""),
-                other_fee_remark=safe_str(fa.receivable_other_fee_remark if fa else ""),
-                door_pickup_fee=format_decimal(safe_float(door_pickup_fee_val)),
+                other_fee_remark="",
+                door_pickup_fee=safe_str(md.door_pickup_fee if md else ""),
                 airport_pickup_fee=safe_str(md.airport_pickup_fee if md else ""),
-                carrier_deduction=safe_str(carrier_deduction_val),
+                carrier_deduction=safe_str(md.carrier_deduction if md else ""),
                 total_amount=format_decimal(total_amount_val),
                 payment_method="",
-                consignee=consignee_final,
+                consignee=consignee_name,
                 destination=item["destination"],
-                pickup_method=pickup_method_val,
+                pickup_method="",
                 weight=safe_str(export.chargeable_weight),
                 freight=format_decimal(receivable_freight),
                 cca=safe_str(md.cca if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
-                delivery_fee=safe_str(md.airport_pickup_fee if md else ""), # 派送费
-                collection_payment=collection_val,
-                remark=safe_str(fa.receivable_remark if fa else ""),
+                delivery_fee=safe_str(md.airport_pickup_fee if md else ""),
+                collection_payment="",
+                remark="",
                 gross_profit=format_decimal(gross_profit_val)
             )
 
         elif source_type == "china_southern_air":
             approval = item["_main"]
-            # 取南航相关的子表 pieces/weight
             related_lms = csa_lalamoves_map.get(approval.id, [])
             
             gate_pieces_val = sum(safe_int(l.pieces) for l in related_lms)
             transit_weight_val = sum(safe_float(l.weight) for l in related_lms)
             
-            # 过站费率与费用
             cargo_type = md.cargo_type if md else ""
             transit_rate = get_customer_transit_rate(customer, cargo_type)
             transit_fee_val = transit_weight_val * transit_rate
 
-            # 电报成本：优先人工，无则使用 md 中的电报费
-            telegraph_cost_val = fa.payable_telegraph_cost if (fa and fa.payable_telegraph_cost is not None) else (md.telegram_fee if md else "")
+            telegraph_cost_val = md.telegram_fee if md else ""
 
-            # 成本合计
             cca_cost = safe_float(md.cca if md else 0.0)
             pack_fee = safe_float(md.packaging_fee if md else 0.0)
             oth_fee = safe_float(md.other_fees if md else 0.0)
             door_fee = safe_float(md.door_pickup_fee if md else 0.0)
             airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
-            delivery_cost = safe_float(md.airport_pickup_fee if md else 0.0) # 南航派送成本对应 airport_pickup_fee
+            delivery_cost = safe_float(md.airport_pickup_fee if md else 0.0)
 
             total_cost_val = (
                 safe_float(approval.ref_freight) +
@@ -760,7 +665,7 @@ async def get_air_financial_audits(
                 telegraph_cost=safe_str(telegraph_cost_val),
                 packaging_fee=safe_str(md.packaging_fee if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
-                other_fee_remark=safe_str(fa.payable_other_fee_remark if fa else ""),
+                other_fee_remark="",
                 door_pickup_company=safe_str(md.door_pickup_company if md else ""),
                 door_pickup_fee=safe_str(md.door_pickup_fee if md else ""),
                 delivery_company=safe_str(md.delivery_company if md else ""),
@@ -769,7 +674,6 @@ async def get_air_financial_audits(
                 total_cost=format_decimal(total_cost_val)
             )
 
-            # 获取南航运单中的收货人信息
             wb_phone = ""
             wb_consignee = ""
             if approval.waybill_number and approval.waybill_number in csa_waybill_map:
@@ -782,25 +686,17 @@ async def get_air_financial_audits(
                     except Exception:
                         pass
 
-            # 运费
             receivable_freight = safe_float(approval.chargeable_weight) * safe_float(approval.ref_rate)
 
-            # 应收中的提货方式、代收货款、上门提货费、承运扣款等：使用财务扩展表
-            carrier_deduction_val = fa.receivable_carrier_deduction if (fa and fa.receivable_carrier_deduction is not None) else (md.carrier_deduction if md else "")
-            door_pickup_fee_val = fa.receivable_pickup_fee if (fa and fa.receivable_pickup_fee is not None) else (md.door_pickup_fee if md else "")
-            pickup_method_val = fa.receivable_pickup_method if (fa and fa.receivable_pickup_method is not None) else ""
-            collection_val = fa.receivable_collection_payment if (fa and fa.receivable_collection_payment is not None) else ""
-
-            # 应收总金额合计
             total_amount_val = (
                 safe_float(md.telegram_fee if md else 0.0) +
                 safe_float(md.airport_pickup_fee if md else 0.0) +
                 safe_float(md.packaging_fee if md else 0.0) +
-                safe_float(door_pickup_fee_val) +
+                safe_float(md.door_pickup_fee if md else 0.0) +
                 receivable_freight +
                 safe_float(md.cca if md else 0.0) +
                 safe_float(md.other_fees if md else 0.0) +
-                safe_float(md.airport_pickup_fee if md else 0.0) # 派送费对应 airport_pickup_fee
+                safe_float(md.airport_pickup_fee if md else 0.0)
             )
 
             gross_profit_val = total_amount_val - total_cost_val
@@ -820,22 +716,22 @@ async def get_air_financial_audits(
                 packaging_fee=safe_str(md.packaging_fee if md else ""),
                 telegram_fee=safe_str(md.telegram_fee if md else ""),
                 telegram_code=safe_str(md.telegram_code if md else ""),
-                other_fee_remark=safe_str(fa.receivable_other_fee_remark if fa else ""),
-                door_pickup_fee=format_decimal(safe_float(door_pickup_fee_val)),
+                other_fee_remark="",
+                door_pickup_fee=safe_str(md.door_pickup_fee if md else ""),
                 airport_pickup_fee=safe_str(md.airport_pickup_fee if md else ""),
-                carrier_deduction=safe_str(carrier_deduction_val),
+                carrier_deduction=safe_str(md.carrier_deduction if md else ""),
                 total_amount=format_decimal(total_amount_val),
                 payment_method="",
                 consignee=wb_consignee,
                 destination=item["destination"],
-                pickup_method=pickup_method_val,
+                pickup_method="",
                 weight=safe_str(approval.chargeable_weight),
                 freight=format_decimal(receivable_freight),
                 cca=safe_str(md.cca if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
                 delivery_fee=safe_str(md.airport_pickup_fee if md else ""),
-                collection_payment=collection_val,
-                remark=safe_str(fa.receivable_remark if fa else ""),
+                collection_payment="",
+                remark="",
                 gross_profit=format_decimal(gross_profit_val)
             )
 
@@ -843,20 +739,17 @@ async def get_air_financial_audits(
             note = item["_main"]
             form_dict = item["_form_dict"]
 
-            # 同行空运没有过机件数与过站重量，为空
             gate_pieces_val = ""
             transit_fee_val = 0.0
 
-            # 电报成本：优先人工，无则使用 md 中的电报费
-            telegraph_cost_val = fa.payable_telegraph_cost if (fa and fa.payable_telegraph_cost is not None) else (md.telegram_fee if md else "")
+            telegraph_cost_val = md.telegram_fee if md else ""
 
-            # 成本合计
             cca_cost = safe_float(md.cca if md else 0.0)
             pack_fee = safe_float(md.packaging_fee if md else 0.0)
             oth_fee = safe_float(md.other_fees if md else 0.0)
             door_fee = safe_float(md.door_pickup_fee if md else 0.0)
             airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
-            delivery_cost = safe_float(md.airport_pickup_fee if md else 0.0) # 派送成本对应 airport_pickup_fee
+            delivery_cost = safe_float(md.airport_pickup_fee if md else 0.0)
 
             total_cost_val = (
                 safe_float(form_dict.get("air_freight", 0.0)) +
@@ -884,7 +777,7 @@ async def get_air_financial_audits(
                 telegraph_cost=safe_str(telegraph_cost_val),
                 packaging_fee=safe_str(md.packaging_fee if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
-                other_fee_remark=safe_str(fa.payable_other_fee_remark if fa else ""),
+                other_fee_remark="",
                 door_pickup_company=safe_str(md.door_pickup_company if md else ""),
                 door_pickup_fee=safe_str(md.door_pickup_fee if md else ""),
                 delivery_company=safe_str(md.delivery_company if md else ""),
@@ -893,27 +786,17 @@ async def get_air_financial_audits(
                 total_cost=format_decimal(total_cost_val)
             )
 
-            # 运费
             receivable_freight = safe_float(form_dict.get("chargeable_weight", 0.0)) * safe_float(form_dict.get("rate", 0.0))
 
-            # 应收中的提货方式、代收货款、上门提货费、承运扣款、收货电话、收货单位等：使用财务扩展表
-            carrier_deduction_val = fa.receivable_carrier_deduction if (fa and fa.receivable_carrier_deduction is not None) else (md.carrier_deduction if md else "")
-            door_pickup_fee_val = fa.receivable_pickup_fee if (fa and fa.receivable_pickup_fee is not None) else (md.door_pickup_fee if md else "")
-            pickup_method_val = fa.receivable_pickup_method if (fa and fa.receivable_pickup_method is not None) else ""
-            collection_val = fa.receivable_collection_payment if (fa and fa.receivable_collection_payment is not None) else ""
-            consignee_phone_val = fa.receivable_consignee_phone if (fa and fa.receivable_consignee_phone is not None) else ""
-            consignee_unit_val = fa.receivable_consignee_unit if (fa and fa.receivable_consignee_unit is not None) else ""
-
-            # 应收总金额合计
             total_amount_val = (
                 safe_float(md.telegram_fee if md else 0.0) +
                 safe_float(md.airport_pickup_fee if md else 0.0) +
                 safe_float(md.packaging_fee if md else 0.0) +
-                safe_float(door_pickup_fee_val) +
+                safe_float(md.door_pickup_fee if md else 0.0) +
                 receivable_freight +
                 safe_float(md.cca if md else 0.0) +
                 safe_float(md.other_fees if md else 0.0) +
-                safe_float(md.airport_pickup_fee if md else 0.0) # 派送费对应 airport_pickup_fee
+                safe_float(md.airport_pickup_fee if md else 0.0)
             )
 
             gross_profit_val = total_amount_val - total_cost_val
@@ -921,7 +804,7 @@ async def get_air_financial_audits(
             receivable_data = ReceivableResponse(
                 flight_date=item["flight_date"],
                 customer_name=cust_name,
-                consignee_phone=consignee_phone_val,
+                consignee_phone="",
                 origin=item["origin"],
                 airline=item["airline"],
                 flight_number=item["flight_number"],
@@ -933,26 +816,52 @@ async def get_air_financial_audits(
                 packaging_fee=safe_str(md.packaging_fee if md else ""),
                 telegram_fee=safe_str(md.telegram_fee if md else ""),
                 telegram_code=safe_str(md.telegram_code if md else ""),
-                other_fee_remark=safe_str(fa.receivable_other_fee_remark if fa else ""),
-                door_pickup_fee=format_decimal(safe_float(door_pickup_fee_val)),
+                other_fee_remark="",
+                door_pickup_fee=safe_str(md.door_pickup_fee if md else ""),
                 airport_pickup_fee=safe_str(md.airport_pickup_fee if md else ""),
-                carrier_deduction=safe_str(carrier_deduction_val),
+                carrier_deduction=safe_str(md.carrier_deduction if md else ""),
                 total_amount=format_decimal(total_amount_val),
                 payment_method="",
-                consignee=consignee_unit_val,
+                consignee="",
                 destination=item["destination"],
-                pickup_method=pickup_method_val,
+                pickup_method="",
                 weight=safe_str(form_dict.get("chargeable_weight", "")),
                 freight=format_decimal(receivable_freight),
                 cca=safe_str(md.cca if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
                 delivery_fee=safe_str(md.airport_pickup_fee if md else ""),
-                collection_payment=collection_val,
-                remark=safe_str(fa.receivable_remark if fa else ""),
+                collection_payment="",
+                remark="",
                 gross_profit=format_decimal(gross_profit_val)
             )
 
-        # 组装完整的项目并加入列表
+        # ================= 4. 合并财务人工自定义覆盖的应付应收 JSON 数据 =================
+        payable_dict = payable_data.model_dump()
+        if fa and fa.payable_data:
+            p_override = fa.payable_data
+            if isinstance(p_override, str):
+                try:
+                    p_override = json.loads(p_override)
+                except Exception:
+                    p_override = {}
+            if isinstance(p_override, dict):
+                payable_dict.update({k: str(v) for k, v in p_override.items() if v is not None})
+        
+        payable_res = PayableResponse(**payable_dict)
+
+        receivable_dict = receivable_data.model_dump()
+        if fa and fa.receivable_data:
+            r_override = fa.receivable_data
+            if isinstance(r_override, str):
+                try:
+                    r_override = json.loads(r_override)
+                except Exception:
+                    r_override = {}
+            if isinstance(r_override, dict):
+                receivable_dict.update({k: str(v) for k, v in r_override.items() if v is not None})
+
+        receivable_res = ReceivableResponse(**receivable_dict)
+
         result_items.append(AirFinancialAuditItemResponse(
             source_type=source_type,
             source_id=item["source_id"],
@@ -971,8 +880,8 @@ async def get_air_financial_audits(
             billing_weight=item["billing_weight"],
             creator=item["creator"],
             creation_time=item["creation_time"],
-            payable=payable_data,
-            receivable=receivable_data
+            payable=payable_res,
+            receivable=receivable_res
         ))
 
     return success_response(data={
@@ -988,19 +897,12 @@ async def audit_air_financial(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    """
-    空运财务审核提交或暂存接口。
-    - action == 'save': 状态更新为 1 (暂存)
-    - action == 'submit': 状态更新为 2 (已审核)
-    并将人工填写的电报费、其他费用、上门提货、派送、承运扣款等字段持久化保存。
-    """
     if action not in ["save", "submit"]:
         raise HTTPException(status_code=400, detail="Invalid action. Must be 'save' or 'submit'")
 
     source_type = req.source_type
     source_id = int(req.source_id)
 
-    # 1. 验证对应的源主表是否存在
     if source_type == "shenzhen_air":
         exists = db.query(ShenzhenAirBookingExport.id).filter(ShenzhenAirBookingExport.id == source_id).first()
     elif source_type == "china_southern_air":
@@ -1013,7 +915,6 @@ async def audit_air_financial(
     if not exists:
         raise HTTPException(status_code=404, detail="Source record not found")
 
-    # 2. 查询现有的财务扩展表数据，没有则新建
     fa_data = db.query(AirFinancialAuditData).filter(
         AirFinancialAuditData.source_type == source_type,
         AirFinancialAuditData.source_id == source_id
@@ -1026,22 +927,12 @@ async def audit_air_financial(
         )
         db.add(fa_data)
 
-    # 3. 更新人工填写字段
-    # 应付
-    fa_data.payable_telegraph_cost = req.payable_telegraph_cost
-    fa_data.payable_other_fee_remark = req.payable_other_fee_remark
-    
-    # 应收
-    fa_data.receivable_consignee_phone = req.receivable_consignee_phone
-    fa_data.receivable_consignee_unit = req.receivable_consignee_unit
-    fa_data.receivable_other_fee_remark = req.receivable_other_fee_remark
-    fa_data.receivable_pickup_fee = req.receivable_pickup_fee
-    fa_data.receivable_carrier_deduction = req.receivable_carrier_deduction
-    fa_data.receivable_pickup_method = req.receivable_pickup_method
-    fa_data.receivable_collection_payment = req.receivable_collection_payment
-    fa_data.receivable_remark = req.receivable_remark
+    # 支持对整个 payable & receivable 中传递的字段全部进行序列化并作为 JSON 保存到数据库中
+    if req.payable is not None:
+        fa_data.payable_data = req.payable.model_dump()
+    if req.receivable is not None:
+        fa_data.receivable_data = req.receivable.model_dump()
 
-    # 4. 根据动作设置审核状态与审核人信息
     target_status = 1 if action == "save" else 2
     fa_data.financial_audit_status = target_status
     fa_data.financial_auditor_id = current_user.id

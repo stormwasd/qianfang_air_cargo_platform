@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, BigInteger, DateTime, Integer
+from sqlalchemy import Column, String, BigInteger, DateTime, Integer, JSON
 from app.database import Base
 from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
@@ -11,19 +11,9 @@ class AirFinancialAuditData(Base):
     source_type = Column(String(50), nullable=False, index=True, comment="来源类型: shenzhen_air / china_southern_air / peer_air")
     source_id = Column(BigInteger, nullable=False, index=True, comment="来源主表ID")
 
-    # 人工填写字段（应付）
-    payable_telegraph_cost = Column(String(50), nullable=True, comment="电报费/电报成本(应付-人工填写)")
-    payable_other_fee_remark = Column(String(500), nullable=True, comment="其他费用说明(应付-人工填写)")
-
-    # 人工填写字段（应收）
-    receivable_consignee_phone = Column(String(100), nullable=True, comment="收货电话(应收-人工填写, 仅同行空运)")
-    receivable_consignee_unit = Column(String(255), nullable=True, comment="收货单位(应收-人工填写, 仅同行空运)")
-    receivable_other_fee_remark = Column(String(500), nullable=True, comment="其他费用说明(应收-人工填写)")
-    receivable_pickup_fee = Column(String(50), nullable=True, comment="上门提货费(应收-人工填写)")
-    receivable_carrier_deduction = Column(String(50), nullable=True, comment="承运扣款(应收-人工填写)")
-    receivable_pickup_method = Column(String(100), nullable=True, comment="提货方式(应收-人工填写)")
-    receivable_collection_payment = Column(String(50), nullable=True, comment="代收货款(应收-人工填写)")
-    receivable_remark = Column(String(500), nullable=True, comment="备注(应收-人工填写)")
+    # 应收与应付板块的整表自定义覆盖数据JSON，支持全部字段修改保存
+    payable_data = Column(JSON, nullable=True, comment="应付修改后的全部数据 JSON")
+    receivable_data = Column(JSON, nullable=True, comment="应收修改后的全部数据 JSON")
 
     # 财务审核状态
     financial_audit_status = Column(Integer, default=0, index=True, comment="财务审核状态: 0=未审, 1=暂存, 2=已审")
