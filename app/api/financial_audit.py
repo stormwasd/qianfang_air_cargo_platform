@@ -30,8 +30,18 @@ from app.schemas.financial_audit import (
     AirFinancialAuditCreateRequest,
     AirFinancialAuditItemResponse,
     PayableResponse,
-    ReceivableResponse
+    ReceivableResponse,
+    ExtraData
 )
+from app.utils.airport_code_mapper import get_city_name_by_code
+from app.utils.pickup_phone_mapper import pickup_phone_mapper
+
+SETTLEMENT_CYCLE_MAP = {
+    1: "周结",
+    2: "半月结",
+    3: "月结",
+    4: "现结"
+}
 
 router = APIRouter()
 
@@ -540,6 +550,7 @@ async def get_air_financial_audits(
     # ================= 3. 批量提取/组装本页详细数据 =================
     customers = db.query(Customer).all()
     customer_map = {c.company_name: c for c in customers if c.company_name}
+    customer_id_map = {str(c.id): c for c in customers}
 
     sz_waybill_8s = []
     csa_approval_ids = []
@@ -601,7 +612,32 @@ async def get_air_financial_audits(
                     recv_raw = {}
 
             payable_res = PayableResponse(**{k: (str(v) if v is not None else None) for k, v in pay_raw.items() if k in PayableResponse.model_fields})
-            receivable_res = ReceivableResponse(**{k: (str(v) if v is not None else None) for k, v in recv_raw.items() if k in ReceivableResponse.model_fields})
+            receivable_dict = {k: (str(v) if v is not None else None) for k, v in recv_raw.items() if k in ReceivableResponse.model_fields}
+            
+            customer_name_raw = str(item.get("customer_name") or "").strip()
+            if customer_name_raw in customer_id_map:
+                cust = customer_id_map[customer_name_raw]
+                cycle_str = SETTLEMENT_CYCLE_MAP.get(cust.settlement_cycle, "") if cust.settlement_cycle else ""
+                receivable_dict["payment_method"] = cycle_str
+            elif not customer_name_raw.isdigit():
+                receivable_dict["payment_method"] = ""
+
+            receivable_res = ReceivableResponse(**receivable_dict)
+
+            dest_code = item.get("destination", "")
+            dest_name = get_city_name_by_code(dest_code)
+            
+            airline = item.get("airline", "")
+            if airline == "深航":
+                phone = pickup_phone_mapper.get_shenzhen_air_phone(dest_code, dest_name)
+            else:
+                phone = pickup_phone_mapper.get_national_phone(dest_name, airline)
+
+            extra_data = ExtraData(
+                pickup_point=dest_name if dest_name != dest_code else dest_code,
+                pickup_phone=phone,
+                billing_time=""
+            )
 
             result_items.append(AirFinancialAuditItemResponse(
                 source_type=item["source_type"],
@@ -622,7 +658,8 @@ async def get_air_financial_audits(
                 creator=item["creator"],
                 creation_time=item["creation_time"],
                 payable=payable_res,
-                receivable=receivable_res
+                receivable=receivable_res,
+                extra_data=extra_data
             ))
             continue
 
@@ -631,10 +668,17 @@ async def get_air_financial_audits(
         cust_name = item["customer_name"]
         customer = customer_map.get(cust_name)
 
+        billing_time_val = ""
+
         if source_type == "shenzhen_air":
             export = item["_main"]
             wb_8 = export.waybill_number[-8:] if export.waybill_number and len(export.waybill_number) >= 8 else ""
             related_conts = sz_containers_map.get(wb_8, [])
+            
+            for cont in related_conts:
+                if cont.billing_time:
+                    billing_time_val = cont.billing_time.strftime("%Y-%m-%d %H:%M:%S")
+                    break
             
             gate_pieces_val = sum(safe_int(c.quantity) for c in related_conts)
             transit_weight_val = sum(safe_float(c.weight) for c in related_conts)
@@ -981,7 +1025,30 @@ async def get_air_financial_audits(
             if isinstance(r_override, dict):
                 receivable_dict.update({k: str(v) for k, v in r_override.items() if v is not None})
 
+        customer_name_raw = str(cust_name).strip() if cust_name else ""
+        if customer_name_raw in customer_id_map:
+            cust = customer_id_map[customer_name_raw]
+            cycle_str = SETTLEMENT_CYCLE_MAP.get(cust.settlement_cycle, "") if cust.settlement_cycle else ""
+            receivable_dict["payment_method"] = cycle_str
+        elif not customer_name_raw.isdigit():
+            receivable_dict["payment_method"] = ""
+
         receivable_res = ReceivableResponse(**receivable_dict)
+
+        dest_code = item.get("destination", "")
+        dest_name = get_city_name_by_code(dest_code)
+        
+        airline = item.get("airline", "")
+        if airline == "深航":
+            phone = pickup_phone_mapper.get_shenzhen_air_phone(dest_code, dest_name)
+        else:
+            phone = pickup_phone_mapper.get_national_phone(dest_name, airline)
+
+        extra_data = ExtraData(
+            pickup_point=dest_name if dest_name != dest_code else dest_code,
+            pickup_phone=phone,
+            billing_time=billing_time_val
+        )
 
         result_items.append(AirFinancialAuditItemResponse(
             source_type=source_type,
@@ -1002,7 +1069,8 @@ async def get_air_financial_audits(
             creator=item["creator"],
             creation_time=item["creation_time"],
             payable=payable_res,
-            receivable=receivable_res
+            receivable=receivable_res,
+            extra_data=extra_data
         ))
 
     return success_response(data={

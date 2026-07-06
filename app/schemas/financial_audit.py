@@ -146,6 +146,11 @@ class ReceivableResponse(BaseModel):
     remark: Optional[str] = Field(None, description="备注(人工填写)")
     gross_profit: Optional[str] = Field(None, description="毛利")
 
+class ExtraData(BaseModel):
+    pickup_point: Optional[str] = Field(None, description="提货点(机场中文名)")
+    pickup_phone: Optional[str] = Field(None, description="提货电话")
+    billing_time: Optional[str] = Field(None, description="计飞时间")
+
 class AirFinancialAuditItemResponse(BaseModel):
     source_type: str = Field(..., description="来源类型: shenzhen_air / china_southern_air / peer_air")
     source_id: str = Field(..., description="来源主表ID")
@@ -166,3 +171,4 @@ class AirFinancialAuditItemResponse(BaseModel):
     creation_time: Optional[str] = Field(None, description="制单时间")
     payable: PayableResponse
     receivable: ReceivableResponse
+    extra_data: Optional[ExtraData] = Field(None, description="额外数据，如提货点等")
