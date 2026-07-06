@@ -27,6 +27,7 @@ from app.models.waybill import Waybill
 from app.schemas.financial_audit import (
     AirFinancialAuditQuery,
     AirFinancialAuditDataUpsert,
+    AirFinancialAuditCreateRequest,
     AirFinancialAuditItemResponse,
     PayableResponse,
     ReceivableResponse
@@ -452,6 +453,83 @@ async def get_air_financial_audits(
                 "_fa": fa
             })
 
+    # ================= 1.4 查询手工新增的记录 =================
+    manual_q = db.query(AirFinancialAuditData).filter(
+        AirFinancialAuditData.source_id == 0
+    )
+
+    if query.airline_type:
+        manual_q = manual_q.filter(AirFinancialAuditData.source_type == query.airline_type)
+
+    if query.financial_audit_status is not None:
+        if query.financial_audit_status == 0:
+            manual_q = manual_q.filter(or_(AirFinancialAuditData.financial_audit_status == 0, AirFinancialAuditData.financial_audit_status.is_(None)))
+        else:
+            manual_q = manual_q.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
+
+    for fa in manual_q.all():
+        # 从 receivable_data JSON 中提取列表层字段
+        recv = fa.receivable_data or {}
+        if isinstance(recv, str):
+            try:
+                recv = json.loads(recv)
+            except Exception:
+                recv = {}
+        pay = fa.payable_data or {}
+        if isinstance(pay, str):
+            try:
+                pay = json.loads(pay)
+            except Exception:
+                pay = {}
+
+        fl_date = recv.get("flight_date", "") or ""
+        wb_number = recv.get("waybill_number", "") or ""
+        agent_name_val = pay.get("agent_name", "") or ""
+
+        if waybill_list and wb_number not in waybill_list:
+            continue
+
+        # 航班日期范围过滤
+        if query.flight_date_start and fl_date < str(query.flight_date_start):
+            continue
+        if query.flight_date_end and fl_date > str(query.flight_date_end):
+            continue
+
+        # 目的站模糊搜索
+        if query.destination and query.destination not in (recv.get("destination", "") or ""):
+            continue
+
+        # 航班号模糊搜索
+        if query.flight_number and query.flight_number not in (recv.get("flight_number", "") or ""):
+            continue
+            
+        # 同行空运需支持代理名称过滤
+        if query.agent_name and query.agent_name not in agent_name_val:
+            if fa.source_type == "peer_air":
+                continue
+
+        candidate_items.append({
+            "source_type": fa.source_type,
+            "source_id": str(fa.id),
+            "is_manual": True,
+            "flight_date": fl_date,
+            "waybill_number": wb_number,
+            "origin": recv.get("origin", "") or "",
+            "destination": recv.get("destination", "") or "",
+            "flight_number": recv.get("flight_number", "") or "",
+            "audit_status": 0,
+            "financial_audit_status": fa.financial_audit_status or 0,
+            "customer_name": recv.get("customer_name", "") or "",
+            "agent_name": agent_name_val,
+            "airline": recv.get("airline", "") or "",
+            "cargo_name": recv.get("cargo_name", "") or "",
+            "billing_quantity": pay.get("billing_pieces", "") or "",
+            "billing_weight": pay.get("billing_weight", "") or "",
+            "creator": pay.get("_creator_name", "") or "",
+            "creation_time": fa.created_at.strftime("%Y-%m-%d %H:%M:%S") if fa.created_at else "",
+            "_fa": fa
+        })
+
     # ================= 2. 内存全局排序 =================
     candidate_items.sort(key=lambda x: (x["flight_date"] or "", x["source_id"]), reverse=True)
     total = len(candidate_items)
@@ -502,13 +580,56 @@ async def get_air_financial_audits(
     result_items = []
     for item in paged_items:
         source_type = item["source_type"]
+
+        payable_data = None
+        receivable_data = None
+
+        if item.get("is_manual"):
+            # 手工新增的记录直接从payable_data/receivable_data JSON渲染
+            fa = item["_fa"]
+            pay_raw = fa.payable_data or {}
+            if isinstance(pay_raw, str):
+                try:
+                    pay_raw = json.loads(pay_raw)
+                except Exception:
+                    pay_raw = {}
+            recv_raw = fa.receivable_data or {}
+            if isinstance(recv_raw, str):
+                try:
+                    recv_raw = json.loads(recv_raw)
+                except Exception:
+                    recv_raw = {}
+
+            payable_res = PayableResponse(**{k: (str(v) if v is not None else None) for k, v in pay_raw.items() if k in PayableResponse.model_fields})
+            receivable_res = ReceivableResponse(**{k: (str(v) if v is not None else None) for k, v in recv_raw.items() if k in ReceivableResponse.model_fields})
+
+            result_items.append(AirFinancialAuditItemResponse(
+                source_type=item["source_type"],
+                source_id=item["source_id"],
+                audit_status=0,
+                financial_audit_status=item["financial_audit_status"],
+                flight_date=item["flight_date"],
+                customer_name=item["customer_name"],
+                agent_name=item["agent_name"],
+                airline=item["airline"],
+                waybill_number=item["waybill_number"],
+                origin=item["origin"],
+                destination=item["destination"],
+                flight_number=item["flight_number"],
+                cargo_name=item["cargo_name"],
+                billing_quantity=item["billing_quantity"],
+                billing_weight=item["billing_weight"],
+                creator=item["creator"],
+                creation_time=item["creation_time"],
+                payable=payable_res,
+                receivable=receivable_res
+            ))
+            continue
+
         md = item["_md"]
         fa = item["_fa"]
         cust_name = item["customer_name"]
         customer = customer_map.get(cust_name)
-
-        payable_data = None
-        receivable_data = None
 
         if source_type == "shenzhen_air":
             export = item["_main"]
@@ -903,29 +1024,49 @@ async def audit_air_financial(
     source_type = req.source_type
     source_id = int(req.source_id)
 
+    exists = False
+    is_manual = False
+
     if source_type == "shenzhen_air":
-        exists = db.query(ShenzhenAirBookingExport.id).filter(ShenzhenAirBookingExport.id == source_id).first()
+        exists_record = db.query(ShenzhenAirBookingExport.id).filter(ShenzhenAirBookingExport.id == source_id).first()
+        if exists_record: exists = True
     elif source_type == "china_southern_air":
-        exists = db.query(ChinaSouthernAirApprovalData.id).filter(ChinaSouthernAirApprovalData.id == source_id).first()
+        exists_record = db.query(ChinaSouthernAirApprovalData.id).filter(ChinaSouthernAirApprovalData.id == source_id).first()
+        if exists_record: exists = True
     elif source_type == "peer_air":
-        exists = db.query(ConsignmentNote.id).filter(ConsignmentNote.id == source_id, ConsignmentNote.transport_type == "0").first()
+        exists_record = db.query(ConsignmentNote.id).filter(ConsignmentNote.id == source_id, ConsignmentNote.transport_type == "0").first()
+        if exists_record: exists = True
     else:
         raise HTTPException(status_code=400, detail="Invalid source_type")
+
+    # 如果主表不存在，检查是否是手工新增的记录（source_id == 0，且自身 id == source_id）
+    if not exists:
+        fa_manual = db.query(AirFinancialAuditData.id).filter(
+            AirFinancialAuditData.id == source_id,
+            AirFinancialAuditData.source_type == source_type,
+            AirFinancialAuditData.source_id == 0
+        ).first()
+        if fa_manual:
+            exists = True
+            is_manual = True
 
     if not exists:
         raise HTTPException(status_code=404, detail="Source record not found")
 
-    fa_data = db.query(AirFinancialAuditData).filter(
-        AirFinancialAuditData.source_type == source_type,
-        AirFinancialAuditData.source_id == source_id
-    ).first()
+    if is_manual:
+        fa_data = db.query(AirFinancialAuditData).filter(AirFinancialAuditData.id == source_id).first()
+    else:
+        fa_data = db.query(AirFinancialAuditData).filter(
+            AirFinancialAuditData.source_type == source_type,
+            AirFinancialAuditData.source_id == source_id
+        ).first()
 
-    if not fa_data:
-        fa_data = AirFinancialAuditData(
-            source_type=source_type,
-            source_id=source_id
-        )
-        db.add(fa_data)
+        if not fa_data:
+            fa_data = AirFinancialAuditData(
+                source_type=source_type,
+                source_id=source_id
+            )
+            db.add(fa_data)
 
     # 支持对整个 payable & receivable 中传递的字段全部进行序列化并作为 JSON 保存到数据库中
     if req.payable is not None:
@@ -944,6 +1085,59 @@ async def audit_air_financial(
 
     return success_response(msg="操作成功", data={
         "source_type": fa_data.source_type,
-        "source_id": str(fa_data.source_id),
+        "source_id": str(fa_data.id) if fa_data.source_id == 0 else str(fa_data.source_id),
         "financial_audit_status": fa_data.financial_audit_status
     })
+
+
+@router.post("/air", summary="新增空运财务审核单据")
+async def create_air_financial_audit(
+    req: AirFinancialAuditCreateRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    """
+    新增空运财务审核单据接口。
+    手动创建一条单独的财务审核记录，不关联任何源表数据（source_id 为 0）。
+    通过 receivable.airline 字段推导 source_type：深航/南航/同行空运。
+    receivable 中的 waybill_number 和 airline 必传。
+    """
+    # 校验运单号必填
+    if not req.receivable.waybill_number or not req.receivable.waybill_number.strip():
+        raise HTTPException(status_code=400, detail="receivable 中的 waybill_number（运单号）为必填项")
+        
+    airline_val = req.receivable.airline
+    if not airline_val or not airline_val.strip():
+        raise HTTPException(status_code=400, detail="receivable 中的 airline（航空公司）为必填项")
+        
+    airline_val = airline_val.strip()
+    if airline_val == "深航":
+        derived_source_type = "shenzhen_air"
+    elif airline_val == "南航":
+        derived_source_type = "china_southern_air"
+    else:
+        derived_source_type = "peer_air"
+
+    pay_dict = req.payable.model_dump()
+    pay_dict["_creator_name"] = current_user.name
+
+    fa_data = AirFinancialAuditData(
+        source_type=derived_source_type,
+        source_id=0,
+        payable_data=pay_dict,
+        receivable_data=req.receivable.model_dump(),
+        financial_audit_status=0,
+        financial_auditor_id=None,
+        financial_auditor_name=None,
+        financial_audit_time=None
+    )
+    db.add(fa_data)
+    db.commit()
+    db.refresh(fa_data)
+
+    return success_response(msg="新增成功", data={
+        "id": str(fa_data.id),
+        "source_type": derived_source_type,
+        "waybill_number": req.receivable.waybill_number.strip()
+    })
+

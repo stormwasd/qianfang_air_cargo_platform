@@ -42,6 +42,7 @@ class PayableRequest(BaseModel):
     total_cost: Optional[str] = Field(None, description="成本合计")
 
 class ReceivableRequest(BaseModel):
+    waybill_number: Optional[str] = Field(None, description="运单号（新增接口时必传）")
     flight_date: Optional[str] = Field(None, description="航班日期")
     customer_name: Optional[str] = Field(None, description="客户名称")
     consignee_phone: Optional[str] = Field(None, description="收货电话")
@@ -73,6 +74,11 @@ class ReceivableRequest(BaseModel):
     collection_payment: Optional[str] = Field(None, description="代收货款(人工填写)")
     remark: Optional[str] = Field(None, description="备注(人工填写)")
     gross_profit: Optional[str] = Field(None, description="毛利")
+
+class AirFinancialAuditCreateRequest(BaseModel):
+    """空运财务审核新增请求"""
+    payable: PayableRequest = Field(..., description="应付板块全部数据")
+    receivable: ReceivableRequest = Field(..., description="应收板块全部数据（其中 waybill_number 和 airline 必传）")
 
 class AirFinancialAuditDataUpsert(BaseModel):
     source_type: str = Field(..., description="来源类型: shenzhen_air / china_southern_air / peer_air")
@@ -107,6 +113,7 @@ class PayableResponse(BaseModel):
     total_cost: Optional[str] = Field(None, description="成本合计")
 
 class ReceivableResponse(BaseModel):
+    waybill_number: Optional[str] = Field(None, description="运单号")
     flight_date: Optional[str] = Field(None, description="航班日期")
     customer_name: Optional[str] = Field(None, description="客户名称")
     consignee_phone: Optional[str] = Field(None, description="收货电话")
