@@ -1,7 +1,7 @@
 """
 公司信息模型
 """
-from sqlalchemy import Column, BigInteger, String, DateTime, JSON
+from sqlalchemy import Column, BigInteger, String, DateTime, JSON, Boolean
 from app.database import Base
 from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
@@ -14,6 +14,7 @@ class CompanyAccount(Base):
     account_name = Column(String(200), nullable=False, comment="账户名")
     account_number = Column(String(100), nullable=False, comment="账号")
     bank_name = Column(String(200), nullable=False, comment="开户行")
+    is_active = Column(Boolean, default=False, comment="是否激活(唯一)")
     created_at = Column(DateTime, default=get_china_now, comment="创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="更新时间")
 
