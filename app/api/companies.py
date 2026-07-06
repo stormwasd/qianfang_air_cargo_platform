@@ -11,19 +11,16 @@ from app.database import get_db
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china
 
-from app.models.company import CompanyAccount
+from app.models.company import CompanyAccount, CompanyInfo
 from app.schemas.company import (
     CompanyAccountCreate,
     CompanyAccountUpdate,
     CompanyAccountResponse,
-    CompanyListResponse
+    CompanyListResponse,
+    CompanyInfoUpdate
 )
 
 router = APIRouter()
-
-# 基础公司信息常量
-BASE_COMPANY_NAME = "丰德航空物流有限公司"
-BASE_COMPANY_LOCATION = "深圳市宝安区宝安机场领航二路148号"
 
 
 @router.post("/accounts", summary="新增公司账户", response_model=ResponseModel[CompanyAccountResponse])
@@ -169,10 +166,46 @@ async def get_company_list(
         for account in accounts
     ]
     
+    # 查询公司信息单例
+    company_info = db.query(CompanyInfo).filter(CompanyInfo.id == 1).first()
+    if not company_info:
+        company_info = CompanyInfo(id=1)
+        db.add(company_info)
+        db.commit()
+        db.refresh(company_info)
+    
     data = {
-        "company_name": BASE_COMPANY_NAME,
-        "company_location": BASE_COMPANY_LOCATION,
+        "company_name": company_info.company_name,
+        "company_location": company_info.company_location,
+        "payment_qr_codes": company_info.payment_qr_codes or [],
         "accounts": account_list
     }
     
     return success_response(data=data, msg="查询成功")
+
+
+@router.put("/info", summary="修改公司基本信息", response_model=ResponseModel[Any])
+async def update_company_info(
+    payload: CompanyInfoUpdate,
+    current_user=Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    更新公司基本信息（支持部分更新）。
+    可更新公司名称、地址以及上传好的收款码URL列表。
+    """
+    company_info = db.query(CompanyInfo).filter(CompanyInfo.id == 1).first()
+    if not company_info:
+        company_info = CompanyInfo(id=1)
+        db.add(company_info)
+        db.commit()
+        db.refresh(company_info)
+        
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        if value is not None:
+            setattr(company_info, key, value)
+            
+    db.commit()
+    
+    return success_response(msg="公司信息更新成功")

@@ -3,6 +3,7 @@ FastAPI应用主入口
 """
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -113,6 +114,11 @@ def create_application() -> FastAPI:
     
     # 注册API路由
     app.include_router(api_router)
+    
+    # 挂载静态文件目录 (创建 static/uploads 如果不存在)
+    import os
+    os.makedirs("static/uploads", exist_ok=True)
+    app.mount("/static", StaticFiles(directory="static"), name="static")
     
     return app
 

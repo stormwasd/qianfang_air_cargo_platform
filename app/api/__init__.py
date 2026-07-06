@@ -3,7 +3,7 @@ API路由统一注册
 """
 from fastapi import APIRouter
 from app.config import settings
-from app.api import auth, users, departments, customers, config, user_center, waybills, bookings, settlements, rpa_tasks, notifications, waybill_stocks, robots, companies, agents, pickup_units, delivery_units, weather, consignment_notes, departure_tracking, shenzhen_air_approval, china_southern_air_approval, financial_audit
+from app.api import auth, users, departments, customers, config, user_center, waybills, bookings, settlements, rpa_tasks, notifications, waybill_stocks, robots, companies, agents, pickup_units, delivery_units, weather, consignment_notes, departure_tracking, shenzhen_air_approval, china_southern_air_approval, financial_audit, common
 
 # 创建API v1路由器
 api_router = APIRouter(prefix=settings.API_V1_PREFIX)
@@ -16,6 +16,7 @@ api_router.include_router(users.router, prefix="/users", tags=["账号管理"])
 api_router.include_router(user_center.router, prefix="/user-center", tags=["用户中心"])
 api_router.include_router(customers.router, prefix="/customers", tags=["客户管理"])
 api_router.include_router(companies.router, prefix="/companies", tags=["公司信息管理"])
+api_router.include_router(common.router, prefix="/common", tags=["公共模块"])
 api_router.include_router(agents.router, prefix="/agents", tags=["代理管理"])
 api_router.include_router(pickup_units.router, prefix="/pickup-units", tags=["提货单位管理"])
 api_router.include_router(delivery_units.router, prefix="/delivery-units", tags=["派送单位管理"])
