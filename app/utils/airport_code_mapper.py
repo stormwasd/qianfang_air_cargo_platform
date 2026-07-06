@@ -324,6 +324,27 @@ def get_code_by_city_name(city_name: str) -> str:
     return ""
 
 
+def get_airport_name_by_code(airport_code: str) -> str:
+    """
+    根据机场三字码获取完整的机场名称
+    
+    Args:
+        airport_code: 机场三字码，如 "TNA"
+    
+    Returns:
+        完整的机场名称，如 "济南遥墙机场"；如果找不到则返回城市名或原三字码
+    """
+    if not airport_code:
+        return ""
+    code_upper = airport_code.upper().strip()
+    # 先反向查找完整的机场名称
+    for name, code in AIRPORT_NAME_TO_CODE.items():
+        if code == code_upper:
+            return name
+    # 如果没找到全称，回退到城市名称
+    return AIRPORT_CODE_TO_CITY.get(code_upper, airport_code)
+
+
 # 完整的机场名称到三字码映射（用于模糊搜索）
 # 格式: "完整机场名称": "三字码"
 AIRPORT_NAME_TO_CODE = {

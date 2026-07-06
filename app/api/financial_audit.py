@@ -33,7 +33,7 @@ from app.schemas.financial_audit import (
     ReceivableResponse,
     ExtraData
 )
-from app.utils.airport_code_mapper import get_city_name_by_code
+from app.utils.airport_code_mapper import get_airport_name_by_code
 from app.utils.pickup_phone_mapper import pickup_phone_mapper
 
 SETTLEMENT_CYCLE_MAP = {
@@ -625,7 +625,7 @@ async def get_air_financial_audits(
             receivable_res = ReceivableResponse(**receivable_dict)
 
             dest_code = item.get("destination", "")
-            dest_name = get_city_name_by_code(dest_code)
+            dest_name = get_airport_name_by_code(dest_code)
             
             airline = item.get("airline", "")
             if airline == "深航":
@@ -1036,7 +1036,7 @@ async def get_air_financial_audits(
         receivable_res = ReceivableResponse(**receivable_dict)
 
         dest_code = item.get("destination", "")
-        dest_name = get_city_name_by_code(dest_code)
+        dest_name = get_airport_name_by_code(dest_code)
         
         airline = item.get("airline", "")
         if airline == "深航":
