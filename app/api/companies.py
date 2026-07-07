@@ -207,10 +207,17 @@ async def get_company_list(
     qr_codes = company_info.payment_qr_codes or []
     formatted_qr_codes = []
     if qr_codes and isinstance(qr_codes[0], str):
-        # 如果是老数据（字符串），默认第一个激活
-        formatted_qr_codes = [{"url": url, "is_active": i == 0} for i, url in enumerate(qr_codes)]
+        # 如果是老数据（字符串），默认第一个激活，并初始化微信号
+        formatted_qr_codes = [{"url": url, "wechat_name": "", "is_active": i == 0} for i, url in enumerate(qr_codes)]
     else:
-        formatted_qr_codes = qr_codes
+        # 如果是对象列表，为了保险起见，给那些可能缺少 wechat_name 的对象补上默认值
+        formatted_qr_codes = []
+        for qr in qr_codes:
+            if isinstance(qr, dict):
+                qr.setdefault("wechat_name", "")
+                formatted_qr_codes.append(qr)
+            else:
+                formatted_qr_codes.append(qr)
 
     data = {
         "company_name": company_info.company_name,

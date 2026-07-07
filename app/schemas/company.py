@@ -8,6 +8,7 @@ from datetime import datetime
 
 class PaymentQRCode(BaseModel):
     url: str = Field(..., description="收款码图片URL")
+    wechat_name: str = Field("", description="微信用户名称")
     is_active: bool = Field(False, description="是否处于激活状态")
 
 
