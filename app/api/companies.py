@@ -214,7 +214,9 @@ async def get_company_list(
         formatted_qr_codes = []
         for qr in qr_codes:
             if isinstance(qr, dict):
-                qr.setdefault("wechat_name", "")
+                # 为了防止库里存的是 null 或者缺少这个键，做个更安全的显式判断
+                if "wechat_name" not in qr or qr["wechat_name"] is None:
+                    qr["wechat_name"] = ""
                 formatted_qr_codes.append(qr)
             else:
                 formatted_qr_codes.append(qr)
