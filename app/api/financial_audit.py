@@ -9,6 +9,7 @@ from datetime import date, datetime
 from app.database import get_db
 from app.api.deps import get_current_active_user
 from app.core.response import success_response
+from app.utils.snowflake import generate_id
 
 # 导入所有相关模型
 from app.models.transit_loading import ShenzhenAirBookingExport
