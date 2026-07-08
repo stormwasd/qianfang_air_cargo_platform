@@ -465,7 +465,10 @@ async def get_air_financial_audits(
 
     # ================= 1.4 查询手工新增的记录 =================
     manual_q = db.query(AirFinancialAuditData).filter(
-        AirFinancialAuditData.source_id == 0
+        or_(
+            AirFinancialAuditData.source_id == 0,
+            AirFinancialAuditData.source_id == AirFinancialAuditData.id
+        )
     )
 
     if query.airline_type:
@@ -1183,12 +1186,15 @@ async def audit_air_financial(
     else:
         raise HTTPException(status_code=400, detail="Invalid source_type")
 
-    # 如果主表不存在，检查是否是手工新增的记录（source_id == 0，且自身 id == source_id）
+    # 如果主表不存在，检查是否是手工新增的记录（自身 id == source_id 或 source_id == 0 兼容旧数据）
     if not exists:
         fa_manual = db.query(AirFinancialAuditData.id).filter(
             AirFinancialAuditData.id == source_id,
             AirFinancialAuditData.source_type == source_type,
-            AirFinancialAuditData.source_id == 0
+            or_(
+                AirFinancialAuditData.source_id == 0,
+                AirFinancialAuditData.source_id == source_id
+            )
         ).first()
         if fa_manual:
             exists = True
@@ -1229,7 +1235,7 @@ async def audit_air_financial(
 
     return success_response(msg="操作成功", data={
         "source_type": fa_data.source_type,
-        "source_id": str(fa_data.id) if fa_data.source_id == 0 else str(fa_data.source_id),
+        "source_id": str(fa_data.id) if (fa_data.source_id == 0 or fa_data.source_id == fa_data.id) else str(fa_data.source_id),
         "financial_audit_status": fa_data.financial_audit_status
     })
 
@@ -1265,12 +1271,17 @@ async def create_air_financial_audit(
     pay_dict = req.payable.model_dump()
     pay_dict["_creator_name"] = current_user.name
 
+    # 预先生成唯一ID，并作为 source_id 保存，避免触发 ux_source 唯一约束冲突（source_type, source_id)
+    new_id = generate_id()
+
     fa_data = AirFinancialAuditData(
+        id=new_id,
         source_type=derived_source_type,
-        source_id=0,
+        source_id=new_id,
         payable_data=pay_dict,
         receivable_data=req.receivable.model_dump(),
         financial_audit_status=0,
+
         financial_auditor_id=None,
         financial_auditor_name=None,
         financial_audit_time=None
