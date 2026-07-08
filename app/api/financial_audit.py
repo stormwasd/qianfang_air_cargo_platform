@@ -615,8 +615,10 @@ async def get_air_financial_audits(
             receivable_dict = {k: (str(v) if v is not None else None) for k, v in recv_raw.items() if k in ReceivableResponse.model_fields}
             
             customer_name_raw = str(item.get("customer_name") or "").strip()
+            actual_customer_name = ""
             if customer_name_raw in customer_id_map:
                 cust = customer_id_map[customer_name_raw]
+                actual_customer_name = cust.company_name
                 cycle_str = SETTLEMENT_CYCLE_MAP.get(cust.settlement_cycle, "") if cust.settlement_cycle else ""
                 receivable_dict["payment_method"] = cycle_str
                 receivable_dict["document_fee"] = str(cust.document_fee) if cust.document_fee is not None else ""
@@ -648,6 +650,7 @@ async def get_air_financial_audits(
                 financial_audit_status=item["financial_audit_status"],
                 flight_date=item["flight_date"],
                 customer_name=item["customer_name"],
+                actual_customer_name=actual_customer_name,
                 agent_name=item["agent_name"],
                 airline=item["airline"],
                 waybill_number=item["waybill_number"],
@@ -1028,8 +1031,10 @@ async def get_air_financial_audits(
                 receivable_dict.update({k: str(v) for k, v in r_override.items() if v is not None})
 
         customer_name_raw = str(cust_name).strip() if cust_name else ""
+        actual_customer_name = ""
         if customer_name_raw in customer_id_map:
             cust = customer_id_map[customer_name_raw]
+            actual_customer_name = cust.company_name
             cycle_str = SETTLEMENT_CYCLE_MAP.get(cust.settlement_cycle, "") if cust.settlement_cycle else ""
             receivable_dict["payment_method"] = cycle_str
             receivable_dict["document_fee"] = str(cust.document_fee) if cust.document_fee is not None else ""
@@ -1061,6 +1066,7 @@ async def get_air_financial_audits(
             financial_audit_status=item["financial_audit_status"],
             flight_date=item["flight_date"],
             customer_name=cust_name,
+            actual_customer_name=actual_customer_name,
             agent_name=item["agent_name"],
             airline=item["airline"],
             waybill_number=item["waybill_number"],
