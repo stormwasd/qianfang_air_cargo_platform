@@ -715,7 +715,7 @@ async def get_air_financial_audits(
             
             for cont in related_conts:
                 if cont.billing_time:
-                    billing_time_val = cont.billing_time.strftime("%Y-%m-%d %H:%M:%S")
+                    billing_time_val = str(cont.billing_time)
                     break
             
             gate_pieces_val = sum(safe_int(c.quantity) for c in related_conts)
