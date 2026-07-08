@@ -611,6 +611,21 @@ async def get_air_financial_audits(
                 except Exception:
                     recv_raw = {}
 
+            # 重新计算成本合计 (total_cost)
+            calc_total_cost = (
+                safe_float(pay_raw.get("air_freight")) +
+                safe_float(pay_raw.get("fuel_surcharge")) +
+                safe_float(pay_raw.get("transit_fee")) +
+                safe_float(pay_raw.get("cca_cost")) +
+                safe_float(pay_raw.get("telegraph_cost")) +
+                safe_float(pay_raw.get("packaging_fee")) +
+                safe_float(pay_raw.get("other_fees")) +
+                safe_float(pay_raw.get("door_pickup_fee")) +
+                safe_float(pay_raw.get("airport_pickup_fee")) +
+                safe_float(pay_raw.get("delivery_cost"))
+            )
+            pay_raw["total_cost"] = format_decimal(calc_total_cost)
+
             payable_res = PayableResponse(**{k: (str(v) if v is not None else None) for k, v in pay_raw.items() if k in PayableResponse.model_fields})
             receivable_dict = {k: (str(v) if v is not None else None) for k, v in recv_raw.items() if k in ReceivableResponse.model_fields}
             
@@ -625,6 +640,24 @@ async def get_air_financial_audits(
             elif not customer_name_raw.isdigit():
                 receivable_dict["payment_method"] = ""
                 receivable_dict["document_fee"] = ""
+
+            # 重新计算应收总金额 (total_amount)
+            calc_total_amount = (
+                safe_float(receivable_dict.get("freight")) +
+                safe_float(receivable_dict.get("document_fee")) +
+                safe_float(receivable_dict.get("door_pickup_fee")) +
+                safe_float(receivable_dict.get("packaging_fee")) +
+                safe_float(receivable_dict.get("airport_pickup_fee")) +
+                safe_float(receivable_dict.get("delivery_fee")) +
+                safe_float(receivable_dict.get("cca")) +
+                safe_float(receivable_dict.get("telegram_fee")) +
+                safe_float(receivable_dict.get("carrier_deduction")) +
+                safe_float(receivable_dict.get("other_fees"))
+            )
+            receivable_dict["total_amount"] = format_decimal(calc_total_amount)
+            # 同时也需要更新毛利
+            calc_gross_profit = calc_total_amount - calc_total_cost
+            receivable_dict["gross_profit"] = format_decimal(calc_gross_profit)
 
             receivable_res = ReceivableResponse(**receivable_dict)
 
@@ -699,7 +732,7 @@ async def get_air_financial_audits(
             oth_fee = safe_float(md.other_fees if md else 0.0)
             door_fee = safe_float(md.door_pickup_fee if md else 0.0)
             airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
-            delivery_cost = safe_float(md.airport_pickup_fee if md else 0.0)
+            delivery_cost = safe_float(md.delivery_fee if md else 0.0)
 
             total_cost_val = (
                 safe_float(export.air_freight) +
@@ -782,7 +815,7 @@ async def get_air_financial_audits(
                 freight=format_decimal(receivable_freight),
                 cca=safe_str(md.cca if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
-                delivery_fee=safe_str(md.airport_pickup_fee if md else ""),
+                delivery_fee=safe_str(md.delivery_fee if md else ""),
                 collection_payment="",
                 remark="",
                 gross_profit=format_decimal(gross_profit_val)
@@ -806,7 +839,7 @@ async def get_air_financial_audits(
             oth_fee = safe_float(md.other_fees if md else 0.0)
             door_fee = safe_float(md.door_pickup_fee if md else 0.0)
             airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
-            delivery_cost = safe_float(md.airport_pickup_fee if md else 0.0)
+            delivery_cost = safe_float(md.delivery_fee if md else 0.0)
 
             total_cost_val = (
                 safe_float(approval.ref_freight) +
@@ -899,7 +932,7 @@ async def get_air_financial_audits(
                 freight=format_decimal(receivable_freight),
                 cca=safe_str(md.cca if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
-                delivery_fee=safe_str(md.airport_pickup_fee if md else ""),
+                delivery_fee=safe_str(md.delivery_fee if md else ""),
                 collection_payment="",
                 remark="",
                 gross_profit=format_decimal(gross_profit_val)
@@ -919,7 +952,7 @@ async def get_air_financial_audits(
             oth_fee = safe_float(md.other_fees if md else 0.0)
             door_fee = safe_float(md.door_pickup_fee if md else 0.0)
             airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
-            delivery_cost = safe_float(md.airport_pickup_fee if md else 0.0)
+            delivery_cost = safe_float(md.delivery_fee if md else 0.0)
 
             total_cost_val = (
                 safe_float(form_dict.get("air_freight", 0.0)) +
@@ -999,7 +1032,7 @@ async def get_air_financial_audits(
                 freight=format_decimal(receivable_freight),
                 cca=safe_str(md.cca if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
-                delivery_fee=safe_str(md.airport_pickup_fee if md else ""),
+                delivery_fee=safe_str(md.delivery_fee if md else ""),
                 collection_payment="",
                 remark="",
                 gross_profit=format_decimal(gross_profit_val)
@@ -1017,6 +1050,21 @@ async def get_air_financial_audits(
             if isinstance(p_override, dict):
                 payable_dict.update({k: str(v) for k, v in p_override.items() if v is not None})
         
+        # 重新计算成本合计 (total_cost)
+        calc_total_cost = (
+            safe_float(payable_dict.get("air_freight")) +
+            safe_float(payable_dict.get("fuel_surcharge")) +
+            safe_float(payable_dict.get("transit_fee")) +
+            safe_float(payable_dict.get("cca_cost")) +
+            safe_float(payable_dict.get("telegraph_cost")) +
+            safe_float(payable_dict.get("packaging_fee")) +
+            safe_float(payable_dict.get("other_fees")) +
+            safe_float(payable_dict.get("door_pickup_fee")) +
+            safe_float(payable_dict.get("airport_pickup_fee")) +
+            safe_float(payable_dict.get("delivery_cost"))
+        )
+        payable_dict["total_cost"] = format_decimal(calc_total_cost)
+
         payable_res = PayableResponse(**payable_dict)
 
         receivable_dict = receivable_data.model_dump()
@@ -1041,6 +1089,24 @@ async def get_air_financial_audits(
         elif not customer_name_raw.isdigit():
             receivable_dict["payment_method"] = ""
             receivable_dict["document_fee"] = ""
+
+        # 重新计算应收总金额 (total_amount)
+        calc_total_amount = (
+            safe_float(receivable_dict.get("freight")) +
+            safe_float(receivable_dict.get("document_fee")) +
+            safe_float(receivable_dict.get("door_pickup_fee")) +
+            safe_float(receivable_dict.get("packaging_fee")) +
+            safe_float(receivable_dict.get("airport_pickup_fee")) +
+            safe_float(receivable_dict.get("delivery_fee")) +
+            safe_float(receivable_dict.get("cca")) +
+            safe_float(receivable_dict.get("telegram_fee")) +
+            safe_float(receivable_dict.get("carrier_deduction")) +
+            safe_float(receivable_dict.get("other_fees"))
+        )
+        receivable_dict["total_amount"] = format_decimal(calc_total_amount)
+        # 同时也需要更新毛利
+        calc_gross_profit = calc_total_amount - calc_total_cost
+        receivable_dict["gross_profit"] = format_decimal(calc_gross_profit)
 
         receivable_res = ReceivableResponse(**receivable_dict)
 
