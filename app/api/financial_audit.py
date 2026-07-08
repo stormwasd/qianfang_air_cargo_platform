@@ -619,8 +619,10 @@ async def get_air_financial_audits(
                 cust = customer_id_map[customer_name_raw]
                 cycle_str = SETTLEMENT_CYCLE_MAP.get(cust.settlement_cycle, "") if cust.settlement_cycle else ""
                 receivable_dict["payment_method"] = cycle_str
+                receivable_dict["document_fee"] = str(cust.document_fee) if cust.document_fee is not None else ""
             elif not customer_name_raw.isdigit():
                 receivable_dict["payment_method"] = ""
+                receivable_dict["document_fee"] = ""
 
             receivable_res = ReceivableResponse(**receivable_dict)
 
@@ -1030,8 +1032,10 @@ async def get_air_financial_audits(
             cust = customer_id_map[customer_name_raw]
             cycle_str = SETTLEMENT_CYCLE_MAP.get(cust.settlement_cycle, "") if cust.settlement_cycle else ""
             receivable_dict["payment_method"] = cycle_str
+            receivable_dict["document_fee"] = str(cust.document_fee) if cust.document_fee is not None else ""
         elif not customer_name_raw.isdigit():
             receivable_dict["payment_method"] = ""
+            receivable_dict["document_fee"] = ""
 
         receivable_res = ReceivableResponse(**receivable_dict)
 
