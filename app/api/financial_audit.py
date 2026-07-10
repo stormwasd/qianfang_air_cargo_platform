@@ -635,9 +635,11 @@ async def get_air_financial_audits(
             
             customer_name_raw = str(item.get("customer_name") or "").strip()
             actual_customer_name = ""
+            inquiry_hotline = ""
             if customer_name_raw in customer_id_map:
                 cust = customer_id_map[customer_name_raw]
                 actual_customer_name = cust.company_name
+                inquiry_hotline = cust.contact_phone
                 cycle_str = SETTLEMENT_CYCLE_MAP.get(cust.settlement_cycle, "") if cust.settlement_cycle else ""
                 receivable_dict["payment_method"] = cycle_str
                 receivable_dict["document_fee"] = str(cust.document_fee) if cust.document_fee is not None else ""
@@ -677,7 +679,8 @@ async def get_air_financial_audits(
             extra_data = ExtraData(
                 pickup_point=dest_name if dest_name != dest_code else dest_code,
                 pickup_phone=phone,
-                billing_time=""
+                billing_time="",
+                Inquiry_hotline=inquiry_hotline
             )
 
             result_items.append(AirFinancialAuditItemResponse(

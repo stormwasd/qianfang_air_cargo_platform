@@ -150,6 +150,7 @@ class ExtraData(BaseModel):
     pickup_point: Optional[str] = Field(None, description="提货点(机场中文名)")
     pickup_phone: Optional[str] = Field(None, description="提货电话")
     billing_time: Optional[str] = Field(None, description="计飞时间")
+    Inquiry_hotline: Optional[str] = Field(None, description="查询热线(根据客户ID查询得到的联系电话)")
 
 class AirFinancialAuditItemResponse(BaseModel):
     source_type: str = Field(..., description="来源类型: shenzhen_air / china_southern_air / peer_air")
