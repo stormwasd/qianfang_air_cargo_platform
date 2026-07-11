@@ -62,9 +62,9 @@ def get_airline_reconciliation_list(
     candidate_items = []
     
     # ---------------- 1. 深航数据提取 ----------------
-    sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).outerjoin(
+    sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).join(
         ShenzhenAirDepartureManualData, ShenzhenAirBookingExport.id == ShenzhenAirDepartureManualData.booking_export_id
-    )
+    ).filter(ShenzhenAirDepartureManualData.audit_status == 2)
     if query.waybill_numbers:
         wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
         if wbs:
@@ -112,9 +112,9 @@ def get_airline_reconciliation_list(
         })
 
     # ---------------- 2. 南航数据提取 ----------------
-    csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).outerjoin(
+    csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).join(
         CsaDepartureManualData, ChinaSouthernAirApprovalData.id == CsaDepartureManualData.approval_data_id
-    )
+    ).filter(CsaDepartureManualData.audit_status == 2)
     if query.waybill_numbers:
         wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
         if wbs:
@@ -171,9 +171,12 @@ def get_airline_reconciliation_list(
         })
 
     # ---------------- 3. 同行空运提取 ----------------
-    peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).outerjoin(
+    peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).join(
         PeerAirDepartureManualData, ConsignmentNote.id == PeerAirDepartureManualData.consignment_note_id
-    ).filter(ConsignmentNote.transport_type == "0")
+    ).filter(
+        ConsignmentNote.transport_type == "0",
+        PeerAirDepartureManualData.audit_status == 2
+    )
     
     if query.flight_date_start:
         peer_query = peer_query.filter(ConsignmentNote.consignment_date >= query.flight_date_start)
