@@ -3,7 +3,7 @@ API路由统一注册
 """
 from fastapi import APIRouter
 from app.config import settings
-from app.api import auth, users, departments, customers, config, user_center, waybills, bookings, settlements, rpa_tasks, notifications, waybill_stocks, robots, companies, agents, pickup_units, delivery_units, weather, consignment_notes, departure_tracking, shenzhen_air_approval, china_southern_air_approval, financial_audit, common, reconciliation_airline
+from app.api import auth, users, departments, customers, config, user_center, waybills, bookings, settlements, rpa_tasks, notifications, waybill_stocks, robots, companies, agents, pickup_units, delivery_units, weather, consignment_notes, departure_tracking, shenzhen_air_approval, china_southern_air_approval, financial_audit, common, reconciliation_airline, reconciliation_pickup
 
 # 创建API v1路由器
 api_router = APIRouter(prefix=settings.API_V1_PREFIX)
@@ -34,6 +34,7 @@ api_router.include_router(shenzhen_air_approval.router, prefix="/shenzhen-air-ap
 api_router.include_router(china_southern_air_approval.router, prefix="/china-southern-air-approvals", tags=["南航订舱批复跟踪模块"])
 api_router.include_router(financial_audit.router, prefix="/financial-audit", tags=["财务单据审核"])
 api_router.include_router(reconciliation_airline.router, prefix="/reconciliation/airline", tags=["应付对账-航司对账"])
+api_router.include_router(reconciliation_pickup.router, prefix="/reconciliation/pickup", tags=["应付对账-提货单位对账"])
 
 __all__ = ["api_router"]
 
