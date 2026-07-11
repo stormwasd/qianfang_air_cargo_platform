@@ -47,3 +47,10 @@ class AirlineReconciliationListResponse(BaseModel):
     total: int
     page: int
     pageSize: int
+
+class AirlineBatchSettleItem(BaseModel):
+    source_type: str = Field(..., description="来源类型")
+    source_id: str = Field(..., description="来源主表ID")
+
+class AirlineBatchSettleRequest(BaseModel):
+    items: List[AirlineBatchSettleItem] = Field(..., description="待结算的单据列表")

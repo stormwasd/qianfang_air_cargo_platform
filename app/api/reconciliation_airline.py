@@ -24,7 +24,8 @@ from app.models.waybill import Waybill
 from app.schemas.reconciliation_airline import (
     AirlineReconciliationQuery,
     AirlineReconciliationItemResponse,
-    AirlineReconciliationListResponse
+    AirlineReconciliationListResponse,
+    AirlineBatchSettleRequest
 )
 
 router = APIRouter()
@@ -507,3 +508,40 @@ def cancel_airline_settlement(
     
     db.commit()
     return success_response(msg="取消结算成功")
+
+@router.post("/air/batch-settle", summary="批量确认结算航司对账")
+def batch_confirm_airline_settlement(
+    req: AirlineBatchSettleRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    if not req.items:
+        return success_response(msg="没有需要结算的单据")
+
+    now = get_china_now()
+    
+    for item in req.items:
+        source_id_int = safe_int(item.source_id)
+        fa = db.query(AirFinancialAuditData).filter(
+            AirFinancialAuditData.source_type == item.source_type,
+            or_(
+                AirFinancialAuditData.source_id == source_id_int,
+                AirFinancialAuditData.id == source_id_int
+            )
+        ).first()
+        
+        if not fa:
+            # 如果不存在，自动创建
+            fa = AirFinancialAuditData(
+                source_type=item.source_type,
+                source_id=source_id_int
+            )
+            db.add(fa)
+            
+        fa.airline_settlement_status = 1
+        fa.airline_settlement_auditor_id = current_user.id
+        fa.airline_settlement_auditor_name = current_user.name
+        fa.airline_settlement_time = now
+        
+    db.commit()
+    return success_response(msg=f"成功批量结算 {len(req.items)} 条单据")
