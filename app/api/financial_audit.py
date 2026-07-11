@@ -622,6 +622,7 @@ async def get_air_financial_audits(
                 safe_float(pay_raw.get("transit_fee")) +
                 safe_float(pay_raw.get("cca_cost")) +
                 safe_float(pay_raw.get("telegraph_cost")) +
+                safe_float(pay_raw.get("penalty_fee")) +
                 safe_float(pay_raw.get("packaging_fee")) +
                 safe_float(pay_raw.get("other_fees")) +
                 safe_float(pay_raw.get("door_pickup_fee")) +
@@ -741,6 +742,8 @@ async def get_air_financial_audits(
             airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
             delivery_cost = safe_float(md.delivery_fee if md else 0.0)
 
+            penalty_fee = 0.0
+
             total_cost_val = (
                 safe_float(export.air_freight) +
                 safe_float(export.fuel_surcharge) +
@@ -750,7 +753,8 @@ async def get_air_financial_audits(
                 oth_fee +
                 door_fee +
                 airport_fee +
-                delivery_cost
+                delivery_cost +
+                penalty_fee
             )
 
             payable_data = PayableResponse(
@@ -767,6 +771,7 @@ async def get_air_financial_audits(
                 transit_fee=format_decimal(transit_fee_val),
                 cca_cost=safe_str(md.cca if md else ""),
                 telegraph_cost=safe_str(telegraph_cost_val),
+                penalty_fee="",
                 packaging_fee=safe_str(md.packaging_fee if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
                 other_fee_remark="",
@@ -848,6 +853,8 @@ async def get_air_financial_audits(
             airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
             delivery_cost = safe_float(md.delivery_fee if md else 0.0)
 
+            penalty_fee = 0.0
+
             total_cost_val = (
                 safe_float(approval.ref_freight) +
                 transit_fee_val +
@@ -856,7 +863,8 @@ async def get_air_financial_audits(
                 oth_fee +
                 door_fee +
                 airport_fee +
-                delivery_cost
+                delivery_cost +
+                penalty_fee
             )
 
             payable_data = PayableResponse(
@@ -873,6 +881,7 @@ async def get_air_financial_audits(
                 transit_fee=format_decimal(transit_fee_val),
                 cca_cost=safe_str(md.cca if md else ""),
                 telegraph_cost=safe_str(telegraph_cost_val),
+                penalty_fee="",
                 packaging_fee=safe_str(md.packaging_fee if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
                 other_fee_remark="",
@@ -961,6 +970,8 @@ async def get_air_financial_audits(
             airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
             delivery_cost = safe_float(md.delivery_fee if md else 0.0)
 
+            penalty_fee = 0.0
+
             total_cost_val = (
                 safe_float(form_dict.get("air_freight", 0.0)) +
                 cca_cost +
@@ -968,7 +979,8 @@ async def get_air_financial_audits(
                 oth_fee +
                 door_fee +
                 airport_fee +
-                delivery_cost
+                delivery_cost +
+                penalty_fee
             )
 
             payable_data = PayableResponse(
@@ -985,6 +997,7 @@ async def get_air_financial_audits(
                 transit_fee="",
                 cca_cost=safe_str(md.cca if md else ""),
                 telegraph_cost=safe_str(telegraph_cost_val),
+                penalty_fee="",
                 packaging_fee=safe_str(md.packaging_fee if md else ""),
                 other_fees=safe_str(md.other_fees if md else ""),
                 other_fee_remark="",
@@ -1064,6 +1077,7 @@ async def get_air_financial_audits(
             safe_float(payable_dict.get("transit_fee")) +
             safe_float(payable_dict.get("cca_cost")) +
             safe_float(payable_dict.get("telegraph_cost")) +
+            safe_float(payable_dict.get("penalty_fee")) +
             safe_float(payable_dict.get("packaging_fee")) +
             safe_float(payable_dict.get("other_fees")) +
             safe_float(payable_dict.get("door_pickup_fee")) +

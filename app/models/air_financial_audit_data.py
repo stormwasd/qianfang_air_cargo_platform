@@ -21,5 +21,11 @@ class AirFinancialAuditData(Base):
     financial_auditor_name = Column(String(255), nullable=True, comment="财务审核人")
     financial_audit_time = Column(DateTime, nullable=True, comment="财务审核时间")
 
+    # 航司应付对账结算状态
+    airline_settlement_status = Column(Integer, default=0, index=True, comment="航司对账结算状态: 0=未结算, 1=已结算")
+    airline_settlement_auditor_id = Column(BigInteger, nullable=True, comment="航司对账结算操作人ID")
+    airline_settlement_auditor_name = Column(String(255), nullable=True, comment="航司对账结算操作人")
+    airline_settlement_time = Column(DateTime, nullable=True, comment="航司对账结算时间")
+
     created_at = Column(DateTime, default=get_china_now, comment="创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="更新时间")
