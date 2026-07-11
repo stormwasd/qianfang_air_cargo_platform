@@ -29,7 +29,7 @@ from app.schemas.reconciliation_airline import (
 
 router = APIRouter()
 
-@router.get("/air", summary="航司对账列表查询", response_model=AirlineReconciliationListResponse)
+@router.get("/air", summary="航司对账列表查询")
 def get_airline_reconciliation_list(
     query: AirlineReconciliationQuery = Depends(),
     db: Session = Depends(get_db),
