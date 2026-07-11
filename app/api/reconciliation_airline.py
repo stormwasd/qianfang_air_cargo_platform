@@ -4,6 +4,10 @@ from sqlalchemy import or_, and_
 from typing import List
 from datetime import datetime
 import json
+import pandas as pd
+from io import BytesIO
+from fastapi.responses import StreamingResponse
+from urllib.parse import quote
 
 from app.api.deps import get_db, get_current_active_user
 from app.core.response import success_response
@@ -25,7 +29,8 @@ from app.schemas.reconciliation_airline import (
     AirlineReconciliationQuery,
     AirlineReconciliationItemResponse,
     AirlineReconciliationListResponse,
-    AirlineBatchSettleRequest
+    AirlineBatchSettleRequest,
+    AirlineReconciliationExportRequest
 )
 
 router = APIRouter()
@@ -545,3 +550,91 @@ def batch_confirm_airline_settlement(
         
     db.commit()
     return success_response(msg=f"成功批量结算 {len(req.items)} 条单据")
+
+@router.post("/air/export", summary="导出航司对账列表 (选中/批量)")
+def export_airline_reconciliation_list(
+    req: AirlineReconciliationExportRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    query = AirlineReconciliationQuery(
+        waybill_numbers=req.waybill_numbers,
+        flight_date_start=req.flight_date_start,
+        flight_date_end=req.flight_date_end,
+        airline=req.airline,
+        financial_audit_status=req.financial_audit_status,
+        customer_name=req.customer_name,
+        settlement_status=req.settlement_status,
+        page=1,
+        pageSize=999999
+    )
+    
+    # 借助现有的查询函数获取全量数据
+    result = get_airline_reconciliation_list(query=query, db=db, current_user=current_user)
+    all_items = result.get("data", {}).get("items", [])
+    
+    # 如果传了 selected_items，则只导出选中的
+    if req.selected_items:
+        selected_keys = {(item.source_type, str(item.source_id)) for item in req.selected_items}
+        items_to_export = [item for item in all_items if (item["source_type"], str(item["source_id"])) in selected_keys]
+    else:
+        items_to_export = all_items
+        
+    if not items_to_export:
+        raise HTTPException(status_code=400, detail="没有符合条件的数据可导出")
+        
+    export_data = []
+    
+    status_map = {0: "未审核", 1: "暂存", 2: "已审核"}
+    settle_map = {0: "未结算", 1: "已结算"}
+    
+    for idx, item in enumerate(items_to_export, 1):
+        export_data.append({
+            "序号": idx,
+            "运单号": item.get("waybill_number", ""),
+            "财务审核": status_map.get(item.get("financial_audit_status", 0), "未知"),
+            "财务审核人": item.get("financial_auditor_name", ""),
+            "结算状态": settle_map.get(item.get("airline_settlement_status", 0), "未知"),
+            "始发站": item.get("origin", ""),
+            "目的站": item.get("destination", ""),
+            "航班日期": item.get("flight_date", ""),
+            "航司": item.get("airline", ""),
+            "客户名称": item.get("actual_customer_name", ""),
+            "开单航班号": item.get("flight_number", ""),
+            "实走航班号": item.get("actual_flight_number", ""),
+            "货物名称": item.get("cargo_name", ""),
+            "开单件数": item.get("billing_quantity", ""),
+            "开单重量": item.get("billing_weight", ""),
+            "实走件数": item.get("actual_pieces", ""),
+            "实走重量": item.get("actual_weight", ""),
+            "计费重量": item.get("chargeable_weight", ""),
+            "费率": item.get("freight_rate", ""),
+            "运费": item.get("air_freight", ""),
+            "燃油费": item.get("fuel_surcharge", ""),
+            "过站费": item.get("transit_fee", ""),
+            "电报费": item.get("telegraph_cost", ""),
+            "CCA费用": item.get("cca_cost", ""),
+            "违规罚款": item.get("penalty_fee", ""),
+            "应付合计": item.get("total_cost", ""),
+            "结算审核人": item.get("airline_settlement_auditor_name", "")
+        })
+        
+    df = pd.DataFrame(export_data)
+    
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='航司对账记录')
+    output.seek(0)
+    
+    filename = f"航司对账列表_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+    encoded_filename = quote(filename)
+    
+    headers = {
+        'Content-Disposition': f'attachment; filename="{encoded_filename}"; filename*=utf-8\'\'{encoded_filename}'
+    }
+    
+    return StreamingResponse(
+        output, 
+        headers=headers,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )

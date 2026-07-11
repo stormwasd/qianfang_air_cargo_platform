@@ -54,3 +54,13 @@ class AirlineBatchSettleItem(BaseModel):
 
 class AirlineBatchSettleRequest(BaseModel):
     items: List[AirlineBatchSettleItem] = Field(..., description="待结算的单据列表")
+
+class AirlineReconciliationExportRequest(BaseModel):
+    waybill_numbers: Optional[str] = None
+    flight_date_start: Optional[str] = None
+    flight_date_end: Optional[str] = None
+    airline: Optional[str] = None
+    financial_audit_status: Optional[int] = None
+    customer_name: Optional[str] = None
+    settlement_status: Optional[int] = None
+    selected_items: Optional[List[AirlineBatchSettleItem]] = Field(None, description="如果传了，就只导出这些选中的；如果为空，则根据查询条件批量导出")
