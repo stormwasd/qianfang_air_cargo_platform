@@ -10,7 +10,7 @@ class AirlineReconciliationQuery(BaseModel):
     customer_name: Optional[str] = Field(None, description="客户名称（通常为前端传入的客户ID）")
     settlement_status: Optional[int] = Field(None, description="结算状态：0=未结算, 1=已结算")
     page: int = Field(1, ge=1, description="页码")
-    pageSize: int = Field(10, ge=1, le=200, description="每页数量")
+    pageSize: int = Field(10, ge=1, description="每页数量")
 
 class AirlineReconciliationItemResponse(BaseModel):
     source_type: str = Field(..., description="来源类型: shenzhen_air / china_southern_air / peer_air")
