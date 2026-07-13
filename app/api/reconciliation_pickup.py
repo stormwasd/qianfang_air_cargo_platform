@@ -243,7 +243,7 @@ def get_pickup_reconciliation_list(
         except Exception:
             form_dict = {}
 
-        act_flight = form_dict.get("actual_flight") or note.flight_number or ""
+        act_flight = str(form_dict.get("actual_flight") or note.flight_number or "")
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
             continue
 
@@ -256,8 +256,8 @@ def get_pickup_reconciliation_list(
                 try: po = json.loads(po)
                 except Exception: po = {}
             if isinstance(po, dict):
-                gate_pieces = str(po.get("gate_pieces", "0"))
-                transit_weight = str(po.get("transit_weight", "0"))
+                gate_pieces = str(po.get("gate_pieces") or "0")
+                transit_weight = str(po.get("transit_weight") or "0")
 
         candidate_items.append({
             "source_type": "peer_air",

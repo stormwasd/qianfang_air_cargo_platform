@@ -256,14 +256,14 @@ def get_delivery_reconciliation_list(
         except Exception:
             form_dict = {}
 
-        act_flight = form_dict.get("actual_flight") or note.flight_number or ""
+        act_flight = str(form_dict.get("actual_flight") or note.flight_number or "")
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
             continue
 
         # 实走件数/重量优先从 payable_data 中获取
         gate_pieces = "0"
         transit_weight = "0"
-        peer_air_freight = form_dict.get("air_freight", "")
+        peer_air_freight = str(form_dict.get("air_freight") or "")
         peer_fuel_surcharge = ""
         if fa and fa.payable_data:
             po = fa.payable_data
@@ -271,12 +271,12 @@ def get_delivery_reconciliation_list(
                 try: po = json.loads(po)
                 except Exception: po = {}
             if isinstance(po, dict):
-                gate_pieces = str(po.get("gate_pieces", "0"))
-                transit_weight = str(po.get("transit_weight", "0"))
+                gate_pieces = str(po.get("gate_pieces") or "0")
+                transit_weight = str(po.get("transit_weight") or "0")
                 if "air_freight" in po:
-                    peer_air_freight = po.get("air_freight", "")
+                    peer_air_freight = str(po.get("air_freight") or "")
                 if "fuel_surcharge" in po:
-                    peer_fuel_surcharge = po.get("fuel_surcharge", "")
+                    peer_fuel_surcharge = str(po.get("fuel_surcharge") or "")
 
         candidate_items.append({
             "source_type": "peer_air",

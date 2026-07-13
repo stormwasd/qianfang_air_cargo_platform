@@ -259,23 +259,23 @@ def get_airline_reconciliation_list(
             try: pay_dict = json.loads(pay_dict)
             except Exception: pay_dict = {}
 
-        wb_no = recv_dict.get("waybill_number", "")
+        wb_no = str(recv_dict.get("waybill_number") or "")
         if query.waybill_numbers:
             wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
             if wbs and wb_no not in wbs:
                 continue
                 
-        f_date = recv_dict.get("flight_date", "")
-        if query.flight_date_start and f_date < query.flight_date_start:
+        f_date = str(recv_dict.get("flight_date") or "")
+        if query.flight_date_start and f_date < str(query.flight_date_start):
             continue
-        if query.flight_date_end and f_date > query.flight_date_end:
+        if query.flight_date_end and f_date > str(query.flight_date_end):
             continue
             
-        air = recv_dict.get("airline", "")
+        air = str(recv_dict.get("airline") or "")
         if query.airline and query.airline != "全部" and air != query.airline:
             continue
             
-        c_name = recv_dict.get("customer_name", "")
+        c_name = str(recv_dict.get("customer_name") or "")
         if query.customer_name and query.customer_name not in c_name:
             continue
 
