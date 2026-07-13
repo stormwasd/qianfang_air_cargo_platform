@@ -572,7 +572,7 @@ def export_airline_reconciliation_list(
     
     # 借助现有的查询函数获取全量数据
     result = get_airline_reconciliation_list(query=query, db=db, current_user=current_user)
-    all_items = result.get("data", {}).get("items", [])
+    all_items = result.data.get("items", []) if result.data else []
     
     # 如果传了 selected_items，则只导出选中的
     if req.selected_items:

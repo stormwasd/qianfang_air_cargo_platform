@@ -489,7 +489,7 @@ def export_delivery_reconciliation_list(
     )
     
     result = get_delivery_reconciliation_list(query=query, db=db, current_user=current_user)
-    all_items = result.get("data", {}).get("items", [])
+    all_items = result.data.get("items", []) if result.data else []
     
     if req.selected_items:
         selected_keys = {(item.source_type, str(item.source_id)) for item in req.selected_items}
