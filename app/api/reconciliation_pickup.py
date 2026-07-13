@@ -12,7 +12,7 @@ from urllib.parse import quote
 from app.api.deps import get_db, get_current_active_user
 from app.core.response import success_response
 from app.utils.helpers import get_china_now
-from app.api.financial_audit import format_decimal, safe_float, safe_int, safe_str
+from app.api.financial_audit import format_decimal, safe_float, safe_int, safe_str, parse_csa_flight_info
 
 from app.models.air_financial_audit_data import AirFinancialAuditData
 from app.models.transit_loading import ShenzhenAirBookingExport
@@ -153,10 +153,7 @@ def get_pickup_reconciliation_list(
                     or_filters.append(ChinaSouthernAirApprovalData.waybill_number.like(f"%{wb}%"))
             csa_query = csa_query.filter(or_(*or_filters))
             
-    if query.flight_date_start:
-        csa_query = csa_query.filter(func.substr(ChinaSouthernAirApprovalData.booking_time, 1, 10) >= query.flight_date_start)
-    if query.flight_date_end:
-        csa_query = csa_query.filter(func.substr(ChinaSouthernAirApprovalData.booking_time, 1, 10) <= query.flight_date_end)
+
         
     if query.pickup_company:
         csa_query = csa_query.filter(CsaDepartureManualData.door_pickup_company.like(f"%{query.pickup_company}%"))
@@ -178,9 +175,14 @@ def get_pickup_reconciliation_list(
         if query.customer_name and query.customer_name not in c_name:
             continue
             
-        flight_num = approval.flight_info.split("/")[0] if approval.flight_info else ""
+        flight_num, f_date, _, _ = parse_csa_flight_info(approval.flight_info)
+        
+        if query.flight_date_start and f_date < str(query.flight_date_start):
+            continue
+        if query.flight_date_end and f_date > str(query.flight_date_end):
+            continue
+            
         act_flight = str(approval.actual_flight or flight_num)
-        f_date = approval.booking_time[:10] if approval.booking_time and len(approval.booking_time) >= 10 else ""
         
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
             continue

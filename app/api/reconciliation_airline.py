@@ -12,7 +12,7 @@ from urllib.parse import quote
 from app.api.deps import get_db, get_current_active_user
 from app.core.response import success_response
 from app.utils.helpers import get_china_now
-from app.api.financial_audit import format_decimal, safe_float, safe_int, safe_str
+from app.api.financial_audit import format_decimal, safe_float, safe_int, safe_str, parse_csa_flight_info
 
 from app.models.air_financial_audit_data import AirFinancialAuditData
 from app.models.transit_loading import ShenzhenAirBookingExport
@@ -125,11 +125,7 @@ def get_airline_reconciliation_list(
         wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
         if wbs:
             csa_query = csa_query.filter(ChinaSouthernAirApprovalData.waybill_number.in_(wbs))
-    # 南航没有 flight_date，提取订舱时间前10位作为替代
-    if query.flight_date_start:
-        csa_query = csa_query.filter(func.substr(ChinaSouthernAirApprovalData.booking_time, 1, 10) >= query.flight_date_start)
-    if query.flight_date_end:
-        csa_query = csa_query.filter(func.substr(ChinaSouthernAirApprovalData.booking_time, 1, 10) <= query.flight_date_end)
+    # 南航没有 flight_date，提取flight_info作为替代
     if query.airline and query.airline != "全部":
         if query.airline != "南航" and query.airline != "南方航空":
             csa_records = []
@@ -147,10 +143,15 @@ def get_airline_reconciliation_list(
         if query.customer_name and query.customer_name not in c_name:
             continue
             
-        f_date = approval.booking_time[:10] if approval.booking_time and len(approval.booking_time) >= 10 else ""
-        flight_num = approval.flight_info.split("/")[0] if approval.flight_info else ""
-        dest = approval.booking_routing.split("-")[-1] if approval.booking_routing else ""
-        origin = approval.booking_routing.split("-")[0] if approval.booking_routing else "CAN"
+        flight_num, f_date, orig_parse, dest_parse = parse_csa_flight_info(approval.flight_info)
+        
+        if query.flight_date_start and f_date < str(query.flight_date_start):
+            continue
+        if query.flight_date_end and f_date > str(query.flight_date_end):
+            continue
+            
+        dest = approval.booking_routing.split("-")[-1] if approval.booking_routing else dest_parse
+        origin = approval.booking_routing.split("-")[0] if approval.booking_routing else orig_parse
         
         candidate_items.append({
             "source_type": "china_southern_air",
