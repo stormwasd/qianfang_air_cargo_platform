@@ -452,7 +452,12 @@ def get_airline_reconciliation_list(
             "airline_settlement_auditor_name": fa.airline_settlement_auditor_name if fa else ""
         })
 
-    return {"code": 0, "data": {"items": result_items, "total": total, "page": query.page, "pageSize": query.pageSize}, "msg": "success"}
+    return success_response({
+        "items": result_items,
+        "total": total,
+        "page": query.page,
+        "pageSize": query.pageSize
+    })
 
 
 @router.post("/air/{source_type}/{source_id}/settle", summary="确认结算航司对账")
