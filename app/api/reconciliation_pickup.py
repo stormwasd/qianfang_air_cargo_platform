@@ -178,7 +178,8 @@ def get_pickup_reconciliation_list(
         if query.customer_name and query.customer_name not in c_name:
             continue
             
-        act_flight = str(approval.flight_number or "")
+        flight_num = approval.flight_info.split("/")[0] if approval.flight_info else ""
+        act_flight = str(approval.actual_flight or flight_num)
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
             continue
 
