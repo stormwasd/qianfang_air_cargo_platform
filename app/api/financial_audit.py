@@ -450,7 +450,7 @@ async def get_air_financial_audits(
                 "flight_number": safe_str(note.flight_number),
                 "audit_status": md.audit_status if md else 0,
                 "financial_audit_status": fa.financial_audit_status if fa else 0,
-                "customer_name": md.customer_name if md else note.customer_name,
+                "customer_name": md.customer_name if md else "",
                 "agent_name": note.company_name or "",
                 "airline": note.airline or "",
                 "cargo_name": form_dict.get("cargo_name", ""),

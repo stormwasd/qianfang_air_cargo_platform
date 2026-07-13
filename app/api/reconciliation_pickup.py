@@ -236,7 +236,7 @@ def get_pickup_reconciliation_list(
         if fa_status_filter_active and not fa:
             continue
             
-        c_name = str(md.customer_name) if md and md.customer_name else str(note.customer_name or "")
+        c_name = str(md.customer_name) if md and md.customer_name else ""
         if query.customer_name and query.customer_name not in c_name:
             continue
             
