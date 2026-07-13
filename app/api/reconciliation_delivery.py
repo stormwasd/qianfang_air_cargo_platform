@@ -303,6 +303,13 @@ def get_delivery_reconciliation_list(
     end_idx = start_idx + query.pageSize
     paged_items = candidate_items[start_idx:end_idx]
 
+    # 查 customer 名字映射
+    customer_ids = {str(item["customer_name"]) for item in paged_items if str(item.get("customer_name")).isdigit()}
+    customer_id_map = {}
+    if customer_ids:
+        customers = db.query(Customer).filter(Customer.id.in_(customer_ids)).all()
+        customer_id_map = {str(c.id): c for c in customers}
+
     result_items = []
     for item in paged_items:
         fa = item["_fa"]
@@ -350,6 +357,9 @@ def get_delivery_reconciliation_list(
             
         airport_pickup_fee = format_decimal(calc_total_cost)
 
+        c_name = str(item.get("customer_name") or "").strip()
+        actual_customer_name = customer_id_map[c_name].company_name if c_name in customer_id_map else c_name
+
         result_items.append(DeliveryReconciliationItemResponse(
             source_type=item["source_type"],
             source_id=str(item["source_id"]),
@@ -357,6 +367,7 @@ def get_delivery_reconciliation_list(
             financial_audit_status=financial_audit_status,
             delivery_settlement_status=delivery_settlement_status,
             customer_name=item.get("customer_name", ""),
+            actual_customer_name=actual_customer_name,
             delivery_company=delivery_company,
             flight_date=str(item.get("flight_date", "")).replace("/", "-"),
             actual_flight_number=item.get("actual_flight_number", ""),
@@ -509,7 +520,7 @@ def export_delivery_reconciliation_list(
         export_data.append({
             "序号": idx,
             "运单号": item.get("waybill_number", ""),
-            "客户名称": item.get("customer_name", ""),
+            "客户名称": item.get("actual_customer_name", ""),
             "财务审核": status_map.get(item.get("financial_audit_status", 0), "未知"),
             "结算状态": settle_map.get(item.get("delivery_settlement_status", 0), "未知"),
             "派送单位": item.get("delivery_company", ""),

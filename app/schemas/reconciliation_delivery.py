@@ -18,6 +18,7 @@ class DeliveryReconciliationItemResponse(BaseModel):
     source_id: str = Field(..., description="来源主表ID")
     waybill_number: Optional[str] = Field(None, description="2. 运单号")
     customer_name: Optional[str] = Field(None, description="客户名称")
+    actual_customer_name: Optional[str] = Field(None, description="真实客户名称（根据客户ID匹配得到）")
     financial_audit_status: int = Field(0, description="3. 财务审核状态: 0=未审, 1=暂存, 2=已审")
     delivery_settlement_status: int = Field(0, description="4. 结算状态: 0=未结算, 1=已结算")
     delivery_company: Optional[str] = Field(None, description="5. 派送单位")
