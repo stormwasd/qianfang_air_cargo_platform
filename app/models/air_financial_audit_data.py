@@ -33,5 +33,11 @@ class AirFinancialAuditData(Base):
     pickup_settlement_auditor_name = Column(String(255), nullable=True, comment="提货单位对账结算操作人")
     pickup_settlement_time = Column(DateTime, nullable=True, comment="提货单位对账结算时间")
 
+    # 派送单位应付对账结算状态
+    delivery_settlement_status = Column(Integer, default=0, index=True, comment="派送单位对账结算状态: 0=未结算, 1=已结算")
+    delivery_settlement_auditor_id = Column(BigInteger, nullable=True, comment="派送单位对账结算操作人ID")
+    delivery_settlement_auditor_name = Column(String(255), nullable=True, comment="派送单位对账结算操作人")
+    delivery_settlement_time = Column(DateTime, nullable=True, comment="派送单位对账结算时间")
+
     created_at = Column(DateTime, default=get_china_now, comment="创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="更新时间")
