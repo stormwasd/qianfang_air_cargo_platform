@@ -56,9 +56,6 @@ def get_delivery_reconciliation_list(
         
     fa_status_filter_active = query.financial_audit_status is not None or query.settlement_status is not None
 
-    customers = db.query(Customer).all()
-    customer_map = {c.id: c.company_name for c in customers}
-
     candidate_items = []
     
     # ---------------- 1. 深航数据提取 ----------------
@@ -98,7 +95,7 @@ def get_delivery_reconciliation_list(
         if fa_status_filter_active and not fa:
             continue
             
-        c_name = str(export.agent) if export.agent else ""
+        c_name = str(md.customer_name) if md and md.customer_name else ""
         if query.customer_name and query.customer_name not in c_name:
             continue
             
@@ -135,6 +132,7 @@ def get_delivery_reconciliation_list(
             "actual_weight": transit_weight,
             "air_freight": export.air_freight,
             "fuel_surcharge": export.fuel_surcharge,
+            "customer_name": c_name,
             "_main": export,
             "_md": md,
             "_fa": fa
@@ -184,7 +182,7 @@ def get_delivery_reconciliation_list(
         if fa_status_filter_active and not fa:
             continue
             
-        c_name = str(approval.key_account_name) if approval.key_account_name else ""
+        c_name = str(md.customer_name) if md and md.customer_name else ""
         if query.customer_name and query.customer_name not in c_name:
             continue
             
@@ -207,6 +205,7 @@ def get_delivery_reconciliation_list(
             "actual_weight": transit_weight,
             "air_freight": approval.estimated_freight,
             "fuel_surcharge": 0,
+            "customer_name": c_name,
             "_main": approval,
             "_md": md,
             "_fa": fa
@@ -250,7 +249,7 @@ def get_delivery_reconciliation_list(
         if fa_status_filter_active and not fa:
             continue
             
-        c_name = customer_map.get(note.customer_id, "")
+        c_name = str(md.customer_name) if md and md.customer_name else str(note.customer_name or "")
         if query.customer_name and query.customer_name not in c_name:
             continue
             
@@ -272,6 +271,7 @@ def get_delivery_reconciliation_list(
             "actual_weight": transit_weight,
             "air_freight": note.air_freight,
             "fuel_surcharge": note.fuel_surcharge,
+            "customer_name": c_name,
             "_main": note,
             "_md": md,
             "_fa": fa
@@ -338,6 +338,7 @@ def get_delivery_reconciliation_list(
             waybill_number=str(item.get("waybill_number", "")).replace("/", "-"),
             financial_audit_status=financial_audit_status,
             delivery_settlement_status=delivery_settlement_status,
+            customer_name=item.get("customer_name", ""),
             delivery_company=delivery_company,
             flight_date=str(item.get("flight_date", "")).replace("/", "-"),
             actual_flight_number=item.get("actual_flight_number", ""),
@@ -490,6 +491,7 @@ def export_delivery_reconciliation_list(
         export_data.append({
             "序号": idx,
             "运单号": item.get("waybill_number", ""),
+            "客户名称": item.get("customer_name", ""),
             "财务审核": status_map.get(item.get("financial_audit_status", 0), "未知"),
             "结算状态": settle_map.get(item.get("delivery_settlement_status", 0), "未知"),
             "派送单位": item.get("delivery_company", ""),

@@ -17,6 +17,7 @@ class PickupReconciliationItemResponse(BaseModel):
     source_type: str = Field(..., description="来源类型: shenzhen_air / china_southern_air / peer_air")
     source_id: str = Field(..., description="来源主表ID")
     waybill_number: Optional[str] = Field(None, description="2. 运单号")
+    customer_name: Optional[str] = Field(None, description="客户名称")
     financial_audit_status: int = Field(0, description="3. 财务审核状态: 0=未审, 1=暂存, 2=已审")
     pickup_settlement_status: int = Field(0, description="4. 结算状态: 0=未结算, 1=已结算")
     pickup_company: Optional[str] = Field(None, description="5. 上门提货单位")
