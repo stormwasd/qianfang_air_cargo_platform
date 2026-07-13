@@ -358,7 +358,7 @@ def get_delivery_reconciliation_list(
         airport_pickup_fee = format_decimal(calc_total_cost)
 
         c_name = str(item.get("customer_name") or "").strip()
-        actual_customer_name = customer_id_map[c_name].company_name if c_name in customer_id_map else c_name
+        actual_customer_name = customer_id_map[c_name].company_name if c_name in customer_id_map else ""
 
         result_items.append(DeliveryReconciliationItemResponse(
             source_type=item["source_type"],

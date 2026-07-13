@@ -332,7 +332,7 @@ def get_airline_reconciliation_list(
         fa = item.get("_fa")
         
         c_name = str(item.get("customer_name") or "").strip()
-        actual_name = customer_id_map[c_name].company_name if c_name in customer_id_map else c_name
+        actual_name = customer_id_map[c_name].company_name if c_name in customer_id_map else ""
         
         # 提取 payable 相关字段
         transit_fee_val = 0.0

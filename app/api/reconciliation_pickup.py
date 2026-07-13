@@ -300,7 +300,7 @@ def get_pickup_reconciliation_list(
         pickup_fee = str(md.door_pickup_fee or "")
 
         c_name = str(item.get("customer_name") or "").strip()
-        actual_customer_name = customer_id_map[c_name].company_name if c_name in customer_id_map else c_name
+        actual_customer_name = customer_id_map[c_name].company_name if c_name in customer_id_map else ""
 
         result_items.append(PickupReconciliationItemResponse(
             source_type=item["source_type"],
