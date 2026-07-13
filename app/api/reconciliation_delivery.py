@@ -57,7 +57,7 @@ def get_delivery_reconciliation_list(
     fa_status_filter_active = query.financial_audit_status is not None or query.settlement_status is not None
 
     customers = db.query(Customer).all()
-    customer_map = {c.id: c.customer_name for c in customers}
+    customer_map = {c.id: c.company_name for c in customers}
 
     candidate_items = []
     
