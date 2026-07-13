@@ -89,7 +89,7 @@ def get_airline_reconciliation_list(
             continue
         
         # 匹配客户名称搜索
-        c_name = str(export.agent) if export.agent else ""
+        c_name = str(md.customer_name) if md and md.customer_name else ""
         if query.customer_name and query.customer_name not in c_name:
             continue
             
@@ -143,7 +143,7 @@ def get_airline_reconciliation_list(
         if fa_status_filter_active and not fa:
             continue
             
-        c_name = str(approval.key_account_name) if approval.key_account_name else ""
+        c_name = str(md.customer_name) if md and md.customer_name else ""
         if query.customer_name and query.customer_name not in c_name:
             continue
             
@@ -197,7 +197,7 @@ def get_airline_reconciliation_list(
         if fa_status_filter_active and not fa:
             continue
             
-        c_name = str(note.customer_name) if note.customer_name else ""
+        c_name = str(md.customer_name) if md and md.customer_name else ""
         if query.customer_name and query.customer_name not in c_name:
             continue
             
@@ -331,7 +331,7 @@ def get_airline_reconciliation_list(
         fa = item.get("_fa")
         
         c_name = str(item.get("customer_name") or "").strip()
-        actual_name = customer_id_map[c_name].company_name if c_name in customer_id_map else ""
+        actual_name = customer_id_map[c_name].company_name if c_name in customer_id_map else c_name
         
         # 提取 payable 相关字段
         transit_fee_val = 0.0
