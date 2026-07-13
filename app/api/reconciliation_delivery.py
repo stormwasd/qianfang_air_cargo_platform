@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
 from typing import List
 from datetime import datetime
 import json
@@ -162,9 +162,9 @@ def get_delivery_reconciliation_list(
             csa_query = csa_query.filter(or_(*or_filters))
             
     if query.flight_date_start:
-        csa_query = csa_query.filter(ChinaSouthernAirApprovalData.flight_date >= query.flight_date_start)
+        csa_query = csa_query.filter(func.substr(ChinaSouthernAirApprovalData.booking_time, 1, 10) >= query.flight_date_start)
     if query.flight_date_end:
-        csa_query = csa_query.filter(ChinaSouthernAirApprovalData.flight_date <= query.flight_date_end)
+        csa_query = csa_query.filter(func.substr(ChinaSouthernAirApprovalData.booking_time, 1, 10) <= query.flight_date_end)
         
     if query.delivery_company:
         csa_query = csa_query.filter(CsaDepartureManualData.delivery_company.like(f"%{query.delivery_company}%"))
@@ -188,6 +188,8 @@ def get_delivery_reconciliation_list(
             
         flight_num = approval.flight_info.split("/")[0] if approval.flight_info else ""
         act_flight = str(approval.actual_flight or flight_num)
+        f_date = approval.booking_time[:10] if approval.booking_time and len(approval.booking_time) >= 10 else ""
+        
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
             continue
 
@@ -198,7 +200,7 @@ def get_delivery_reconciliation_list(
         candidate_items.append({
             "source_type": "china_southern_air",
             "source_id": approval.id,
-            "flight_date": approval.flight_date,
+            "flight_date": f_date,
             "waybill_number": approval.waybill_number,
             "destination": approval.destination,
             "actual_flight_number": act_flight,
