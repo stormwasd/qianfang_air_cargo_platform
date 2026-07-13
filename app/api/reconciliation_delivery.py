@@ -184,7 +184,7 @@ def get_delivery_reconciliation_list(
         if fa_status_filter_active and not fa:
             continue
             
-        c_name = customer_map.get(approval.customer_id, "")
+        c_name = str(approval.key_account_name) if approval.key_account_name else ""
         if query.customer_name and query.customer_name not in c_name:
             continue
             
