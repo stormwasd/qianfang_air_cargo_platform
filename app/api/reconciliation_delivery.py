@@ -183,7 +183,7 @@ def get_delivery_reconciliation_list(
         if query.customer_name and query.customer_name not in c_name:
             continue
             
-        flight_num, f_date, _, _ = parse_csa_flight_info(approval.flight_info)
+        flight_num, f_date, _, csa_dest = parse_csa_flight_info(approval.flight_info)
         
         if query.flight_date_start and f_date < str(query.flight_date_start):
             continue
@@ -204,11 +204,11 @@ def get_delivery_reconciliation_list(
             "source_id": approval.id,
             "flight_date": f_date,
             "waybill_number": approval.waybill_number,
-            "destination": approval.destination,
+            "destination": csa_dest or (approval.booking_routing.split("-")[-1] if approval.booking_routing else ""),
             "actual_flight_number": act_flight,
             "actual_pieces": gate_pieces,
             "actual_weight": transit_weight,
-            "air_freight": approval.estimated_freight,
+            "air_freight": approval.ref_freight,
             "fuel_surcharge": 0,
             "customer_name": c_name,
             "_main": approval,
@@ -236,14 +236,7 @@ def get_delivery_reconciliation_list(
     if query.waybill_numbers:
         wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
         if wbs:
-            or_filters = []
-            for wb in wbs:
-                if "-" in wb:
-                    num = wb.split("-", 1)[1]
-                    or_filters.append(ConsignmentNote.waybill_number.like(f"%{num}%"))
-                else:
-                    or_filters.append(ConsignmentNote.waybill_number.like(f"%{wb}%"))
-            peer_query = peer_query.filter(or_(*or_filters))
+            peer_query = peer_query.filter(PeerAirDepartureManualData.waybill_number.in_(wbs))
             
     if query.delivery_company:
         peer_query = peer_query.filter(PeerAirDepartureManualData.delivery_company.like(f"%{query.delivery_company}%"))
@@ -257,25 +250,45 @@ def get_delivery_reconciliation_list(
         c_name = str(md.customer_name) if md and md.customer_name else ""
         if query.customer_name and query.customer_name not in c_name:
             continue
-            
-        act_flight = str(note.actual_flight or note.billing_flight or "")
+
+        try:
+            form_dict = json.loads(note.form_data) if note.form_data else {}
+        except Exception:
+            form_dict = {}
+
+        act_flight = form_dict.get("actual_flight") or note.flight_number or ""
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
             continue
 
-        gate_pieces = str(safe_int(note.actual_pieces))
-        transit_weight = str(safe_float(note.actual_weight))
+        # 实走件数/重量优先从 payable_data 中获取
+        gate_pieces = "0"
+        transit_weight = "0"
+        peer_air_freight = form_dict.get("air_freight", "")
+        peer_fuel_surcharge = ""
+        if fa and fa.payable_data:
+            po = fa.payable_data
+            if isinstance(po, str):
+                try: po = json.loads(po)
+                except Exception: po = {}
+            if isinstance(po, dict):
+                gate_pieces = str(po.get("gate_pieces", "0"))
+                transit_weight = str(po.get("transit_weight", "0"))
+                if "air_freight" in po:
+                    peer_air_freight = po.get("air_freight", "")
+                if "fuel_surcharge" in po:
+                    peer_fuel_surcharge = po.get("fuel_surcharge", "")
 
         candidate_items.append({
             "source_type": "peer_air",
             "source_id": note.id,
-            "flight_date": note.consignment_date,
-            "waybill_number": note.waybill_number,
-            "destination": note.destination,
+            "flight_date": str(note.consignment_date) if note.consignment_date else "",
+            "waybill_number": md.waybill_number if md else "",
+            "destination": note.destination or "",
             "actual_flight_number": act_flight,
             "actual_pieces": gate_pieces,
             "actual_weight": transit_weight,
-            "air_freight": note.air_freight,
-            "fuel_surcharge": note.fuel_surcharge,
+            "air_freight": peer_air_freight,
+            "fuel_surcharge": peer_fuel_surcharge,
             "customer_name": c_name,
             "_main": note,
             "_md": md,
