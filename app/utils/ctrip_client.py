@@ -24,7 +24,15 @@ class CtripClient:
     def __init__(self):
         self._guid: Optional[str] = None
         self._guid_ts: float = 0.0  # GUID 获取时的时间戳
-        self._lock = asyncio.Lock()
+        self._locks: Dict[asyncio.AbstractEventLoop, asyncio.Lock] = {}
+
+    @property
+    def lock(self) -> asyncio.Lock:
+        """根据当前的 event loop 动态获取或创建锁，防止多事件循环并发访问报错"""
+        loop = asyncio.get_running_loop()
+        if loop not in self._locks:
+            self._locks[loop] = asyncio.Lock()
+        return self._locks[loop]
 
     # ------------------------------------------------------------------
     # GUID 管理
@@ -69,7 +77,7 @@ class CtripClient:
         if self._is_guid_valid():
             return self._guid  # type: ignore
 
-        async with self._lock:
+        async with self.lock:
             # 双重检查：可能在等锁时已被其他协程刷新
             if self._is_guid_valid():
                 return self._guid  # type: ignore
