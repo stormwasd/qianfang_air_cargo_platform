@@ -15,7 +15,6 @@ class BaseAPIException(HTTPException):
         detail: Any = None,
         headers: Optional[Dict[str, Any]] = None,
     ):
-        # 确保detail是字符串
         if detail is None:
             detail = "请求处理失败"
         elif not isinstance(detail, str):

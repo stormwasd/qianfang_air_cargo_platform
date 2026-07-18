@@ -31,7 +31,7 @@ class AgentUpdate(BaseModel):
 
 class AgentResponse(BaseModel):
     """代理详情响应schema"""
-    id: str  # 以字符串返回
+    id: str  
     agent_code: Optional[str] = None
     agent_type: int
     agent_name: str

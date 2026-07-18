@@ -45,11 +45,9 @@ async def create_pickup_unit(
     """新增提货单位"""
     pickup_code = unit_in.pickup_code
     if not pickup_code:
-        # 获取当前最大的提货单位编码
         latest_unit = db.query(PickupUnit).filter(PickupUnit.pickup_code.like("THS%")).order_by(PickupUnit.pickup_code.desc()).first()
         if latest_unit and latest_unit.pickup_code:
             try:
-                # 提取末尾的数字部分
                 num = int(latest_unit.pickup_code[3:])
                 pickup_code = f"THS{(num + 1):03d}"
             except ValueError:

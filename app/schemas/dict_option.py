@@ -26,13 +26,13 @@ class DictOptionUpdate(BaseModel):
 
 class DictOptionResponse(BaseModel):
     """字典选项响应schema"""
-    id: str  # ID以字符串形式返回
-    dict_type_id: str  # 字典类型ID
-    dict_type: str  # 字典类型的唯一标识
-    label: str  # 显示字段
-    value: str  # 存储的值（单个字符串）
-    status: int  # 状态（0=禁用，1=开启）
-    color_type: Optional[str] = None  # 颜色类型（用于前端区分状态颜色，非必填）
+    id: str  
+    dict_type_id: str  
+    dict_type: str  
+    label: str  
+    value: str  
+    status: int  
+    color_type: Optional[str] = None  
     created_at: datetime
     updated_at: datetime
     

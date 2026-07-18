@@ -11,7 +11,6 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 
-# 固定加密密钥种子（与项目 SECRET_KEY 隔离，防止密钥变更影响已加密数据）
 _ROBOT_CRYPTO_SEED = "qianfang-air-cargo-robot-id-encryption-key-2026"
 
 
@@ -44,18 +43,15 @@ def encrypt_robot_id(plain_robot_id: str) -> str:
         raise ValueError("机器人ID不能为空")
     
     key = _derive_key()
-    iv = os.urandom(16)  # 随机生成16字节IV
+    iv = os.urandom(16)  
     
-    # PKCS7填充
     padder = padding.PKCS7(128).padder()
     padded_data = padder.update(plain_robot_id.encode("utf-8")) + padder.finalize()
     
-    # AES-256-CBC加密
     cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
     encryptor = cipher.encryptor()
     ciphertext = encryptor.update(padded_data) + encryptor.finalize()
     
-    # IV + 密文 拼接后Base64编码（URL安全）
     encrypted_bytes = iv + ciphertext
     return base64.urlsafe_b64encode(encrypted_bytes).decode("utf-8")
 
@@ -81,22 +77,18 @@ def decrypt_robot_id(encrypted_robot_id: str) -> str:
     try:
         key = _derive_key()
         
-        # Base64解码
         encrypted_bytes = base64.urlsafe_b64decode(encrypted_robot_id.encode("utf-8"))
         
-        if len(encrypted_bytes) < 32:  # 至少16字节IV + 16字节密文（1个AES块）
+        if len(encrypted_bytes) < 32:  
             raise ValueError("加密数据长度不足")
         
-        # 分离IV和密文
         iv = encrypted_bytes[:16]
         ciphertext = encrypted_bytes[16:]
         
-        # AES-256-CBC解密
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
         decryptor = cipher.decryptor()
         padded_data = decryptor.update(ciphertext) + decryptor.finalize()
         
-        # 去除PKCS7填充
         unpadder = padding.PKCS7(128).unpadder()
         plain_data = unpadder.update(padded_data) + unpadder.finalize()
         

@@ -10,7 +10,6 @@ import math
 class PickupPhoneMapper:
     _instance = None
     
-    # 缓存数据
     _shenzhen_air_data: Dict[str, str] = {}
     _shenzhen_air_name_data: Dict[str, str] = {}
     _national_air_data: Dict[str, List[Dict[str, str]]] = {}
@@ -31,7 +30,6 @@ class PickupPhoneMapper:
         sz_path = os.path.join(base_dir, "深航提货电话.xlsx")
         national_path = os.path.join(base_dir, "全国民用机场提货电话.xlsx")
 
-        # 1. 加载深航提货电话
         if os.path.exists(sz_path):
             try:
                 df_sz = pd.read_excel(sz_path)
@@ -47,12 +45,9 @@ class PickupPhoneMapper:
             except Exception as e:
                 print(f"Error loading {sz_path}: {e}")
 
-        # 2. 加载全国民用机场提货电话 (表头在第6行, index=5)
         if os.path.exists(national_path):
             try:
-                # pandas header 是 0-indexed，所以 5 代表第6行
                 df_na = pd.read_excel(national_path, header=5)
-                # 第一列是“目的站”，可能存在合并单元格，需要向下填充
                 if "目的站" in df_na.columns:
                     df_na["目的站"] = df_na["目的站"].ffill()
                     
@@ -99,10 +94,8 @@ class PickupPhoneMapper:
             return ""
             
         name = dest_name.strip()
-        # 兼容“机场”后缀
         name_without_airport = name.replace("机场", "")
         
-        # 匹配目的站
         matched_dest = None
         for key in cls._national_air_data.keys():
             if key in name or name in key or key in name_without_airport:
@@ -116,24 +109,19 @@ class PickupPhoneMapper:
         if not records:
             return ""
             
-        # 如果只有一条记录，直接返回
         if len(records) == 1:
             return records[0]["phone"]
             
-        # 如果指定了航司，尝试精准匹配
         if airline:
-            airline_key = airline.replace("航", "") # 南航 -> 南
+            airline_key = airline.replace("航", "") 
             for record in records:
                 if airline in record["airline"] or airline_key in record["airline"]:
                     return record["phone"]
                     
-        # 尝试返回无特定航司限制的默认记录 (如 '/')
         for record in records:
             if record["airline"] == "/" or not record["airline"] or record["airline"] == "nan":
                 return record["phone"]
                 
-        # 实在匹配不到，返回第一条
         return records[0]["phone"]
 
-# 提供便捷调用的实例化对象
 pickup_phone_mapper = PickupPhoneMapper()

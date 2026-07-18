@@ -45,11 +45,9 @@ async def create_delivery_unit(
     """新增派送单位"""
     delivery_code = unit_in.delivery_code
     if not delivery_code:
-        # 获取当前最大的派送单位编码
         latest_unit = db.query(DeliveryUnit).filter(DeliveryUnit.delivery_code.like("PSS%")).order_by(DeliveryUnit.delivery_code.desc()).first()
         if latest_unit and latest_unit.delivery_code:
             try:
-                # 提取末尾的数字部分
                 num = int(latest_unit.delivery_code[3:])
                 delivery_code = f"PSS{(num + 1):03d}"
             except ValueError:

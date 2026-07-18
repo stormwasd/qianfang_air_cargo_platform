@@ -5,7 +5,6 @@
 from sqlalchemy import Column, BigInteger, ForeignKey, Table
 from app.database import Base
 
-# 用户-部门关联表
 user_department = Table(
     'user_departments',
     Base.metadata,

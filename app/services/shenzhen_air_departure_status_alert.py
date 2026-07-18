@@ -22,7 +22,6 @@ class ShenzhenAirDepartureStatusAlertService:
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
 
-        # 加载提货电话 Excel
         self._phone_dict = {}
         self._load_phone_excel()
 
@@ -117,7 +116,6 @@ class ShenzhenAirDepartureStatusAlertService:
                     await self._process_single_record(record, db)
                 except Exception as e:
                     print(f"[ShenzhenAirDepartureStatusAlert] 处理单号 {record.waybill_number} 异常: {e}")
-                # 错峰
                 await asyncio.sleep(random.uniform(1.0, 3.0))
 
         except Exception as e:
@@ -130,7 +128,6 @@ class ShenzhenAirDepartureStatusAlertService:
         waybill_num = record.waybill_number
         flight_date = record.flight_date
         
-        # 获取关联实走数据
         containers = db.query(ShenzhenAirBillingTimeContainer).filter(
             ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_num,
             ShenzhenAirBillingTimeContainer.flight_date == flight_date
@@ -139,7 +136,6 @@ class ShenzhenAirDepartureStatusAlertService:
         qty_diff = self._safe_float(record.quantity_difference)
         wt_diff = self._safe_float(record.weight_difference)
         
-        # 计飞时间：从containers获取，或者用携程
         planned_time_str = ""
         if containers and containers[0].billing_time:
             planned_time_str = containers[0].billing_time
@@ -150,7 +146,6 @@ class ShenzhenAirDepartureStatusAlertService:
                 if flight_res and flight_res.get("ready_time"):
                     planned_time_str = flight_res.get("ready_time")
         
-        # 实走航班实飞时间
         actual_flight_str = record.actual_flight or ""
         actual_flights = [f.strip() for f in actual_flight_str.split(",") if f.strip()]
         actual_time_displays = []
@@ -167,7 +162,6 @@ class ShenzhenAirDepartureStatusAlertService:
                     if planned_time_str:
                         try:
                             act_dt = datetime.strptime(act_time, "%Y-%m-%d %H:%M:%S")
-                            # ctrip API returns %Y-%m-%d %H:%M or %Y-%m-%d %H:%M:%S, parse flexibly
                             act_dt_str = act_time if len(act_time) > 16 else act_time + ":00"
                             act_dt = datetime.strptime(act_dt_str, "%Y-%m-%d %H:%M:%S")
                             
@@ -181,11 +175,9 @@ class ShenzhenAirDepartureStatusAlertService:
                 else:
                     actual_time_displays.append(f"{flt} / 暂无")
         
-        # 判断状态
         is_abnormal = qty_diff > 0 or wt_diff > 0 or is_delayed
         status_text = "出港异常" if is_abnormal else "出港正常"
         
-        # State hash to avoid duplicate push (精简哈希，剔除时间文本)
         state_hash = f"{qty_diff}_{wt_diff}_{is_delayed}"
         
         alert_record = db.query(AlertNotificationRecord).filter(
@@ -196,7 +188,6 @@ class ShenzhenAirDepartureStatusAlertService:
         if alert_record and alert_record.state_hash == state_hash:
             return
         
-        # 查客户名称
         customer_name = "未知客户"
         full_waybill = f"479-{waybill_num}"
         waybill_record = db.query(Waybill).filter(Waybill.waybill_number == full_waybill).first()
@@ -204,14 +195,12 @@ class ShenzhenAirDepartureStatusAlertService:
             shipper_info = waybill_record.form_data.get("shipper_consignee_info", {})
             customer_name = shipper_info.get("shipper_unit", "未知客户")
             
-        # 实走数据
         sum_qty = sum([self._safe_float(c.quantity) for c in containers])
         sum_wt = sum([self._safe_float(c.weight) for c in containers])
         
         qty_diff_actual = self._safe_float(record.quantity) - sum_qty
         wt_diff_actual = self._safe_float(record.weight) - sum_wt
         
-        # 提货电话
         telephone = "/"
         if routing and "-" in routing:
             dest = routing.split("-")[1].strip()
@@ -235,10 +224,8 @@ class ShenzhenAirDepartureStatusAlertService:
 
 落地两小时后联系提货（收货人携带好身份证）"""
 
-        # 调用微信接口
         await self._send_wechat_message(msg)
         
-        # 更新防重记录
         if alert_record:
             alert_record.state_hash = state_hash
         else:

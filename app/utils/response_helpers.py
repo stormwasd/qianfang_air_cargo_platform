@@ -18,13 +18,10 @@ def model_to_dict(model: Any) -> Dict[str, Any]:
         Dict: 字典格式的数据
     """
     if hasattr(model, 'model_dump'):
-        # Pydantic v2
         return model.model_dump()
     elif hasattr(model, 'dict'):
-        # Pydantic v1
         return model.dict()
     elif hasattr(model, '__dict__'):
-        # SQLAlchemy模型或其他对象
         result = {}
         for key, value in model.__dict__.items():
             if not key.startswith('_'):

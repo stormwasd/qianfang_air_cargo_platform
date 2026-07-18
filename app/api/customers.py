@@ -168,10 +168,8 @@ async def get_customers(
     
     支持按公司名称和联系人进行模糊搜索
     """
-    # 构建查询
     query_obj = db.query(Customer)
     
-    # 模糊搜索条件
     if query.company_name:
         query_obj = query_obj.filter(
             Customer.company_name.like(f"%{query.company_name}%")
@@ -182,10 +180,8 @@ async def get_customers(
             Customer.contact_person.like(f"%{query.contact_person}%")
         )
     
-    # 获取总数
     total = query_obj.count()
     
-    # 分页
     offset = (query.page - 1) * query.pageSize
     customers = query_obj.order_by(
         Customer.created_at.desc(), Customer.id.desc()

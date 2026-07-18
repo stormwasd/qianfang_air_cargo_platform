@@ -27,19 +27,16 @@ def extract_base_qty(qty_str: str) -> str:
     
     qty_str = str(qty_str).strip()
     
-    # 拆分开括号内外
     if "(" in qty_str and qty_str.endswith(")"):
         part1, part2 = qty_str.split("(", 1)
         part2 = part2.rstrip(")")
         
-        # 截取 part1 的前两项
         p1_parts = [x.strip() for x in part1.split("/")]
         if len(p1_parts) >= 2:
             base_str = f"{p1_parts[0]} /{p1_parts[1]}"
         else:
             base_str = part1.strip()
             
-        # 截取 part2 的前两项
         p2_parts = [x.strip() for x in part2.split("/")]
         if len(p2_parts) >= 2:
             diff_str = f"{p2_parts[0]} / {p2_parts[1]}"
@@ -48,7 +45,6 @@ def extract_base_qty(qty_str: str) -> str:
             
         return f"{base_str} ({diff_str})"
     else:
-        # 如果没有括号，也截取前两项
         parts = [x.strip() for x in qty_str.split("/")]
         if len(parts) >= 2:
             return f"{parts[0]} /{parts[1]}"
@@ -101,8 +97,6 @@ class CsaLoadingAlertManager:
         try:
             today_str = datetime.now().strftime("%Y-%m-%d")
             
-            # 查出当天的所有批复单（以 flight_info 包含当天的日期为准）
-            # 例如 "CZ8165 / 2026-06-19 / SZX - MIG"
             approvals = db.query(ChinaSouthernAirApprovalData).filter(
                 ChinaSouthernAirApprovalData.flight_info.like(f"%{today_str}%")
             ).all()
@@ -118,7 +112,6 @@ class CsaLoadingAlertManager:
                 if appv_id in added_approvals:
                     continue
 
-                # 检查是否已在任务表中
                 existing_task = db.query(CsaLoadingAlertTask).filter(
                     CsaLoadingAlertTask.approval_data_id == appv_id
                 ).first()
@@ -133,7 +126,6 @@ class CsaLoadingAlertManager:
                 ready_dt = None
                 display_planned_time = ""
 
-                # 1. 尝试从 planned_takeoff (计飞时间) 获取
                 if appv.planned_takeoff and str(appv.planned_takeoff).strip():
                     bt_clean = str(appv.planned_takeoff).strip().replace(":", "")
                     if len(bt_clean) >= 4:
@@ -144,18 +136,15 @@ class CsaLoadingAlertManager:
                         except ValueError:
                             pass
 
-                # 2. 从携程拿预飞时间(plannedDateTime) 和 兜底计飞时间(ReadyDateTime)
                 if billing_flight and routing:
-                    routing_clean = routing.replace(" ", "") # SZX - MIG -> SZX-MIG
+                    routing_clean = routing.replace(" ", "") 
                     ctrip_times = await ctrip_client.get_flight_times(
                         flight_no=billing_flight,
                         flight_date=today_str,
                         routing=routing_clean
                     )
                     if ctrip_times:
-                        # 预飞时间用于展示
                         display_planned_time = ctrip_times.get("planned_time") or ""
-                        # 如果表里没拿到计飞时间，用携程的兜底
                         if not ready_dt and ctrip_times.get("ready_time"):
                             try:
                                 ready_time_str = ctrip_times.get("ready_time")
@@ -166,15 +155,12 @@ class CsaLoadingAlertManager:
                             except ValueError:
                                 pass
 
-                # 如果没有获取到展示的预飞时间，尽量回退
                 if not display_planned_time:
                     display_planned_time = ready_dt.strftime("%Y-%m-%d %H:%M") if ready_dt else "未知预飞时间"
 
-                # 最终拿不到计飞时间，跳过
                 if not ready_dt:
                     continue
 
-                # 创建任务 (计飞时间提前 100 分钟触发)
                 trigger_dt = ready_dt - timedelta(minutes=100)
                 new_task = CsaLoadingAlertTask(
                     approval_data_id=appv_id,
@@ -204,7 +190,6 @@ class CsaLoadingAlertManager:
                 now = datetime.now()
                 db = SessionLocal()
                 try:
-                    # 获取待执行任务
                     tasks = db.query(CsaLoadingAlertTask).filter(
                         CsaLoadingAlertTask.status == "pending",
                         CsaLoadingAlertTask.trigger_time <= now
@@ -221,7 +206,7 @@ class CsaLoadingAlertManager:
                         except Exception as e:
                             print(f"南航装机预警执行单任务异常 {task.id}: {e}")
                             traceback.print_exc()
-                            task.status = "pending" # 可以等下次重试
+                            task.status = "pending" 
                     
                     db.commit()
                 finally:
@@ -245,7 +230,6 @@ class CsaLoadingAlertManager:
         waybill_num = task.waybill_number
         flight_date = task.flight_date
 
-        # 精确取批复数据
         appv = db.query(ChinaSouthernAirApprovalData).filter(
             ChinaSouthernAirApprovalData.id == approval_data_id
         ).first()
@@ -254,9 +238,7 @@ class CsaLoadingAlertManager:
             task.status = "ignored"
             return
         
-        # 发货人获取
         shipper_unit = "未知客户"
-        # 南航运单号已经自带前缀 "784-"，直接查询
         wb_record = db.query(Waybill).filter(Waybill.waybill_number == waybill_num).first()
         if wb_record and wb_record.form_data:
             shipper_info = wb_record.form_data.get("shipper_consignee_info", {})
@@ -268,7 +250,6 @@ class CsaLoadingAlertManager:
         billing_flight = flight_parts[0] if len(flight_parts) > 0 else "未知航班"
         routing = flight_parts[2] if len(flight_parts) > 2 else "未知航程"
 
-        # 提取制单数据 (件数、重量)
         export_qty = self._safe_float(appv.booking_pieces)
         export_wt = self._safe_float(appv.booking_weight)
         
@@ -276,12 +257,10 @@ class CsaLoadingAlertManager:
         goods_str = extract_base_qty(appv.goods_qty)
         machine_data_str = goods_str if goods_str != "/" else "/"
 
-        # 关联货拉数据 (集装器)
         lalamoves = db.query(CsaLalamoveInformation).filter(
             CsaLalamoveInformation.approval_data_id == appv.id
         ).all()
         
-        # 关联产品信息 (验证航班号)
         products = db.query(CsaProductInformation).filter(
             CsaProductInformation.approval_data_id == appv.id
         ).all()
@@ -303,7 +282,6 @@ class CsaLoadingAlertManager:
                     if p_flight != billing_flight:
                         has_inconsistent_flight = True
                         
-        # 组装集装器显示
         container_texts = []
         for l in lalamoves:
             l_qty = self._safe_float(l.pieces)
@@ -314,11 +292,6 @@ class CsaLoadingAlertManager:
             cap = str(l.capacity_lalamove).strip() if l.capacity_lalamove else ""
             c_code = cap.split("/")[0].strip() if cap else "/"
             
-            # 显示的航班号: 如果产品信息不为空，为了简化，展示开单航班或者不一致的航班？
-            # 模板要求: CZ2044(34 / 667) / CZ5819 (0945)
-            # 或者: CZ1681(21 / 368) / 未配航班
-            # 或者: CZ1681(21 / 368) / CZ5844 (不一致)
-            # 我们从 products 里随便拿一个（或者取第一条不一致的）。
             display_flight = "未配航班"
             if products:
                 for p in products:
@@ -327,9 +300,8 @@ class CsaLoadingAlertManager:
                         p_flight = fd_info.split("/")[0].strip()
                         display_flight = p_flight
                         if p_flight != billing_flight:
-                            break # 如果有不一致的优先显示
+                            break 
             
-            # 加上时间, 比如 (0945) 
             if display_flight != "未配航班" and appv.planned_takeoff:
                 bt_clean = str(appv.planned_takeoff).strip().replace(":", "")
                 if bt_clean:
@@ -337,7 +309,6 @@ class CsaLoadingAlertManager:
                     
             container_texts.append(f"{c_code}({int(l_qty)} / {int(l_wt)}) / {display_flight}")
 
-        # 核心逻辑判定
         is_qty_short = (sum_qty < export_qty) or (sum_wt < export_wt)
 
         alert_type = ""
@@ -352,7 +323,6 @@ class CsaLoadingAlertManager:
             
         planned_time_display = task.planned_time.replace(" ", "  ")
 
-        # 拼装消息
         lines = [
             "装机状态通知（南方航空）",
             f"<font color=\"{'info' if alert_type == '装机正常' else 'warning'}\">{alert_type}</font>",

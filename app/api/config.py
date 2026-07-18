@@ -20,7 +20,6 @@ from app.utils.helpers import format_datetime_china
 router = APIRouter()
 
 
-# ==================== 业务参数配置接口 ====================
 
 @router.put("", summary="保存业务参数配置")
 async def save_config(
@@ -39,20 +38,17 @@ async def save_config(
     - 这是一个 upsert 操作（update or insert）
     - 只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 查询是否已存在配置（全局唯一）
     existing_config = db.query(BusinessConfig).first()
     
     config_json = json.dumps(config_data.config_data, ensure_ascii=False)
     
     if existing_config:
-        # 更新现有配置
         existing_config.config_data = config_json
         db.commit()
         db.refresh(existing_config)
         config = existing_config
         msg = "配置更新成功"
     else:
-        # 创建新配置
         new_config = BusinessConfig(
             config_data=config_json
         )
@@ -62,7 +58,6 @@ async def save_config(
         config = new_config
         msg = "配置创建成功"
     
-    # 返回响应（ID转换为字符串）
     response_data = json.loads(config.config_data)
     result_data = {
         "id": str(config.id),
@@ -87,7 +82,6 @@ async def get_current_config(
     config = db.query(BusinessConfig).first()
     
     if not config:
-        # 没有配置是正常情况，返回 code=0，data=null
         return success_response(data=None, msg="暂无配置信息")
     
     response_data = json.loads(config.config_data)
@@ -100,7 +94,6 @@ async def get_current_config(
     return success_response(data=config_data, msg="查询成功")
 
 
-# ==================== 字典类型管理接口 ====================
 
 @router.post("/dict-types", summary="创建字典类型")
 async def create_dict_type(
@@ -117,12 +110,10 @@ async def create_dict_type(
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 检查type是否已存在
     existing_type = db.query(DictType).filter(DictType.type == dict_type_data.type).first()
     if existing_type:
         raise ConflictException(f"类型标识 '{dict_type_data.type}' 已存在")
     
-    # 创建新字典类型
     new_dict_type = DictType(
         name=dict_type_data.name,
         type=dict_type_data.type,
@@ -160,32 +151,24 @@ async def get_dict_types(
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 构建查询（全局共享）
     query_obj = db.query(DictType)
     
-    # 类型标识筛选
     if query.type:
         query_obj = query_obj.filter(DictType.type == query.type)
     
-    # 状态筛选
     if query.status is not None:
         query_obj = query_obj.filter(DictType.status == query.status)
     
-    # 获取总数
     total = query_obj.count()
     
-    # 排序
     query_obj = query_obj.order_by(DictType.created_at.desc())
     
-    # 分页（只有同时传了page和pageSize才分页）
     if query.page is not None and query.pageSize is not None:
         offset = (query.page - 1) * query.pageSize
         dict_types = query_obj.offset(offset).limit(query.pageSize).all()
     else:
-        # 不分页，返回全部
         dict_types = query_obj.all()
     
-    # 构建响应
     items = []
     for dt in dict_types:
         items.append({
@@ -263,7 +246,6 @@ async def update_dict_type(
     if not dict_type:
         raise NotFoundException(f"字典类型不存在（id: {dict_type_id}）")
     
-    # 如果更新type，检查是否与其他类型冲突
     if dict_type_data.type is not None and dict_type_data.type != dict_type.type:
         existing_type = db.query(DictType).filter(
             DictType.type == dict_type_data.type,
@@ -273,7 +255,6 @@ async def update_dict_type(
             raise ConflictException(f"类型标识 '{dict_type_data.type}' 已被其他字典类型使用")
         dict_type.type = dict_type_data.type
     
-    # 更新其他字段
     if dict_type_data.name is not None:
         dict_type.name = dict_type_data.name
     if dict_type_data.status is not None:
@@ -318,10 +299,8 @@ async def delete_dict_type(
     if not dict_type:
         raise NotFoundException(f"字典类型不存在（id: {dict_type_id}）")
     
-    # 统计关联的选项数量
     options_count = db.query(DictOption).filter(DictOption.dict_type_id == type_id).count()
     
-    # 删除字典类型（关联的选项会自动级联删除）
     dict_type_type = dict_type.type
     dict_type_name = dict_type.name
     db.delete(dict_type)
@@ -338,7 +317,6 @@ async def delete_dict_type(
     )
 
 
-# ==================== 字典选项管理接口 ====================
 
 @router.post("/dict-options", summary="创建字典选项")
 async def create_dict_option(
@@ -357,13 +335,10 @@ async def create_dict_option(
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 查询字典类型
     dict_type = db.query(DictType).filter(DictType.type == dict_option_data.dict_type).first()
     if not dict_type:
         raise NotFoundException(f"字典类型 '{dict_option_data.dict_type}' 不存在")
     
-    # 创建新字典选项
-    # 处理 color_type：如果为空字符串或只包含空白字符，设置为 None
     color_type_value = None
     if dict_option_data.color_type is not None:
         stripped_color_type = dict_option_data.color_type.strip()
@@ -412,27 +387,21 @@ async def get_dict_options(
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 构建查询（全局共享）
     query_obj = db.query(DictOption).join(
         DictType, 
         DictOption.dict_type_id == DictType.id
     )
     
-    # 字典类型筛选
     if query.dict_type:
         query_obj = query_obj.filter(DictType.type == query.dict_type)
     
-    # 状态筛选
     if query.status is not None:
         query_obj = query_obj.filter(DictOption.status == query.status)
     
-    # 获取总数
     total = query_obj.count()
     
-    # 先查询所有数据（在排序和分页之前）
     all_dict_options = query_obj.all()
     
-    # 检查所有value是否全为数字
     def is_numeric(value: str) -> bool:
         """检查字符串是否为数字（包括整数和小数）"""
         try:
@@ -443,10 +412,7 @@ async def get_dict_options(
     
     all_values_numeric = all(is_numeric(do.value) for do in all_dict_options) if all_dict_options else False
     
-    # 排序逻辑
     if all_values_numeric:
-        # 所有value全为数字，按value排序
-        # 如果order参数存在，使用order参数；如果不存在，默认从小到大（asc）
         sort_order = query.order if query.order else "asc"
         reverse = (sort_order == "desc")
         dict_options = sorted(
@@ -455,19 +421,16 @@ async def get_dict_options(
             reverse=reverse
         )
     else:
-        # 不全为数字，保持原有排序（按创建时间倒序），不受order参数影响
         dict_options = sorted(
             all_dict_options,
             key=lambda x: x.created_at,
             reverse=True
         )
     
-    # 分页（只有同时传了page和pageSize才分页）
     if query.page is not None and query.pageSize is not None:
         offset = (query.page - 1) * query.pageSize
         dict_options = dict_options[offset:offset + query.pageSize]
     
-    # 构建响应
     items = []
     for do in dict_options:
         items.append({
@@ -555,25 +518,19 @@ async def update_dict_option(
     if not dict_option:
         raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    # 如果更新dict_type，检查新的类型是否存在
     if dict_option_data.dict_type is not None:
         new_dict_type = db.query(DictType).filter(DictType.type == dict_option_data.dict_type).first()
         if not new_dict_type:
             raise NotFoundException(f"字典类型 '{dict_option_data.dict_type}' 不存在")
         dict_option.dict_type_id = new_dict_type.id
     
-    # 更新其他字段
     if dict_option_data.label is not None:
         dict_option.label = dict_option_data.label
     if dict_option_data.value is not None:
         dict_option.value = dict_option_data.value
     if dict_option_data.status is not None:
         dict_option.status = dict_option_data.status
-    # color_type 字段：如果提供了值（非 None），就更新；如果为 None，保持原值
-    # 支持传入空字符串来清空 color_type 字段（空字符串会被转换为 None）
     if dict_option_data.color_type is not None:
-        # 如果传入空字符串或只包含空白字符，设置为 None（清空字段）
-        # 否则设置为去除首尾空白后的值
         stripped_value = dict_option_data.color_type.strip()
         dict_option.color_type = stripped_value if stripped_value else None
     
@@ -617,7 +574,6 @@ async def delete_dict_option(
     if not dict_option:
         raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    # 保存信息用于返回
     option_label = dict_option.label
     option_dict_type = dict_option.dict_type.type
     

@@ -29,10 +29,8 @@ async def create_consignment_note(
     """
     新增托运书（空运/汽运）
     """
-    # 提取核心搜索列
     form_data = payload.form_data
     
-    # 解析动态列用于搜索，并做兼容性回退
     consignment_date = form_data.get("transport_date") or form_data.get("flight_date")
     destination = form_data.get("destination_city") or form_data.get("destination_station")
     flight_number = form_data.get("flight_number")
@@ -72,13 +70,11 @@ async def get_consignment_notes(
     
     from sqlalchemy import or_
     
-    # 财务审核模式处理
     if query.is_financial:
         if not query.transport_type:
             return success_response(code=400, msg="财务审核模式下必须指定托运方式筛选")
             
         if query.transport_type == "1":
-            # 汽运财务审核
             from app.models.peer_road_manual_data import PeerRoadDepartureManualData
             query_obj = query_obj.outerjoin(
                 PeerRoadDepartureManualData,
@@ -95,7 +91,6 @@ async def get_consignment_notes(
                 else:
                     query_obj = query_obj.filter(PeerRoadDepartureManualData.financial_audit_status == query.financial_audit_status)
         else:
-            # 空运财务审核
             from app.models.peer_air_manual_data import PeerAirDepartureManualData
             query_obj = query_obj.outerjoin(
                 PeerAirDepartureManualData,
@@ -114,7 +109,6 @@ async def get_consignment_notes(
             if query.waybill_number:
                 query_obj = query_obj.filter(PeerAirDepartureManualData.waybill_number.like(f"%{query.waybill_number}%"))
     else:
-        # 原本的 0. 审核状态 / 主单号 过滤 (关联手动数据表)
         if query.audit_status is not None or query.waybill_number:
             if query.transport_type == "1":
                 from app.models.peer_road_manual_data import PeerRoadDepartureManualData
@@ -151,25 +145,20 @@ async def get_consignment_notes(
                 if query.waybill_number:
                     query_obj = query_obj.filter(PeerAirDepartureManualData.waybill_number.like(f"%{query.waybill_number}%"))
             
-    # 类型过滤
     if query.transport_type:
         query_obj = query_obj.filter(ConsignmentNote.transport_type == query.transport_type)
         
-    # 日期范围
     if query.date_start:
         query_obj = query_obj.filter(ConsignmentNote.consignment_date >= query.date_start)
     if query.date_end:
         query_obj = query_obj.filter(ConsignmentNote.consignment_date <= query.date_end)
         
-    # 公共过滤
     if query.company_name:
         query_obj = query_obj.filter(ConsignmentNote.company_name.like(f"%{query.company_name}%"))
         
-    # 汽运特有/或者空运也可以带
     if query.customer_name:
         query_obj = query_obj.filter(ConsignmentNote.customer_name.like(f"%{query.customer_name}%"))
         
-    # 空运特有
     if query.destination:
         query_obj = query_obj.filter(ConsignmentNote.destination.like(f"%{query.destination}%"))
     if query.flight_number:
@@ -177,7 +166,6 @@ async def get_consignment_notes(
     if query.airline:
         query_obj = query_obj.filter(ConsignmentNote.airline.like(f"%{query.airline}%"))
 
-    # 始发城市过滤 (仅汽运)
     if query.origin_city:
         from sqlalchemy import or_
         query_obj = query_obj.filter(
@@ -187,11 +175,9 @@ async def get_consignment_notes(
             )
         )
 
-    # 目的城市过滤 (仅汽运)
     if query.destination_city:
         query_obj = query_obj.filter(ConsignmentNote.destination.like(f"%{query.destination_city}%"))
 
-    # 始发站过滤 (从 form_data JSON 中提取并匹配)
     if query.origin_station:
         from sqlalchemy import or_
         query_obj = query_obj.filter(
@@ -201,7 +187,6 @@ async def get_consignment_notes(
             )
         )
         
-    # 航班日期/托运日期 精确匹配过滤
     if query.flight_date:
         query_obj = query_obj.filter(ConsignmentNote.consignment_date == query.flight_date)
 
@@ -209,7 +194,6 @@ async def get_consignment_notes(
     offset = (query.page - 1) * query.pageSize
     notes = query_obj.order_by(ConsignmentNote.created_at.desc(), ConsignmentNote.id.desc()).offset(offset).limit(query.pageSize).all()
     
-    # 批量拉取空运记录的手动审核数据
     manual_data_by_note_id = {}
     air_note_ids = [note.id for note in notes if note.transport_type == "0"]
     if air_note_ids:
@@ -219,7 +203,6 @@ async def get_consignment_notes(
         ).all()
         manual_data_by_note_id = {md.consignment_note_id: md for md in manual_datas}
         
-    # 批量拉取汽运记录的审核数据
     road_manual_data_by_note_id = {}
     road_note_ids = [note.id for note in notes if note.transport_type == "1"]
     if road_note_ids:
@@ -250,7 +233,6 @@ async def get_consignment_notes(
             "manual_data": None
         }
         
-        # 挂载空运手动审核数据
         if note.transport_type == "0" and note.id in manual_data_by_note_id:
             md = manual_data_by_note_id[note.id]
             md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
@@ -258,7 +240,6 @@ async def get_consignment_notes(
             md_dict["consignment_note_id"] = str(md.consignment_note_id)
             item_dict["manual_data"] = PeerAirDepartureManualDataDTO(**md_dict).model_dump(mode="json")
             
-        # 挂载汽运审核数据
         elif note.transport_type == "1" and note.id in road_manual_data_by_note_id:
             md = road_manual_data_by_note_id[note.id]
             md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
@@ -364,14 +345,11 @@ async def generate_consignment_pdf(
         
     form_data = json.loads(note.form_data)
     
-    # 获取捆绑字体的绝对路径，确保在不同服务器上跨平台可用
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     font_path = os.path.join(current_dir, "..", "assets", "fonts", "SimHei.ttf")
-    # CSS url 路径最好将反斜杠替换为正斜杠，以防 Windows 路径解析问题
     font_path_css = font_path.replace("\\", "/")
     
-    # 基础 HTML 模板
     html_template = f"""
     <!DOCTYPE html>
     <html lang="zh-CN">
@@ -486,7 +464,6 @@ async def generate_consignment_pdf(
     if pdf.err:
         raise NotFoundException("生成PDF失败")
         
-    # Return as PDF file response
     headers = {
         "Content-Disposition": f"attachment; filename=consignment_note_{note.id}.pdf"
     }
@@ -502,13 +479,11 @@ async def audit_consignment_note(
 ):
     from app.utils.helpers import get_china_now
     
-    # 检查托运书是否存在
     note = db.query(ConsignmentNote).filter(ConsignmentNote.id == int(data.consignment_note_id)).first()
     if not note:
         return success_response(code=404, msg="托运书不存在")
         
     if note.transport_type == "0":
-        # 空运审核逻辑
         from app.models.peer_air_manual_data import PeerAirDepartureManualData
         manual_data = db.query(PeerAirDepartureManualData).filter(
             PeerAirDepartureManualData.consignment_note_id == int(data.consignment_note_id)
@@ -520,7 +495,6 @@ async def audit_consignment_note(
             )
             db.add(manual_data)
             
-        # 覆盖填写字段
         manual_data.waybill_number = data.waybill_number
         manual_data.customer_name = data.customer_name
         manual_data.cargo_type = data.cargo_type
@@ -553,7 +527,6 @@ async def audit_consignment_note(
             return success_response(code=400, msg="未知的操作类型")
             
     elif note.transport_type == "1":
-        # 汽运审核逻辑
         from app.models.peer_road_manual_data import PeerRoadDepartureManualData
         manual_data = db.query(PeerRoadDepartureManualData).filter(
             PeerRoadDepartureManualData.consignment_note_id == int(data.consignment_note_id)
@@ -596,13 +569,11 @@ async def financial_audit_consignment_note(
     """
     from app.utils.helpers import get_china_now
     
-    # 检查托运书是否存在
     note = db.query(ConsignmentNote).filter(ConsignmentNote.id == int(payload.consignment_note_id)).first()
     if not note:
         return success_response(code=404, msg="托运书不存在")
         
     if note.transport_type == "0":
-        # 空运
         from app.models.peer_air_manual_data import PeerAirDepartureManualData
         manual_data = db.query(PeerAirDepartureManualData).filter(
             PeerAirDepartureManualData.consignment_note_id == int(payload.consignment_note_id)
@@ -627,7 +598,6 @@ async def financial_audit_consignment_note(
             return success_response(code=400, msg="未知的操作类型")
             
     elif note.transport_type == "1":
-        # 汽运
         from app.models.peer_road_manual_data import PeerRoadDepartureManualData
         manual_data = db.query(PeerRoadDepartureManualData).filter(
             PeerRoadDepartureManualData.consignment_note_id == int(payload.consignment_note_id)

@@ -28,7 +28,7 @@ from app.models.agent import Agent
 from app.models.pickup_unit import PickupUnit
 from app.models.delivery_unit import DeliveryUnit
 from app.models.consignment_note import ConsignmentNote
-from app.models.user_department import user_department  # 确保关联表被导入
+from app.models.user_department import user_department  
 
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer

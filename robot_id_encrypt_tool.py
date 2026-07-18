@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 机器人ID加密工具（独立脚本）
 
@@ -17,7 +16,6 @@
 import sys
 import os
 
-# 将项目根目录加入 sys.path，使脚本可以直接引用 app 包
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.utils.robot_crypto import encrypt_robot_id, decrypt_robot_id
@@ -40,35 +38,35 @@ def main():
         if choice == "1":
             plain_id = input("请输入机器人真实ID: ").strip()
             if not plain_id:
-                print("❌ 机器人ID不能为空！")
+                print("机器人ID不能为空！")
                 continue
             try:
                 encrypted = encrypt_robot_id(plain_id)
                 print()
-                print("✅ 加密成功！")
+                print("加密成功！")
                 print(f"   真实ID:   {plain_id}")
                 print(f"   加密后ID: {encrypted}")
                 print()
-                print("📋 请将「加密后ID」复制并粘贴到系统管理后台的机器人ID表单中。")
+                print("请将「加密后ID」复制并粘贴到系统管理后台的机器人ID表单中。")
                 print()
             except Exception as e:
-                print(f"❌ 加密失败: {e}")
+                print(f"加密失败: {e}")
                 print()
 
         elif choice == "2":
             encrypted_id = input("请输入加密后的机器人ID: ").strip()
             if not encrypted_id:
-                print("❌ 加密ID不能为空！")
+                print("加密ID不能为空！")
                 continue
             try:
                 decrypted = decrypt_robot_id(encrypted_id)
                 print()
-                print("✅ 解密成功！")
+                print("解密成功！")
                 print(f"   加密ID:   {encrypted_id}")
                 print(f"   真实ID:   {decrypted}")
                 print()
             except ValueError as e:
-                print(f"❌ 解密失败: {e}")
+                print(f"解密失败: {e}")
                 print()
 
         elif choice == "3":
@@ -76,7 +74,7 @@ def main():
             break
 
         else:
-            print("❌ 无效选项，请输入 1、2 或 3")
+            print("无效选项，请输入 1、2 或 3")
             print()
 
 

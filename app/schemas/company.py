@@ -37,7 +37,7 @@ class CompanyAccountUpdate(BaseModel):
 
 class CompanyAccountResponse(BaseModel):
     """公司账户详情响应schema"""
-    id: str  # 以字符串返回
+    id: str  
     account_name: str
     account_number: str
     bank_name: str

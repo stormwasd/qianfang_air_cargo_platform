@@ -50,15 +50,12 @@ class ShenzhenAirApprovalAlertService:
         interval = getattr(settings, "ALERT_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS", 600)
         fixed_times_str = getattr(settings, "ALERT_SHENZHEN_AIR_APPROVAL_FIXED_TIMES", "18:00")
 
-        # 解析固定时间点列表
         fixed_times: List[str] = []
         if fixed_times_str and fixed_times_str.strip():
             fixed_times = [t.strip() for t in fixed_times_str.split(",") if t.strip()]
 
-        # 记录已触发的定时时间点（避免同一分钟内重复触发）
         triggered_fixed_times: set = set()
 
-        # 间隔计数器
         elapsed = 0
 
         while not self._stop_event.is_set():
@@ -67,21 +64,18 @@ class ShenzhenAirApprovalAlertService:
                 current_time_str = now.strftime("%H:%M")
                 current_date_str = now.strftime("%Y-%m-%d")
 
-                # 日期变更时重置已触发记录
                 date_key = current_date_str
                 if hasattr(self, "_last_date") and self._last_date != date_key:
                     triggered_fixed_times.clear()
                 self._last_date = date_key
 
-                # --- 定时触发检查 ---
                 if current_time_str in fixed_times and current_time_str not in triggered_fixed_times:
                     triggered_fixed_times.add(current_time_str)
                     print(f"[ShenzhenAirApprovalAlert] 定时触发（{current_time_str}），开始扫描...")
                     await self._scan_and_alert()
 
-                # --- 间隔触发检查 ---
                 if interval and interval > 0:
-                    elapsed += 5  # 每次循环 sleep 5 秒
+                    elapsed += 5  
                     if elapsed >= interval:
                         elapsed = 0
                         print(f"[ShenzhenAirApprovalAlert] 间隔触发（每{interval}秒），开始扫描...")
@@ -105,8 +99,6 @@ class ShenzhenAirApprovalAlertService:
             
             tomorrow_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-            # ===== 1. 扫描窄体机表 (shenzhen_air_approval_data) =====
-            # 先找明天航班的父级ID
             narrow_parent_ids = db.query(ShenzhenAirApprovalData.id).filter(
                 ShenzhenAirApprovalData.parent_id.is_(None),
                 ShenzhenAirApprovalData.flight_date == tomorrow_str
@@ -121,7 +113,6 @@ class ShenzhenAirApprovalAlertService:
                 total_count += 1
                 if self._is_narrow_body_abnormal(record):
                     abnormal_count += 1
-                    # 获取父级信息（航班号）用于展示
                     parent = db.query(ShenzhenAirApprovalData).filter(
                         ShenzhenAirApprovalData.id == record.parent_id
                     ).first()
@@ -136,7 +127,6 @@ class ShenzhenAirApprovalAlertService:
                     if detail_str:
                         abnormal_details.append(f"   [{flight_number}] - {detail_str}")
 
-            # ===== 2. 扫描宽体机表 (shenzhen_air_approval_wide_body_data) =====
             wide_parent_ids = db.query(ShenzhenAirApprovalWideBodyData.id).filter(
                 ShenzhenAirApprovalWideBodyData.parent_id.is_(None),
                 ShenzhenAirApprovalWideBodyData.flight_date == tomorrow_str
@@ -166,7 +156,6 @@ class ShenzhenAirApprovalAlertService:
 
             normal_count = total_count - abnormal_count
 
-            # ===== 3. 构造消息并发送 =====
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
             message_lines = [
                 f"深航订舱批复预警 ({now_str})",
@@ -179,13 +168,11 @@ class ShenzhenAirApprovalAlertService:
             if abnormal_count > 0:
                 message_lines.append("")
                 message_lines.append("异常明细：")
-                # 最多展示前20条，防止消息过长
                 for detail in abnormal_details[:20]:
                     message_lines.append(detail)
                 if len(abnormal_details) > 20:
                     message_lines.append(f"  ...等共{len(abnormal_details)}条")
 
-            # 构造防重特征码 (去除了易变的时间戳)
             hash_lines = [
                 f"订舱数量：{total_count}单",
                 f"批复正常：{normal_count}单",
@@ -195,7 +182,6 @@ class ShenzhenAirApprovalAlertService:
                 hash_lines.extend(abnormal_details[:20])
             state_hash = "|".join(hash_lines)
 
-            # 查防重记录表
             alert_record = db.query(AlertNotificationRecord).filter(
                 AlertNotificationRecord.module_name == "shenzhen_air_approval",
                 AlertNotificationRecord.target_id == "daily_summary"
@@ -208,7 +194,6 @@ class ShenzhenAirApprovalAlertService:
             message = "\n".join(message_lines)
             await self._send_wechat_message(message)
             
-            # 记录防重
             if alert_record:
                 alert_record.state_hash = state_hash
             else:
@@ -270,10 +255,8 @@ class ShenzhenAirApprovalAlertService:
         for booking_val, approval_val in pairs:
             b = self._safe_to_float(booking_val)
             a = self._safe_to_float(approval_val)
-            # 两个都是 None/空 视为正常（无数据）
             if b is None and a is None:
                 continue
-            # 一方有值一方没值，或数值不等，均视为异常
             if b != a:
                 return True
         return False
@@ -325,5 +308,4 @@ class ShenzhenAirApprovalAlertService:
                 print(f"[ShenzhenAirApprovalAlert] 发送企业微信消息异常: {repr(e)}")
 
 
-# 全局单例
 shenzhen_air_approval_alert = ShenzhenAirApprovalAlertService()

@@ -40,33 +40,27 @@ async def create_user(
     
     新增账号默认启用
     """
-    # 验证权限列表
     if not validate_permissions(user.permissions):
         raise BadRequestException("权限列表包含无效的权限")
     
-    # 检查手机号是否已存在
     existing_user = db.query(User).filter(User.phone == user.phone).first()
     if existing_user:
         raise ConflictException("该手机号已被注册")
     
-    # 验证部门是否存在
     if user.department_ids:
-        # 将字符串ID转换为整数用于查询
         department_ids_int = [int(dept_id) for dept_id in user.department_ids]
         departments = db.query(Department).filter(Department.id.in_(department_ids_int)).all()
         if len(departments) != len(user.department_ids):
             raise NotFoundException("部分部门不存在")
     
-    # 创建用户
     new_user = User(
         phone=user.phone,
         password_hash=get_password_hash(user.password),
         name=user.name,
         permissions=format_permissions_to_json(user.permissions),
-        is_active=True  # 默认启用
+        is_active=True  
     )
     
-    # 关联部门
     if user.department_ids:
         new_user.departments = departments
     
@@ -74,7 +68,6 @@ async def create_user(
     db.commit()
     db.refresh(new_user)
     
-    # 返回响应（ID转换为字符串）
     user_permissions = parse_json_permissions(new_user.permissions)
     user_data = {
         "id": str(new_user.id),
@@ -135,15 +128,12 @@ async def get_user(
     
     - **user_id**: 用户ID（字符串格式）
     """
-    # 将字符串ID转换为整数用于查询
     user_id_int = int(user_id)
     
-    # 查询用户是否存在，并加载关联的部门
     user = db.query(User).options(joinedload(User.departments)).filter(User.id == user_id_int).first()
     if not user:
         raise NotFoundException("用户不存在")
     
-    # 解析权限
     user_permissions = parse_json_permissions(user.permissions)
     
     user_data = {
@@ -183,8 +173,6 @@ async def update_user_status(
     
     user.is_active = is_active
     
-    # 停用账号时，递增token_version使该用户所有已有的JWT立即失效
-    # 防止被禁用的用户继续使用缓存的token访问系统
     if not is_active:
         user.token_version = (user.token_version or 0) + 1
     
@@ -212,7 +200,6 @@ async def batch_update_user_status(
     注意：批量停用账号时会递增每个用户的token_version，使其所有已有的JWT立即失效，
     被停用的用户将无法继续使用系统，需要重新登录（但登录时会被is_active检查拦截）。
     """
-    # 将字符串ID转换为整数用于查询
     user_ids_int = [int(uid) for uid in batch_data.user_ids]
     users = db.query(User).filter(User.id.in_(user_ids_int)).all()
     if len(users) != len(batch_data.user_ids):
@@ -220,8 +207,6 @@ async def batch_update_user_status(
     
     for user in users:
         user.is_active = batch_data.is_active
-        # 停用账号时，递增token_version使该用户所有已有的JWT立即失效
-        # 防止被禁用的用户继续使用缓存的token访问系统
         if not batch_data.is_active:
             user.token_version = (user.token_version or 0) + 1
     
@@ -255,68 +240,53 @@ async def update_user(
     - 所有字段都是可选的，传入值的就修改该用户属性，没传值的就保留原值
     - 如果修改了权限，该用户的JWT将失效，需要重新登录
     """
-    # 将字符串ID转换为整数用于查询
     target_user_id_int = int(user_id)
     
-    # 查找目标用户
     target_user = db.query(User).options(joinedload(User.departments)).filter(User.id == target_user_id_int).first()
     if not target_user:
         raise NotFoundException("用户不存在")
     
-    # 记录原始权限（用于判断权限是否变更）
     original_permissions = parse_json_permissions(target_user.permissions)
     
-    # 更新手机号（如果提供）
     if user_update.phone is not None:
-        # 检查新手机号是否与其他用户重复
         existing_user = db.query(User).filter(User.phone == user_update.phone, User.id != target_user_id_int).first()
         if existing_user:
             raise ConflictException("该手机号已被其他用户使用")
         target_user.phone = user_update.phone
     
-    # 更新密码（如果提供）
     if user_update.password is not None:
         target_user.password_hash = get_password_hash(user_update.password)
     
-    # 更新用户姓名（如果提供）
     if user_update.name is not None:
         target_user.name = user_update.name
     
-    # 更新部门（如果提供）
     if user_update.department_ids is not None:
         if user_update.department_ids:
-            # 验证部门是否存在
             department_ids_int = [int(dept_id) for dept_id in user_update.department_ids]
             departments = db.query(Department).filter(Department.id.in_(department_ids_int)).all()
             if len(departments) != len(user_update.department_ids):
                 raise NotFoundException("部分部门不存在")
             target_user.departments = departments
         else:
-            # 空列表表示清空部门关联
             target_user.departments = []
     
-    # 更新权限（如果提供）
     permissions_changed = False
     if user_update.permissions is not None:
-        # 验证权限列表
         if not validate_permissions(user_update.permissions):
             raise BadRequestException("权限列表包含无效的权限")
         
-        # 检查权限是否变更
         new_permissions = sorted(user_update.permissions)
         if sorted(original_permissions) != new_permissions:
             permissions_changed = True
         
         target_user.permissions = format_permissions_to_json(user_update.permissions)
     
-    # 如果权限变更，递增token_version使JWT失效
     if permissions_changed:
         target_user.token_version = (target_user.token_version or 0) + 1
     
     db.commit()
     db.refresh(target_user)
     
-    # 返回响应（ID转换为字符串）
     user_permissions = parse_json_permissions(target_user.permissions)
     user_data = {
         "id": str(target_user.id),
@@ -353,7 +323,6 @@ async def delete_user(
     if not user:
         raise NotFoundException("用户不存在")
     
-    # 不能删除自己
     if user.id == current_user.id:
         raise BadRequestException("不能删除自己的账号")
     
@@ -377,10 +346,8 @@ async def batch_delete_users(
     
     - **user_ids**: 用户ID列表（字符串格式）
     """
-    # 将字符串ID转换为整数用于查询
     user_ids_int = [int(uid) for uid in batch_data.user_ids]
     
-    # 不能删除自己
     if current_user.id in user_ids_int:
         raise BadRequestException("不能删除自己的账号")
     

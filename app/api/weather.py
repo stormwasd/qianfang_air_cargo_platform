@@ -17,37 +17,25 @@ router = APIRouter()
 AMAP_WEATHER_API = "https://restapi.amap.com/v3/weather/weatherInfo"
 AMAP_KEY = "9fe669a436c5cab2488337aa471c77c8"
 
-# 高德天气 API 特殊城市名称转换映射
-# 高德天气 API 无法识别部分非标准行政区划名称（如“北京大兴”、“上海虹桥”等），需在此转换为标准行政区划名称
 AMAP_WEATHER_CITY_MAPPING = {
-    # 北京
     "北京首都": "北京",
     "北京大兴": "北京",
-    # 上海
     "上海虹桥": "上海",
     "上海浦东": "上海",
-    # 四川
     "成都双流": "成都",
     "成都天府": "成都",
-    # 辽宁
     "锦州湾": "锦州",
-    # 云南
     "西双版纳": "西双版纳傣族自治州",
     "宁蒗": "宁蒗彝族自治县",
     "怒江": "怒江傈僳族自治州",
     "迪庆": "迪庆藏族自治州",
     "文山": "文山壮族苗族自治州",
-    # 吉林
-    "长白山": "抚松县",  # 长白山机场位于吉林省白山市抚松县
-    # 浙江
-    "横店": "东阳市",    # 横店机场位于浙江省金华市东阳市横店镇
-    # 新疆
-    "那拉提": "新源县",  # 那拉提机场位于新疆伊犁哈萨克自治州新源县
-    "花土沟": "茫崖市",  # 花土沟机场位于青海省海西蒙古族藏族自治州茫崖市花土沟镇
-    # 青海
+    "长白山": "抚松县",  
+    "横店": "东阳市",    
+    "那拉提": "新源县",  
+    "花土沟": "茫崖市",  
     "果洛": "果洛藏族自治州",
-    # 黑龙江
-    "建三江": "佳木斯",  # 建三江机场位于黑龙江省佳木斯市境内
+    "建三江": "佳木斯",  
 }
 
 @router.get("", summary="获取机场指定日期天气", response_model=ResponseModel[Any])
@@ -58,12 +46,9 @@ async def get_weather(
     """
     根据机场三字码和指定日期获取高德天气预报
     """
-    # 1. 映射三字码到城市名称
     raw_city = get_city_name_by_code(query.airport_code)
     city_name = AMAP_WEATHER_CITY_MAPPING.get(raw_city.strip() if raw_city else "", raw_city)
     
-    # 2. 调用高德天气接口
-    # 重点：直接使用中文城市名称请求高德接口
     url = f"{AMAP_WEATHER_API}?key={AMAP_KEY}&city={urllib.parse.quote(city_name)}&extensions=all"
     
     try:
@@ -77,7 +62,6 @@ async def get_weather(
     if data.get("status") != "1" or data.get("infocode") != "10000":
         raise BadRequestException(f"高德天气服务异常: {data.get('info')}")
         
-    # 3. 筛选指定日期
     forecasts = data.get("forecasts", [])
     if not forecasts:
         return success_response(msg="暂无天气预报")
@@ -87,5 +71,4 @@ async def get_weather(
         if cast.get("date") == query.date:
             return success_response(data=cast, msg="查询成功")
             
-    # 如果遍历完毕也没找到目标日期的天气
     return success_response(msg="暂无天气预报")

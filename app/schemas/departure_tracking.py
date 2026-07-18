@@ -123,7 +123,6 @@ class ShenzhenAirDepartureListResponse(BaseModel):
     items: List[ShenzhenAirDepartureItem] = Field(..., description="深航出港数据列表")
 
 
-# ========== 南航出港跟踪 Schemas ==========
 
 class CsaProductInformationDTO(BaseModel):
     id: str

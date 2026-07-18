@@ -8,12 +8,9 @@
 """
 from typing import List
 
-# 三字码到城市名称的映射（与 airport_three_letter_code.json 的 label 保持一致）
 AIRPORT_CODE_TO_CITY = {
-    # 北京
     "PEK": "北京首都",
     "PKX": "北京大兴",
-    # 华北地区
     "TSN": "天津",
     "SJW": "石家庄",
     "TVS": "唐山",
@@ -21,7 +18,6 @@ AIRPORT_CODE_TO_CITY = {
     "HDG": "邯郸",
     "ZQZ": "张家口",
     "CDE": "承德",
-    # 山西
     "TYN": "太原",
     "CIH": "长治",
     "DAT": "大同",
@@ -29,7 +25,6 @@ AIRPORT_CODE_TO_CITY = {
     "YCU": "运城",
     "WUT": "忻州",
     "LLV": "吕梁",
-    # 内蒙古
     "HET": "呼和浩特",
     "XIL": "锡林浩特",
     "NZL": "扎兰屯",
@@ -49,7 +44,6 @@ AIRPORT_CODE_TO_CITY = {
     "HLH": "乌兰浩特",
     "DSN": "鄂尔多斯",
     "YIE": "阿尔山",
-    # 东北 - 辽宁
     "SHE": "沈阳",
     "DLC": "大连",
     "AOG": "鞍山",
@@ -57,14 +51,12 @@ AIRPORT_CODE_TO_CITY = {
     "JNZ": "锦州湾",
     "YKH": "营口",
     "CHG": "朝阳",
-    # 东北 - 吉林
     "CGQ": "长春",
     "YNJ": "延吉",
     "NBS": "长白山",
     "TNH": "通化",
     "DBC": "白城",
     "YSQ": "松原",
-    # 东北 - 黑龙江
     "HRB": "哈尔滨",
     "JXA": "鸡西",
     "NDG": "齐齐哈尔",
@@ -77,10 +69,8 @@ AIRPORT_CODE_TO_CITY = {
     "DTU": "五大连池",
     "LDS": "伊春",
     "HEK": "黑河",
-    # 上海
     "SHA": "上海虹桥",
     "PVG": "上海浦东",
-    # 江苏
     "NKG": "南京",
     "LYG": "连云港",
     "WUX": "无锡",
@@ -91,7 +81,6 @@ AIRPORT_CODE_TO_CITY = {
     "YNZ": "盐城",
     "YTY": "扬州",
     "XUZ": "徐州",
-    # 浙江
     "HGH": "杭州",
     "HEW": "横店",
     "WNZ": "温州",
@@ -100,14 +89,12 @@ AIRPORT_CODE_TO_CITY = {
     "HSN": "舟山",
     "HYN": "台州",
     "JUZ": "衢州",
-    # 安徽
     "HFE": "合肥",
     "FUG": "阜阳",
     "TXN": "黄山",
     "AQG": "安庆",
     "WHA": "芜湖",
     "JUH": "池州",
-    # 山东
     "TNA": "济南",
     "TAO": "青岛",
     "YNT": "烟台",
@@ -116,7 +103,6 @@ AIRPORT_CODE_TO_CITY = {
     "JNG": "济宁",
     "WEH": "威海",
     "RIZ": "日照",
-    # 江西
     "KHN": "南昌",
     "KOW": "赣州",
     "JGS": "井冈山",
@@ -124,14 +110,12 @@ AIRPORT_CODE_TO_CITY = {
     "SQD": "上饶",
     "YIC": "宜春",
     "JIU": "九江",
-    # 福建
     "FOC": "福州",
     "XMN": "厦门",
     "JJN": "泉州",
     "WUS": "武夷山",
     "LCX": "龙岩",
     "SQJ": "三明",
-    # 广东
     "CAN": "广州",
     "HUZ": "惠州",
     "SZX": "深圳",
@@ -141,7 +125,6 @@ AIRPORT_CODE_TO_CITY = {
     "ZHA": "湛江",
     "HSC": "韶关",
     "MXZ": "梅州",
-    # 广西
     "NNG": "南宁",
     "HCJ": "河池",
     "KWL": "桂林",
@@ -150,16 +133,13 @@ AIRPORT_CODE_TO_CITY = {
     "WUZ": "梧州",
     "AEB": "百色",
     "YLX": "玉林",
-    # 海南
     "HAK": "海口",
     "SYX": "三亚",
     "BAR": "琼海",
-    # 河南
     "CGO": "郑州",
     "LYA": "洛阳",
     "NNY": "南阳",
     "XAI": "信阳",
-    # 湖南
     "CSX": "长沙",
     "LLF": "永州",
     "DYG": "张家界",
@@ -169,7 +149,6 @@ AIRPORT_CODE_TO_CITY = {
     "YYA": "岳阳",
     "HJJ": "怀化",
     "WGN": "邵阳",
-    # 湖北
     "WUH": "武汉",
     "HPG": "神农架",
     "YIH": "宜昌",
@@ -178,13 +157,11 @@ AIRPORT_CODE_TO_CITY = {
     "WDS": "十堰",
     "SHS": "荆州",
     "EHU": "鄂州",
-    # 重庆
     "CKG": "重庆",
     "WSK": "巫山",
     "CQW": "武隆",
     "JIQ": "黔江",
     "WXN": "万州",
-    # 四川
     "CTU": "成都双流",
     "PZI": "攀枝花",
     "GZG": "甘孜",
@@ -201,7 +178,6 @@ AIRPORT_CODE_TO_CITY = {
     "KGT": "康定",
     "DZH": "达州",
     "AHJ": "红原",
-    # 云南
     "KMG": "昆明",
     "DIG": "迪庆",
     "LJG": "丽江",
@@ -216,7 +192,6 @@ AIRPORT_CODE_TO_CITY = {
     "NLH": "宁蒗",
     "BSD": "保山",
     "LFH": "怒江",
-    # 贵州
     "KWE": "贵阳",
     "LLB": "荔波",
     "ZYI": "遵义",
@@ -227,13 +202,11 @@ AIRPORT_CODE_TO_CITY = {
     "BFJ": "毕节",
     "LPF": "六盘水",
     "AVA": "安顺",
-    # 西藏
     "LXA": "拉萨",
     "LZY": "林芝",
     "BPX": "昌都",
     "RKZ": "日喀则",
     "NGQ": "阿里",
-    # 新疆
     "URC": "乌鲁木齐",
     "TLQ": "吐鲁番",
     "NLT": "那拉提",
@@ -256,14 +229,12 @@ AIRPORT_CODE_TO_CITY = {
     "YTW": "于田",
     "KRY": "克拉玛依",
     "IQM": "且末",
-    # 陕西
     "XIY": "西安",
     "UYN": "榆林",
     "HZG": "汉中",
     "ENY": "延安",
     "AKA": "安康",
     "DFA": "商洛",
-    # 甘肃
     "LHW": "兰州",
     "IQN": "庆阳",
     "DNH": "敦煌",
@@ -273,11 +244,9 @@ AIRPORT_CODE_TO_CITY = {
     "LNL": "陇南",
     "JIC": "金昌",
     "GXH": "甘南",
-    # 宁夏
     "INC": "银川",
     "ZHY": "中卫",
     "GYU": "固原",
-    # 青海
     "XNN": "西宁",
     "COQ": "格尔木",
     "YUS": "玉树",
@@ -300,7 +269,6 @@ def get_city_name_by_code(airport_code: str) -> str:
     """
     if not airport_code:
         return ""
-    # 转换为大写以确保匹配
     code_upper = airport_code.upper().strip()
     return AIRPORT_CODE_TO_CITY.get(code_upper, airport_code)
 
@@ -317,7 +285,6 @@ def get_code_by_city_name(city_name: str) -> str:
     """
     if not city_name:
         return ""
-    # 反向查找
     for code, city in AIRPORT_CODE_TO_CITY.items():
         if city == city_name.strip():
             return code
@@ -337,16 +304,12 @@ def get_airport_name_by_code(airport_code: str) -> str:
     if not airport_code:
         return ""
     code_upper = airport_code.upper().strip()
-    # 先反向查找完整的机场名称
     for name, code in AIRPORT_NAME_TO_CODE.items():
         if code == code_upper:
             return name
-    # 如果没找到全称，回退到城市名称
     return AIRPORT_CODE_TO_CITY.get(code_upper, airport_code)
 
 
-# 完整的机场名称到三字码映射（用于模糊搜索）
-# 格式: "完整机场名称": "三字码"
 AIRPORT_NAME_TO_CODE = {
     "北京首都机场": "PEK",
     "北京大兴机场": "PKX",
@@ -556,7 +519,6 @@ def search_airport_codes_by_keyword(keyword: str) -> List[str]:
     
     matched_codes = []
     
-    # 遍历机场名称映射，进行模糊匹配
     for airport_name, code in AIRPORT_NAME_TO_CODE.items():
         if keyword in airport_name:
             matched_codes.append(code)

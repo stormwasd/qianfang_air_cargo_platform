@@ -3,9 +3,7 @@
 """
 from app.config import settings
 
-# 管理员权限代码
 ADMIN_PERMISSION_CODE = "admin"
-# 管理员权限名称（向后兼容）
 ADMIN_PERMISSION_NAME = settings.PERMISSIONS.get(ADMIN_PERMISSION_CODE, "管理员")
 
 
@@ -19,7 +17,6 @@ def is_admin(permissions: list) -> bool:
     Returns:
         是否为管理员
     """
-    # 支持代码和名称两种格式
     return ADMIN_PERMISSION_CODE in permissions or ADMIN_PERMISSION_NAME in permissions
 
 

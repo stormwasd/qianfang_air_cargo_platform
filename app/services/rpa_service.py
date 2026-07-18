@@ -175,9 +175,6 @@ class RPAService:
 
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "RPA保持登录接口调用失败")
-                    # 兼容：部分RPA jobUuid在RPA侧为“非引用类型”，
-                    # 不允许通过API覆盖/修改任务入参。此时应重试一次：不传inputParam，
-                    # 让job使用其预置的参数/默认配置。
                     if "非引用类型" in error_msg or "不允许修改任务入参" in error_msg:
                         payload_without_input_param = {
                             "jobUuid": job_uuid,
@@ -279,7 +276,6 @@ class RPAService:
             "package": package,
             "storage_and_transportation_precautions": storage_and_transportation_precautions
         }
-        # 合并队列名称到流程入参
         if queue_names:
             input_param.update(queue_names)
         
@@ -295,7 +291,6 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "RPA接口调用失败")
                     raise BadRequestException(f"RPA接口调用失败: {error_msg}")
@@ -329,7 +324,6 @@ class RPAService:
         """
         url = f"{self.base_url}/openAPI/work-execute/list"
         
-        # 如果没有提供时间，使用默认值
         if not start_time:
             start_time = "2021-02-20 22:00:06"
         if not end_time:
@@ -348,7 +342,6 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "RPA状态查询失败")
                     raise BadRequestException(f"RPA状态查询失败: {error_msg}")
@@ -421,16 +414,13 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "获取运单号失败")
                     raise BadRequestException(f"获取运单号失败: {error_msg}")
                 
                 data = result.get("data", {})
-                # data.data 是运单号后八位，可能是带引号的字符串，需要去除引号
                 waybill_suffix = data.get("data", "")
                 if waybill_suffix:
-                    # 去除可能的引号
                     waybill_suffix = waybill_suffix.strip('"').strip("'")
                     return waybill_suffix
                 return None
@@ -495,7 +485,7 @@ class RPAService:
             运单号后八位（如：58841145）
         """
         if waybill_number.startswith("479-"):
-            return waybill_number[4:]  # 去除 "479-" 前缀
+            return waybill_number[4:]  
         return waybill_number
     
     async def get_china_southern_air_waybill_number(self, queue_uuid: str) -> Optional[str]:
@@ -516,16 +506,13 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "获取运单号失败")
                     raise BadRequestException(f"获取运单号失败: {error_msg}")
                 
                 data = result.get("data", {})
-                # data.data 是运单号后八位，可能是带引号的字符串，需要去除引号
                 waybill_suffix = data.get("data", "")
                 if waybill_suffix:
-                    # 去除可能的引号
                     waybill_suffix = waybill_suffix.strip('"').strip("'")
                     return waybill_suffix
                 return None
@@ -574,7 +561,6 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "RPA作废接口调用失败")
                     raise BadRequestException(f"RPA作废接口调用失败: {error_msg}")
@@ -714,7 +700,6 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "RPA订舱接口调用失败")
                     raise BadRequestException(f"RPA订舱接口调用失败: {error_msg}")
@@ -804,7 +789,6 @@ class RPAService:
         Returns:
             RPA接口返回的数据，包含任务执行状态等信息
         """
-        # 复用深航的状态查询接口，因为接口路径和参数格式相同
         return await self.query_shenzhen_air_waybill_status(job_uuid, start_time, end_time, size)
     
     def extract_waybill_suffix_china_southern_air(self, waybill_number: str) -> str:
@@ -820,14 +804,11 @@ class RPAService:
         if not waybill_number:
             return ""
         
-        # 去除可能的空格
         waybill_number = waybill_number.strip()
         
-        # 如果包含 "784-" 前缀，去除它
         if waybill_number.startswith("784-"):
             waybill_number = waybill_number[4:]
         
-        # 返回后八位（如果长度超过8位，取最后8位）
         if len(waybill_number) >= 8:
             return waybill_number[-8:]
         
@@ -872,7 +853,6 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "南航退舱RPA接口调用失败")
                     raise BadRequestException(f"南航退舱RPA接口调用失败: {error_msg}")
@@ -944,7 +924,6 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "南航直接开单RPA接口调用失败")
                     raise BadRequestException(f"南航直接开单RPA接口调用失败: {error_msg}")
@@ -983,7 +962,6 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "RPA作废接口调用失败")
                     raise BadRequestException(f"RPA作废接口调用失败: {error_msg}")
@@ -1137,7 +1115,6 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "南航新增运单RPA接口调用失败")
                     raise BadRequestException(f"南航新增运单RPA接口调用失败: {error_msg}")
@@ -1267,7 +1244,6 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "南航修改数据后开单RPA接口调用失败")
                     raise BadRequestException(f"南航修改数据后开单RPA接口调用失败: {error_msg}")
@@ -1342,10 +1318,8 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "创建队列失败")
-                    # 预防机制：如果队列已存在，主动调用查询接口找到旧队列并删除，然后重试创建
                     if "已存在" in error_msg or "already exist" in error_msg.lower():
                         existing_queues = await self.query_queues_by_name(queue_name)
                         if existing_queues:
@@ -1357,7 +1331,6 @@ class RPAService:
                                     except Exception as del_err:
                                         print(f"清理已存在的队列 {q_id} 失败: {repr(del_err)}")
                             
-                            # 删除后重试创建（仅重试一次）
                             retry_response = await client.post(url, headers=self._get_headers(), json=payload)
                             retry_response.raise_for_status()
                             retry_result = retry_response.json()
@@ -1400,12 +1373,10 @@ class RPAService:
                 response.raise_for_status()
                 result = response.json()
                 
-                # 检查RPA接口返回的code
                 if result.get("code") != 0:
                     error_msg = result.get("msg", "删除队列失败")
                     raise BadRequestException(f"删除队列失败: {error_msg}")
                 
-                # 返回data字段的值（通常是True）
                 return result.get("data", False)
             except httpx.HTTPStatusError as e:
                 raise BadRequestException(f"删除队列HTTP错误: {e.response.status_code}")
@@ -1414,7 +1385,6 @@ class RPAService:
             except Exception as e:
                 raise BadRequestException(f"删除队列异常: {repr(e)}")
     
-    # ========== 打单RPA接口 ==========
     
     async def print_file(
         self,
@@ -1756,6 +1726,5 @@ class RPAService:
                 return {"code": -1, "msg": str(e), "data": []}
 
 
-# 创建全局RPA服务实例
 rpa_service = RPAService()
 

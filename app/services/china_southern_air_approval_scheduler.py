@@ -55,20 +55,17 @@ class ChinaSouthernAirApprovalScheduler:
 
     async def _async_main(self) -> None:
         """主循环"""
-        # 1. 启动时立即执行一次下发
         if not self._stop_event.is_set():
             try:
                 await self._enqueue_task()
             except Exception as e:
                 print(f"[ChinaSouthernAirApprovalScheduler] 启动时入队失败: {repr(e)}")
 
-        # 2. 定期执行
         while not self._stop_event.is_set():
             try:
                 interval = getattr(settings, "RPA_CHINA_SOUTHERN_AIR_APPROVAL_INTERVAL_SECONDS", 900)
                 remaining = interval if interval and interval > 0 else 900
                 
-                # 分段 sleep，以支持及时 stop 并在休眠间隙轮询文件
                 while remaining > 0 and not self._stop_event.is_set():
                     step = min(5.0, remaining)
                     try:
@@ -83,7 +80,7 @@ class ChinaSouthernAirApprovalScheduler:
 
             except Exception as e:
                 print(f"[ChinaSouthernAirApprovalScheduler] 调度循环异常: {repr(e)}\n{traceback.format_exc()}")
-                await asyncio.sleep(60)  # 异常后等待一分钟重试
+                await asyncio.sleep(60)  
 
     async def _enqueue_task(self) -> None:
         """创建任务"""
@@ -91,7 +88,6 @@ class ChinaSouthernAirApprovalScheduler:
         try:
             task_type = RPATaskType.CHINA_SOUTHERN_AIR_APPROVAL_DATA.value
             
-            # 检查是否有未处理完的相同任务，避免重复下发
             existing = rpa_task_service.get_pending_task_for_target(
                 db,
                 target_type=TARGET_TYPE,
@@ -101,7 +97,6 @@ class ChinaSouthernAirApprovalScheduler:
             if existing:
                 return
 
-            # 查询数据库里的基础参数
             task_process = db.query(TaskProcess).filter(
                 TaskProcess.task_name == task_type
             ).first()
@@ -113,7 +108,6 @@ class ChinaSouthernAirApprovalScheduler:
                 except Exception:
                     pass
             
-            # 动态覆盖 flight_date (明天的日期)
             tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             params["flight_date"] = tomorrow
             
@@ -126,7 +120,7 @@ class ChinaSouthernAirApprovalScheduler:
                 job_uuid=None,
                 priority=2,
                 created_by=None,
-                robot_id=None,  # 允许任何有权限的机器人执行
+                robot_id=None,  
             )
             print(f"[ChinaSouthernAirApprovalScheduler] 已生成南航订舱批复数据获取任务({task_type})")
         finally:
@@ -140,11 +134,10 @@ class ChinaSouthernAirApprovalScheduler:
             if filename.endswith(".xlsx") and "订舱查询与处理" in filename:
                 filepath = os.path.join(self.watch_dir, filename)
                 
-                # 简单防抖：确保文件不再被写入
                 try:
                     os.rename(filepath, filepath)
                 except OSError:
-                    continue  # 文件仍在使用中
+                    continue  
                 
                 print(f"[ChinaSouthernAirApprovalScheduler] 发现新的批复数据文件: {filename}，开始解析入库...")
                 self._process_file(filepath)
@@ -165,14 +158,12 @@ class ChinaSouthernAirApprovalScheduler:
             
             today_str = datetime.now().strftime("%Y-%m-%d")
             
-            # --- 按业务范围先清空后插入 (Zombie Data 防护) ---
             unique_dates = set()
             for idx, r in df.iterrows():
                 if idx < 3:
                     continue
                 r_dict = r.to_dict()
                 try:
-                    # 索引 0 是订舱航班
                     f_info = str(r_dict.get(list(r_dict.keys())[0]))
                     if f_info and f_info.strip() and f_info != 'nan':
                         parts = f_info.split('/')
@@ -188,40 +179,30 @@ class ChinaSouthernAirApprovalScheduler:
                 from sqlalchemy import or_, and_
                 conditions = [ChinaSouthernAirApprovalData.flight_info.like(f"%{date_str}%") for date_str in unique_dates]
                 
-                # --- 获取该日期范围内的所有现有记录 ID (用于后续对比抓僵尸) ---
                 existing_records = db.query(ChinaSouthernAirApprovalData.id).filter(or_(*conditions)).all()
                 existing_ids = {r[0] for r in existing_records}
-                # 不再执行野蛮的提前删除，保住所有记录的原始自增 ID
-            # ------------------------------------------------
             
             processed_ids = set()
             
-            # 从第4行（索引为3）开始是真正的表头和数据
-            # 索引对应：0->订舱航班, 1->机型, 2->飞机号 ... 49->计费重量
             for index, row in df.iterrows():
-                # 跳过表头和无用行
                 if index < 3:
                     continue
                     
                 row_dict = row.to_dict()
                 aircraft_type = _get_val(row_dict, 1)
                 
-                # 过滤掉"小计"行，只存明细
                 if aircraft_type == "小计":
                     continue
                     
-                # 确保有基本的航班或单号数据，避免空行
                 flight_info = _get_val(row_dict, 0)
                 waybill_number = _get_val(row_dict, 7)
                 
-                # 过滤掉"总计"行
                 if flight_info and "总计" in flight_info:
                     continue
                     
                 if not flight_info and not waybill_number:
                     continue
                 
-                # === booking_no 去重（UPSERT）===
                 booking_no_raw = _get_val(row_dict, 12)
                 existing_record = None
                 if booking_no_raw:
@@ -236,7 +217,6 @@ class ChinaSouthernAirApprovalScheduler:
                             ChinaSouthernAirApprovalData.booking_no == booking_no_raw
                         ).first()
                 
-                # 构造字段映射
                 field_values = dict(
                     flight_info=flight_info,
                     aircraft_type=aircraft_type,
@@ -291,34 +271,27 @@ class ChinaSouthernAirApprovalScheduler:
                 )
                 
                 if existing_record:
-                    # 已存在：更新字段（保护已有的 container）
                     for k, v in field_values.items():
                         if k == "container" and getattr(existing_record, k):
                             continue
                         setattr(existing_record, k, v)
                     export_record = existing_record
                 else:
-                    # 不存在：新增
                     export_record = ChinaSouthernAirApprovalData(**field_values)
                     db.add(export_record)
                 
                 db.flush()
                 processed_ids.add(export_record.id)
                 
-                # === 下发出港跟踪任务（仅当天航班 + 去重）===
                 if booking_no_raw and flight_info:
-                    # 提取航班日期，格式如：CZ8577 / 2026-06-16 / SZX - WUH
                     flight_date_match = re.search(r'(\d{4}-\d{2}-\d{2})', str(flight_info))
                     flight_date = flight_date_match.group(1) if flight_date_match else None
                     
-                    # 仅当航班日期是当天时才下发出港跟踪任务
                     if flight_date == today_str:
-                        # 提取左括号前的纯数字订舱号
                         match = re.match(r'^(\d+)', str(booking_no_raw).strip())
                         if match:
                             booking_number = match.group(1)
                             
-                            # 检查是否已有 pending/running 的出港跟踪任务（基于同一 approval_data_id）
                             existing_task = rpa_task_service.get_pending_task_for_target(
                                 db,
                                 target_type="csa_dep_tracking",
@@ -341,12 +314,10 @@ class ChinaSouthernAirApprovalScheduler:
                                     robot_id=None
                                 )
             
-            # --- 击杀真正的僵尸数据 ---
             if unique_dates and existing_ids:
                 zombie_ids = existing_ids - processed_ids
                 if zombie_ids:
                     from sqlalchemy import or_
-                    # 保护已配集装器的记录，只删未配集装器且航司也删掉的纯僵尸
                     db.query(ChinaSouthernAirApprovalData).filter(
                         ChinaSouthernAirApprovalData.id.in_(zombie_ids),
                         or_(
@@ -355,12 +326,10 @@ class ChinaSouthernAirApprovalScheduler:
                             ChinaSouthernAirApprovalData.container == "nan"
                         )
                     ).delete(synchronize_session=False)
-            # ---------------------------
             
             db.commit()
             print(f"[ChinaSouthernAirApprovalScheduler] 文件 {os.path.basename(filepath)} 解析入库完成。")
             
-            # 重命名防重处理，防止被再次处理
             os.rename(filepath, filepath + ".processed")
             
         except Exception as e:

@@ -58,7 +58,6 @@ def get_pickup_reconciliation_list(
 
     candidate_items = []
     
-    # ---------------- 1. 深航数据提取 ----------------
     sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).join(
         ShenzhenAirDepartureManualData, ShenzhenAirBookingExport.id == ShenzhenAirDepartureManualData.booking_export_id
     ).filter(
@@ -133,7 +132,6 @@ def get_pickup_reconciliation_list(
             "_fa": fa
         })
 
-    # ---------------- 2. 南航数据提取 ----------------
     csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).join(
         CsaDepartureManualData, ChinaSouthernAirApprovalData.id == CsaDepartureManualData.approval_data_id
     ).filter(
@@ -206,7 +204,6 @@ def get_pickup_reconciliation_list(
             "_fa": fa
         })
 
-    # ---------------- 3. 同行空运提取 ----------------
     peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).join(
         PeerAirDepartureManualData, ConsignmentNote.id == PeerAirDepartureManualData.consignment_note_id
     ).filter(
@@ -247,7 +244,6 @@ def get_pickup_reconciliation_list(
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
             continue
 
-        # 实走件数/重量优先从 payable_data 中获取
         gate_pieces = "0"
         transit_weight = "0"
         if fa and fa.payable_data:
@@ -274,14 +270,12 @@ def get_pickup_reconciliation_list(
             "_fa": fa
         })
 
-    # 排序与分页
     candidate_items.sort(key=lambda x: str(x.get("flight_date", "")), reverse=True)
     
     total_count = len(candidate_items)
     start_idx = (query.page - 1) * query.pageSize
     end_idx = start_idx + query.pageSize
     paged_items = candidate_items[start_idx:end_idx]
-    # 查 customer 名字映射
     customer_ids = {str(item["customer_name"]) for item in paged_items if str(item.get("customer_name")).isdigit()}
     customer_id_map = {}
     if customer_ids:

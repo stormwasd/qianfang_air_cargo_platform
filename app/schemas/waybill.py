@@ -142,7 +142,7 @@ class WaybillQuery(BaseModel):
 
 class WaybillResponse(BaseModel):
     """运单响应schema"""
-    id: str  # ID以字符串形式返回
+    id: str  
     waybill_number: Optional[str]
     form_data: Dict[str, Any]
     airline_record_status: str

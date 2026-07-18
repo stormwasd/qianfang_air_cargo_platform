@@ -36,7 +36,6 @@ async def create_company_account(
     - **account_number**: 账号（必填）
     - **bank_name**: 开户行（必填）
     """
-    # 检查是否是第一条记录
     is_first = db.query(CompanyAccount).count() == 0
     is_active = True if is_first else account.is_active
 
@@ -47,9 +46,8 @@ async def create_company_account(
         is_active=is_active
     )
     db.add(new_account)
-    db.flush() # flush 获取 id
+    db.flush() 
     
-    # 唯一激活保证
     if is_active:
         db.query(CompanyAccount).filter(CompanyAccount.id != new_account.id).update({"is_active": False})
         
@@ -90,7 +88,6 @@ async def update_company_account(
     
     update_data = payload.model_dump(exclude_unset=True)
     
-    # 如果指定了 is_active=True，需保证唯一
     if update_data.get("is_active") is True:
         db.query(CompanyAccount).filter(CompanyAccount.id != account.id).update({"is_active": False})
         
@@ -161,7 +158,6 @@ async def delete_company_account(
     db.delete(account)
     db.flush()
     
-    # 兜底：如果删除的是激活状态的，自动激活最新的一个
     if was_active:
         latest = db.query(CompanyAccount).order_by(CompanyAccount.created_at.desc(), CompanyAccount.id.desc()).first()
         if latest:
@@ -195,7 +191,6 @@ async def get_company_list(
         for account in accounts
     ]
     
-    # 查询公司信息单例
     company_info = db.query(CompanyInfo).filter(CompanyInfo.id == 1).first()
     if not company_info:
         company_info = CompanyInfo(id=1)
@@ -203,18 +198,14 @@ async def get_company_list(
         db.commit()
         db.refresh(company_info)
     
-    # 将存储的JSON转换为对象数组格式
     qr_codes = company_info.payment_qr_codes or []
     formatted_qr_codes = []
     if qr_codes and isinstance(qr_codes[0], str):
-        # 如果是老数据（字符串），默认第一个激活，并初始化微信号
         formatted_qr_codes = [{"url": url, "wechat_name": "", "is_active": i == 0} for i, url in enumerate(qr_codes)]
     else:
-        # 如果是对象列表，为了保险起见，给那些可能缺少 wechat_name 的对象补上默认值
         formatted_qr_codes = []
         for qr in qr_codes:
             if isinstance(qr, dict):
-                # 为了防止库里存的是 null 或者缺少这个键，做个更安全的显式判断
                 if "wechat_name" not in qr or qr["wechat_name"] is None:
                     qr["wechat_name"] = ""
                 formatted_qr_codes.append(qr)
@@ -250,7 +241,6 @@ async def update_company_info(
         
     update_data = payload.model_dump(exclude_unset=True)
     
-    # 强制校验收款码激活唯一性
     if "payment_qr_codes" in update_data and update_data["payment_qr_codes"] is not None:
         qr_codes = update_data["payment_qr_codes"]
         if len(qr_codes) > 0:

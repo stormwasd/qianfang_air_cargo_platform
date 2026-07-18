@@ -22,10 +22,10 @@ class DictTypeUpdate(BaseModel):
 
 class DictTypeResponse(BaseModel):
     """字典类型响应schema"""
-    id: str  # ID以字符串形式返回
+    id: str  
     name: str
     type: str
-    status: int  # 状态（0=禁用，1=开启）
+    status: int  
     created_at: datetime
     updated_at: datetime
     

@@ -46,7 +46,6 @@ def get_airline_reconciliation_list(
     与财务审核列表同源，追加了实走航班号，并支持按航司对账结算状态过滤。
     """
     
-    # 基础查询，仅包含财务审核状态
     fa_base_query = db.query(AirFinancialAuditData)
     
     if query.financial_audit_status is not None:
@@ -57,17 +56,14 @@ def get_airline_reconciliation_list(
 
     fa_records = fa_base_query.all()
     
-    # 构建快速索引
     fa_map = {}
     for fa in fa_records:
         fa_map.setdefault(fa.source_type, {})[fa.source_id] = fa
 
-    # 如果有状态过滤，且某个来源表中没有记录匹配该状态，则提取对应主表时不应包含它们
     fa_status_filter_active = (query.financial_audit_status is not None) or (query.settlement_status is not None)
 
     candidate_items = []
     
-    # ---------------- 1. 深航数据提取 ----------------
     sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).join(
         ShenzhenAirDepartureManualData, ShenzhenAirBookingExport.id == ShenzhenAirDepartureManualData.booking_export_id
     ).filter(ShenzhenAirDepartureManualData.audit_status == 2)
@@ -88,7 +84,6 @@ def get_airline_reconciliation_list(
         if fa_status_filter_active and not fa:
             continue
         
-        # 匹配客户名称搜索
         c_name = str(md.customer_name) if md and md.customer_name else ""
         if query.customer_name and query.customer_name not in c_name:
             continue
@@ -102,7 +97,7 @@ def get_airline_reconciliation_list(
             "origin": "SZX",
             "destination": export.routing,
             "flight_number": export.billing_flight,
-            "actual_flight_number": export.actual_flight or export.billing_flight, # 实走航班号
+            "actual_flight_number": export.actual_flight or export.billing_flight, 
             "customer_name": c_name,
             "airline": export.carrier,
             "cargo_name": export.cargo_name,
@@ -117,7 +112,6 @@ def get_airline_reconciliation_list(
             "_fa": fa
         })
 
-    # ---------------- 2. 南航数据提取 ----------------
     csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).join(
         CsaDepartureManualData, ChinaSouthernAirApprovalData.id == CsaDepartureManualData.approval_data_id
     ).filter(CsaDepartureManualData.audit_status == 2)
@@ -125,7 +119,6 @@ def get_airline_reconciliation_list(
         wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
         if wbs:
             csa_query = csa_query.filter(ChinaSouthernAirApprovalData.waybill_number.in_(wbs))
-    # 南航没有 flight_date，提取flight_info作为替代
     if query.airline and query.airline != "全部":
         if query.airline != "南航" and query.airline != "南方航空":
             csa_records = []
@@ -162,7 +155,7 @@ def get_airline_reconciliation_list(
             "origin": origin,
             "destination": dest,
             "flight_number": flight_num,
-            "actual_flight_number": approval.actual_flight or flight_num, # 实走航班号
+            "actual_flight_number": approval.actual_flight or flight_num, 
             "customer_name": c_name,
             "airline": "南方航空",
             "cargo_name": approval.goods_name,
@@ -177,7 +170,6 @@ def get_airline_reconciliation_list(
             "_fa": fa
         })
 
-    # ---------------- 3. 同行空运提取 ----------------
     peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).join(
         PeerAirDepartureManualData, ConsignmentNote.id == PeerAirDepartureManualData.consignment_note_id
     ).filter(
@@ -238,7 +230,6 @@ def get_airline_reconciliation_list(
             "_form_dict": form_dict
         })
 
-    # ---------------- 4. 纯手工财务审核单据提取 ----------------
     fa_manual_records = [
         f for f in fa_records 
         if (f.source_id == 0 or f.source_id == f.id)
@@ -302,14 +293,12 @@ def get_airline_reconciliation_list(
             "_pay_dict": pay_dict
         })
 
-    # 分页排序
     candidate_items.sort(key=lambda x: (x["flight_date"] or "", x["waybill_number"] or ""), reverse=True)
     total = len(candidate_items)
     start_idx = (query.page - 1) * query.pageSize
     end_idx = start_idx + query.pageSize
     paged_items = candidate_items[start_idx:end_idx]
 
-    # 加载辅助数据 (Lalamove 和 Waybills)
     csa_approval_ids = [item["source_id"] for item in paged_items if item["source_type"] == "china_southern_air"]
     csa_lalamoves_map = {}
     if csa_approval_ids:
@@ -320,7 +309,6 @@ def get_airline_reconciliation_list(
         for lm in lalamoves:
             csa_lalamoves_map.setdefault(lm.approval_data_id, []).append(lm)
 
-    # 查 customer 名字映射
     customer_ids = {str(item["customer_name"]) for item in paged_items if str(item.get("customer_name")).isdigit()}
     customer_id_map = {}
     if customer_ids:
@@ -334,7 +322,6 @@ def get_airline_reconciliation_list(
         c_name = str(item.get("customer_name") or "").strip()
         actual_name = customer_id_map[c_name].company_name if c_name in customer_id_map else ""
         
-        # 提取 payable 相关字段
         transit_fee_val = 0.0
         gate_pieces_val = ""
         transit_weight_val = ""
@@ -376,17 +363,14 @@ def get_airline_reconciliation_list(
                 pack_fee = safe_float(md.packaging_fee)
                 oth_fee = safe_float(md.other_fees)
 
-            # 根据来源类型提取件数重量过站费
             if item["source_type"] == "china_southern_air":
                 related_lms = csa_lalamoves_map.get(item["source_id"], [])
                 gate_pieces_val = str(sum(safe_int(l.pieces) for l in related_lms)) if related_lms else "0"
                 transit_weight_val = format_decimal(sum(safe_float(l.weight) for l in related_lms))
-                # 假设 transit_rate 不计算，这里直接默认0
                 transit_fee_val = 0.0 
             else:
-                pass # 深航由于没有相关上下文传递不便完全重算，依赖 financial_audit 数据
+                pass 
                 
-            # 我们优先尝试从 fa.payable_data 中恢复结果以保持与财务审核单一致
             pay_override = {}
             if fa and fa.payable_data:
                 po = fa.payable_data
@@ -477,7 +461,6 @@ def confirm_airline_settlement(
     ).first()
     
     if not fa:
-        # 如果不存在，自动创建
         fa = AirFinancialAuditData(
             source_type=source_type,
             source_id=source_id_int
@@ -542,7 +525,6 @@ def batch_confirm_airline_settlement(
         ).first()
         
         if not fa:
-            # 如果不存在，自动创建
             fa = AirFinancialAuditData(
                 source_type=item.source_type,
                 source_id=source_id_int
@@ -575,11 +557,9 @@ def export_airline_reconciliation_list(
         pageSize=999999
     )
     
-    # 借助现有的查询函数获取全量数据
     result = get_airline_reconciliation_list(query=query, db=db, current_user=current_user)
     all_items = result.data.get("items", []) if result.data else []
     
-    # 如果传了 selected_items，则只导出选中的
     if req.selected_items:
         selected_keys = {(item.source_type, str(item.source_id)) for item in req.selected_items}
         items_to_export = [item for item in all_items if (item["source_type"], str(item["source_id"])) in selected_keys]

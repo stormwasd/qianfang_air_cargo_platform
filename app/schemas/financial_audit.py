@@ -85,7 +85,6 @@ class AirFinancialAuditDataUpsert(BaseModel):
     source_type: str = Field(..., description="来源类型: shenzhen_air / china_southern_air / peer_air")
     source_id: str = Field(..., description="来源主表ID")
     
-    # 支持修改应付板块和应收板块中的全部字段并提交
     payable: Optional[PayableRequest] = Field(None, description="应付板块全部数据")
     receivable: Optional[ReceivableRequest] = Field(None, description="应收板块全部数据")
 

@@ -66,7 +66,7 @@ class UserPasswordReset(BaseModel):
 
 class UserResponse(UserBase):
     """用户响应schema"""
-    id: str  # ID以字符串形式返回
+    id: str  
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -109,9 +109,9 @@ class LoginResponse(BaseModel):
 
 class TokenData(BaseModel):
     """Token数据schema"""
-    user_id: int  # 内部使用，保持int类型
+    user_id: int  
     phone: str
-    token_version: int  # Token版本号，用于JWT失效机制
+    token_version: int  
 
 
 class BatchUserStatusUpdate(BaseModel):

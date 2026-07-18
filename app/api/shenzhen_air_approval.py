@@ -26,7 +26,6 @@ async def get_shenzhen_air_approvals(
     - cabin_type=0 对应 shenzhen_air_approval_data 表
     - cabin_type=1 对应 shenzhen_air_approval_wide_body_data 表
     """
-    # 动态选择 Model
     if cabin_type == 1:
         model = ShenzhenAirApprovalWideBodyData
         schema_class = ShenzhenAirApprovalWideItem
@@ -37,11 +36,9 @@ async def get_shenzhen_air_approvals(
     query = db.query(model)
 
     filters = []
-    # 1. 航班号查询 (模糊匹配)
     if flight_number:
         filters.append(model.flight_number.like(f"%{flight_number}%"))
         
-    # 2. 航班日期区间查询
     if flight_date_start:
         filters.append(func.replace(model.flight_date, '/', '-') >= flight_date_start)
     if flight_date_end:
@@ -56,36 +53,30 @@ async def get_shenzhen_air_approvals(
             )
         )
 
-    # 计算总数
     total = query.count()
 
-    # 分页查询数据
     offset = (page - 1) * pageSize
     records = query.order_by(
         func.coalesce(model.parent_id, model.id).desc(),
         model.id.asc()
     ).offset(offset).limit(pageSize).all()
 
-    # 如果当前页没有数据，直接返回
     if not records:
         return success_response(
             data={"total": total, "items": [], "data_update_time": None},
             msg="查询成功"
         )
 
-    # 构造返回列表
     items = []
     for record in records:
         record_dict = {k: v for k, v in record.__dict__.items() if not k.startswith('_')}
-        record_dict["id"] = str(record.id)  # 转字符串防止精度丢失
+        record_dict["id"] = str(record.id)  
         if record_dict.get("parent_id") is not None:
             record_dict["parent_id"] = str(record_dict["parent_id"])
         
-        # 序列化
         item_schema = schema_class(**record_dict)
         items.append(item_schema.model_dump(mode="json"))
 
-    # 提取数据更新时间（第一条记录的 updated_at，格式化到分钟）
     data_update_time = None
     if records and hasattr(records[0], 'updated_at') and records[0].updated_at:
         data_update_time = records[0].updated_at.strftime("%Y-%m-%d %H:%M")

@@ -16,7 +16,6 @@ class ShenzhenAirDepartureAlertTask(Base):
     created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")
 
-    # 复合索引：保证同一天的同一运单不被重复写入
     __table_args__ = (
         Index("ix_szx_departure_alert_waybill_date", "waybill_number", "flight_date", unique=True),
     )

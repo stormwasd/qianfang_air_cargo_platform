@@ -18,12 +18,11 @@ def _rand_str(n: int = 12) -> str:
 class CtripClient:
     """携程航班接口客户端（动态 GUID 缓存版）"""
 
-    # GUID 缓存有效期（秒），设为 30 分钟
     GUID_TTL = 30 * 60
 
     def __init__(self):
         self._guid: Optional[str] = None
-        self._guid_ts: float = 0.0  # GUID 获取时的时间戳
+        self._guid_ts: float = 0.0  
         self._locks: Dict[asyncio.AbstractEventLoop, asyncio.Lock] = {}
 
     @property
@@ -34,9 +33,6 @@ class CtripClient:
             self._locks[loop] = asyncio.Lock()
         return self._locks[loop]
 
-    # ------------------------------------------------------------------
-    # GUID 管理
-    # ------------------------------------------------------------------
 
     def _is_guid_valid(self) -> bool:
         """判断当前缓存的 GUID 是否仍然有效"""
@@ -78,7 +74,6 @@ class CtripClient:
             return self._guid  # type: ignore
 
         async with self.lock:
-            # 双重检查：可能在等锁时已被其他协程刷新
             if self._is_guid_valid():
                 return self._guid  # type: ignore
             self._guid = await self._fetch_guid()
@@ -91,9 +86,6 @@ class CtripClient:
         self._guid = None
         self._guid_ts = 0.0
 
-    # ------------------------------------------------------------------
-    # 公开接口
-    # ------------------------------------------------------------------
 
     async def get_flight_times(
         self, flight_no: str, flight_date: str, routing: str
@@ -110,13 +102,11 @@ class CtripClient:
         if not flight_no or not routing:
             return None
 
-        # 解析 routing 获取起降点
         ports = routing.split("-") if routing else []
         if len(ports) != 2:
             return None
         d_port, a_port = ports[0], ports[1]
 
-        # 最多尝试 2 次：首次失败时刷新 GUID 再试一次
         for attempt in range(2):
             try:
                 guid = await self._ensure_guid()
@@ -210,11 +200,9 @@ class CtripClient:
                 if not data:
                     return None
 
-                # 检查携程接口返回的 Ack 是否成功
                 resp_status = data.get("ResponseStatus") or {}
                 ack = resp_status.get("Ack", "")
                 if ack != "Success":
-                    # 接口级失败，可能 GUID 已失效
                     if attempt == 0:
                         logger.warning(
                             "Ctrip API Ack=%s for %s %s, refreshing GUID and retrying",
@@ -224,7 +212,6 @@ class CtripClient:
                         continue
                     return None
 
-                # detailItem -> basicItemInfo -> dItemInfo -> dateTimeForRecord
                 detail_item = data.get("detailItem") or {}
                 basic_item_info = detail_item.get("basicItemInfo") or {}
                 d_item_info = basic_item_info.get("dItemInfo") or {}
@@ -255,7 +242,7 @@ class CtripClient:
                 )
                 return None
 
-        return None  # pragma: no cover
+        return None  
 
 
 ctrip_client = CtripClient()

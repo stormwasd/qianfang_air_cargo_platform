@@ -53,20 +53,17 @@ class ShenzhenAirApprovalScheduler:
 
     async def _async_main(self) -> None:
         """主循环"""
-        # 1. 启动时立即执行一次下发
         if not self._stop_event.is_set():
             try:
                 await self._enqueue_task()
             except Exception as e:
                 print(f"[ShenzhenAirApprovalScheduler] 启动时入队失败: {repr(e)}")
 
-        # 2. 定期执行
         while not self._stop_event.is_set():
             try:
                 interval = getattr(settings, "RPA_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS", 900)
                 remaining = interval if interval and interval > 0 else 900
                 
-                # 分段 sleep，以支持及时 stop 并在休眠间隙轮询文件
                 while remaining > 0 and not self._stop_event.is_set():
                     step = min(5.0, remaining)
                     try:
@@ -81,7 +78,7 @@ class ShenzhenAirApprovalScheduler:
 
             except Exception as e:
                 print(f"[ShenzhenAirApprovalScheduler] 调度循环异常: {repr(e)}\n{traceback.format_exc()}")
-                await asyncio.sleep(60)  # 异常后等待一分钟重试
+                await asyncio.sleep(60)  
 
     async def _enqueue_task(self) -> None:
         """创建任务"""
@@ -93,7 +90,6 @@ class ShenzhenAirApprovalScheduler:
             ]
             
             for task_type in task_types_to_enqueue:
-                # 检查是否有未处理完的相同任务，避免重复下发
                 existing = rpa_task_service.get_pending_task_for_target(
                     db,
                     target_type=TARGET_TYPE,
@@ -103,7 +99,6 @@ class ShenzhenAirApprovalScheduler:
                 if existing:
                     continue
 
-                # 查询数据库里的基础参数
                 task_process = db.query(TaskProcess).filter(
                     TaskProcess.task_name == task_type
                 ).first()
@@ -115,7 +110,6 @@ class ShenzhenAirApprovalScheduler:
                     except Exception:
                         pass
                 
-                # 动态覆盖 flight_date (明天的日期)
                 tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
                 params["flight_date"] = tomorrow
                 
@@ -128,7 +122,7 @@ class ShenzhenAirApprovalScheduler:
                     job_uuid=None,
                     priority=2,
                     created_by=None,
-                    robot_id=None,  # 允许任何有权限的机器人执行
+                    robot_id=None,  
                 )
                 print(f"[ShenzhenAirApprovalScheduler] 已生成深航订舱批复数据获取任务({task_type}), flight_date={tomorrow}")
         finally:
@@ -148,11 +142,10 @@ class ShenzhenAirApprovalScheduler:
 
                 filepath = os.path.join(self.watch_dir, filename)
                 
-                # 简单防抖：确保文件不再被写入
                 try:
                     os.rename(filepath, filepath)
                 except OSError:
-                    continue  # 文件仍在使用中
+                    continue  
                 
                 print(f"[ShenzhenAirApprovalScheduler] 发现新的批复数据文件: {filename}，开始解析入库...")
                 if is_wide_body:
@@ -165,12 +158,10 @@ class ShenzhenAirApprovalScheduler:
         try:
             df = pd.read_excel(filepath)
             
-            # --- 按业务范围先清空后插入 (Zombie Data 防护) ---
             if "航班日期" in df.columns:
                 unique_dates = df["航班日期"].dropna().unique().tolist()
                 date_strs = [str(d).strip() for d in unique_dates if str(d).strip() and str(d) != 'nan']
                 if date_strs:
-                    # 1. 查询这些日期对应的父级 ID
                     parent_records = db.query(ShenzhenAirApprovalData.id).filter(
                         ShenzhenAirApprovalData.flight_date.in_(date_strs),
                         ShenzhenAirApprovalData.parent_id == None
@@ -178,16 +169,13 @@ class ShenzhenAirApprovalScheduler:
                     
                     parent_ids = [p[0] for p in parent_records]
                     if parent_ids:
-                        # 2. 批量级联删除子级
                         db.query(ShenzhenAirApprovalData).filter(
                             ShenzhenAirApprovalData.parent_id.in_(parent_ids)
                         ).delete(synchronize_session=False)
-                        # 3. 批量删除父级
                         db.query(ShenzhenAirApprovalData).filter(
                             ShenzhenAirApprovalData.id.in_(parent_ids)
                         ).delete(synchronize_session=False)
                         db.commit()
-            # ------------------------------------------------
             
             seen_flight_pairs = set()
             current_parent_id = None
@@ -207,13 +195,11 @@ class ShenzhenAirApprovalScheduler:
                 if flight_number and "总计" in flight_number:
                     continue
                 
-                # 判断是否是父级（汇总）行：有航班号且有航班日期
                 is_parent = bool(flight_number and flight_date)
                 
                 if is_parent:
                     pair_key = f"{flight_number}_{flight_date}"
                     
-                    # 防重策略：如果遇到新的航班组合，先清空数据库中已有的父级和子级记录
                     if pair_key not in seen_flight_pairs:
                         existing_parents = db.query(ShenzhenAirApprovalData).filter(
                             ShenzhenAirApprovalData.flight_number == flight_number,
@@ -223,11 +209,9 @@ class ShenzhenAirApprovalScheduler:
                         
                         parent_ids = [p.id for p in existing_parents]
                         if parent_ids:
-                            # 删子项
                             db.query(ShenzhenAirApprovalData).filter(
                                 ShenzhenAirApprovalData.parent_id.in_(parent_ids)
                             ).delete(synchronize_session=False)
-                            # 删父项
                             db.query(ShenzhenAirApprovalData).filter(
                                 ShenzhenAirApprovalData.id.in_(parent_ids)
                             ).delete(synchronize_session=False)
@@ -255,13 +239,12 @@ class ShenzhenAirApprovalScheduler:
                         remark=_get_val(row_dict, "备注")
                     )
                     db.add(export_record)
-                    db.flush() # 获取自增的主键ID
+                    db.flush() 
                     current_parent_id = export_record.id
                     
                 else:
-                    # 子项（细节）行：没有航班号
                     if current_parent_id is None:
-                        continue # 孤儿行，忽略
+                        continue 
                         
                     export_record = ShenzhenAirApprovalData(
                         flight_number=None,
@@ -288,7 +271,6 @@ class ShenzhenAirApprovalScheduler:
             db.commit()
             print(f"[ShenzhenAirApprovalScheduler] 文件 {os.path.basename(filepath)} 解析入库完成。")
             
-            # 重命名防重处理，防止被再次处理
             os.rename(filepath, filepath + ".processed")
             
         except Exception as e:
@@ -302,12 +284,10 @@ class ShenzhenAirApprovalScheduler:
         try:
             df = pd.read_excel(filepath)
             
-            # --- 按业务范围先清空后插入 (Zombie Data 防护) ---
             if "航班日期" in df.columns:
                 unique_dates = df["航班日期"].dropna().unique().tolist()
                 date_strs = [str(d).strip() for d in unique_dates if str(d).strip() and str(d) != 'nan']
                 if date_strs:
-                    # 1. 查询这些日期对应的父级 ID
                     parent_records = db.query(ShenzhenAirApprovalWideBodyData.id).filter(
                         ShenzhenAirApprovalWideBodyData.flight_date.in_(date_strs),
                         ShenzhenAirApprovalWideBodyData.parent_id == None
@@ -315,16 +295,13 @@ class ShenzhenAirApprovalScheduler:
                     
                     parent_ids = [p[0] for p in parent_records]
                     if parent_ids:
-                        # 2. 批量级联删除子级
                         db.query(ShenzhenAirApprovalWideBodyData).filter(
                             ShenzhenAirApprovalWideBodyData.parent_id.in_(parent_ids)
                         ).delete(synchronize_session=False)
-                        # 3. 批量删除父级
                         db.query(ShenzhenAirApprovalWideBodyData).filter(
                             ShenzhenAirApprovalWideBodyData.id.in_(parent_ids)
                         ).delete(synchronize_session=False)
                         db.commit()
-            # ------------------------------------------------
             
             seen_flight_pairs = set()
             current_parent_id = None
@@ -344,13 +321,11 @@ class ShenzhenAirApprovalScheduler:
                 if flight_number and "总计" in flight_number:
                     continue
                 
-                # 判断是否是父级（汇总）行：有航班号且有航班日期
                 is_parent = bool(flight_number and flight_date)
                 
                 if is_parent:
                     pair_key = f"{flight_number}_{flight_date}"
                     
-                    # 防重策略：如果遇到新的航班组合，先清空数据库中已有的父级和子级记录
                     if pair_key not in seen_flight_pairs:
                         existing_parents = db.query(ShenzhenAirApprovalWideBodyData).filter(
                             ShenzhenAirApprovalWideBodyData.flight_number == flight_number,
@@ -360,11 +335,9 @@ class ShenzhenAirApprovalScheduler:
                         
                         parent_ids = [p.id for p in existing_parents]
                         if parent_ids:
-                            # 删子项
                             db.query(ShenzhenAirApprovalWideBodyData).filter(
                                 ShenzhenAirApprovalWideBodyData.parent_id.in_(parent_ids)
                             ).delete(synchronize_session=False)
-                            # 删父项
                             db.query(ShenzhenAirApprovalWideBodyData).filter(
                                 ShenzhenAirApprovalWideBodyData.id.in_(parent_ids)
                             ).delete(synchronize_session=False)
@@ -390,13 +363,12 @@ class ShenzhenAirApprovalScheduler:
                         remark=_get_val(row_dict, "备注")
                     )
                     db.add(export_record)
-                    db.flush() # 获取自增的主键ID
+                    db.flush() 
                     current_parent_id = export_record.id
                     
                 else:
-                    # 子项（细节）行：没有航班号
                     if current_parent_id is None:
-                        continue # 孤儿行，忽略
+                        continue 
                         
                     export_record = ShenzhenAirApprovalWideBodyData(
                         flight_number=None,
@@ -421,7 +393,6 @@ class ShenzhenAirApprovalScheduler:
             db.commit()
             print(f"[ShenzhenAirApprovalScheduler] 宽体机文件 {os.path.basename(filepath)} 解析入库完成。")
             
-            # 重命名防重处理，防止被再次处理
             os.rename(filepath, filepath + ".processed")
             
         except Exception as e:
@@ -430,5 +401,4 @@ class ShenzhenAirApprovalScheduler:
         finally:
             db.close()
 
-# 全局单例
 shenzhen_air_approval_scheduler = ShenzhenAirApprovalScheduler()

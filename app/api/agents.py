@@ -47,11 +47,9 @@ async def create_agent(
     """新增代理"""
     agent_code = agent_in.agent_code
     if not agent_code:
-        # 获取当前最大的代理编码
         latest_agent = db.query(Agent).filter(Agent.agent_code.like("KCYS%")).order_by(Agent.agent_code.desc()).first()
         if latest_agent and latest_agent.agent_code:
             try:
-                # 提取末尾的数字部分
                 num = int(latest_agent.agent_code[4:])
                 agent_code = f"KCYS{(num + 1):03d}"
             except ValueError:

@@ -14,7 +14,7 @@ class ExecutionStatus(str, enum.Enum):
     NOT_EXECUTED = "未执行"
     EXECUTING = "执行中"
     FAILED = "执行失败"
-    SUCCESS = "执行成功"  # RPA执行成功状态
+    SUCCESS = "执行成功"  
 
 
 class Waybill(Base):

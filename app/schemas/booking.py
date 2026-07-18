@@ -83,7 +83,7 @@ class BookingQuery(BaseModel):
 
 class BookingResponse(BaseModel):
     """订舱响应schema"""
-    id: str  # ID以字符串形式返回
+    id: str  
     form_data: Dict[str, Any]
     booking_status: str
     invoice_status: str

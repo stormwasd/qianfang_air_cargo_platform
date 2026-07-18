@@ -23,7 +23,6 @@ class CsaDepartureStatusAlertService:
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
 
-        # 加载提货电话 Excel
         self._phone_dict = {}
         self._load_phone_excel()
 
@@ -39,7 +38,6 @@ class CsaDepartureStatusAlertService:
                     phone = str(row.get("联系电话", "")).strip()
                     
                     if dest and dest != "nan" and phone and phone != "nan":
-                        # 识别南航
                         if "南方航空" in airline or "南航" in airline:
                             self._phone_dict[dest] = phone
                 print(f"[CsaDepartureStatusAlert] 已加载南航提货电话 {len(self._phone_dict)} 条记录")
@@ -161,20 +159,16 @@ class CsaDepartureStatusAlertService:
             
         billing_flight, flight_date, routing = self._parse_flight_info(record.flight_info)
         
-        # 制单与实走数据
         billing_data_display = self._extract_billing_qty(record.billing_qty)
         actual_data_display, diff_pieces, diff_weight = self._extract_actual_qty(record.actual_qty)
         
-        # 获取开单航班计飞时间
         planned_time_str = ""
         if routing and "-" in routing and billing_flight and flight_date:
             flight_res = await ctrip_client.get_flight_times(billing_flight, flight_date, routing)
             if flight_res and flight_res.get("ready_time"):
                 planned_time_str = flight_res.get("ready_time")
                 
-        # 实走航班实飞时间
         actual_flight_str = record.actual_flight or ""
-        # 兼容逗号和分号分隔
         actual_flights = [f.strip() for f in re.split(r'[,;]', actual_flight_str) if f.strip()]
         actual_time_displays = []
         is_delayed = False
@@ -184,7 +178,6 @@ class CsaDepartureStatusAlertService:
                 flight_res = await ctrip_client.get_flight_times(flt, flight_date, routing)
                 if flight_res and flight_res.get("actual_time"):
                     act_time = flight_res.get("actual_time")
-                    # 为了和用户模板“ZH9511 / 2026-06-09  09:45 ”尽量保持一致，直接拼接
                     actual_time_displays.append(f"{flt} / {act_time}")
                     
                     if planned_time_str:
@@ -202,26 +195,22 @@ class CsaDepartureStatusAlertService:
                 else:
                     actual_time_displays.append(f"{flt} / 暂无")
         
-        # 异常判断
         is_abnormal = diff_pieces > 0 or diff_weight > 0 or is_delayed
         status_text = "出港异常" if is_abnormal else "出港正常"
         
-        # 防重哈希 (精简哈希，剔除容易波动的携程实际时间字符串)
         actual_time_text = "；".join(actual_time_displays) if actual_time_displays else "/"
         actual_flight_display = "；".join(actual_flights) if actual_flights else "/"
         
         state_hash = f"{diff_pieces}_{diff_weight}_{is_delayed}"
         
-        # 持久化防重检查
         alert_record = db.query(AlertNotificationRecord).filter(
             AlertNotificationRecord.module_name == "csa_departure_status",
             AlertNotificationRecord.target_id == str(record.id)
         ).first()
         
         if alert_record and alert_record.state_hash == state_hash:
-            return # 状态未改变，拦截重发
+            return 
             
-        # 查询 Waybill 取客户名称和收货人 (条件: airline_record_status == 3)
         customer_name = "未知客户"
         consignee_name = "未知"
         waybill_record = db.query(Waybill).filter(
@@ -235,7 +224,6 @@ class CsaDepartureStatusAlertService:
             contact_info = waybill_record.form_data.get("contact_info", {})
             consignee_name = contact_info.get("consignee", "未知")
 
-        # 取提货电话
         telephone = "/"
         if routing and "-" in routing:
             dest_code = routing.split("-")[1].strip()
@@ -260,7 +248,6 @@ class CsaDepartureStatusAlertService:
 
         await self._send_wechat_message(msg)
         
-        # 更新或插入防重记录
         if alert_record:
             alert_record.state_hash = state_hash
         else:

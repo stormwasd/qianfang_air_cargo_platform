@@ -25,7 +25,6 @@ async def get_current_user_info(
     
     返回当前登录用户的详细信息
     """
-    # 确保加载部门关系
     db.refresh(current_user, ["departments"])
     
     user_permissions = parse_json_permissions(current_user.permissions)
@@ -59,11 +58,9 @@ async def reset_current_user_password(
     
     注意：此接口只能重置当前登录用户自己的密码，需要验证旧密码
     """
-    # 验证旧密码
     if not verify_password(password_data.old_password, current_user.password_hash):
         raise BadRequestException("旧密码错误")
     
-    # 更新密码
     current_user.password_hash = get_password_hash(password_data.new_password)
     db.commit()
     

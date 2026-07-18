@@ -20,42 +20,30 @@ async def lifespan(app: FastAPI):
     应用生命周期管理
     启动时启动RPA Worker，关闭时停止Worker
     """
-    # 启动时
     if settings.RPA_QUEUE_ENABLED:
         from app.services.rpa_worker import rpa_worker_manager
         rpa_worker_manager.start_workers()
         print(f"RPA任务队列已启用，启动了 {len(rpa_worker_manager.workers)} 个Worker")
-        # 启动保持登录调度器（周期性入队，由Worker消费）
         from app.services.keep_login_scheduler import rpa_keep_login_scheduler
         rpa_keep_login_scheduler.start()
-        # 启动深航过机装机数据获取任务调度与监控器
         from app.services.transit_loading_manager import transit_loading_manager
         transit_loading_manager.start()
-        # 启动深航订舱批复数据获取调度器
         from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
         shenzhen_air_approval_scheduler.start()
-        # 启动南航订舱批复数据获取调度器
         from app.services.china_southern_air_approval_scheduler import china_southern_air_approval_scheduler
         china_southern_air_approval_scheduler.start()
-        # 启动深航订舱批复预警服务
         from app.services.shenzhen_air_approval_alert import shenzhen_air_approval_alert
         shenzhen_air_approval_alert.start()
-        # 启动深航出港跟踪预警服务
         from app.services.shenzhen_air_departure_alert import shenzhen_air_departure_alert_manager
         shenzhen_air_departure_alert_manager.start()
-        # 启动南航出港跟踪预警服务
         from app.services.csa_departure_alert import csa_departure_alert_manager
         csa_departure_alert_manager.start()
-        # 启动深航装机状态预警服务
         from app.services.shenzhen_air_loading_alert import shenzhen_air_loading_alert_manager
         shenzhen_air_loading_alert_manager.start()
-        # 启动南航装机状态预警服务
         from app.services.csa_loading_alert import csa_loading_alert_manager
         csa_loading_alert_manager.start()
-        # 启动深航出港状态预警服务
         from app.services.shenzhen_air_departure_status_alert import shenzhen_air_departure_status_alert
         shenzhen_air_departure_status_alert.start()
-        # 启动南航出港状态预警服务
         from app.services.csa_departure_status_alert import csa_departure_status_alert
         csa_departure_status_alert.start()
     else:
@@ -63,7 +51,6 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # 关闭时
     if settings.RPA_QUEUE_ENABLED:
         from app.services.rpa_worker import rpa_worker_manager
         rpa_worker_manager.stop_workers()
@@ -103,19 +90,15 @@ def create_application() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
-        lifespan=lifespan,  # 添加生命周期管理
+        lifespan=lifespan,  
     )
     
-    # 配置中间件
     setup_cors_middleware(app)
     
-    # 注册异常处理器
     register_exception_handlers(app)
     
-    # 注册API路由
     app.include_router(api_router)
     
-    # 挂载静态文件目录 (创建 static/uploads 如果不存在)
     import os
     os.makedirs("static/uploads", exist_ok=True)
     app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -181,7 +164,6 @@ def register_exception_handlers(app: FastAPI):
         )
 
 
-# 创建应用实例
 app = create_application()
 
 

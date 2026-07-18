@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ======================== 单号生成核心算法 ========================
 
 def generate_next_number(current: int) -> int:
     """
@@ -88,7 +87,6 @@ def generate_waybill_numbers(first_number: str, last_number: str, quantity: int)
     if quantity < 1:
         raise BadRequestException("领单数量必须大于0")
     
-    # 生成单号序列
     numbers = [str(first)]
     current = first
     
@@ -124,30 +122,21 @@ def calculate_max_capacity(first_number: str, last_number: str) -> int:
     if first > last:
         return 0
         
-    # 计算两个单号之间的有效数字个数
-    # 规则：个位0-6循环，每变一次十位加1。
-    # 这意味着每生成一个新单号，(num // 10) 都会精确地加1。
-    # 因此，总步数就是十位及以上部分的差值。
     
     first_prefix = first // 10
     last_prefix = last // 10
     steps = last_prefix - first_prefix
     
-    # 校验当前 last_number 是否能包含最后一步生成的单号
-    # 第 steps 个生成的单号，其个位数应该是 (first % 10 + steps) % 7
     expected_last_units = (first % 10 + steps) % 7
     actual_last_units = last % 10
     
-    # 如果 last_number 的个位 >= 理论上第 steps 个号的个位，说明包含了第 steps 个号
     if actual_last_units >= expected_last_units:
         return steps + 1
     else:
-        # 否则说明 last_number 还没到第 steps 个号的个位，步数需减1
         return steps
 
 
 
-# ======================== 单号库管理 ========================
 
 @router.post("/pools", summary="创建单号库")
 async def create_waybill_stock_pool(
@@ -187,12 +176,10 @@ async def preview_waybill_numbers(
     if not number_prefix:
         raise BadRequestException(f"未找到航司'{stock.airline_name}'对应的单号前缀")
         
-    # 1. 计算符合规则的实际数量
     actual_quantity = calculate_max_capacity(payload.first_number, payload.last_number)
     if actual_quantity <= 0:
          raise BadRequestException("无法根据当前首尾单号生成有效单号，请检查输入")
          
-    # 2. 生成单号序列
     number_suffixes = generate_waybill_numbers(
         payload.first_number,
         payload.last_number,
@@ -207,7 +194,6 @@ async def preview_waybill_numbers(
     }, msg="预览成功")
 
 
-# ======================== 接口实现 ========================
 
 
 @router.post("", summary="新增单号（领单）")
@@ -237,7 +223,6 @@ async def create_waybill_stock_batch(
     if not stock:
         raise NotFoundException("指定的单号库不存在")
 
-    # 1. 校验领单数量是否匹配首尾单号规则
     expected_quantity = calculate_max_capacity(payload.first_number, payload.last_number)
     if payload.claim_quantity != expected_quantity:
         raise BadRequestException(
@@ -245,7 +230,6 @@ async def create_waybill_stock_batch(
             f"应包含 {expected_quantity} 个有效单号，但您输入的数量为 {payload.claim_quantity}"
         )
 
-    # 2. 根据航司名称获取单号前缀
     number_prefix = settings.AIRLINE_NUMBER_PREFIX.get(stock.airline_name)
     if not number_prefix:
         raise BadRequestException(
@@ -253,14 +237,12 @@ async def create_waybill_stock_batch(
             f"当前支持的航司：{', '.join(settings.AIRLINE_NUMBER_PREFIX.keys())}"
         )
     
-    # 3. 生成单号序列
     number_suffixes = generate_waybill_numbers(
         payload.first_number,
         payload.last_number,
         payload.claim_quantity,
     )
     
-    # 3. 创建领单批次记录
     batch = WaybillStockBatch(
         claim_date=payload.claim_date,
         first_number=payload.first_number,
@@ -270,9 +252,8 @@ async def create_waybill_stock_batch(
         number_prefix=number_prefix,
     )
     db.add(batch)
-    db.flush()  # 获取 batch.id
+    db.flush()  
     
-    # 4. 批量创建单号详情记录（按单号从大到小写入，确保分配时优先使用大单号）
     items = []
     for suffix in reversed(number_suffixes):
         item = WaybillStockItem(
@@ -316,14 +297,12 @@ async def get_waybill_stock_items(
     - **page**: 页码（默认1）
     - **pageSize**: 每页数量（默认10，最大200）
     """
-    # 验证单号库是否存在
     stock = db.query(WaybillStock).filter(
         WaybillStock.id == int(stock_id)
     ).first()
     if not stock:
         raise NotFoundException("单号库不存在")
     
-    # 构建查询
     query_obj = db.query(WaybillStockItem).join(
         WaybillStockBatch, WaybillStockItem.batch_id == WaybillStockBatch.id
     ).filter(
@@ -347,7 +326,6 @@ async def get_waybill_stock_items(
         elif len(dates) == 1:
             query_obj = query_obj.filter(WaybillStockItem.usage_date == dates[0])
     
-    # 使用状态筛选
     if query.usage_status is not None:
         if query.usage_status not in ("0", "1"):
             raise BadRequestException("使用状态值无效，有效值为：0=未使用，1=已使用")
@@ -363,10 +341,8 @@ async def get_waybill_stock_items(
             raise BadRequestException("失效状态值无效，有效值为：0=未失效，1=已失效")
         query_obj = query_obj.filter(WaybillStockItem.is_invalid == query.is_invalid)
     
-    # 总数
     total = query_obj.count()
     
-    # 分页（按单号后缀升序排列）
     order_query = query_obj.order_by(WaybillStockItem.number_suffix.asc())
     if query.is_all:
         items = order_query.all()
@@ -426,18 +402,15 @@ async def update_waybill_stock_item(
     - **invalid_reason**: 失效原因登记（可选）
     - **usage_date**: 用单日期（可选）
     """
-    # 查找单号详情
     item = db.query(WaybillStockItem).filter(
         WaybillStockItem.id == int(item_id)
     ).first()
     if not item:
         raise NotFoundException("单号详情不存在")
         
-    # 校验：单号编辑仅能针对未使用的单号
     if item.usage_status != "0":
         raise BadRequestException(f"单号 {item.full_number} 非未使用状态，不允许编辑")
     
-    # 部分更新：仅允许更新特定字段
     allowed_fields = {"is_abnormal", "is_invalid", "invalid_reason"}
     update_data = payload.model_dump(exclude_unset=True)
     
@@ -482,7 +455,6 @@ async def delete_waybill_stock_items(
     except ValueError:
         raise BadRequestException("单号ID必须为有效的数字字符串")
 
-    # 1. 查找所有单号详情
     items = db.query(WaybillStockItem).filter(
         WaybillStockItem.id.in_(item_ids)
     ).all()
@@ -490,16 +462,13 @@ async def delete_waybill_stock_items(
     if not items:
         return success_response(data=None, msg="无匹配的单号被删除")
     
-    # 2. 校验状态：单号删除仅能针对未使用的单号
     for item in items:
         if item.usage_status != "0":
             raise BadRequestException(f"单号 {item.full_number} 非未使用状态，不允许删除")
     
-    # 记录每个批次需要扣减的数量
     batch_deducts = {}
     deleted_ids = []
     
-    # 3. 统计并删除记录
     for item in items:
         batch_id = item.batch_id
         if batch_id not in batch_deducts:
@@ -509,7 +478,6 @@ async def delete_waybill_stock_items(
         
         db.delete(item)
     
-    # 4. 同步更新相关领单批次的领单数量
     batches = db.query(WaybillStockBatch).filter(
         WaybillStockBatch.id.in_(list(batch_deducts.keys()))
     ).all()
@@ -545,23 +513,18 @@ async def get_waybill_stock_batches(
     - **page**: 页码（默认1）
     - **pageSize**: 每页数量（默认10，最大200）
     """
-    # 构建查询
     query_obj = db.query(WaybillStockBatch)
     
-    # 航司名称筛选
     if query.stock_id:
         query_obj = query_obj.filter(WaybillStockBatch.stock_id == int(query.stock_id))
     
-    # 总数
     total = query_obj.count()
     
-    # 分页（按创建时间倒序）
     offset = (query.page - 1) * query.pageSize
     batches = query_obj.order_by(
         WaybillStockBatch.created_at.desc(), WaybillStockBatch.id.desc()
     ).offset(offset).limit(query.pageSize).all()
     
-    # 统计单号使用情况
     batch_ids = [b.id for b in batches]
     stats_dict = {}
     if batch_ids:
@@ -598,7 +561,6 @@ async def get_waybill_stock_batches(
     )
 
 
-# ======================== 响应格式化工具 ========================
 
 def _format_batch_response(batch: WaybillStockBatch, stats: dict = None) -> dict:
     """格式化领单批次响应数据"""

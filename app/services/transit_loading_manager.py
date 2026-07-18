@@ -47,12 +47,10 @@ class TransitLoadingManager:
             
         self._stop_event.clear()
         
-        # 启动调度器线程
         if not (self._scheduler_thread and self._scheduler_thread.is_alive()):
             self._scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
             self._scheduler_thread.start()
             
-        # 启动文件监控线程
         if not (self._watcher_thread and self._watcher_thread.is_alive()):
             self._watcher_thread = threading.Thread(target=self._run_watcher, daemon=True)
             self._watcher_thread.start()
@@ -99,11 +97,10 @@ class TransitLoadingManager:
         """创建下载表格任务"""
         db = SessionLocal()
         try:
-            # 检查是否已有 pending/running 任务
             existing = rpa_task_service.get_pending_task_for_target(
                 db,
                 target_type=TRANSIT_LOADING_TARGET_TYPE,
-                target_id=1,  # 全局单例
+                target_id=1,  
                 task_type=RPATaskType.SHENZHEN_AIR_TRANSIT_LOADING.value,
             )
             if existing:
@@ -113,7 +110,6 @@ class TransitLoadingManager:
             node = business_config.get("shenzhen_air", {}).get("booking", {}).get("shenzhen_air_login", {})
             system_account = node.get("system_account", "")
             if not system_account:
-                # Fallback to default or just skip if critical
                 system_account = "szxfdh002"
 
             params = {
@@ -127,10 +123,10 @@ class TransitLoadingManager:
                 target_type=TRANSIT_LOADING_TARGET_TYPE,
                 target_id=1,
                 params=params,
-                job_uuid=None,  # 任务分配时会读取 task_processes
+                job_uuid=None,  
                 priority=2,
                 created_by=None,
-                robot_id=None,  # 允许任何有权限的机器人执行
+                robot_id=None,  
             )
             print("[TransitLoadingManager] 已生成深航过机装机数据获取(下载表格)定时任务")
         finally:
@@ -144,7 +140,7 @@ class TransitLoadingManager:
             except Exception as e:
                 print(f"[TransitLoadingManager] 文件监控异常: {repr(e)}\n{traceback.format_exc()}")
             
-            await asyncio.sleep(5)  # 每5秒检查一次
+            await asyncio.sleep(5)  
 
     def _check_for_new_files(self) -> None:
         if not os.path.exists(self.watch_dir):
@@ -154,11 +150,10 @@ class TransitLoadingManager:
             if "AwbQueryExport" in filename and filename.endswith(".xlsx"):
                 filepath = os.path.join(self.watch_dir, filename)
                 
-                # 简单防抖：确保文件不再被写入
                 try:
                     os.rename(filepath, filepath)
                 except OSError:
-                    continue  # 文件仍在使用中
+                    continue  
                 
                 print(f"[TransitLoadingManager] 发现新的数据文件: {filename}，开始解析入库...")
                 self._process_file(filepath)
@@ -168,7 +163,6 @@ class TransitLoadingManager:
         try:
             df = pd.read_excel(filepath)
             
-            # --- Upsert 前期准备 (精准防僵尸) ---
             existing_records = []
             if "航班日期" in df.columns:
                 unique_dates = df["航班日期"].dropna().unique().tolist()
@@ -178,18 +172,14 @@ class TransitLoadingManager:
                         ShenzhenAirBookingExport.flight_date.in_(date_strs)
                     ).all()
             
-            # 用 运单号+日期 作为内存字典的 key
             existing_map = {(r.waybill_number, r.flight_date): r for r in existing_records}
             processed_keys = set()
-            # ------------------------------------------------
 
             business_config = _get_business_config_dict(db)
             node = business_config.get("shenzhen_air", {}).get("booking", {}).get("shenzhen_air_login", {})
             system_account = node.get("system_account", "szxfdh002")
 
-            # 遍历行
             for index, row in df.iterrows():
-                # 读取全部31列（处理 NaN 为 None）
                 row_dict = row.where(pd.notnull(row), None).to_dict()
                 
                 waybill_number = str(row_dict.get("单号", ""))
@@ -203,7 +193,6 @@ class TransitLoadingManager:
                 key = (waybill_number, flight_date)
                 processed_keys.add(key)
                 
-                # 提取数据映射
                 field_values = {
                     "prefix": str(row_dict.get("前缀", "")),
                     "waybill_status": str(row_dict.get("运单状态", "")),
@@ -237,23 +226,20 @@ class TransitLoadingManager:
                 }
                 
                 if key in existing_map:
-                    # Upsert: 更新记录 (保持原有的 id 稳定不变)
                     export_record = existing_map[key]
                     for k, v in field_values.items():
                         setattr(export_record, k, v)
                 else:
-                    # Upsert: 新增记录
                     export_record = ShenzhenAirBookingExport(
                         waybill_number=waybill_number,
                         flight_date=flight_date,
                         **field_values
                     )
                     db.add(export_record)
-                    existing_map[key] = export_record # 防止 Excel 内部的重复单号插入
+                    existing_map[key] = export_record 
                 
-                db.flush()  # 获取或锁定 export_record.id
+                db.flush()  
                 
-                # 下发子任务：计飞时间与集装器获取
                 params = {
                     "system_url": "https://www.kinggo.com/main",
                     "system_account": system_account,
@@ -272,17 +258,13 @@ class TransitLoadingManager:
                     robot_id=None
                 )
                 
-            # --- 击杀真正的僵尸数据 ---
-            # 任何在 original 集合中但不在 processed_keys 中的单据，说明航司已将其删除
             for key, existing_record in existing_map.items():
                 if key not in processed_keys:
                     db.delete(existing_record)
-            # ---------------------------
             
             db.commit()
             print(f"[TransitLoadingManager] 文件 {os.path.basename(filepath)} 解析入库及子任务下发完成。")
             
-            # 重命名防重处理
             os.rename(filepath, filepath + ".processed")
             
         except Exception as e:
@@ -291,5 +273,4 @@ class TransitLoadingManager:
         finally:
             db.close()
 
-# 全局单例
 transit_loading_manager = TransitLoadingManager()

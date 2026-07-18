@@ -11,7 +11,6 @@ from app.api.deps import get_current_active_user
 
 router = APIRouter()
 
-# 上传根目录配置
 UPLOAD_DIR = "static/uploads"
 
 @router.post("/upload", summary="通用文件上传", response_model=ResponseModel[dict])
@@ -28,12 +27,10 @@ async def upload_file(
     if not file:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file provided")
 
-    # 根据年月分目录存放
     current_month = datetime.now().strftime("%Y%m")
     save_dir = os.path.join(UPLOAD_DIR, current_month)
     os.makedirs(save_dir, exist_ok=True)
     
-    # 防止文件名冲突，使用 uuid 加上原文件名后缀
     original_filename = file.filename or "unknown_file"
     file_ext = os.path.splitext(original_filename)[1]
     unique_filename = f"{uuid.uuid4().hex}{file_ext}"
@@ -48,7 +45,6 @@ async def upload_file(
     finally:
         file.file.close()
         
-    # 构建相对 URL
     file_url = f"/{UPLOAD_DIR}/{current_month}/{unique_filename}"
     
     return success_response(

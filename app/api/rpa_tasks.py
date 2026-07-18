@@ -36,7 +36,6 @@ async def get_task_status(
     if not task:
         raise NotFoundException("任务不存在或已完成")
     
-    # 解析result字段
     result_data = None
     if task.result:
         try:

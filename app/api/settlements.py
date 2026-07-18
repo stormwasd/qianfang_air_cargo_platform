@@ -87,7 +87,6 @@ async def create_settlement(
     
     所有字段都是可选的，所有字段的值都是字符串类型
     """
-    # 将form_data转换为JSON字符串
     form_data_json = json.dumps(settlement.form_data, ensure_ascii=False)
     
     new_settlement = Settlement(
@@ -97,7 +96,6 @@ async def create_settlement(
     db.commit()
     db.refresh(new_settlement)
     
-    # 解析form_data JSON
     form_data_dict = json.loads(new_settlement.form_data)
     
     settlement_data = {
@@ -135,7 +133,6 @@ async def get_settlements(
     
     支持多条件组合筛选，航司录单时间从form_data JSON中提取进行日期范围筛选。列表不包含 waybill_void_status='3'（作废成功）的结算单。
     """
-    # 构建基础查询：outerjoin 运单表，列表返回与时间筛选都需用到（航司录单时间优先取运单 booking_date，无则取 form_data.airline_record_time）
     query_obj = db.query(Settlement).outerjoin(
         Waybill,
         func.cast(
@@ -146,10 +143,8 @@ async def get_settlements(
             String(100)
         ) == Waybill.waybill_number
     )
-    # 列表不展示运单已作废成功的结算单（waybill_void_status='3' 表示作废成功）
     query_obj = query_obj.filter(Settlement.waybill_void_status != "3")
 
-    # 从form_data JSON中提取字段进行模糊搜索
     if query.airline:
         query_obj = query_obj.filter(
             func.cast(
@@ -173,8 +168,6 @@ async def get_settlements(
         )
     
     if query.customer_name:
-        # 客户名称可能在form_data中的不同字段，尝试多个可能的字段名
-        # 如：customer_name, shipper, consignor等
         customer_name_filter = or_(
             func.cast(
                 func.json_extract(
@@ -222,7 +215,6 @@ async def get_settlements(
             ).like(f"%{query.master_airwaybill_number}%")
         )
     
-    # 结算状态筛选（精确匹配）
     if query.settlement_status:
         query_obj = query_obj.filter(
             func.cast(
@@ -234,7 +226,6 @@ async def get_settlements(
             ) == query.settlement_status
         )
     
-    # 财务审核状态筛选（精确匹配）
     if query.financial_review:
         query_obj = query_obj.filter(
             func.cast(
@@ -246,8 +237,6 @@ async def get_settlements(
             ) == query.financial_review
         )
     
-    # 航司录单时间范围筛选：仅按 settlements 表 form_data 中的 airline_record_time（YYYY-MM-DD 字符串）筛选
-    # MySQL JSON_EXTRACT 返回的值带双引号，需用 JSON_UNQUOTE 取出纯字符串后再做区间比较
     if query.airline_record_time_start or query.airline_record_time_end:
         airline_record_time_expr = func.json_unquote(
             func.json_extract(
@@ -262,17 +251,13 @@ async def get_settlements(
             end_date_str = query.airline_record_time_end.isoformat()
             query_obj = query_obj.filter(airline_record_time_expr <= end_date_str)
     
-    # 获取总数（需要去重，因为JOIN可能产生重复）
     total = query_obj.distinct().count()
     
-    # 分页
     offset = (query.page - 1) * query.pageSize
     settlements = query_obj.distinct().order_by(
         Settlement.created_at.desc(), Settlement.id.desc()
     ).offset(offset).limit(query.pageSize).all()
     
-    # 批量查询关联的运单信息（优化性能，避免N+1查询）
-    # 收集所有主单号
     master_airwaybill_numbers = []
     settlement_form_data_map = {}
     for settlement in settlements:
@@ -282,7 +267,6 @@ async def get_settlements(
         if master_airwaybill_number:
             master_airwaybill_numbers.append(master_airwaybill_number)
     
-    # 批量查询Waybill，建立主单号到booking_date的映射
     waybill_map = {}
     if master_airwaybill_numbers:
         waybills = db.query(Waybill).filter(
@@ -296,36 +280,32 @@ async def get_settlements(
         master_airwaybill_number = form_data_dict.get("master_airwaybill_number")
         waybill = waybill_map.get(master_airwaybill_number) if master_airwaybill_number else None
         
-        # 提取指定字段
-        # 航司录单时间：优先使用通过主单号关联运单表获取的值，如果关联上了并且有值则用它，如果没有关联上或没有值则使用form_data中用户输入的airline_record_time
         airline_record_time = None
         if waybill and waybill.booking_date:
-            # 如果通过主单号关联上了运单表并且有值，优先使用运单表的booking_date
             airline_record_time = waybill.booking_date.isoformat()
         else:
-            # 如果没有关联上或没有值，使用form_data中用户输入的airline_record_time
             airline_record_time = form_data_dict.get("airline_record_time")
         
         settlement_item = {
             "id": str(settlement.id),
-            "airline_record_time": airline_record_time,  # 航司录单时间
-            "airline": form_data_dict.get("airline"),  # 所属航司
-            "master_airwaybill_number": master_airwaybill_number,  # 主单号
-            "flight_number": form_data_dict.get("flight_number"),  # 航班号
-            "destination": form_data_dict.get("destination"),  # 目的站
-            "flight_date": form_data_dict.get("flight_date"),  # 航班日期
-            "shipper_unit": form_data_dict.get("customer_name"),  # 托运单位（就是客户名称）
-            "quantity": form_data_dict.get("quantity"),  # 件数
-            "weight": form_data_dict.get("weight"),  # 重量
-            "chargeable_weight": form_data_dict.get("chargeable_weight"),  # 计费重量
-            "transit_weight": form_data_dict.get("master_transit_weight"),  # 过站重量
-            "cargo_name": form_data_dict.get("cargo_name"),  # 货物名称
-            "customer_name": form_data_dict.get("customer_name"),  # 客户名称
-            "airline_rate": form_data_dict.get("sub_rate"),  # 航空费率
-            "airline_fee": form_data_dict.get("sub_airline_fee"),  # 航空运价
-            "packaging_fee": form_data_dict.get("sub_packaging_fee"),  # 包装费
-            "pickup_fee": form_data_dict.get("sub_pickup_fee"),  # 上门提货费
-            "waybill_void_status": settlement.waybill_void_status,  # 运单作废状态
+            "airline_record_time": airline_record_time,  
+            "airline": form_data_dict.get("airline"),  
+            "master_airwaybill_number": master_airwaybill_number,  
+            "flight_number": form_data_dict.get("flight_number"),  
+            "destination": form_data_dict.get("destination"),  
+            "flight_date": form_data_dict.get("flight_date"),  
+            "shipper_unit": form_data_dict.get("customer_name"),  
+            "quantity": form_data_dict.get("quantity"),  
+            "weight": form_data_dict.get("weight"),  
+            "chargeable_weight": form_data_dict.get("chargeable_weight"),  
+            "transit_weight": form_data_dict.get("master_transit_weight"),  
+            "cargo_name": form_data_dict.get("cargo_name"),  
+            "customer_name": form_data_dict.get("customer_name"),  
+            "airline_rate": form_data_dict.get("sub_rate"),  
+            "airline_fee": form_data_dict.get("sub_airline_fee"),  
+            "packaging_fee": form_data_dict.get("sub_packaging_fee"),  
+            "pickup_fee": form_data_dict.get("sub_pickup_fee"),  
+            "waybill_void_status": settlement.waybill_void_status,  
             "created_at": format_datetime_china(settlement.created_at),
             "updated_at": format_datetime_china(settlement.updated_at)
         }
@@ -353,7 +333,6 @@ async def get_settlement(
     if not settlement:
         raise NotFoundException("结算单不存在")
     
-    # 解析form_data JSON
     form_data_dict = json.loads(settlement.form_data)
     
     settlement_data = {

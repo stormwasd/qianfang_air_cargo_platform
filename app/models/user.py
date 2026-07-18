@@ -23,12 +23,11 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
-    # 多对多关系：用户可以有多个部门
     departments = relationship(
         "Department",
         secondary=user_department,
         back_populates="users",
-        lazy="selectin"  # 使用selectin加载策略，提高查询效率
+        lazy="selectin"  
     )
     
     def __repr__(self):

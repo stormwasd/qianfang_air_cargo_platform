@@ -32,7 +32,6 @@ async def get_shenzhen_air_departures(
     """
     query = db.query(ShenzhenAirBookingExport)
 
-    # 0. 关联手动表进行查询 (审核状态、客户名称)
     if audit_status is not None or customer_name:
         from app.models.departure_manual_data import ShenzhenAirDepartureManualData
         query = query.outerjoin(
@@ -54,29 +53,24 @@ async def get_shenzhen_air_departures(
         if customer_name:
             query = query.filter(ShenzhenAirDepartureManualData.customer_name.like(f"%{customer_name}%"))
 
-    # 1. 航班号查询
     if flight_number:
         query = query.filter(ShenzhenAirBookingExport.billing_flight.like(f"%{flight_number}%"))
         
-    # 2. 航班日期区间查询
     if flight_date_start:
         query = query.filter(func.replace(ShenzhenAirBookingExport.flight_date, '/', '-') >= flight_date_start)
     if flight_date_end:
         query = query.filter(func.replace(ShenzhenAirBookingExport.flight_date, '/', '-') <= f"{flight_date_end} 23:59:59")
 
-    # 3. 运单号多单号查询
     if waybill_number:
         waybill_numbers = [wn.strip() for wn in waybill_number.split(",") if wn.strip()]
         if waybill_numbers:
             query = query.filter(ShenzhenAirBookingExport.waybill_number.in_(waybill_numbers))
 
-    # 4. 始发站/目的站
     if origin:
         query = query.filter(ShenzhenAirBookingExport.routing.like(f"{origin}-%"))
     if destination:
         query = query.filter(ShenzhenAirBookingExport.routing.like(f"%-{destination}"))
         
-    # 5. 疑似异常
     if is_suspected_abnormal:
         from app.models.alert_notification_record import AlertNotificationRecord
         query = query.filter(
@@ -89,10 +83,8 @@ async def get_shenzhen_air_departures(
             )
         )
 
-    # 计算总数
     total = query.count()
 
-    # 分页查询主表数据，修复由于 created_at 相同导致的分页乱序问题
     offset = (page - 1) * pageSize
     exports = query.order_by(
         ShenzhenAirBookingExport.flight_date.desc(), 
@@ -100,29 +92,23 @@ async def get_shenzhen_air_departures(
     ).offset(offset).limit(pageSize).all()
 
 
-    # 如果当前页没有数据，直接返回
     if not exports:
         return success_response(
             data={"total": total, "items": [], "data_update_time": None},
             msg="查询成功"
         )
 
-    # 4. 提取当前页的所有主表单号的后8位，用于批量查询从表
-    # 主表的运单号通常格式为 479-12345678 或 12345678
-    # 从表的运单号明确为 waybill_number_8 (12345678)
     waybill_8_list = []
-    export_by_wb8 = {}  # 记录后8位与主表实体的对应关系，用于组装
+    export_by_wb8 = {}  
     
     for export in exports:
         if export.waybill_number:
             wb8 = export.waybill_number[-8:] if len(export.waybill_number) >= 8 else export.waybill_number
             waybill_8_list.append(wb8)
-            # 建立映射表
             if wb8 not in export_by_wb8:
                 export_by_wb8[wb8] = []
             export_by_wb8[wb8].append(export)
 
-    # 5. 批量查询关联的从表数据
     containers = []
     manual_datas = []
     export_ids = [export.id for export in exports]
@@ -137,8 +123,6 @@ async def get_shenzhen_air_departures(
             ShenzhenAirDepartureManualData.booking_export_id.in_(export_ids)
         ).all()
 
-    # 6. 在内存中组装数据
-    # 按主表对象的ID初始化空列表
     containers_by_export_id = {export.id: [] for export in exports}
     manual_data_by_export_id = {md.booking_export_id: md for md in manual_datas}
     
@@ -148,17 +132,14 @@ async def get_shenzhen_air_departures(
             for matched_export in export_by_wb8[wb8]:
                 containers_by_export_id[matched_export.id].append(container)
 
-    # 构造返回列表
     items = []
     from app.schemas.departure_tracking import ShenzhenAirDepartureManualDataDTO
     for export in exports:
         export_dict = {k: v for k, v in export.__dict__.items() if not k.startswith('_')}
-        export_dict["id"] = str(export.id)  # 转字符串防止精度丢失
+        export_dict["id"] = str(export.id)  
         
-        # 使用 Pydantic 严格按照 Schema 定义的顺序和类型进行序列化
         item_schema = ShenzhenAirDepartureItem(**export_dict)
         
-        # 组装子表数据
         containers_data = []
         for c in containers_by_export_id[export.id]:
             c_dict = {k: v for k, v in c.__dict__.items() if not k.startswith('_')}
@@ -167,7 +148,6 @@ async def get_shenzhen_air_departures(
             
         item_schema.billing_time_containers = containers_data
         
-        # 组装手动扩展数据
         if export.id in manual_data_by_export_id:
             md = manual_data_by_export_id[export.id]
             md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
@@ -175,10 +155,8 @@ async def get_shenzhen_air_departures(
             md_dict["booking_export_id"] = str(md.booking_export_id)
             item_schema.manual_data = ShenzhenAirDepartureManualDataDTO(**md_dict)
         
-        # 转换为字典，保持键顺序一致
         items.append(item_schema.model_dump(mode="json"))
 
-    # 提取数据更新时间（第一条记录的 updated_at，格式化到分钟）
     data_update_time = None
     if exports and hasattr(exports[0], 'updated_at') and exports[0].updated_at:
         data_update_time = exports[0].updated_at.strftime("%Y-%m-%d %H:%M")
@@ -199,19 +177,16 @@ async def upsert_shenzhen_air_manual_data(
 ):
     from app.models.departure_manual_data import ShenzhenAirDepartureManualData
     
-    # 根据 booking_export_id 查询是否已存在
     manual_data = db.query(ShenzhenAirDepartureManualData).filter(
         ShenzhenAirDepartureManualData.booking_export_id == data.booking_export_id
     ).first()
     
     if manual_data:
-        # 更新
         update_data = data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(manual_data, key, value)
         msg = "更新成功"
     else:
-        # 插入
         manual_data = ShenzhenAirDepartureManualData(**data.model_dump())
         db.add(manual_data)
         msg = "保存成功"
@@ -260,7 +235,6 @@ async def audit_shenzhen_air_departure(
     db.commit()
     return success_response(msg=msg)
 
-# ========== 南航出港跟踪接口 ==========
 
 from app.schemas.departure_tracking import CsaDepartureItem, CsaProductInformationDTO, CsaLalamoveInformationDTO, CsaDepartureManualDataDTO
 
@@ -292,7 +266,6 @@ async def get_china_southern_air_departures(
 
     query = db.query(ChinaSouthernAirApprovalData)
 
-    # 0. 关联手动表进行查询 (审核状态、客户名称)
     if audit_status is not None or customer_name:
         query = query.outerjoin(
             CsaDepartureManualData,
@@ -313,20 +286,16 @@ async def get_china_southern_air_departures(
         if customer_name:
             query = query.filter(CsaDepartureManualData.customer_name.like(f"%{customer_name}%"))
 
-    # 1. 航班号查询（从 flight_info 中匹配，如 "CZ8577 / 2026-06-16 / SZX - WUH"）
     if flight_number:
         query = query.filter(
             ChinaSouthernAirApprovalData.flight_info.like(f"%{flight_number}%")
         )
         
-    # 1.5 运单状态查询 (从 booking_no 中匹配，如 "63821575 ( UU )")
     if waybill_status:
         query = query.filter(
             ChinaSouthernAirApprovalData.booking_no.like(f"%{waybill_status}%")
         )
     
-    # 2. 航班日期区间查询（从 flight_info 中提取日期部分进行比较）
-    # flight_info 格式如: "CZ8577 / 2026-06-16 / SZX - WUH"，第二段是日期
     if flight_date_start or flight_date_end:
         date_str = func.trim(func.substring_index(func.substring_index(ChinaSouthernAirApprovalData.flight_info, ' / ', 2), ' / ', -1))
         if flight_date_start:
@@ -334,19 +303,16 @@ async def get_china_southern_air_departures(
         if flight_date_end:
             query = query.filter(func.replace(date_str, '/', '-') <= f"{flight_date_end} 23:59:59")
 
-    # 3. 运单号多单号查询
     if waybill_number:
         waybill_numbers = [wn.strip() for wn in waybill_number.split(",") if wn.strip()]
         if waybill_numbers:
             query = query.filter(ChinaSouthernAirApprovalData.waybill_number.in_(waybill_numbers))
 
-    # 4. 始发站/目的站
     if origin:
         query = query.filter(ChinaSouthernAirApprovalData.flight_info.like(f"%{origin} -%"))
     if destination:
         query = query.filter(ChinaSouthernAirApprovalData.flight_info.like(f"%- {destination}%"))
         
-    # 5. 疑似异常
     if is_suspected_abnormal:
         from app.models.alert_notification_record import AlertNotificationRecord
         query = query.filter(
@@ -359,10 +325,8 @@ async def get_china_southern_air_departures(
             )
         )
 
-    # 计算总数
     total = query.count()
 
-    # 分页查询
     offset = (page - 1) * pageSize
     records = query.order_by(
         ChinaSouthernAirApprovalData.flight_info.desc(),
@@ -375,25 +339,20 @@ async def get_china_southern_air_departures(
             msg="查询成功"
         )
 
-    # 4. 提取当前页所有主表 ID，用于批量查询子表
     record_ids = [r.id for r in records]
     
-    # 批量查询本站货物数据
     product_infos = db.query(CsaProductInformation).filter(
         CsaProductInformation.approval_data_id.in_(record_ids)
     ).all()
     
-    # 批量查询货拉数据
     lalamove_infos = db.query(CsaLalamoveInformation).filter(
         CsaLalamoveInformation.approval_data_id.in_(record_ids)
     ).all()
 
-    # 批量查询手动数据（通过 approval_data_id 关联）
     manual_datas = db.query(CsaDepartureManualData).filter(
         CsaDepartureManualData.approval_data_id.in_(record_ids)
     ).all()
 
-    # 5. 在内存中组装数据
     products_by_id = {}
     for p in product_infos:
         products_by_id.setdefault(p.approval_data_id, []).append(p)
@@ -404,7 +363,6 @@ async def get_china_southern_air_departures(
 
     manual_data_by_id = {md.approval_data_id: md for md in manual_datas}
 
-    # 6. 构造返回列表
     items = []
     for record in records:
         record_dict = {k: v for k, v in record.__dict__.items() if not k.startswith('_')}
@@ -412,21 +370,18 @@ async def get_china_southern_air_departures(
 
         item_schema = CsaDepartureItem(**record_dict)
 
-        # 组装本站货物数据
         for p in products_by_id.get(record.id, []):
             p_dict = {k: v for k, v in p.__dict__.items() if not k.startswith('_')}
             p_dict["id"] = str(p.id)
             p_dict["approval_data_id"] = str(p.approval_data_id)
             item_schema.product_information.append(CsaProductInformationDTO(**p_dict))
 
-        # 组装货拉数据
         for l in lalamove_by_id.get(record.id, []):
             l_dict = {k: v for k, v in l.__dict__.items() if not k.startswith('_')}
             l_dict["id"] = str(l.id)
             l_dict["approval_data_id"] = str(l.approval_data_id)
             item_schema.lalamove_information.append(CsaLalamoveInformationDTO(**l_dict))
 
-        # 组装手动录入数据
         if record.id in manual_data_by_id:
             md = manual_data_by_id[record.id]
             md_dict = {k: v for k, v in md.__dict__.items() if not k.startswith('_')}
@@ -436,7 +391,6 @@ async def get_china_southern_air_departures(
 
         items.append(item_schema.model_dump(mode="json"))
 
-    # 提取数据更新时间（第一条记录的 updated_at，格式化到分钟）
     data_update_time = None
     if records and hasattr(records[0], 'updated_at') and records[0].updated_at:
         data_update_time = records[0].updated_at.strftime("%Y-%m-%d %H:%M")
@@ -458,19 +412,16 @@ async def upsert_china_southern_air_manual_data(
 ):
     from app.models.csa_departure_manual_data import CsaDepartureManualData
     
-    # 根据 approval_data_id 查询是否已存在
     manual_data = db.query(CsaDepartureManualData).filter(
         CsaDepartureManualData.approval_data_id == int(data.approval_data_id)
     ).first()
     
     if manual_data:
-        # 更新
         update_data = data.model_dump(exclude_unset=True, exclude={"approval_data_id"})
         for key, value in update_data.items():
             setattr(manual_data, key, value)
         msg = "更新成功"
     else:
-        # 插入
         insert_data = data.model_dump()
         insert_data["approval_data_id"] = int(insert_data["approval_data_id"])
         manual_data = CsaDepartureManualData(**insert_data)

@@ -58,7 +58,6 @@ def get_delivery_reconciliation_list(
 
     candidate_items = []
     
-    # ---------------- 1. 深航数据提取 ----------------
     sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).join(
         ShenzhenAirDepartureManualData, ShenzhenAirBookingExport.id == ShenzhenAirDepartureManualData.booking_export_id
     ).filter(
@@ -138,7 +137,6 @@ def get_delivery_reconciliation_list(
             "_fa": fa
         })
 
-    # ---------------- 2. 南航数据提取 ----------------
     csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).join(
         CsaDepartureManualData, ChinaSouthernAirApprovalData.id == CsaDepartureManualData.approval_data_id
     ).filter(
@@ -216,7 +214,6 @@ def get_delivery_reconciliation_list(
             "_fa": fa
         })
 
-    # ---------------- 3. 同行空运提取 ----------------
     peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).join(
         PeerAirDepartureManualData, ConsignmentNote.id == PeerAirDepartureManualData.consignment_note_id
     ).filter(
@@ -260,7 +257,6 @@ def get_delivery_reconciliation_list(
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
             continue
 
-        # 实走件数/重量优先从 payable_data 中获取
         gate_pieces = "0"
         transit_weight = "0"
         peer_air_freight = str(form_dict.get("air_freight") or "")
@@ -295,7 +291,6 @@ def get_delivery_reconciliation_list(
             "_fa": fa
         })
 
-    # 排序与分页
     candidate_items.sort(key=lambda x: str(x.get("flight_date", "")), reverse=True)
     
     total_count = len(candidate_items)
@@ -303,7 +298,6 @@ def get_delivery_reconciliation_list(
     end_idx = start_idx + query.pageSize
     paged_items = candidate_items[start_idx:end_idx]
 
-    # 查 customer 名字映射
     customer_ids = {str(item["customer_name"]) for item in paged_items if str(item.get("customer_name")).isdigit()}
     customer_id_map = {}
     if customer_ids:
@@ -321,7 +315,6 @@ def get_delivery_reconciliation_list(
         delivery_company = str(md.delivery_company or "")
         delivery_fee = str(md.delivery_fee or "")
         
-        # 计算 total_cost 作为机场提货费
         pay_override = {}
         if fa and fa.payable_data:
             po = fa.payable_data
@@ -333,7 +326,6 @@ def get_delivery_reconciliation_list(
                 
         calc_total_cost = safe_float(pay_override.get("total_cost", 0.0))
         if "total_cost" not in pay_override:
-            # Fallback calculation if not yet saved in financial audit
             transit_fee_val = 0.0
             telegraph_cost_val = safe_float(md.telegram_fee)
             cca_cost = safe_float(md.cca)
@@ -352,7 +344,7 @@ def get_delivery_reconciliation_list(
                 oth_fee +
                 safe_float(md.door_pickup_fee) +
                 safe_float(md.airport_pickup_fee) +
-                safe_float(md.delivery_fee) # note: md has delivery_fee, wait, financial payable calls it delivery_cost, but in manual data it's delivery_fee? Yes.
+                safe_float(md.delivery_fee) 
             )
             
         airport_pickup_fee = format_decimal(calc_total_cost)

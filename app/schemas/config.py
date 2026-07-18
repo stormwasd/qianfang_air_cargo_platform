@@ -135,7 +135,7 @@ class BusinessConfigCreate(BaseModel):
 
 class BusinessConfigResponse(BaseModel):
     """业务参数配置响应schema"""
-    id: str  # ID以字符串形式返回
+    id: str  
     config_data: Dict[str, Any]
     created_at: datetime
     updated_at: datetime

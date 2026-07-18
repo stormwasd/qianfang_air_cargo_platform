@@ -69,14 +69,12 @@ class ShenzhenAirDepartureAlertManager:
             finally:
                 await asyncio.sleep(interval)
 
-    # ========================== 同步逻辑 ==========================
 
     async def _sync_tasks(self):
         """扫描当天 booking_exports 表，更新队列表"""
         db = SessionLocal()
         try:
             today_str = datetime.now().strftime("%Y-%m-%d")
-            # 查出当天的所有出口单
             exports = db.query(ShenzhenAirBookingExport).filter(
                 ShenzhenAirBookingExport.flight_date == today_str
             ).all()
@@ -92,26 +90,22 @@ class ShenzhenAirDepartureAlertManager:
                     continue
 
 
-                # 检查是否已在任务表中
                 existing_task = db.query(ShenzhenAirDepartureAlertTask).filter(
                     ShenzhenAirDepartureAlertTask.waybill_number == waybill_num,
                     ShenzhenAirDepartureAlertTask.flight_date == today_str
                 ).first()
 
                 if existing_task:
-                    continue  # 已加入任务表，跳过
+                    continue  
 
-                # 获取 containers
                 containers = db.query(ShenzhenAirBillingTimeContainer).filter(
                     ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_num,
                     ShenzhenAirBillingTimeContainer.flight_date == today_str
                 ).all()
 
                 if not containers:
-                    # 没有关联数据 -> 直接跳过不处理
                     continue
 
-                # 有关联数据，尝试获取 billing_time
                 billing_time_str = None
                 for c in containers:
                     if c.billing_time and str(c.billing_time).strip():
@@ -120,18 +114,16 @@ class ShenzhenAirDepartureAlertManager:
                 
                 planned_dt = None
                 if billing_time_str:
-                    # billing_time 一般是 "1925" 或者 "19:25" 等格式
                     bt_clean = billing_time_str.replace(":", "")
                     if len(bt_clean) >= 4:
                         hour = int(bt_clean[:2])
                         minute = int(bt_clean[2:4])
                         planned_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
                 
-                # 如果数据库中没有时间，用 ctrip API 查
                 if not planned_dt:
                     actual_flight = export.actual_flight
                     if not actual_flight:
-                        continue  # 没航班查不了携程，跳过
+                        continue  
 
                     ctrip_times = await ctrip_client.get_flight_times(
                         flight_no=actual_flight,
@@ -148,11 +140,9 @@ class ShenzhenAirDepartureAlertManager:
                         except ValueError:
                             pass
                 
-                # 如果最终都拿不到时间，跳过
                 if not planned_dt:
                     continue
 
-                # 创建任务
                 trigger_dt = planned_dt - timedelta(minutes=135)
                 new_task = ShenzhenAirDepartureAlertTask(
                     waybill_number=waybill_num,
@@ -169,14 +159,12 @@ class ShenzhenAirDepartureAlertManager:
         finally:
             db.close()
 
-    # ========================== 执行逻辑 ==========================
 
     async def _exec_tasks(self):
         """拉取到点的 pending 任务，执行预警逻辑"""
         db = SessionLocal()
         try:
             now = datetime.now()
-            # 获取需要执行的任务，使用 with_for_update 避免并发冲突
             tasks = db.query(ShenzhenAirDepartureAlertTask).filter(
                 ShenzhenAirDepartureAlertTask.status == "pending",
                 ShenzhenAirDepartureAlertTask.trigger_time <= now
@@ -185,12 +173,10 @@ class ShenzhenAirDepartureAlertManager:
             if not tasks:
                 return
 
-            # 先把状态标记为 processing，防止重复执行
             for t in tasks:
                 t.status = "processing"
             db.commit()
 
-            # 并发执行每个任务的判断逻辑（加入 Semaphore 限流，防止瞬间耗尽 DB 连接池）
             sem = asyncio.Semaphore(5)
             
             async def _bounded_process(task_id: int):
@@ -228,14 +214,13 @@ class ShenzhenAirDepartureAlertManager:
                 ShenzhenAirBillingTimeContainer.flight_date == flight_date
             ).all()
 
-            # 发送预警
             await self._evaluate_and_send_alert(db, task, export_record, containers)
 
             task.status = "processed"
             db.commit()
         except Exception as e:
             print(f"处理出港跟踪预警单({task_id})异常: {e}")
-            task.status = "pending" # 失败重试
+            task.status = "pending" 
             db.commit()
         finally:
             db.close()
@@ -243,7 +228,6 @@ class ShenzhenAirDepartureAlertManager:
     async def _evaluate_and_send_alert(self, db: Session, task: ShenzhenAirDepartureAlertTask, export_record: ShenzhenAirBookingExport, containers: List[ShenzhenAirBillingTimeContainer]):
         """核心业务逻辑：分析数据，判断场景，发送模板"""
         
-        # 1. 查客户名称
         customer_name = "未知客户"
         full_waybill = f"479-{export_record.waybill_number}"
         waybill_record = db.query(Waybill).filter(Waybill.waybill_number == full_waybill).first()
@@ -251,7 +235,6 @@ class ShenzhenAirDepartureAlertManager:
             shipper_info = waybill_record.form_data.get("shipper_consignee_info", {})
             customer_name = shipper_info.get("shipper_unit", "未知客户")
         
-        # 2. 取制单数据
         def _safe_float(val):
             if val is None or str(val).strip() == "": return 0.0
             try: return float(str(val).strip())
@@ -260,8 +243,6 @@ class ShenzhenAirDepartureAlertManager:
         export_qty = _safe_float(export_record.quantity)
         export_wt = _safe_float(export_record.weight)
 
-        # 3. 取过机数据（集装器统计）
-        # 过滤掉完全没有集装器编号的数据（比如联表有记录，但 container 等字段全空）
         valid_containers = []
         for c in containers:
             if c.container and str(c.container).strip():
@@ -278,8 +259,6 @@ class ShenzhenAirDepartureAlertManager:
             container_code = c.container or "/"
             container_details.append(f"{container_code} ({int(c_qty)} / {int(c_wt)})")
 
-        # 4. 判断场景
-        # 场景2: 超时未获取到集装器编码
         if not valid_containers:
             alert_title = "过机时间超时预警"
             machine_data_str = "/"
@@ -290,13 +269,11 @@ class ShenzhenAirDepartureAlertManager:
             machine_data_str = f"{int(sum_qty)} / {int(sum_wt)} ({diff_qty} / {diff_wt})"
             containers_str = "\n".join(container_details)
 
-            # 场景1 or 场景3
             if sum_qty >= export_qty and sum_wt >= export_wt:
                 alert_title = "过机正常"
             else:
                 alert_title = "少货/取消货预警"
 
-        # 5. 拼装消息模板
         routing = export_record.routing or "未知航程"
         billing_flight = export_record.billing_flight or "未知航班"
         planned_time = task.planned_time
@@ -314,7 +291,6 @@ class ShenzhenAirDepartureAlertManager:
             f"{containers_str}"
         )
 
-        # 6. 发送微信消息
         await self._send_wechat_msg(message)
 
     async def _send_wechat_msg(self, text: str):

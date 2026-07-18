@@ -35,7 +35,7 @@ class SettlementQuery(BaseModel):
 
 class SettlementResponse(BaseModel):
     """结算单响应schema"""
-    id: str  # ID以字符串形式返回
+    id: str  
     form_data: Dict[str, Any]
     created_at: datetime
     updated_at: datetime

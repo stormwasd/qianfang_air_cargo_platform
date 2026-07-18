@@ -11,7 +11,6 @@ from app.api.deps import get_current_active_user
 from app.core.response import success_response
 from app.utils.snowflake import generate_id
 
-# 导入所有相关模型
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.departure_manual_data import ShenzhenAirDepartureManualData
@@ -24,7 +23,6 @@ from app.models.air_financial_audit_data import AirFinancialAuditData
 from app.models.customer import Customer
 from app.models.waybill import Waybill
 
-# 导入 Schemas
 from app.schemas.financial_audit import (
     AirFinancialAuditQuery,
     AirFinancialAuditDataUpsert,
@@ -46,7 +44,6 @@ SETTLEMENT_CYCLE_MAP = {
 
 router = APIRouter()
 
-# ----------------- Helper Functions -----------------
 
 def safe_float(val: Any) -> float:
     if val is None:
@@ -126,7 +123,6 @@ def get_customer_transit_rate(customer: Optional[Customer], cargo_type: str) -> 
             return 0.0
     return 0.0
 
-# ----------------- API Endpoints -----------------
 
 @router.get("/air", summary="统一空运财务审核列表")
 async def get_air_financial_audits(
@@ -156,7 +152,6 @@ async def get_air_financial_audits(
     candidate_items = []
     waybill_list = [w.strip() for w in query.waybill_number.split(',') if w.strip()] if query.waybill_number else []
 
-    # ================= 1.1 查询深航 =================
     if query_shenzhen:
         sz_q = db.query(
             ShenzhenAirBookingExport,
@@ -267,7 +262,6 @@ async def get_air_financial_audits(
                 "_fa": fa
             })
 
-    # ================= 1.2 查询南航 =================
     if query_southern:
         csa_q = db.query(
             ChinaSouthernAirApprovalData,
@@ -360,7 +354,6 @@ async def get_air_financial_audits(
                 "_fa": fa
             })
 
-    # ================= 1.3 查询同行空运 =================
     if query_peer:
         peer_q = db.query(
             ConsignmentNote,
@@ -464,7 +457,6 @@ async def get_air_financial_audits(
                 "_fa": fa
             })
 
-    # ================= 1.4 查询手工新增的记录 =================
     manual_q = db.query(AirFinancialAuditData).filter(
         or_(
             AirFinancialAuditData.source_id == 0,
@@ -482,7 +474,6 @@ async def get_air_financial_audits(
             manual_q = manual_q.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
 
     for fa in manual_q.all():
-        # 从 receivable_data JSON 中提取列表层字段
         recv = fa.receivable_data or {}
         if isinstance(recv, str):
             try:
@@ -503,21 +494,17 @@ async def get_air_financial_audits(
         if waybill_list and wb_number not in waybill_list:
             continue
 
-        # 航班日期范围过滤
         if query.flight_date_start and fl_date < str(query.flight_date_start):
             continue
         if query.flight_date_end and fl_date > str(query.flight_date_end):
             continue
 
-        # 目的站模糊搜索
         if query.destination and query.destination not in (recv.get("destination", "") or ""):
             continue
 
-        # 航班号模糊搜索
         if query.flight_number and query.flight_number not in (recv.get("flight_number", "") or ""):
             continue
             
-        # 同行空运需支持代理名称过滤
         if query.agent_name and query.agent_name not in agent_name_val:
             if fa.source_type == "peer_air":
                 continue
@@ -544,14 +531,12 @@ async def get_air_financial_audits(
             "_fa": fa
         })
 
-    # ================= 2. 内存全局排序 =================
     candidate_items.sort(key=lambda x: (x["flight_date"] or "", x["source_id"]), reverse=True)
     total = len(candidate_items)
 
     offset = (query.page - 1) * query.pageSize
     paged_items = candidate_items[offset : offset + query.pageSize]
 
-    # ================= 3. 批量提取/组装本页详细数据 =================
     customers = db.query(Customer).all()
     customer_map = {c.company_name: c for c in customers if c.company_name}
     customer_id_map = {str(c.id): c for c in customers}
@@ -600,7 +585,6 @@ async def get_air_financial_audits(
         receivable_data = None
 
         if item.get("is_manual"):
-            # 手工新增的记录直接从payable_data/receivable_data JSON渲染
             fa = item["_fa"]
             pay_raw = fa.payable_data or {}
             if isinstance(pay_raw, str):
@@ -615,7 +599,6 @@ async def get_air_financial_audits(
                 except Exception:
                     recv_raw = {}
 
-            # 重新计算成本合计 (total_cost)
             calc_total_cost = (
                 safe_float(pay_raw.get("air_freight")) +
                 safe_float(pay_raw.get("fuel_surcharge")) +
@@ -648,7 +631,6 @@ async def get_air_financial_audits(
                 receivable_dict["payment_method"] = ""
                 receivable_dict["document_fee"] = ""
 
-            # 重新计算应收总金额 (total_amount)
             calc_total_amount = (
                 safe_float(receivable_dict.get("freight")) +
                 safe_float(receivable_dict.get("document_fee")) +
@@ -662,7 +644,6 @@ async def get_air_financial_audits(
                 safe_float(receivable_dict.get("other_fees"))
             )
             receivable_dict["total_amount"] = format_decimal(calc_total_amount)
-            # 同时也需要更新毛利
             calc_gross_profit = calc_total_amount - calc_total_cost
             receivable_dict["gross_profit"] = format_decimal(calc_gross_profit)
 
@@ -1058,7 +1039,6 @@ async def get_air_financial_audits(
                 gross_profit=format_decimal(gross_profit_val)
             )
 
-        # ================= 4. 合并财务人工自定义覆盖的应付应收 JSON 数据 =================
         payable_dict = payable_data.model_dump()
         if fa and fa.payable_data:
             p_override = fa.payable_data
@@ -1070,7 +1050,6 @@ async def get_air_financial_audits(
             if isinstance(p_override, dict):
                 payable_dict.update({k: str(v) for k, v in p_override.items() if v is not None})
         
-        # 重新计算成本合计 (total_cost)
         calc_total_cost = (
             safe_float(payable_dict.get("air_freight")) +
             safe_float(payable_dict.get("fuel_surcharge")) +
@@ -1111,7 +1090,6 @@ async def get_air_financial_audits(
             receivable_dict["payment_method"] = ""
             receivable_dict["document_fee"] = ""
 
-        # 重新计算应收总金额 (total_amount)
         calc_total_amount = (
             safe_float(receivable_dict.get("freight")) +
             safe_float(receivable_dict.get("document_fee")) +
@@ -1125,7 +1103,6 @@ async def get_air_financial_audits(
             safe_float(receivable_dict.get("other_fees"))
         )
         receivable_dict["total_amount"] = format_decimal(calc_total_amount)
-        # 同时也需要更新毛利
         calc_gross_profit = calc_total_amount - calc_total_cost
         receivable_dict["gross_profit"] = format_decimal(calc_gross_profit)
 
@@ -1204,7 +1181,6 @@ async def audit_air_financial(
     else:
         raise HTTPException(status_code=400, detail="Invalid source_type")
 
-    # 如果主表不存在，检查是否是手工新增的记录（自身 id == source_id 或 source_id == 0 兼容旧数据）
     if not exists:
         fa_manual = db.query(AirFinancialAuditData.id).filter(
             AirFinancialAuditData.id == source_id,
@@ -1236,7 +1212,6 @@ async def audit_air_financial(
             )
             db.add(fa_data)
 
-    # 支持对整个 payable & receivable 中传递的字段全部进行序列化并作为 JSON 保存到数据库中
     if req.payable is not None:
         fa_data.payable_data = req.payable.model_dump()
     if req.receivable is not None:
@@ -1270,7 +1245,6 @@ async def create_air_financial_audit(
     通过 receivable.airline 字段推导 source_type：深航/南航/同行空运。
     receivable 中的 waybill_number 和 airline 必传。
     """
-    # 校验运单号必填
     if not req.receivable.waybill_number or not req.receivable.waybill_number.strip():
         raise HTTPException(status_code=400, detail="receivable 中的 waybill_number（运单号）为必填项")
         
@@ -1289,7 +1263,6 @@ async def create_air_financial_audit(
     pay_dict = req.payable.model_dump()
     pay_dict["_creator_name"] = current_user.name
 
-    # 预先生成唯一ID，并作为 source_id 保存，避免触发 ux_source 唯一约束冲突（source_type, source_id)
     new_id = generate_id()
 
     fa_data = AirFinancialAuditData(
