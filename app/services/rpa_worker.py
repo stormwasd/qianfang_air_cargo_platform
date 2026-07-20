@@ -395,6 +395,8 @@ class RPAWorker:
                     await self._execute_china_southern_air_keep_login(db, task)
                 elif task.task_type == RPATaskType.TANGYI_KEEP_LOGIN.value:
                     await self._execute_tangyi_keep_login(db, task)
+                elif task.task_type == RPATaskType.TANGYI_RESTART.value:
+                    await self._execute_tangyi_restart(db, task)
                 elif task.task_type == RPATaskType.SHENZHEN_AIR_TRANSIT_LOADING.value:
                     await self._execute_shenzhen_air_transit_loading(db, task)
                 elif task.task_type == RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value:
@@ -538,6 +540,44 @@ class RPAWorker:
     async def _execute_tangyi_keep_login(self, db, task: RPATask):
         job_uuid = task.job_uuid or settings.RPA_TANGYI_KEEP_LOGIN_JOB_UUID
         await self._execute_keep_login_job(db, task, job_uuid=job_uuid)
+
+    async def _execute_tangyi_restart(self, db, task: RPATask):
+        job_uuid = task.job_uuid or settings.RPA_TANGYI_RESTART_JOB_UUID
+        params = json.loads(task.params) if task.params else {}
+        
+        system_account = params.get("system_account", "")
+        login_password = params.get("login_password", "")
+        executable_path = params.get("address_of_the_application_executable_file_tangyi", "")
+        
+        if not system_account or not login_password or not executable_path:
+            raise Exception("唐翼重启任务参数缺失：system_account/login_password/executable_path")
+
+        rpa_response = await asyncio.wait_for(
+            rpa_service.create_tangyi_restart_job(
+                job_uuid=job_uuid,
+                system_account=system_account,
+                login_password=login_password,
+                executable_path=executable_path
+            ),
+            timeout=settings.RPA_QUEUE_TASK_TIMEOUT
+        )
+
+        work_uuid = rpa_service.extract_work_uuid_from_create_response(rpa_response)
+        if not work_uuid:
+            raise Exception("RPA唐翼重启接口未返回workUuid")
+
+        success, poll_error_detail = await self._poll_keep_login_job_status(
+            job_uuid=job_uuid, work_uuid=work_uuid
+        )
+        if success:
+            rpa_task_service.complete_task(db, task.id, True)
+        else:
+            rpa_task_service.complete_task(
+                db,
+                task.id,
+                False,
+                error_message=poll_error_detail or "RPA唐翼重启执行失败"
+            )
     
     async def _execute_shenzhen_air_waybill(self, db, task: RPATask):
         """执行深航开单任务"""

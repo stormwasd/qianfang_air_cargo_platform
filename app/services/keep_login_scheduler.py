@@ -41,6 +41,11 @@ KEEP_LOGIN_CONFIG_MAP = {
         "fallback_path": ["china_southern_air", "booking_and_create", "china_southern_air_login"],
         "interval_attr": "RPA_TANGYI_KEEP_LOGIN_INTERVAL_SECONDS",
     },
+    RPATaskType.TANGYI_RESTART.value: {
+        "config_path": ["china_southern_air", "booking_and_create", "tangi_login"],
+        "fallback_path": ["china_southern_air", "booking_and_create", "china_southern_air_login"],
+        "interval_attr": "RPA_TANGYI_RESTART_INTERVAL_SECONDS",
+    },
 }
 
 
@@ -66,6 +71,7 @@ def _load_creds_from_path(business_config: Dict[str, Any], config_path: list, fa
     
     system_account = node.get("system_account", "")
     login_password = node.get("login_password", "")
+    tangyi_path = node.get("address_of_the_application_executable_file_tangyi", "")
     
     if (not system_account or not login_password) and fallback_path:
         fb_node = business_config
@@ -73,10 +79,12 @@ def _load_creds_from_path(business_config: Dict[str, Any], config_path: list, fa
             fb_node = fb_node.get(key, {})
         system_account = system_account or fb_node.get("system_account", "")
         login_password = login_password or fb_node.get("login_password", "")
+        tangyi_path = tangyi_path or fb_node.get("address_of_the_application_executable_file_tangyi", "")
     
     return {
         "system_account": system_account,
         "login_password": login_password,
+        "address_of_the_application_executable_file_tangyi": tangyi_path,
     }
 
 

@@ -192,6 +192,7 @@ async def get_task_types(
         "SHENZHEN_AIR_KEEP_LOGIN": "深航保持登录",
         "CHINA_SOUTHERN_AIR_KEEP_LOGIN": "南航保持登录",
         "TANGYI_KEEP_LOGIN": "唐翼保持登录",
+        "TANGYI_RESTART": "唐翼重启流程",
     }
 
     task_types = []

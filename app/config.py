@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_JOB_UUID: str = "946f2c29111a8d6e023ff0a75afb0029"
     RPA_SHENZHEN_AIR_KEEP_LOGIN_JOB_UUID: str = "6d24e496bf1b39af5b77740960d51ca4"
     RPA_TANGYI_KEEP_LOGIN_JOB_UUID: str = "137a3c17c14505dfaac006eab08f16e6"
+    RPA_TANGYI_RESTART_JOB_UUID: str = ""
 
     RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_INTERVAL_SECONDS: Optional[int] = Field(
         default=6600, ge=1, le=86400,
@@ -100,6 +101,10 @@ class Settings(BaseSettings):
     RPA_TANGYI_KEEP_LOGIN_INTERVAL_SECONDS: Optional[int] = Field(
         default=1200, ge=1, le=86400,
         description="唐翼保持登录执行间隔（秒），默认不启用"
+    )
+    RPA_TANGYI_RESTART_INTERVAL_SECONDS: Optional[int] = Field(
+        default=86400, ge=1, le=86400,
+        description="唐翼重启流程执行间隔（秒），默认每天"
     )
     
     RPA_SHENZHEN_AIR_TRANSIT_LOADING_INTERVAL_SECONDS: Optional[int] = Field(

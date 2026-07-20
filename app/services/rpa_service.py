@@ -203,6 +203,48 @@ class RPAService:
                 raise BadRequestException(f"RPA保持登录接口请求失败: {repr(e)}")
             except Exception as e:
                 raise BadRequestException(f"RPA保持登录接口调用异常: {repr(e)}")
+
+    async def create_tangyi_restart_job(
+        self,
+        job_uuid: str,
+        system_account: str,
+        login_password: str,
+        executable_path: str
+    ) -> Dict[str, Any]:
+        """
+        调用“唐翼重启流程”RPA任务
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+
+        payload_with_input_param = {
+            "jobUuid": job_uuid,
+            "operation": 1,
+            "inputParam": {
+                "system_account": system_account,
+                "login_password": login_password,
+                "address_of_the_application_executable_file_tangyi": executable_path
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(
+                    url, headers=self._get_headers(), json=payload_with_input_param
+                )
+                response.raise_for_status()
+                result = response.json()
+
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "RPA唐翼重启接口调用失败")
+                    raise BadRequestException(f"RPA唐翼重启接口调用失败: {error_msg}")
+
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"RPA唐翼重启接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"RPA唐翼重启接口请求失败: {repr(e)}")
+            except Exception as e:
+                raise BadRequestException(f"RPA唐翼重启接口调用异常: {repr(e)}")
     
     async def create_shenzhen_air_waybill(
         self,
