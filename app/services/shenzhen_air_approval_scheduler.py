@@ -81,7 +81,7 @@ class ShenzhenAirApprovalScheduler:
                 await asyncio.sleep(60)  
 
     async def _enqueue_task(self) -> None:
-        """创建任务"""
+        """创建任务（今天+明天各一个，确保当天航司更新的数据也能被获取）"""
         db = SessionLocal()
         try:
             task_types_to_enqueue = [
@@ -89,42 +89,49 @@ class ShenzhenAirApprovalScheduler:
                 RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value
             ]
             
+            today = datetime.now().strftime("%Y-%m-%d")
+            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            date_configs = [
+                {"flight_date": today, "target_id": 1, "label": "今天"},
+                {"flight_date": tomorrow, "target_id": 2, "label": "明天"},
+            ]
+            
             for task_type in task_types_to_enqueue:
-                existing = rpa_task_service.get_pending_task_for_target(
-                    db,
-                    target_type=TARGET_TYPE,
-                    target_id=1,
-                    task_type=task_type,
-                )
-                if existing:
-                    continue
-
                 task_process = db.query(TaskProcess).filter(
                     TaskProcess.task_name == task_type
                 ).first()
                 
-                params = {}
+                base_params = {}
                 if task_process and task_process.process_param:
                     try:
-                        params = json.loads(task_process.process_param)
+                        base_params = json.loads(task_process.process_param)
                     except Exception:
                         pass
                 
-                tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-                params["flight_date"] = tomorrow
-                
-                rpa_task_service.create_task(
-                    db=db,
-                    task_type=task_type,
-                    target_type=TARGET_TYPE,
-                    target_id=1,
-                    params=params,
-                    job_uuid=None,
-                    priority=2,
-                    created_by=None,
-                    robot_id=None,  
-                )
-                print(f"[ShenzhenAirApprovalScheduler] 已生成深航订舱批复数据获取任务({task_type}), flight_date={tomorrow}")
+                for date_cfg in date_configs:
+                    existing = rpa_task_service.get_pending_task_for_target(
+                        db,
+                        target_type=TARGET_TYPE,
+                        target_id=date_cfg["target_id"],
+                        task_type=task_type,
+                    )
+                    if existing:
+                        continue
+                    
+                    params = {**base_params, "flight_date": date_cfg["flight_date"]}
+                    
+                    rpa_task_service.create_task(
+                        db=db,
+                        task_type=task_type,
+                        target_type=TARGET_TYPE,
+                        target_id=date_cfg["target_id"],
+                        params=params,
+                        job_uuid=None,
+                        priority=2,
+                        created_by=None,
+                        robot_id=None,
+                    )
+                    print(f"[ShenzhenAirApprovalScheduler] 已生成深航订舱批复数据获取任务({task_type}), flight_date={date_cfg['flight_date']}({date_cfg['label']})")
         finally:
             db.close()
 
