@@ -203,7 +203,7 @@ class KeepLoginScheduler:
                         target_id=robot.id,
                         params=creds,
                         job_uuid=job_uuid,
-                        priority=3,  
+                        priority=None,  
                         created_by=None,
                         robot_id=robot.id,  
                     )
