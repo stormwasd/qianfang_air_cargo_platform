@@ -219,6 +219,42 @@ async def batch_update_user_status(
     )
 
 
+@router.put("/password", summary="重置账号密码")
+async def reset_user_password(
+    password_data: UserPasswordUpdate,
+    current_user = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    重置账号密码接口（需要管理员权限）
+    
+    - **user_id**: 用户ID（必填）
+    - **password**: 新密码
+    """
+    if not password_data.user_id:
+        raise BadRequestException("用户ID不能为空")
+        
+    try:
+        user_id_int = int(password_data.user_id)
+    except ValueError:
+        raise BadRequestException("无效的用户ID格式")
+        
+    user = db.query(User).filter(User.id == user_id_int).first()
+    if not user:
+        raise NotFoundException("用户不存在")
+        
+    user.password_hash = get_password_hash(password_data.password)
+    # 重置密码后，强制用户重新登录
+    user.token_version = (user.token_version or 0) + 1
+    
+    db.commit()
+    
+    return success_response(
+        data={"user_id": password_data.user_id},
+        msg="密码重置成功，用户的现有登录凭证已失效"
+    )
+
+
 @router.put("/{user_id}", summary="修改用户信息")
 async def update_user(
     user_id: str,
