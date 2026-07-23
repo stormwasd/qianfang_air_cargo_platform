@@ -143,17 +143,16 @@ class CsaLoadingAlertManager:
                         flight_date=today_str,
                         routing=routing_clean
                     )
-                    if ctrip_times:
-                        display_planned_time = ctrip_times.get("planned_time") or ""
-                        if not ready_dt and ctrip_times.get("ready_time"):
-                            try:
-                                ready_time_str = ctrip_times.get("ready_time")
-                                if len(ready_time_str) > 16:
-                                    ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
-                                else:
-                                    ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
-                            except ValueError:
-                                pass
+                    if ctrip_times and ctrip_times.get("ready_time"):
+                        ready_time_str = ctrip_times.get("ready_time")
+                        display_planned_time = ready_time_str
+                        try:
+                            if len(ready_time_str) > 16:
+                                ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
+                            else:
+                                ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
+                        except ValueError:
+                            pass
 
                 if not display_planned_time:
                     display_planned_time = ready_dt.strftime("%Y-%m-%d %H:%M") if ready_dt else "未知预飞时间"

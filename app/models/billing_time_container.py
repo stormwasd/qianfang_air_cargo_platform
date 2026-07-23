@@ -8,6 +8,7 @@ class ShenzhenAirBillingTimeContainer(Base):
     __tablename__ = "shenzhen_air_billing_time_containers"
 
     id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
+    booking_export_id = Column(BigInteger, index=True, nullable=False, comment="关联 shenzhen_air_booking_exports.id")
     waybill_number_8 = Column(String(50), index=True, comment="运单号(8位)")
     sequence = Column(String(50), comment="序号")
     flight_number = Column(String(50), comment="航班号")

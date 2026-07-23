@@ -541,27 +541,26 @@ async def get_air_financial_audits(
     customer_map = {c.company_name: c for c in customers if c.company_name}
     customer_id_map = {str(c.id): c for c in customers}
 
-    sz_waybill_8s = []
+    sz_export_ids = []
     csa_approval_ids = []
     csa_waybills = []
 
     for item in paged_items:
         if item["source_type"] == "shenzhen_air":
             export = item["_main"]
-            if export.waybill_number and len(export.waybill_number) >= 8:
-                sz_waybill_8s.append(export.waybill_number[-8:])
+            sz_export_ids.append(export.id)
         elif item["source_type"] == "china_southern_air":
             csa_approval_ids.append(int(item["source_id"]))
             if item["waybill_number"]:
                 csa_waybills.append(item["waybill_number"])
 
     sz_containers_map = {}
-    if sz_waybill_8s:
+    if sz_export_ids:
         containers = db.query(ShenzhenAirBillingTimeContainer).filter(
-            ShenzhenAirBillingTimeContainer.waybill_number_8.in_(sz_waybill_8s)
+            ShenzhenAirBillingTimeContainer.booking_export_id.in_(sz_export_ids)
         ).all()
         for cont in containers:
-            sz_containers_map.setdefault(cont.waybill_number_8, []).append(cont)
+            sz_containers_map.setdefault(cont.booking_export_id, []).append(cont)
 
     csa_lalamoves_map = {}
     if csa_approval_ids:
@@ -699,8 +698,7 @@ async def get_air_financial_audits(
 
         if source_type == "shenzhen_air":
             export = item["_main"]
-            wb_8 = export.waybill_number[-8:] if export.waybill_number and len(export.waybill_number) >= 8 else ""
-            related_conts = sz_containers_map.get(wb_8, [])
+            related_conts = sz_containers_map.get(export.id, [])
             
             for cont in related_conts:
                 if cont.billing_time:

@@ -2986,8 +2986,13 @@ class RPAWorker:
                     if billing_data and isinstance(billing_data, list):
                         params = json.loads(task.params) if task.params else {}
                         waybill_number_8 = params.get("waybill_number_8", "")
+                        booking_export_id = task.target_id
                         
-                        if waybill_number_8:
+                        if booking_export_id:
+                            db.query(ShenzhenAirBillingTimeContainer).filter(
+                                ShenzhenAirBillingTimeContainer.booking_export_id == booking_export_id
+                            ).delete()
+                        elif waybill_number_8:
                             db.query(ShenzhenAirBillingTimeContainer).filter(
                                 ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_number_8
                             ).delete()
@@ -3002,6 +3007,7 @@ class RPAWorker:
                                 continue
                                 
                             record = ShenzhenAirBillingTimeContainer(
+                                booking_export_id=booking_export_id,
                                 waybill_number_8=waybill_number_8,
                                 sequence=seq,
                                 flight_number=str(row[1]).strip(),

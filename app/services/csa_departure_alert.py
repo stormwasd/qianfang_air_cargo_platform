@@ -164,13 +164,13 @@ class CsaDepartureAlertManager:
                         flight_date=today_str,
                         routing=routing
                     )
-                    if ctrip_times and ctrip_times.get("ready_time"):
+                    if ctrip_times and ctrip_times.get("planned_time"):
                         try:
-                            ready_time_str = ctrip_times.get("ready_time")
-                            if len(ready_time_str) > 16:
-                                planned_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
+                            planned_time_str = ctrip_times.get("planned_time")
+                            if len(planned_time_str) > 16:
+                                planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M:%S")
                             else:
-                                planned_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
+                                planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M")
                         except ValueError:
                             pass
                 

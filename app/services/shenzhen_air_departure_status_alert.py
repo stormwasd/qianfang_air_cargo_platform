@@ -6,6 +6,7 @@ import random
 from datetime import datetime, timedelta
 import pandas as pd
 import os
+import re
 from typing import Optional, List
 
 from app.config import settings
@@ -127,10 +128,11 @@ class ShenzhenAirDepartureStatusAlertService:
     async def _process_single_record(self, record: ShenzhenAirBookingExport, db) -> None:
         waybill_num = record.waybill_number
         flight_date = record.flight_date
-        
+        routing = record.routing
+        billing_flight = record.billing_flight or ""
+
         containers = db.query(ShenzhenAirBillingTimeContainer).filter(
-            ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_num,
-            ShenzhenAirBillingTimeContainer.flight_date == flight_date
+            ShenzhenAirBillingTimeContainer.booking_export_id == record.id
         ).all()
 
         qty_diff = self._safe_float(record.quantity_difference)
@@ -139,20 +141,28 @@ class ShenzhenAirDepartureStatusAlertService:
         planned_time_str = ""
         if containers and containers[0].billing_time:
             planned_time_str = containers[0].billing_time
-        else:
-            routing = record.routing
-            if routing and "-" in routing:
-                flight_res = await ctrip_client.get_flight_times(record.billing_flight, flight_date, routing)
-                if flight_res and flight_res.get("ready_time"):
-                    planned_time_str = flight_res.get("ready_time")
+        elif routing and "-" in routing and billing_flight:
+            flight_res = await ctrip_client.get_flight_times(billing_flight, flight_date, routing)
+            if flight_res and flight_res.get("ready_time"):
+                planned_time_str = flight_res.get("ready_time")
         
-        actual_flight_str = record.actual_flight or ""
-        actual_flights = [f.strip() for f in actual_flight_str.split(",") if f.strip()]
+        actual_flight_str = record.actual_flight or billing_flight
+        parsed_actual_flights = [f.strip() for f in re.split(r'[,;]', actual_flight_str) if f.strip()]
+        if not parsed_actual_flights and billing_flight:
+            parsed_actual_flights = [billing_flight]
+
+        # 收集需要查询实飞时间的去重航班列表（开单航班 + 实走航班）
+        query_flights = []
+        if billing_flight and billing_flight not in query_flights:
+            query_flights.append(billing_flight)
+        for flt in parsed_actual_flights:
+            if flt not in query_flights:
+                query_flights.append(flt)
+
         actual_time_displays = []
         is_delayed = False
         
-        routing = record.routing
-        for flt in actual_flights:
+        for flt in query_flights:
             if routing and "-" in routing:
                 flight_res = await ctrip_client.get_flight_times(flt, flight_date, routing)
                 if flight_res and flight_res.get("actual_time"):
@@ -161,7 +171,6 @@ class ShenzhenAirDepartureStatusAlertService:
                     
                     if planned_time_str:
                         try:
-                            act_dt = datetime.strptime(act_time, "%Y-%m-%d %H:%M:%S")
                             act_dt_str = act_time if len(act_time) > 16 else act_time + ":00"
                             act_dt = datetime.strptime(act_dt_str, "%Y-%m-%d %H:%M:%S")
                             
@@ -178,6 +187,9 @@ class ShenzhenAirDepartureStatusAlertService:
         is_abnormal = qty_diff > 0 or wt_diff > 0 or is_delayed
         status_text = "出港异常" if is_abnormal else "出港正常"
         
+        actual_time_text = " ；".join(actual_time_displays) if actual_time_displays else "/"
+        actual_flight_display = "；".join(parsed_actual_flights) if parsed_actual_flights else billing_flight
+
         state_hash = f"{qty_diff}_{wt_diff}_{is_delayed}"
         
         alert_record = db.query(AlertNotificationRecord).filter(
@@ -206,17 +218,14 @@ class ShenzhenAirDepartureStatusAlertService:
             dest = routing.split("-")[1].strip()
             telephone = self._phone_dict.get(dest, "/")
             
-        actual_time_text = "\n".join(actual_time_displays) if actual_time_displays else "/"
-        
         msg = f"""出港状态通知（深圳航空）
 {status_text}
 
 客户名称：{customer_name}
 运单号：{full_waybill}
-开单航班/航程：{record.billing_flight} / {record.routing}
-实走航班：{record.actual_flight}
-实飞时间：
-{actual_time_text}
+开单航班/航程：{billing_flight} / {record.routing}
+实走航班：{actual_flight_display}
+实飞时间：{actual_time_text}
 制单数据：{record.quantity} / {record.weight}
 实走数据：{int(sum_qty)} / {int(sum_wt)} ({int(qty_diff_actual)} / {wt_diff_actual})
 收货人：{record.consignee}

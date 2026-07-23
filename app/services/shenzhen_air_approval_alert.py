@@ -97,16 +97,21 @@ class ShenzhenAirApprovalAlertService:
             abnormal_count = 0
             abnormal_details: List[str] = []
             
+            from sqlalchemy import func
+
+            today_str = datetime.now().strftime("%Y-%m-%d")
             tomorrow_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            target_dates = [today_str, tomorrow_str]
+            valid_statuses = ["ss", "nn/na"]
 
             narrow_parent_ids = db.query(ShenzhenAirApprovalData.id).filter(
                 ShenzhenAirApprovalData.parent_id.is_(None),
-                ShenzhenAirApprovalData.flight_date == tomorrow_str
+                ShenzhenAirApprovalData.flight_date.in_(target_dates)
             ).subquery()
 
             narrow_records = db.query(ShenzhenAirApprovalData).filter(
                 ShenzhenAirApprovalData.parent_id.in_(narrow_parent_ids),
-                ShenzhenAirApprovalData.status == "ss"
+                func.lower(ShenzhenAirApprovalData.status).in_(valid_statuses)
             ).all()
 
             for record in narrow_records:
@@ -129,12 +134,12 @@ class ShenzhenAirApprovalAlertService:
 
             wide_parent_ids = db.query(ShenzhenAirApprovalWideBodyData.id).filter(
                 ShenzhenAirApprovalWideBodyData.parent_id.is_(None),
-                ShenzhenAirApprovalWideBodyData.flight_date == tomorrow_str
+                ShenzhenAirApprovalWideBodyData.flight_date.in_(target_dates)
             ).subquery()
 
             wide_records = db.query(ShenzhenAirApprovalWideBodyData).filter(
                 ShenzhenAirApprovalWideBodyData.parent_id.in_(wide_parent_ids),
-                ShenzhenAirApprovalWideBodyData.status == "ss"
+                func.lower(ShenzhenAirApprovalWideBodyData.status).in_(valid_statuses)
             ).all()
 
             for record in wide_records:

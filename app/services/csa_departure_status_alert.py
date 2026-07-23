@@ -168,12 +168,23 @@ class CsaDepartureStatusAlertService:
             if flight_res and flight_res.get("ready_time"):
                 planned_time_str = flight_res.get("ready_time")
                 
-        actual_flight_str = record.actual_flight or ""
-        actual_flights = [f.strip() for f in re.split(r'[,;]', actual_flight_str) if f.strip()]
+        actual_flight_str = record.actual_flight or billing_flight
+        parsed_actual_flights = [f.strip() for f in re.split(r'[,;]', actual_flight_str) if f.strip()]
+        if not parsed_actual_flights and billing_flight:
+            parsed_actual_flights = [billing_flight]
+
+        # 收集需要查询实飞时间的去重航班列表（开单航班 + 实走航班）
+        query_flights = []
+        if billing_flight and billing_flight not in query_flights:
+            query_flights.append(billing_flight)
+        for flt in parsed_actual_flights:
+            if flt not in query_flights:
+                query_flights.append(flt)
+
         actual_time_displays = []
         is_delayed = False
         
-        for flt in actual_flights:
+        for flt in query_flights:
             if routing and "-" in routing and flight_date:
                 flight_res = await ctrip_client.get_flight_times(flt, flight_date, routing)
                 if flight_res and flight_res.get("actual_time"):
@@ -198,8 +209,8 @@ class CsaDepartureStatusAlertService:
         is_abnormal = diff_pieces > 0 or diff_weight > 0 or is_delayed
         status_text = "出港异常" if is_abnormal else "出港正常"
         
-        actual_time_text = "；".join(actual_time_displays) if actual_time_displays else "/"
-        actual_flight_display = "；".join(actual_flights) if actual_flights else "/"
+        actual_time_text = " ；".join(actual_time_displays) if actual_time_displays else "/"
+        actual_flight_display = "；".join(parsed_actual_flights) if parsed_actual_flights else billing_flight
         
         state_hash = f"{diff_pieces}_{diff_weight}_{is_delayed}"
         

@@ -98,26 +98,15 @@ async def get_shenzhen_air_departures(
             msg="查询成功"
         )
 
-    waybill_8_list = []
-    export_by_wb8 = {}  
-    
-    for export in exports:
-        if export.waybill_number:
-            wb8 = export.waybill_number[-8:] if len(export.waybill_number) >= 8 else export.waybill_number
-            waybill_8_list.append(wb8)
-            if wb8 not in export_by_wb8:
-                export_by_wb8[wb8] = []
-            export_by_wb8[wb8].append(export)
-
+    export_ids = [export.id for export in exports]
     containers = []
     manual_datas = []
-    export_ids = [export.id for export in exports]
-    if waybill_8_list:
+    
+    if export_ids:
         containers = db.query(ShenzhenAirBillingTimeContainer).filter(
-            ShenzhenAirBillingTimeContainer.waybill_number_8.in_(waybill_8_list)
+            ShenzhenAirBillingTimeContainer.booking_export_id.in_(export_ids)
         ).all()
         
-    if export_ids:
         from app.models.departure_manual_data import ShenzhenAirDepartureManualData
         manual_datas = db.query(ShenzhenAirDepartureManualData).filter(
             ShenzhenAirDepartureManualData.booking_export_id.in_(export_ids)
@@ -127,10 +116,8 @@ async def get_shenzhen_air_departures(
     manual_data_by_export_id = {md.booking_export_id: md for md in manual_datas}
     
     for container in containers:
-        wb8 = container.waybill_number_8
-        if wb8 in export_by_wb8:
-            for matched_export in export_by_wb8[wb8]:
-                containers_by_export_id[matched_export.id].append(container)
+        if container.booking_export_id in containers_by_export_id:
+            containers_by_export_id[container.booking_export_id].append(container)
 
     items = []
     from app.schemas.departure_tracking import ShenzhenAirDepartureManualDataDTO

@@ -80,45 +80,42 @@ class ShenzhenAirLoadingAlertManager:
                 if existing_task:
                     continue
                 
-                waybill_num_8 = waybill_num.replace("479-", "")
-                container = db.query(ShenzhenAirBillingTimeContainer).filter(
-                    ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_num_8,
-                    ShenzhenAirBillingTimeContainer.flight_date == today_str
-                ).first()
-
-                ready_dt = None
-                
-                if container and container.billing_time and str(container.billing_time).strip():
-                    bt_clean = str(container.billing_time).strip().replace(":", "")
-                    if len(bt_clean) >= 4:
-                        try:
-                            hour = int(bt_clean[:2])
-                            minute = int(bt_clean[2:4])
-                            ready_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
-                        except ValueError:
-                            pass
-                
-                display_planned_time = ""
-                actual_flight = export.actual_flight
+                billing_flight = export.billing_flight
                 routing = export.routing
-                if actual_flight and routing:
+                ready_dt = None
+                display_planned_time = ""
+
+                if billing_flight and routing:
                     ctrip_times = await ctrip_client.get_flight_times(
-                        flight_no=actual_flight,
+                        flight_no=billing_flight,
                         flight_date=today_str,
                         routing=routing
                     )
-                    if ctrip_times:
-                        display_planned_time = ctrip_times.get("planned_time") or ""
-                        if not ready_dt and ctrip_times.get("ready_time"):
+                    if ctrip_times and ctrip_times.get("ready_time"):
+                        ready_time_str = ctrip_times.get("ready_time")
+                        display_planned_time = ready_time_str
+                        try:
+                            if len(ready_time_str) > 16:
+                                ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
+                            else:
+                                ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
+                        except ValueError:
+                            pass
+
+                if not ready_dt:
+                    container = db.query(ShenzhenAirBillingTimeContainer).filter(
+                        ShenzhenAirBillingTimeContainer.booking_export_id == export.id
+                    ).first()
+                    if container and container.billing_time and str(container.billing_time).strip():
+                        bt_clean = str(container.billing_time).strip().replace(":", "")
+                        if len(bt_clean) >= 4:
                             try:
-                                ready_time_str = ctrip_times.get("ready_time")
-                                if len(ready_time_str) > 16:
-                                    ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
-                                else:
-                                    ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
+                                hour = int(bt_clean[:2])
+                                minute = int(bt_clean[2:4])
+                                ready_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
                             except ValueError:
                                 pass
-                
+
                 if not display_planned_time:
                     display_planned_time = ready_dt.strftime("%Y-%m-%d %H:%M") if ready_dt else "未知预飞时间"
                 
@@ -204,10 +201,8 @@ class ShenzhenAirLoadingAlertManager:
         except ValueError:
             pass
 
-        waybill_num_8 = waybill_num.replace("479-", "")
         containers = db.query(ShenzhenAirBillingTimeContainer).filter(
-            ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_num_8,
-            ShenzhenAirBillingTimeContainer.flight_date == flight_date
+            ShenzhenAirBillingTimeContainer.booking_export_id == export.id
         ).all()
 
         sum_qty = 0

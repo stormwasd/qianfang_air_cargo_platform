@@ -99,8 +99,7 @@ class ShenzhenAirDepartureAlertManager:
                     continue  
 
                 containers = db.query(ShenzhenAirBillingTimeContainer).filter(
-                    ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_num,
-                    ShenzhenAirBillingTimeContainer.flight_date == today_str
+                    ShenzhenAirBillingTimeContainer.booking_export_id == export.id
                 ).all()
 
                 if not containers:
@@ -130,13 +129,13 @@ class ShenzhenAirDepartureAlertManager:
                         flight_date=today_str,
                         routing=export.routing
                     )
-                    if ctrip_times and ctrip_times.get("ready_time"):
+                    if ctrip_times and ctrip_times.get("planned_time"):
                         try:
-                            ready_time_str = ctrip_times.get("ready_time")
-                            if len(ready_time_str) > 16:
-                                planned_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
+                            planned_time_str = ctrip_times.get("planned_time")
+                            if len(planned_time_str) > 16:
+                                planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M:%S")
                             else:
-                                planned_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
+                                planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M")
                         except ValueError:
                             pass
                 
@@ -210,8 +209,7 @@ class ShenzhenAirDepartureAlertManager:
                 return
 
             containers = db.query(ShenzhenAirBillingTimeContainer).filter(
-                ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_num,
-                ShenzhenAirBillingTimeContainer.flight_date == flight_date
+                ShenzhenAirBillingTimeContainer.booking_export_id == export_record.id
             ).all()
 
             await self._evaluate_and_send_alert(db, task, export_record, containers)
