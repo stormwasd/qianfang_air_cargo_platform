@@ -343,6 +343,43 @@ async def update_user(
     return success_response(data=user_data, msg=msg)
 
 
+@router.delete("/batch", summary="批量删除账号 (DELETE /batch)")
+@router.post("/batch-delete", summary="批量删除账号 (POST /batch-delete)")
+@router.delete("", summary="批量删除账号")
+async def batch_delete_users(
+    batch_data: BatchUserDelete,
+    current_user = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    批量删除账号接口（需要管理员权限）
+    
+    支持路径:
+    - DELETE /api/v1/users
+    - DELETE /api/v1/users/batch
+    - POST /api/v1/users/batch-delete
+    
+    - **user_ids**: 用户ID列表（字符串格式）
+    """
+    user_ids_int = [int(uid) for uid in batch_data.user_ids]
+    
+    if current_user.id in user_ids_int:
+        raise BadRequestException("不能删除自己的账号")
+    
+    users = db.query(User).filter(User.id.in_(user_ids_int)).all()
+    if len(users) != len(batch_data.user_ids):
+        raise BadRequestException("部分用户ID不存在")
+    
+    for user in users:
+        db.delete(user)
+    db.commit()
+    
+    return success_response(
+        data={"count": len(users)},
+        msg="批量删除成功"
+    )
+
+
 @router.delete("/{user_id}", summary="删除账号")
 async def delete_user(
     user_id: str,
@@ -368,35 +405,5 @@ async def delete_user(
     return success_response(
         data={"user_id": str(user_id)},
         msg="账号删除成功"
-    )
-
-
-@router.delete("", summary="批量删除账号")
-async def batch_delete_users(
-    batch_data: BatchUserDelete,
-    current_user = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """
-    批量删除账号接口（需要管理员权限）
-    
-    - **user_ids**: 用户ID列表（字符串格式）
-    """
-    user_ids_int = [int(uid) for uid in batch_data.user_ids]
-    
-    if current_user.id in user_ids_int:
-        raise BadRequestException("不能删除自己的账号")
-    
-    users = db.query(User).filter(User.id.in_(user_ids_int)).all()
-    if len(users) != len(batch_data.user_ids):
-        raise BadRequestException("部分用户ID不存在")
-    
-    for user in users:
-        db.delete(user)
-    db.commit()
-    
-    return success_response(
-        data={"count": len(users)},
-        msg="批量删除成功"
     )
 
