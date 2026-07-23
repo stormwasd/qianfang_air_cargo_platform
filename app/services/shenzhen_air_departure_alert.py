@@ -10,7 +10,8 @@ from app.database import SessionLocal
 from app.config import settings
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
-from app.models.waybill import Waybill
+from app.models.departure_manual_data import ShenzhenAirDepartureManualData
+from app.models.customer import Customer
 from app.models.shenzhen_air_departure_alert_task import ShenzhenAirDepartureAlertTask
 from app.utils.ctrip_client import ctrip_client
 
@@ -226,12 +227,18 @@ class ShenzhenAirDepartureAlertManager:
     async def _evaluate_and_send_alert(self, db: Session, task: ShenzhenAirDepartureAlertTask, export_record: ShenzhenAirBookingExport, containers: List[ShenzhenAirBillingTimeContainer]):
         """核心业务逻辑：分析数据，判断场景，发送模板"""
         
-        customer_name = "未知客户"
-        full_waybill = f"479-{export_record.waybill_number}"
-        waybill_record = db.query(Waybill).filter(Waybill.waybill_number == full_waybill).first()
-        if waybill_record and waybill_record.form_data:
-            shipper_info = waybill_record.form_data.get("shipper_consignee_info", {})
-            customer_name = shipper_info.get("shipper_unit", "未知客户")
+        customer_name = ""
+        manual_data = db.query(ShenzhenAirDepartureManualData).filter(
+            ShenzhenAirDepartureManualData.booking_export_id == export_record.id
+        ).first()
+        if manual_data and manual_data.customer_name:
+            c_id_str = str(manual_data.customer_name).strip()
+            if c_id_str.isdigit():
+                cust = db.query(Customer).filter(Customer.id == int(c_id_str)).first()
+                if cust and cust.company_name:
+                    customer_name = cust.company_name
+
+        full_waybill = f"479-{export_record.waybill_number}" if not str(export_record.waybill_number or "").startswith("479-") else export_record.waybill_number
         
         def _safe_float(val):
             if val is None or str(val).strip() == "": return 0.0

@@ -7,7 +7,8 @@ from app.database import SessionLocal
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.shenzhen_air_loading_alert_task import ShenzhenAirLoadingAlertTask
-from app.models.waybill import Waybill
+from app.models.departure_manual_data import ShenzhenAirDepartureManualData
+from app.models.customer import Customer
 from app.config import settings
 from app.utils.ctrip_client import ctrip_client
 import httpx
@@ -260,14 +261,16 @@ class ShenzhenAirLoadingAlertManager:
         elif is_qty_short and (has_inconsistent_flight or has_empty_flight):
             alert_type = "疑似拉货预警 / 少货/取消货预警"
 
-        shipper_unit = "未知发货人"
-        query_wb = waybill_num if waybill_num.startswith("479-") else f"479-{waybill_num}"
-        wb_record = db.query(Waybill).filter(Waybill.waybill_number == query_wb).first()
-        if wb_record and wb_record.form_data:
-            shipper_info = wb_record.form_data.get("shipper_consignee_info", {})
-            shipper_unit = shipper_info.get("shipper_unit", "未知发货人")
-            if not shipper_unit:
-                shipper_unit = "未知发货人"
+        shipper_unit = ""
+        manual_data = db.query(ShenzhenAirDepartureManualData).filter(
+            ShenzhenAirDepartureManualData.booking_export_id == export.id
+        ).first()
+        if manual_data and manual_data.customer_name:
+            c_id_str = str(manual_data.customer_name).strip()
+            if c_id_str.isdigit():
+                cust = db.query(Customer).filter(Customer.id == int(c_id_str)).first()
+                if cust and cust.company_name:
+                    shipper_unit = cust.company_name
         
         lines = [
             "装机状态通知（深圳航空）",

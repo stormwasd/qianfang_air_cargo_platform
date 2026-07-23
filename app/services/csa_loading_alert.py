@@ -7,13 +7,21 @@ from typing import List
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+import re
 from app.database import SessionLocal
 from app.config import settings
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.csa_departure_tracking import CsaLalamoveInformation, CsaProductInformation
-from app.models.waybill import Waybill
+from app.models.departure_manual_data import CsaDepartureManualData
+from app.models.customer import Customer
 from app.models.csa_loading_alert_task import CsaLoadingAlertTask
 from app.utils.ctrip_client import ctrip_client
+
+
+def is_uu_booking(booking_no: str) -> bool:
+    if not booking_no:
+        return False
+    return "UU" in str(booking_no).upper()
 
 
 def extract_base_qty(qty_str: str) -> str:
@@ -104,6 +112,9 @@ class CsaLoadingAlertManager:
             added_approvals = set()
 
             for appv in approvals:
+                if is_uu_booking(appv.booking_no):
+                    continue
+
                 appv_id = appv.id
                 waybill_num = appv.waybill_number
                 if not waybill_num:
@@ -233,17 +244,20 @@ class CsaLoadingAlertManager:
             ChinaSouthernAirApprovalData.id == approval_data_id
         ).first()
 
-        if not appv:
+        if not appv or is_uu_booking(appv.booking_no):
             task.status = "ignored"
             return
         
-        shipper_unit = "未知客户"
-        wb_record = db.query(Waybill).filter(Waybill.waybill_number == waybill_num).first()
-        if wb_record and wb_record.form_data:
-            shipper_info = wb_record.form_data.get("shipper_consignee_info", {})
-            shipper_unit = shipper_info.get("shipper_unit", "未知客户")
-            if not shipper_unit:
-                shipper_unit = "未知客户"
+        shipper_unit = ""
+        manual_data = db.query(CsaDepartureManualData).filter(
+            CsaDepartureManualData.approval_data_id == appv.id
+        ).first()
+        if manual_data and manual_data.customer_name:
+            c_id_str = str(manual_data.customer_name).strip()
+            if c_id_str.isdigit():
+                cust = db.query(Customer).filter(Customer.id == int(c_id_str)).first()
+                if cust and cust.company_name:
+                    shipper_unit = cust.company_name
                 
         flight_parts = [p.strip() for p in (appv.flight_info or "").split("/")]
         billing_flight = flight_parts[0] if len(flight_parts) > 0 else "未知航班"

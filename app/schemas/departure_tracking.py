@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Union
 from datetime import datetime
 
 class ShenzhenAirBillingTimeContainerDTO(BaseModel):
-    id: str
-    booking_export_id: Optional[str] = Field(None, description="关联深航主表ID (shenzhen_air_booking_exports.id)")
+    id: Union[str, int]
+    booking_export_id: Optional[Union[str, int]] = Field(None, description="关联深航主表ID (shenzhen_air_booking_exports.id)")
     waybill_number_8: Optional[str] = Field(None, description="运单号(8位)")
     sequence: Optional[str] = Field(None, description="序号")
     flight_number: Optional[str] = Field(None, description="航班号")

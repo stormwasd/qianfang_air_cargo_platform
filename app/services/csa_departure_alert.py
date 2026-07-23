@@ -11,9 +11,16 @@ from app.database import SessionLocal
 from app.config import settings
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.csa_departure_tracking import CsaLalamoveInformation
-from app.models.waybill import Waybill
+from app.models.departure_manual_data import CsaDepartureManualData
+from app.models.customer import Customer
 from app.models.csa_departure_alert_task import CsaDepartureAlertTask
 from app.utils.ctrip_client import ctrip_client
+
+
+def is_uu_booking(booking_no: str) -> bool:
+    if not booking_no:
+        return False
+    return "UU" in str(booking_no).upper()
 
 
 def extract_base_qty(qty_str: str) -> str:
@@ -119,6 +126,9 @@ class CsaDepartureAlertManager:
             added_approval_ids = set()
 
             for appv in approvals:
+                if is_uu_booking(appv.booking_no):
+                    continue
+
                 appv_id = appv.id
                 waybill_num = appv.waybill_number
                 flight_info = appv.flight_info
@@ -239,7 +249,7 @@ class CsaDepartureAlertManager:
                 ChinaSouthernAirApprovalData.id == approval_data_id
             ).first()
 
-            if not appv_record:
+            if not appv_record or is_uu_booking(appv_record.booking_no):
                 task.status = "ignored"
                 db.commit()
                 return
@@ -263,11 +273,16 @@ class CsaDepartureAlertManager:
     async def _evaluate_and_send_alert(self, db: Session, task: CsaDepartureAlertTask, appv_record: ChinaSouthernAirApprovalData, containers: List[CsaLalamoveInformation]):
         """核心业务逻辑：分析数据，判断场景，发送模板"""
         
-        customer_name = "未知客户"
-        waybill_record = db.query(Waybill).filter(Waybill.waybill_number == appv_record.waybill_number).first()
-        if waybill_record and waybill_record.form_data:
-            shipper_info = waybill_record.form_data.get("shipper_consignee_info", {})
-            customer_name = shipper_info.get("shipper_unit", "未知客户")
+        customer_name = ""
+        manual_data = db.query(CsaDepartureManualData).filter(
+            CsaDepartureManualData.approval_data_id == appv_record.id
+        ).first()
+        if manual_data and manual_data.customer_name:
+            c_id_str = str(manual_data.customer_name).strip()
+            if c_id_str.isdigit():
+                cust = db.query(Customer).filter(Customer.id == int(c_id_str)).first()
+                if cust and cust.company_name:
+                    customer_name = cust.company_name
         
         flight_parts = [p.strip() for p in (appv_record.flight_info or "").split("/")]
         billing_flight = flight_parts[0] if len(flight_parts) > 0 else "未知航班"

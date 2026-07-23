@@ -15,7 +15,8 @@ import httpx
 from app.utils.ctrip_client import ctrip_client
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
-from app.models.waybill import Waybill
+from app.models.departure_manual_data import ShenzhenAirDepartureManualData
+from app.models.customer import Customer
 from app.models.alert_notification_record import AlertNotificationRecord
 
 class ShenzhenAirDepartureStatusAlertService:
@@ -200,12 +201,18 @@ class ShenzhenAirDepartureStatusAlertService:
         if alert_record and alert_record.state_hash == state_hash:
             return
         
-        customer_name = "未知客户"
-        full_waybill = f"479-{waybill_num}"
-        waybill_record = db.query(Waybill).filter(Waybill.waybill_number == full_waybill).first()
-        if waybill_record and waybill_record.form_data:
-            shipper_info = waybill_record.form_data.get("shipper_consignee_info", {})
-            customer_name = shipper_info.get("shipper_unit", "未知客户")
+        customer_name = ""
+        manual_data = db.query(ShenzhenAirDepartureManualData).filter(
+            ShenzhenAirDepartureManualData.booking_export_id == record.id
+        ).first()
+        if manual_data and manual_data.customer_name:
+            c_id_str = str(manual_data.customer_name).strip()
+            if c_id_str.isdigit():
+                cust = db.query(Customer).filter(Customer.id == int(c_id_str)).first()
+                if cust and cust.company_name:
+                    customer_name = cust.company_name
+
+        full_waybill = waybill_num if waybill_num.startswith("479-") else f"479-{waybill_num}"
             
         sum_qty = sum([self._safe_float(c.quantity) for c in containers])
         sum_wt = sum([self._safe_float(c.weight) for c in containers])

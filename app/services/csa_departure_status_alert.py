@@ -13,10 +13,18 @@ from app.config import settings
 from app.database import SessionLocal
 from app.utils.ctrip_client import ctrip_client
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
+from app.models.departure_manual_data import CsaDepartureManualData
+from app.models.customer import Customer
 from app.models.waybill import Waybill
 from app.utils.airport_code_mapper import get_city_name_by_code
 from app.models.csa_departure_alert_task import CsaDepartureAlertTask
 from app.models.alert_notification_record import AlertNotificationRecord
+
+
+def is_uu_booking(booking_no: str) -> bool:
+    if not booking_no:
+        return False
+    return "UU" in str(booking_no).upper()
 
 class CsaDepartureStatusAlertService:
     def __init__(self):
@@ -139,6 +147,8 @@ class CsaDepartureStatusAlertService:
             ).all()
 
             for record in records:
+                if is_uu_booking(record.booking_no):
+                    continue
                 try:
                     await self._process_single_record(record, db)
                 except Exception as e:
@@ -154,7 +164,7 @@ class CsaDepartureStatusAlertService:
 
     async def _process_single_record(self, record: ChinaSouthernAirApprovalData, db) -> None:
         waybill_num = record.waybill_number
-        if not waybill_num:
+        if not waybill_num or is_uu_booking(record.booking_no):
             return
             
         billing_flight, flight_date, routing = self._parse_flight_info(record.flight_info)
@@ -222,16 +232,23 @@ class CsaDepartureStatusAlertService:
         if alert_record and alert_record.state_hash == state_hash:
             return 
             
-        customer_name = "未知客户"
+        customer_name = ""
+        manual_data = db.query(CsaDepartureManualData).filter(
+            CsaDepartureManualData.approval_data_id == record.id
+        ).first()
+        if manual_data and manual_data.customer_name:
+            c_id_str = str(manual_data.customer_name).strip()
+            if c_id_str.isdigit():
+                cust = db.query(Customer).filter(Customer.id == int(c_id_str)).first()
+                if cust and cust.company_name:
+                    customer_name = cust.company_name
+
         consignee_name = "未知"
         waybill_record = db.query(Waybill).filter(
             Waybill.waybill_number == waybill_num,
             Waybill.airline_record_status == 3
         ).first()
-        
         if waybill_record and waybill_record.form_data:
-            shipper_info = waybill_record.form_data.get("shipper_consignee_info", {})
-            customer_name = shipper_info.get("shipper_unit", "未知客户")
             contact_info = waybill_record.form_data.get("contact_info", {})
             consignee_name = contact_info.get("consignee", "未知")
 

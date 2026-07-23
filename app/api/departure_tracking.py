@@ -131,6 +131,7 @@ async def get_shenzhen_air_departures(
         for c in containers_by_export_id[export.id]:
             c_dict = {k: v for k, v in c.__dict__.items() if not k.startswith('_')}
             c_dict["id"] = str(c.id)
+            c_dict["booking_export_id"] = str(c.booking_export_id) if c.booking_export_id is not None else None
             containers_data.append(ShenzhenAirBillingTimeContainerDTO(**c_dict))
             
         item_schema.billing_time_containers = containers_data
