@@ -12,7 +12,7 @@ from app.database import SessionLocal
 from app.config import settings
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.csa_departure_tracking import CsaLalamoveInformation, CsaProductInformation
-from app.models.departure_manual_data import CsaDepartureManualData
+from app.models.csa_departure_manual_data import CsaDepartureManualData
 from app.models.customer import Customer
 from app.models.csa_loading_alert_task import CsaLoadingAlertTask
 from app.utils.ctrip_client import ctrip_client

@@ -13,7 +13,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.utils.ctrip_client import ctrip_client
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
-from app.models.departure_manual_data import CsaDepartureManualData
+from app.models.csa_departure_manual_data import CsaDepartureManualData
 from app.models.customer import Customer
 from app.models.waybill import Waybill
 from app.utils.airport_code_mapper import get_city_name_by_code
