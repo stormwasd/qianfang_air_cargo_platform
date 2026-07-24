@@ -2,8 +2,9 @@
 数据库初始化脚本
 """
 from app.database import engine, Base
-from app.models import User, Department, Customer, BusinessConfig, DictType, DictOption, Waybill, Booking, Settlement, WaybillStockBatch, WaybillStockItem
+from app.models import User, Department, BusinessConfig, DictType, DictOption
 from app.models.user_department import user_department
+
 from app.core.security import get_password_hash
 from app.utils.helpers import format_permissions_to_json
 
