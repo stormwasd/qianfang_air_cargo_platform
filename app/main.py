@@ -18,65 +18,9 @@ from app.core.response import error_response
 async def lifespan(app: FastAPI):
     """
     应用生命周期管理
-    启动时启动RPA Worker，关闭时停止Worker
     """
-    if settings.RPA_QUEUE_ENABLED:
-        from app.services.rpa_worker import rpa_worker_manager
-        rpa_worker_manager.start_workers()
-        print(f"RPA任务队列已启用，启动了 {len(rpa_worker_manager.workers)} 个Worker")
-        from app.services.keep_login_scheduler import rpa_keep_login_scheduler
-        rpa_keep_login_scheduler.start()
-        from app.services.transit_loading_manager import transit_loading_manager
-        transit_loading_manager.start()
-        from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
-        shenzhen_air_approval_scheduler.start()
-        from app.services.china_southern_air_approval_scheduler import china_southern_air_approval_scheduler
-        china_southern_air_approval_scheduler.start()
-        from app.services.shenzhen_air_approval_alert import shenzhen_air_approval_alert
-        shenzhen_air_approval_alert.start()
-        from app.services.shenzhen_air_departure_alert import shenzhen_air_departure_alert_manager
-        shenzhen_air_departure_alert_manager.start()
-        from app.services.csa_departure_alert import csa_departure_alert_manager
-        csa_departure_alert_manager.start()
-        from app.services.shenzhen_air_loading_alert import shenzhen_air_loading_alert_manager
-        shenzhen_air_loading_alert_manager.start()
-        from app.services.csa_loading_alert import csa_loading_alert_manager
-        csa_loading_alert_manager.start()
-        from app.services.shenzhen_air_departure_status_alert import shenzhen_air_departure_status_alert
-        shenzhen_air_departure_status_alert.start()
-        from app.services.csa_departure_status_alert import csa_departure_status_alert
-        csa_departure_status_alert.start()
-    else:
-        print("RPA任务队列已禁用")
-    
     yield
-    
-    if settings.RPA_QUEUE_ENABLED:
-        from app.services.rpa_worker import rpa_worker_manager
-        rpa_worker_manager.stop_workers()
-        print("RPA Worker已停止")
-        from app.services.keep_login_scheduler import rpa_keep_login_scheduler
-        rpa_keep_login_scheduler.stop()
-        from app.services.transit_loading_manager import transit_loading_manager
-        transit_loading_manager.stop()
-        from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
-        shenzhen_air_approval_scheduler.stop()
-        from app.services.china_southern_air_approval_scheduler import china_southern_air_approval_scheduler
-        china_southern_air_approval_scheduler.stop()
-        from app.services.shenzhen_air_approval_alert import shenzhen_air_approval_alert
-        shenzhen_air_approval_alert.stop()
-        from app.services.shenzhen_air_departure_alert import shenzhen_air_departure_alert_manager
-        shenzhen_air_departure_alert_manager.stop()
-        from app.services.csa_departure_alert import csa_departure_alert_manager
-        csa_departure_alert_manager.stop()
-        from app.services.shenzhen_air_loading_alert import shenzhen_air_loading_alert_manager
-        shenzhen_air_loading_alert_manager.stop()
-        from app.services.csa_loading_alert import csa_loading_alert_manager
-        csa_loading_alert_manager.stop()
-        from app.services.shenzhen_air_departure_status_alert import shenzhen_air_departure_status_alert
-        shenzhen_air_departure_status_alert.stop()
-        from app.services.csa_departure_status_alert import csa_departure_status_alert
-        csa_departure_status_alert.stop()
+
 
 def create_application() -> FastAPI:
     """
