@@ -36,17 +36,14 @@ def has_permission(user_permissions: list, required_permission: str) -> bool:
 
 def validate_permissions(permissions: list) -> bool:
     """
-    验证权限列表是否有效（支持代码和名称）
+    验证权限列表是否有效（仅接受标准权限代码）
     
     Args:
-        permissions: 权限列表（可能是代码或名称）
+        permissions: 权限列表（权限代码）
     
     Returns:
         是否所有权限都有效
     """
     valid_codes = set(settings.PERMISSION_CODES)
-    valid_names = set(settings.PERMISSION_NAMES)
-    valid_permissions = valid_codes | valid_names
-    
-    return all(perm in valid_permissions for perm in permissions)
+    return all(perm in valid_codes for perm in permissions)
 

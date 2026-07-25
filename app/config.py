@@ -33,12 +33,17 @@ class Settings(BaseSettings):
     PASSWORD_SALT_ROUNDS: int = Field(default=12, ge=4, le=31, description="密码加密轮数")
     
     PERMISSIONS: Dict[str, str] = {
-        "waybill": "运单管理",
-        "booking": "订舱管理",
-        "settlement": "结算单管理",
-        "customer": "客户管理",
-        "bill": "单号管理",
+        "waybill": "主单管理",
+        "bill": "单号库",
         "robot": "机器人管理",
+        "customer": "客户管理",
+        "account": "账号管理",
+        "system": "系统管理",
+        "agent": "代理管理",
+        "finance": "财务管理",
+        "smart_tracking": "智能跟单",
+        "waybill_audit": "运单单据审核",
+        "company_info": "公司信息",
         "admin": "管理员"
     }
     
