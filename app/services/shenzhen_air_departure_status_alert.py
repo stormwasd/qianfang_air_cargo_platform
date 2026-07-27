@@ -105,6 +105,14 @@ class ShenzhenAirDepartureStatusAlertService:
         try: return float(str(val).strip())
         except ValueError: return 0.0
 
+    def _clean_flight_no(self, raw_flight_str: str) -> str:
+        """提取纯航班号，去除日期与重量描述等后缀 (如 'ZH9511/2026-06-09(806.00)' -> 'ZH9511')"""
+        if not raw_flight_str:
+            return ""
+        first_part = str(raw_flight_str).split("/")[0].strip()
+        match = re.search(r"^[A-Za-z0-9]+", first_part)
+        return match.group(0) if match else first_part
+
     async def _scan_and_alert(self) -> None:
         db = SessionLocal()
         try:
@@ -128,9 +136,8 @@ class ShenzhenAirDepartureStatusAlertService:
 
     async def _process_single_record(self, record: ShenzhenAirBookingExport, db) -> None:
         waybill_num = record.waybill_number
-        flight_date = record.flight_date
-        routing = record.routing
-        billing_flight = record.billing_flight or ""
+        if not waybill_num:
+            return
 
         containers = db.query(ShenzhenAirBillingTimeContainer).filter(
             ShenzhenAirBillingTimeContainer.booking_export_id == record.id
@@ -144,13 +151,18 @@ class ShenzhenAirDepartureStatusAlertService:
         if not valid_containers:
             return
 
+        billing_flight = record.billing_flight or ""
+        flight_date = record.flight_date or ""
+        routing = record.routing or ""
+        clean_billing_flight = self._clean_flight_no(billing_flight)
+
         # 条件 2：通过携程获取预飞时间 ready_time，必须满足 当前时间 >= 预飞时间 才触发
         now = datetime.now()
         ready_dt = None
         planned_time_str = ""
 
-        if routing and "-" in routing and billing_flight:
-            flight_res = await ctrip_client.get_flight_times(billing_flight, flight_date, routing)
+        if routing and "-" in routing and clean_billing_flight:
+            flight_res = await ctrip_client.get_flight_times(clean_billing_flight, flight_date, routing)
             if flight_res:
                 if flight_res.get("planned_time"):
                     planned_time_str = flight_res.get("planned_time")
@@ -182,14 +194,20 @@ class ShenzhenAirDepartureStatusAlertService:
         wt_diff = self._safe_float(record.weight_difference)
         
         actual_flight_str = record.actual_flight or billing_flight
-        parsed_actual_flights = [f.strip() for f in re.split(r'[,;]', actual_flight_str) if f.strip()]
-        if not parsed_actual_flights and billing_flight:
-            parsed_actual_flights = [billing_flight]
+        raw_actual_flights = [f.strip() for f in re.split(r'[,;]', actual_flight_str) if f.strip()]
+        parsed_actual_flights = []
+        for raw_flt in raw_actual_flights:
+            clean_flt = self._clean_flight_no(raw_flt)
+            if clean_flt and clean_flt not in parsed_actual_flights:
+                parsed_actual_flights.append(clean_flt)
+
+        if not parsed_actual_flights and clean_billing_flight:
+            parsed_actual_flights = [clean_billing_flight]
 
         # 收集需要查询实飞时间的去重航班列表（开单航班 + 实走航班）
         query_flights = []
-        if billing_flight and billing_flight not in query_flights:
-            query_flights.append(billing_flight)
+        if clean_billing_flight and clean_billing_flight not in query_flights:
+            query_flights.append(clean_billing_flight)
         for flt in parsed_actual_flights:
             if flt not in query_flights:
                 query_flights.append(flt)
@@ -223,7 +241,7 @@ class ShenzhenAirDepartureStatusAlertService:
         status_text = "出港异常" if is_abnormal else "出港正常"
         
         actual_time_text = " ；".join(actual_time_displays) if actual_time_displays else "/"
-        actual_flight_display = "；".join(parsed_actual_flights) if parsed_actual_flights else billing_flight
+        actual_flight_display = "；".join(parsed_actual_flights) if parsed_actual_flights else clean_billing_flight
 
         state_hash = f"{qty_diff}_{wt_diff}_{is_delayed}"
         
