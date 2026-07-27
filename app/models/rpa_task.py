@@ -81,3 +81,16 @@ class RPATask(Base):
     def __repr__(self):
         return f"<RPATask(id={self.id}, task_type={self.task_type}, status={self.status})>"
 
+
+class RPATaskLastSuccess(Base):
+    """RPA任务最后成功执行时间表"""
+    __tablename__ = "rpa_task_last_success"
+
+    task_type = Column(String(100), primary_key=True, comment="任务类型 (RPATaskType)")
+    last_success_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="最后一次成功执行时间（UTC+8）")
+    updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="记录更新时间（UTC+8）")
+
+    def __repr__(self):
+        return f"<RPATaskLastSuccess(task_type={self.task_type}, last_success_at={self.last_success_at})>"
+
+

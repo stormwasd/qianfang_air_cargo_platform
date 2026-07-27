@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
-from app.models.rpa_task import RPATask, RPATaskStatus, RPATaskType, RPATargetType
+from app.models.rpa_task import RPATask, RPATaskStatus, RPATaskType, RPATargetType, RPATaskLastSuccess
 from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
 from app.config import settings
@@ -298,10 +298,48 @@ class RPATaskService:
             status = RPATaskStatus.SUCCESS.value if success else RPATaskStatus.FAILED.value
             print(f"任务 {task_id} 完成，状态: {status}, 错误: {error_message}")
             
+            if success and task.task_type:
+                self.record_task_success(db, task.task_type)
+
             db.delete(task)
             db.commit()
             return True
         return False
+
+    def record_task_success(self, db: Session, task_type: str) -> bool:
+        """
+        记录/刷新指定任务类型的最后一次成功执行时间（UTC+8）
+        """
+        if not task_type:
+            return False
+        try:
+            now = get_china_now()
+            record = db.query(RPATaskLastSuccess).filter(RPATaskLastSuccess.task_type == task_type).first()
+            if record:
+                record.last_success_at = now
+                record.updated_at = now
+            else:
+                record = RPATaskLastSuccess(
+                    task_type=task_type,
+                    last_success_at=now,
+                    updated_at=now
+                )
+                db.add(record)
+            db.commit()
+            return True
+        except Exception as e:
+            print(f"记录 RPA 任务({task_type})成功时间打卡失败: {e}")
+            db.rollback()
+            return False
+
+    def get_last_success_time(self, db: Session, task_type: str) -> Optional[datetime]:
+        """
+        获取指定任务类型的最后一次成功执行时间
+        """
+        if not task_type:
+            return None
+        record = db.query(RPATaskLastSuccess).filter(RPATaskLastSuccess.task_type == task_type).first()
+        return record.last_success_at if record else None
     
     def timeout_task(
         self,

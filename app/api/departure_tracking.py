@@ -9,6 +9,9 @@ from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.schemas.departure_tracking import ShenzhenAirDepartureListResponse, ShenzhenAirDepartureItem, ShenzhenAirBillingTimeContainerDTO
 
+from app.models.rpa_task import RPATaskType
+from app.services.rpa_task_service import rpa_task_service
+
 router = APIRouter()
 
 @router.get("/shenzhen-air", summary="深航出港列表")
@@ -146,7 +149,10 @@ async def get_shenzhen_air_departures(
         items.append(item_schema.model_dump(mode="json"))
 
     data_update_time = None
-    if exports and hasattr(exports[0], 'updated_at') and exports[0].updated_at:
+    last_success = rpa_task_service.get_last_success_time(db, RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value)
+    if last_success:
+        data_update_time = last_success.strftime("%Y-%m-%d %H:%M")
+    elif exports and hasattr(exports[0], 'updated_at') and exports[0].updated_at:
         data_update_time = exports[0].updated_at.strftime("%Y-%m-%d %H:%M")
 
     return success_response(
@@ -380,7 +386,10 @@ async def get_china_southern_air_departures(
         items.append(item_schema.model_dump(mode="json"))
 
     data_update_time = None
-    if records and hasattr(records[0], 'updated_at') and records[0].updated_at:
+    last_success = rpa_task_service.get_last_success_time(db, RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value)
+    if last_success:
+        data_update_time = last_success.strftime("%Y-%m-%d %H:%M")
+    elif records and hasattr(records[0], 'updated_at') and records[0].updated_at:
         data_update_time = records[0].updated_at.strftime("%Y-%m-%d %H:%M")
 
     return success_response(

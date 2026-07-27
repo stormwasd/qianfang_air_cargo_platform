@@ -7,6 +7,7 @@ from app.api.deps import get_current_active_user
 from app.core.response import success_response
 from app.models.shenzhen_air_approval import ShenzhenAirApprovalData, ShenzhenAirApprovalWideBodyData
 from app.schemas.shenzhen_air_approval import ShenzhenAirApprovalListResponse, ShenzhenAirApprovalNarrowItem, ShenzhenAirApprovalWideItem
+from app.models.rpa_task import RPATaskType
 
 router = APIRouter()
 
@@ -78,7 +79,16 @@ async def get_shenzhen_air_approvals(
         items.append(item_schema.model_dump(mode="json"))
 
     data_update_time = None
-    if records and hasattr(records[0], 'updated_at') and records[0].updated_at:
+    target_task_type = (
+        RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value
+        if cabin_type == 1
+        else RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value
+    )
+    from app.services.rpa_task_service import rpa_task_service
+    last_success = rpa_task_service.get_last_success_time(db, target_task_type)
+    if last_success:
+        data_update_time = last_success.strftime("%Y-%m-%d %H:%M")
+    elif records and hasattr(records[0], 'updated_at') and records[0].updated_at:
         data_update_time = records[0].updated_at.strftime("%Y-%m-%d %H:%M")
 
     return success_response(

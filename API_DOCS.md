@@ -9507,3 +9507,19 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
   - **出港正常**：满足件数差额为 0 且重量差额 <= 0 且未发生延误。
   - **出港异常**：件数差额 > 0 或重量差额 > 0 或实走航班实飞时间晚于开单航班计飞时间（延误）。
 
+#### 21.6 订舱批复跟踪与出港跟踪全局数据更新时间（data_update_time）规范
+- **【设计原则与重构目标】**：列表接口返回的 `data_update_time` 统一代表**对应 RPA 抓取任务最后一次成功执行/打卡的时间点**。即便航司官网数据未发生变更（ORM 未刷新 `updated_at`），只要 RPA 机器人成功运行抓取，`data_update_time` 也会实时更新；且当前端按航班/单号过滤时，`data_update_time` 保持为系统全局最新抓取打卡时间，不再随过滤记录跳变。
+- **【打卡持久化表】**：底层新增 `rpa_task_last_success` 数据库表（主键为 `task_type`，存储 `last_success_at`）。当任何 RPA 任务调用 `rpa_task_service.complete_task(..., success=True)` 时，系统自动完成打卡。
+- **【精准映射规范】**：
+  1. **深航订舱批复跟踪** (`GET /api/v1/shenzhen-air-approval`)：
+     - `cabin_type = 0`（窄体机）取 `SHENZHEN_AIR_APPROVAL_DATA` 打卡时间。
+     - `cabin_type = 1`（宽体机）取 `SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY` 打卡时间。
+  2. **南航订舱批复跟踪** (`GET /api/v1/china-southern-air-approval`)：
+     - 取 `CHINA_SOUTHERN_AIR_APPROVAL_DATA` 打卡时间。
+  3. **深航出港跟踪** (`GET /api/v1/departure-tracking/shenzhen-air`)：
+     - 取 `SHENZHEN_AIR_BILLING_TIME_CONTAINER` 打卡时间。
+  4. **南航出港跟踪** (`GET /api/v1/departure-tracking/china-southern-air`)：
+     - 取 `CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING` 打卡时间。
+- **【降级兜底机制】**：系统初次部署或尚无 RPA 成功打卡记录时，自动降级回退至原有记录的最后修改时间（`updated_at`），确保 `data_update_time` 绝不为空。
+
+

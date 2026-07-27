@@ -11,6 +11,9 @@ router = APIRouter()
 
 from sqlalchemy import or_, func
 
+from app.models.rpa_task import RPATaskType
+from app.services.rpa_task_service import rpa_task_service
+
 @router.get("", summary="南航订舱批复跟踪列表")
 async def get_china_southern_air_approvals(
     flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-03-10"),
@@ -67,7 +70,10 @@ async def get_china_southern_air_approvals(
         items.append(item_schema.model_dump(mode="json"))
 
     data_update_time = None
-    if records and hasattr(records[0], 'updated_at') and records[0].updated_at:
+    last_success = rpa_task_service.get_last_success_time(db, RPATaskType.CHINA_SOUTHERN_AIR_APPROVAL_DATA.value)
+    if last_success:
+        data_update_time = last_success.strftime("%Y-%m-%d %H:%M")
+    elif records and hasattr(records[0], 'updated_at') and records[0].updated_at:
         data_update_time = records[0].updated_at.strftime("%Y-%m-%d %H:%M")
 
     return success_response(
