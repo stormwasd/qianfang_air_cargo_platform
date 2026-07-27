@@ -63,23 +63,26 @@ class ShenzhenAirLoadingAlertManager:
                 ShenzhenAirBookingExport.flight_date == today_str
             ).all()
 
-            added_waybills = set()
+            added_export_ids = set()
 
             for export in exports:
-                raw_waybill = str(export.waybill_number or "").strip()
-                if not raw_waybill:
+                if not export.id or not export.waybill_number:
                     continue
                 
+                if export.id in added_export_ids:
+                    continue
+
+                raw_waybill = str(export.waybill_number or "").strip()
                 clean_waybill = raw_waybill.replace("479-", "")
                 full_waybill = f"479-{clean_waybill}"
                 waybill_candidates = list(set([raw_waybill, clean_waybill, full_waybill]))
 
-                if any(w in added_waybills for w in waybill_candidates):
-                    continue
-
                 existing_task = db.query(ShenzhenAirLoadingAlertTask).filter(
-                    ShenzhenAirLoadingAlertTask.waybill_number.in_(waybill_candidates),
-                    ShenzhenAirLoadingAlertTask.flight_date == today_str
+                    (ShenzhenAirLoadingAlertTask.booking_export_id == export.id) |
+                    (
+                        (ShenzhenAirLoadingAlertTask.waybill_number.in_(waybill_candidates)) &
+                        (ShenzhenAirLoadingAlertTask.flight_date == today_str)
+                    )
                 ).first()
 
                 if existing_task:
@@ -137,6 +140,7 @@ class ShenzhenAirLoadingAlertManager:
 
                 trigger_dt = billing_dt - timedelta(minutes=100)
                 new_task = ShenzhenAirLoadingAlertTask(
+                    booking_export_id=export.id,
                     waybill_number=full_waybill,
                     flight_date=today_str,
                     planned_time=display_ready_time,  # 模板展示【预飞时间】
@@ -144,8 +148,7 @@ class ShenzhenAirLoadingAlertManager:
                     status="pending"
                 )
                 db.add(new_task)
-                for w in waybill_candidates:
-                    added_waybills.add(w)
+                added_export_ids.add(export.id)
             
             db.commit()
 
@@ -154,20 +157,16 @@ class ShenzhenAirLoadingAlertManager:
 
     async def _exec_loop(self):
         """执行循环：到点提取数据、判断条件并触发企微"""
+        interval = getattr(settings, "ALERT_SZX_LOADING_EXEC_INTERVAL_SECONDS", 60)
         while self._running:
             try:
-                interval = settings.ALERT_SHENZHEN_AIR_LOADING_EXEC_INTERVAL_SECONDS
-                if interval <= 0:
-                    await asyncio.sleep(60)
-                    continue
-
-                now = datetime.now()
                 db = SessionLocal()
                 try:
+                    now = datetime.now()
                     tasks = db.query(ShenzhenAirLoadingAlertTask).filter(
                         ShenzhenAirLoadingAlertTask.status == "pending",
                         ShenzhenAirLoadingAlertTask.trigger_time <= now
-                    ).with_for_update(skip_locked=True).all()
+                    ).all()
 
                     for task in tasks:
                         task.status = "processing"
@@ -178,11 +177,11 @@ class ShenzhenAirLoadingAlertManager:
                             await self._process_single_task(task, db)
                             task.status = "processed"
                         except Exception as e:
-                            print(f"深航装机预警执行单任务异常 {task.id}: {e}")
+                            print(f"处理深航装机预警单({task.id})异常: {e}")
                             traceback.print_exc()
-                            task.status = "pending" 
-                    
-                    db.commit()
+                            task.status = "pending"
+                        finally:
+                            db.commit()
                 finally:
                     db.close()
                 
@@ -195,17 +194,23 @@ class ShenzhenAirLoadingAlertManager:
                 await asyncio.sleep(60)
 
     async def _process_single_task(self, task: ShenzhenAirLoadingAlertTask, db):
-        waybill_num = task.waybill_number
-        flight_date = task.flight_date
+        export = None
+        if task.booking_export_id:
+            export = db.query(ShenzhenAirBookingExport).filter(
+                ShenzhenAirBookingExport.id == task.booking_export_id
+            ).first()
 
-        clean_waybill = waybill_num.replace("479-", "") if waybill_num.startswith("479-") else waybill_num
-        full_waybill = f"479-{clean_waybill}"
-        waybill_candidates = list(set([waybill_num, clean_waybill, full_waybill]))
+        if not export:
+            waybill_num = task.waybill_number
+            flight_date = task.flight_date
+            clean_waybill = waybill_num.replace("479-", "") if waybill_num.startswith("479-") else waybill_num
+            full_waybill = f"479-{clean_waybill}"
+            waybill_candidates = list(set([waybill_num, clean_waybill, full_waybill]))
 
-        export = db.query(ShenzhenAirBookingExport).filter(
-            ShenzhenAirBookingExport.waybill_number.in_(waybill_candidates),
-            ShenzhenAirBookingExport.flight_date == flight_date
-        ).order_by(ShenzhenAirBookingExport.id.desc()).first()
+            export = db.query(ShenzhenAirBookingExport).filter(
+                ShenzhenAirBookingExport.waybill_number.in_(waybill_candidates),
+                ShenzhenAirBookingExport.flight_date == flight_date
+            ).order_by(ShenzhenAirBookingExport.id.desc()).first()
 
         if not export:
             task.status = "ignored"

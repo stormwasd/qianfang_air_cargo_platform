@@ -8,6 +8,7 @@ class ShenzhenAirLoadingAlertTask(Base):
     __tablename__ = "shenzhen_air_loading_alert_tasks"
 
     id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
+    booking_export_id = Column(BigInteger, index=True, unique=True, nullable=True, comment="关联 shenzhen_air_booking_exports.id")
     waybill_number = Column(String(50), index=True, comment="运单号")
     flight_date = Column(String(50), index=True, comment="航班日期")
     planned_time = Column(String(50), comment="计飞时间")
@@ -16,7 +17,3 @@ class ShenzhenAirLoadingAlertTask(Base):
     
     created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")
-
-    __table_args__ = (
-        Index("ix_szx_loading_alert_waybill_date", "waybill_number", "flight_date", unique=True),
-    )

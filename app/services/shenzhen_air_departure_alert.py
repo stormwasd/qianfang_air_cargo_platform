@@ -80,23 +80,26 @@ class ShenzhenAirDepartureAlertManager:
                 ShenzhenAirBookingExport.flight_date == today_str
             ).all()
 
-            added_waybills = set()
+            added_export_ids = set()
 
             for export in exports:
-                raw_waybill = str(export.waybill_number or "").strip()
-                if not raw_waybill:
+                if not export.id or not export.waybill_number:
                     continue
                 
+                if export.id in added_export_ids:
+                    continue
+
+                raw_waybill = str(export.waybill_number or "").strip()
                 clean_waybill = raw_waybill.replace("479-", "")
                 full_waybill = f"479-{clean_waybill}"
                 waybill_candidates = list(set([raw_waybill, clean_waybill, full_waybill]))
 
-                if any(w in added_waybills for w in waybill_candidates):
-                    continue
-
                 existing_task = db.query(ShenzhenAirDepartureAlertTask).filter(
-                    ShenzhenAirDepartureAlertTask.waybill_number.in_(waybill_candidates),
-                    ShenzhenAirDepartureAlertTask.flight_date == today_str
+                    (ShenzhenAirDepartureAlertTask.booking_export_id == export.id) |
+                    (
+                        (ShenzhenAirDepartureAlertTask.waybill_number.in_(waybill_candidates)) &
+                        (ShenzhenAirDepartureAlertTask.flight_date == today_str)
+                    )
                 ).first()
 
                 if existing_task:
@@ -147,6 +150,7 @@ class ShenzhenAirDepartureAlertManager:
 
                 trigger_dt = planned_dt - timedelta(minutes=135)
                 new_task = ShenzhenAirDepartureAlertTask(
+                    booking_export_id=export.id,
                     waybill_number=full_waybill,
                     flight_date=today_str,
                     planned_time=planned_dt.strftime("%Y-%m-%d %H:%M"),
@@ -154,8 +158,7 @@ class ShenzhenAirDepartureAlertManager:
                     status="pending"
                 )
                 db.add(new_task)
-                for w in waybill_candidates:
-                    added_waybills.add(w)
+                added_export_ids.add(export.id)
             
             db.commit()
 
@@ -199,17 +202,23 @@ class ShenzhenAirDepartureAlertManager:
             if not task:
                 return
 
-            waybill_num = task.waybill_number
-            flight_date = task.flight_date
+            export_record = None
+            if task.booking_export_id:
+                export_record = db.query(ShenzhenAirBookingExport).filter(
+                    ShenzhenAirBookingExport.id == task.booking_export_id
+                ).first()
 
-            clean_waybill = waybill_num.replace("479-", "") if waybill_num.startswith("479-") else waybill_num
-            full_waybill = f"479-{clean_waybill}"
-            waybill_candidates = list(set([waybill_num, clean_waybill, full_waybill]))
+            if not export_record:
+                waybill_num = task.waybill_number
+                flight_date = task.flight_date
+                clean_waybill = waybill_num.replace("479-", "") if waybill_num.startswith("479-") else waybill_num
+                full_waybill = f"479-{clean_waybill}"
+                waybill_candidates = list(set([waybill_num, clean_waybill, full_waybill]))
 
-            export_record = db.query(ShenzhenAirBookingExport).filter(
-                ShenzhenAirBookingExport.waybill_number.in_(waybill_candidates),
-                ShenzhenAirBookingExport.flight_date == flight_date
-            ).order_by(ShenzhenAirBookingExport.id.desc()).first()
+                export_record = db.query(ShenzhenAirBookingExport).filter(
+                    ShenzhenAirBookingExport.waybill_number.in_(waybill_candidates),
+                    ShenzhenAirBookingExport.flight_date == flight_date
+                ).order_by(ShenzhenAirBookingExport.id.desc()).first()
 
             if not export_record:
                 task.status = "ignored"
