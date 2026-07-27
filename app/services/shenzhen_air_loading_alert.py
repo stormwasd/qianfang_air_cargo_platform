@@ -66,19 +66,24 @@ class ShenzhenAirLoadingAlertManager:
             added_waybills = set()
 
             for export in exports:
-                waybill_num = export.waybill_number
-                if not waybill_num:
+                raw_waybill = str(export.waybill_number or "").strip()
+                if not raw_waybill:
                     continue
                 
-                if waybill_num in added_waybills:
+                clean_waybill = raw_waybill.replace("479-", "")
+                full_waybill = f"479-{clean_waybill}"
+                waybill_candidates = list(set([raw_waybill, clean_waybill, full_waybill]))
+
+                if any(w in added_waybills for w in waybill_candidates):
                     continue
 
                 existing_task = db.query(ShenzhenAirLoadingAlertTask).filter(
-                    ShenzhenAirLoadingAlertTask.waybill_number == waybill_num,
+                    ShenzhenAirLoadingAlertTask.waybill_number.in_(waybill_candidates),
                     ShenzhenAirLoadingAlertTask.flight_date == today_str
                 ).first()
 
-                full_waybill = f"479-{export.waybill_number}" if not str(export.waybill_number or "").startswith("479-") else export.waybill_number
+                if existing_task:
+                    continue
                 
                 billing_flight = export.billing_flight
                 routing = export.routing
@@ -139,7 +144,8 @@ class ShenzhenAirLoadingAlertManager:
                     status="pending"
                 )
                 db.add(new_task)
-                added_waybills.add(full_waybill)
+                for w in waybill_candidates:
+                    added_waybills.add(w)
             
             db.commit()
 
@@ -192,8 +198,12 @@ class ShenzhenAirLoadingAlertManager:
         waybill_num = task.waybill_number
         flight_date = task.flight_date
 
+        clean_waybill = waybill_num.replace("479-", "") if waybill_num.startswith("479-") else waybill_num
+        full_waybill = f"479-{clean_waybill}"
+        waybill_candidates = list(set([waybill_num, clean_waybill, full_waybill]))
+
         export = db.query(ShenzhenAirBookingExport).filter(
-            ShenzhenAirBookingExport.waybill_number == waybill_num,
+            ShenzhenAirBookingExport.waybill_number.in_(waybill_candidates),
             ShenzhenAirBookingExport.flight_date == flight_date
         ).order_by(ShenzhenAirBookingExport.id.desc()).first()
 
