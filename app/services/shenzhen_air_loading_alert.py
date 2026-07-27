@@ -193,6 +193,28 @@ class ShenzhenAirLoadingAlertManager:
                 traceback.print_exc()
                 await asyncio.sleep(60)
 
+    def _format_planned_time(self, flight_date: str, raw_time: str) -> str:
+        """规整预飞时间，确保输出为 'YYYY-MM-DD HH:MM' 格式或带有冒号的规范时间"""
+        if not raw_time or str(raw_time).strip() in ["", "/", "None", "null"]:
+            return "/"
+        val = str(raw_time).strip()
+        if len(val) >= 16 and "-" in val and ":" in val:
+            return val[:16]
+        
+        clean_digits = val.replace(":", "").strip()
+        if len(clean_digits) == 4 and clean_digits.isdigit():
+            hh_mm = f"{clean_digits[:2]}:{clean_digits[2:4]}"
+            if flight_date and "-" in flight_date:
+                return f"{flight_date} {hh_mm}"
+            return hh_mm
+        
+        if ":" in val and len(val) <= 5:
+            if flight_date and "-" in flight_date:
+                return f"{flight_date} {val}"
+            return val
+            
+        return val
+
     async def _process_single_task(self, task: ShenzhenAirLoadingAlertTask, db):
         export = None
         if task.booking_export_id:
@@ -267,6 +289,8 @@ class ShenzhenAirLoadingAlertManager:
                     if c_flight != billing_flight:
                         has_inconsistent_flight = True
                     bt_clean = str(c.billing_time).strip().replace(":", "") if c.billing_time else ""
+                    if len(bt_clean) >= 4 and bt_clean.isdigit():
+                        bt_clean = f"{bt_clean[:2]}:{bt_clean[2:4]}"
                     flight_text = f"{c_flight} ({bt_clean})" if bt_clean else c_flight
                 
                 c_code = str(c.container).strip() if c.container else "/"
@@ -298,6 +322,8 @@ class ShenzhenAirLoadingAlertManager:
                 if cust and cust.company_name:
                     shipper_unit = cust.company_name
         
+        planned_time_display = self._format_planned_time(flight_date or task.flight_date, task.planned_time)
+
         lines = [
             "装机状态通知（深圳航空）",
             f"<font color=\"{'info' if alert_type == '装机正常' else 'warning'}\">{alert_type}</font>",
@@ -305,9 +331,9 @@ class ShenzhenAirLoadingAlertManager:
             f"客户名称：{shipper_unit}",
             f"运单号：{full_waybill}",
             f"开单航班/航程：{billing_flight} / {export.routing or '/'}",
-            f"预飞时间：{task.planned_time}",
+            f"预飞时间：{planned_time_display}",
             f"制单数据：{export_qty} / {int(export_wt)}",
-            f"过机数据：{sum_qty} / {int(sum_wt)} ({diff_qty} / {diff_wt})",
+            f"过机数据：{int(sum_qty)} / {int(sum_wt)} ({int(diff_qty)} / {int(diff_wt)})",
             "集装器 / 航班号："
         ]
         

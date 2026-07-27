@@ -277,6 +277,9 @@ class ShenzhenAirDepartureStatusAlertService:
             dest = routing.split("-")[1].strip()
             telephone = self._phone_dict.get(dest, "/")
             
+        rec_qty = int(self._safe_float(record.quantity))
+        rec_wt = int(self._safe_float(record.weight))
+
         msg = f"""出港状态通知（深圳航空）
 {status_text}
 
@@ -285,8 +288,8 @@ class ShenzhenAirDepartureStatusAlertService:
 开单航班/航程：{billing_flight} / {record.routing}
 实走航班：{actual_flight_display}
 实飞时间：{actual_time_text}
-制单数据：{record.quantity} / {record.weight}
-实走数据：{int(sum_qty)} / {int(sum_wt)} ({int(qty_diff_actual)} / {wt_diff_actual})
+制单数据：{rec_qty} / {rec_wt}
+实走数据：{int(sum_qty)} / {int(sum_wt)} ({int(qty_diff_actual)} / {int(wt_diff_actual)})
 收货人：{record.consignee}
 提货电话：{telephone}
 

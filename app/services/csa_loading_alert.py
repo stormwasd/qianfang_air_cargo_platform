@@ -211,7 +211,7 @@ class CsaLoadingAlertManager:
                 if appv.expected_takeoff and str(appv.expected_takeoff).strip():
                     exp_clean = str(appv.expected_takeoff).strip()
                     if len(exp_clean) >= 4:
-                        display_ready_time = exp_clean
+                        display_ready_time = self._format_planned_time(today_str, exp_clean)
                 
                 if display_ready_time == "/" and billing_flight and routing:
                     routing_clean = routing.replace(" ", "")
@@ -288,6 +288,28 @@ class CsaLoadingAlertManager:
         if val is None or str(val).strip() == "": return 0.0
         try: return float(str(val).strip())
         except ValueError: return 0.0
+
+    def _format_planned_time(self, flight_date: str, raw_time: str) -> str:
+        """规整预飞时间，确保输出为 'YYYY-MM-DD HH:MM' 格式或带有冒号的规范时间"""
+        if not raw_time or str(raw_time).strip() in ["", "/", "None", "null"]:
+            return "/"
+        val = str(raw_time).strip()
+        if len(val) >= 16 and "-" in val and ":" in val:
+            return val[:16]
+        
+        clean_digits = val.replace(":", "").strip()
+        if len(clean_digits) == 4 and clean_digits.isdigit():
+            hh_mm = f"{clean_digits[:2]}:{clean_digits[2:4]}"
+            if flight_date and "-" in flight_date:
+                return f"{flight_date} {hh_mm}"
+            return hh_mm
+        
+        if ":" in val and len(val) <= 5:
+            if flight_date and "-" in flight_date:
+                return f"{flight_date} {val}"
+            return val
+            
+        return val
 
     async def _process_single_task(self, task: CsaLoadingAlertTask, db: Session):
         approval_data_id = task.approval_data_id
@@ -371,6 +393,8 @@ class CsaLoadingAlertManager:
             
             if display_flight != "未配航班" and appv.planned_takeoff:
                 bt_clean = str(appv.planned_takeoff).strip().replace(":", "")
+                if len(bt_clean) >= 4 and bt_clean.isdigit():
+                    bt_clean = f"{bt_clean[:2]}:{bt_clean[2:4]}"
                 if bt_clean:
                     display_flight = f"{display_flight} ({bt_clean})"
                     
@@ -388,7 +412,7 @@ class CsaLoadingAlertManager:
         elif is_qty_short and (has_inconsistent_flight or has_empty_flight):
             alert_type = "疑似拉货预警 / 少货/取消货预警"
             
-        planned_time_display = task.planned_time.replace(" ", "  ")
+        planned_time_display = self._format_planned_time(flight_date or task.flight_date, task.planned_time)
 
         lines = [
             "装机状态通知（南方航空）",

@@ -341,7 +341,7 @@ class CsaDepartureStatusAlertService:
 客户名称：{customer_name}
 运单号：{waybill_num}
 开单航班/航程：{billing_flight} / {routing}
-实走航班/航程：{actual_flight_display}
+实走航班：{actual_flight_display}
 实飞时间：{actual_time_text}
 制单数据：{billing_data_display}
 实走数据：{actual_data_display}
