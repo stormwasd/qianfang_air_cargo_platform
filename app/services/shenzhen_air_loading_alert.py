@@ -289,8 +289,6 @@ class ShenzhenAirLoadingAlertManager:
                     if c_flight != billing_flight:
                         has_inconsistent_flight = True
                     bt_clean = str(c.billing_time).strip().replace(":", "") if c.billing_time else ""
-                    if len(bt_clean) >= 4 and bt_clean.isdigit():
-                        bt_clean = f"{bt_clean[:2]}:{bt_clean[2:4]}"
                     flight_text = f"{c_flight} ({bt_clean})" if bt_clean else c_flight
                 
                 c_code = str(c.container).strip() if c.container else "/"

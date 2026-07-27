@@ -393,8 +393,6 @@ class CsaLoadingAlertManager:
             
             if display_flight != "未配航班" and appv.planned_takeoff:
                 bt_clean = str(appv.planned_takeoff).strip().replace(":", "")
-                if len(bt_clean) >= 4 and bt_clean.isdigit():
-                    bt_clean = f"{bt_clean[:2]}:{bt_clean[2:4]}"
                 if bt_clean:
                     display_flight = f"{display_flight} ({bt_clean})"
                     
