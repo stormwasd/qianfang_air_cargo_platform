@@ -103,42 +103,41 @@ class ShenzhenAirDepartureAlertManager:
                     ShenzhenAirBillingTimeContainer.booking_export_id == export.id
                 ).all()
 
-                if not containers:
-                    continue
-
                 billing_time_str = None
-                for c in containers:
-                    if c.billing_time and str(c.billing_time).strip():
-                        billing_time_str = str(c.billing_time).strip()
-                        break
+                if containers:
+                    for c in containers:
+                        if c.billing_time and str(c.billing_time).strip():
+                            billing_time_str = str(c.billing_time).strip()
+                            break
                 
                 planned_dt = None
                 if billing_time_str:
                     bt_clean = billing_time_str.replace(":", "")
                     if len(bt_clean) >= 4:
-                        hour = int(bt_clean[:2])
-                        minute = int(bt_clean[2:4])
-                        planned_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
-                
-                if not planned_dt:
-                    actual_flight = export.actual_flight
-                    if not actual_flight:
-                        continue  
-
-                    ctrip_times = await ctrip_client.get_flight_times(
-                        flight_no=actual_flight,
-                        flight_date=today_str,
-                        routing=export.routing
-                    )
-                    if ctrip_times and ctrip_times.get("planned_time"):
                         try:
-                            planned_time_str = ctrip_times.get("planned_time")
-                            if len(planned_time_str) > 16:
-                                planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M:%S")
-                            else:
-                                planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M")
+                            hour = int(bt_clean[:2])
+                            minute = int(bt_clean[2:4])
+                            planned_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
                         except ValueError:
                             pass
+                
+                if not planned_dt:
+                    flight_no_to_query = export.billing_flight
+                    if flight_no_to_query and export.routing:
+                        ctrip_times = await ctrip_client.get_flight_times(
+                            flight_no=flight_no_to_query,
+                            flight_date=today_str,
+                            routing=export.routing
+                        )
+                        if ctrip_times and ctrip_times.get("planned_time"):
+                            try:
+                                planned_time_str = ctrip_times.get("planned_time")
+                                if len(planned_time_str) > 16:
+                                    planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M:%S")
+                                else:
+                                    planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M")
+                            except ValueError:
+                                pass
                 
                 if not planned_dt:
                     continue

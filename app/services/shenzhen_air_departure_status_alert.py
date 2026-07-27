@@ -136,16 +136,50 @@ class ShenzhenAirDepartureStatusAlertService:
             ShenzhenAirBillingTimeContainer.booking_export_id == record.id
         ).all()
 
+        # 条件 1：必须存在有效集装器记录
+        valid_containers = [
+            c for c in containers 
+            if c.container and str(c.container).strip() not in ("", "/")
+        ]
+        if not valid_containers:
+            return
+
+        # 条件 2：通过携程获取预飞时间 ready_time，必须满足 当前时间 >= 预飞时间 才触发
+        now = datetime.now()
+        ready_dt = None
+        planned_time_str = ""
+
+        if routing and "-" in routing and billing_flight:
+            flight_res = await ctrip_client.get_flight_times(billing_flight, flight_date, routing)
+            if flight_res:
+                if flight_res.get("planned_time"):
+                    planned_time_str = flight_res.get("planned_time")
+                if flight_res.get("ready_time"):
+                    ready_time_str = flight_res.get("ready_time")
+                    try:
+                        if len(ready_time_str) > 16:
+                            ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
+                        else:
+                            ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
+                    except ValueError:
+                        pass
+
+        if not ready_dt and containers and containers[0].billing_time:
+            bt_clean = str(containers[0].billing_time).strip().replace(":", "")
+            if len(bt_clean) >= 4:
+                try:
+                    hour = int(bt_clean[:2])
+                    minute = int(bt_clean[2:4])
+                    ready_dt = datetime.strptime(flight_date, "%Y-%m-%d").replace(hour=hour, minute=minute)
+                except ValueError:
+                    pass
+
+        # 触发判定：若无法解析预飞时间，或当前时间尚未达到预飞时间，则不触发通知
+        if not ready_dt or now < ready_dt:
+            return
+
         qty_diff = self._safe_float(record.quantity_difference)
         wt_diff = self._safe_float(record.weight_difference)
-        
-        planned_time_str = ""
-        if containers and containers[0].billing_time:
-            planned_time_str = containers[0].billing_time
-        elif routing and "-" in routing and billing_flight:
-            flight_res = await ctrip_client.get_flight_times(billing_flight, flight_date, routing)
-            if flight_res and flight_res.get("ready_time"):
-                planned_time_str = flight_res.get("ready_time")
         
         actual_flight_str = record.actual_flight or billing_flight
         parsed_actual_flights = [f.strip() for f in re.split(r'[,;]', actual_flight_str) if f.strip()]

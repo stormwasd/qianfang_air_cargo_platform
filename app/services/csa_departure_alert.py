@@ -23,30 +23,68 @@ def is_uu_booking(booking_no: str) -> bool:
     return "UU" in str(booking_no).upper()
 
 
-def extract_base_qty(qty_str: str) -> str:
+def extract_billing_qty_only(qty_str: str, default_pieces: str = "0", default_weight: str = "0") -> str:
     """
-    剥离体积和差异数据，例如：
-    "139 / 2530 / 15.15 (1 / -110 / -0.66)" -> "139 / 2530 (1 / -110)"
-    "10 / 87 / 0.52 (3 / 37 / 0.22)" -> "10 / 87 (3 / 37)"
+    提取制单数据（仅件数与重量），彻底剥离差额括号与体积：
+    例如："3 / 1483 / 8.88 (0 / 0 / 0)" -> "3 / 1483"
+    "139 / 2530 / 15.15 (1 / -110 / -0.66)" -> "139 / 2530"
     """
-    if not qty_str or str(qty_str).strip() == "":
+    if not qty_str or str(qty_str).strip() in ("", "/"):
+        try:
+            p = int(float(str(default_pieces).strip())) if default_pieces else 0
+            w = int(float(str(default_weight).strip())) if default_weight else 0
+            return f"{p} / {w}"
+        except (ValueError, TypeError):
+            return "/"
+    
+    qty_str = str(qty_str).strip()
+    if "(" in qty_str:
+        part1 = qty_str.split("(", 1)[0].strip()
+    else:
+        part1 = qty_str
+    
+    parts = [x.strip() for x in part1.split("/") if x.strip()]
+    if len(parts) >= 2:
+        try:
+            p_val = int(float(parts[0]))
+            w_val = int(float(parts[1]))
+            return f"{p_val} / {w_val}"
+        except ValueError:
+            return f"{parts[0]} / {parts[1]}"
+    elif len(parts) == 1:
+        return parts[0]
+    return "/"
+
+
+def extract_goods_qty(qty_str: str) -> str:
+    """
+    提取过机/货物数据，展示 件数 / 重量 (差额件数 / 差额重量)：
+    例如："3 / 1469 / 8.80 (0 / 14 / 0.08)" -> "3 / 1469 (0 / 14)"
+    "0 / 0 / 0 (35 / 2000 / 0)" -> "0 / 0 (35 / 2000)"
+    """
+    if not qty_str or str(qty_str).strip() in ("", "/"):
         return "/"
     
     qty_str = str(qty_str).strip()
-    
     if "(" in qty_str and qty_str.endswith(")"):
         part1, part2 = qty_str.split("(", 1)
         part2 = part2.rstrip(")")
         
         p1_parts = [x.strip() for x in part1.split("/")]
         if len(p1_parts) >= 2:
-            base_str = f"{p1_parts[0]} /{p1_parts[1]}"
+            try:
+                base_str = f"{int(float(p1_parts[0]))} / {int(float(p1_parts[1]))}"
+            except ValueError:
+                base_str = f"{p1_parts[0]} / {p1_parts[1]}"
         else:
             base_str = part1.strip()
             
         p2_parts = [x.strip() for x in part2.split("/")]
         if len(p2_parts) >= 2:
-            diff_str = f"{p2_parts[0]} / {p2_parts[1]}"
+            try:
+                diff_str = f"{int(float(p2_parts[0]))} / {int(float(p2_parts[1]))}"
+            except ValueError:
+                diff_str = f"{p2_parts[0]} / {p2_parts[1]}"
         else:
             diff_str = part2.strip()
             
@@ -54,7 +92,10 @@ def extract_base_qty(qty_str: str) -> str:
     else:
         parts = [x.strip() for x in qty_str.split("/")]
         if len(parts) >= 2:
-            return f"{parts[0]} /{parts[1]}"
+            try:
+                return f"{int(float(parts[0]))} / {int(float(parts[1]))}"
+            except ValueError:
+                return f"{parts[0]} / {parts[1]}"
         return qty_str
 
 
@@ -296,7 +337,7 @@ class CsaDepartureAlertManager:
         booking_pieces = _safe_float(appv_record.booking_pieces)
         booking_weight = _safe_float(appv_record.booking_weight)
         
-        billing_str = extract_base_qty(appv_record.billing_qty)
+        billing_str = extract_billing_qty_only(appv_record.billing_qty, appv_record.booking_pieces, appv_record.booking_weight)
 
         valid_containers = []
         sum_qty = 0.0
@@ -320,7 +361,7 @@ class CsaDepartureAlertManager:
             machine_data_str = "/"
             containers_str = "/"
         else:
-            goods_str = extract_base_qty(appv_record.goods_qty)
+            goods_str = extract_goods_qty(appv_record.goods_qty)
             machine_data_str = goods_str if goods_str != "/" else "/"
             containers_str = "\n".join(container_details)
 

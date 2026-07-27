@@ -78,14 +78,47 @@ class ShenzhenAirLoadingAlertManager:
                     ShenzhenAirLoadingAlertTask.flight_date == today_str
                 ).first()
 
-                if existing_task:
-                    continue
+                full_waybill = f"479-{export.waybill_number}" if not str(export.waybill_number or "").startswith("479-") else export.waybill_number
                 
                 billing_flight = export.billing_flight
                 routing = export.routing
-                ready_dt = None
-                display_planned_time = ""
 
+                # 1. 确定计飞时间（billing_dt），用于计算 100 分钟前触发点
+                billing_dt = None
+                container = db.query(ShenzhenAirBillingTimeContainer).filter(
+                    ShenzhenAirBillingTimeContainer.booking_export_id == export.id
+                ).first()
+                if container and container.billing_time and str(container.billing_time).strip():
+                    bt_clean = str(container.billing_time).strip().replace(":", "")
+                    if len(bt_clean) >= 4:
+                        try:
+                            hour = int(bt_clean[:2])
+                            minute = int(bt_clean[2:4])
+                            billing_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
+                        except ValueError:
+                            pass
+                
+                if not billing_dt and billing_flight and routing:
+                    ctrip_times = await ctrip_client.get_flight_times(
+                        flight_no=billing_flight,
+                        flight_date=today_str,
+                        routing=routing
+                    )
+                    if ctrip_times and ctrip_times.get("planned_time"):
+                        try:
+                            planned_time_str = ctrip_times.get("planned_time")
+                            if len(planned_time_str) > 16:
+                                billing_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M:%S")
+                            else:
+                                billing_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M")
+                        except ValueError:
+                            pass
+                
+                if not billing_dt:
+                    continue
+
+                # 2. 获取预飞时间（ready_time），仅用于模板展示
+                display_ready_time = "/"
                 if billing_flight and routing:
                     ctrip_times = await ctrip_client.get_flight_times(
                         flight_no=billing_flight,
@@ -93,46 +126,20 @@ class ShenzhenAirLoadingAlertManager:
                         routing=routing
                     )
                     if ctrip_times and ctrip_times.get("ready_time"):
-                        ready_time_str = ctrip_times.get("ready_time")
-                        display_planned_time = ready_time_str
-                        try:
-                            if len(ready_time_str) > 16:
-                                ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
-                            else:
-                                ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
-                        except ValueError:
-                            pass
+                        ready_time_str = str(ctrip_times.get("ready_time")).strip()
+                        if ready_time_str:
+                            display_ready_time = ready_time_str[:16]
 
-                if not ready_dt:
-                    container = db.query(ShenzhenAirBillingTimeContainer).filter(
-                        ShenzhenAirBillingTimeContainer.booking_export_id == export.id
-                    ).first()
-                    if container and container.billing_time and str(container.billing_time).strip():
-                        bt_clean = str(container.billing_time).strip().replace(":", "")
-                        if len(bt_clean) >= 4:
-                            try:
-                                hour = int(bt_clean[:2])
-                                minute = int(bt_clean[2:4])
-                                ready_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
-                            except ValueError:
-                                pass
-
-                if not display_planned_time:
-                    display_planned_time = ready_dt.strftime("%Y-%m-%d %H:%M") if ready_dt else "未知预飞时间"
-                
-                if not ready_dt:
-                    continue
-
-                trigger_dt = ready_dt - timedelta(minutes=100)
+                trigger_dt = billing_dt - timedelta(minutes=100)
                 new_task = ShenzhenAirLoadingAlertTask(
-                    waybill_number=waybill_num,
+                    waybill_number=full_waybill,
                     flight_date=today_str,
-                    planned_time=display_planned_time,  
+                    planned_time=display_ready_time,  # 模板展示【预飞时间】
                     trigger_time=trigger_dt,
                     status="pending"
                 )
                 db.add(new_task)
-                added_waybills.add(waybill_num)
+                added_waybills.add(full_waybill)
             
             db.commit()
 

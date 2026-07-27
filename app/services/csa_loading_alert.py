@@ -24,30 +24,68 @@ def is_uu_booking(booking_no: str) -> bool:
     return "UU" in str(booking_no).upper()
 
 
-def extract_base_qty(qty_str: str) -> str:
+def extract_billing_qty_only(qty_str: str, default_pieces: str = "0", default_weight: str = "0") -> str:
     """
-    剥离体积和差异数据，例如：
-    "139 / 2530 / 15.15 (1 / -110 / -0.66)" -> "139 / 2530 (1 / -110)"
-    "10 / 87 / 0.52 (3 / 37 / 0.22)" -> "10 / 87 (3 / 37)"
+    提取制单数据（仅件数与重量），彻底剥离差额括号与体积：
+    例如："3 / 1483 / 8.88 (0 / 0 / 0)" -> "3 / 1483"
+    "139 / 2530 / 15.15 (1 / -110 / -0.66)" -> "139 / 2530"
     """
-    if not qty_str or str(qty_str).strip() == "":
+    if not qty_str or str(qty_str).strip() in ("", "/"):
+        try:
+            p = int(float(str(default_pieces).strip())) if default_pieces else 0
+            w = int(float(str(default_weight).strip())) if default_weight else 0
+            return f"{p} / {w}"
+        except (ValueError, TypeError):
+            return "/"
+    
+    qty_str = str(qty_str).strip()
+    if "(" in qty_str:
+        part1 = qty_str.split("(", 1)[0].strip()
+    else:
+        part1 = qty_str
+    
+    parts = [x.strip() for x in part1.split("/") if x.strip()]
+    if len(parts) >= 2:
+        try:
+            p_val = int(float(parts[0]))
+            w_val = int(float(parts[1]))
+            return f"{p_val} / {w_val}"
+        except ValueError:
+            return f"{parts[0]} / {parts[1]}"
+    elif len(parts) == 1:
+        return parts[0]
+    return "/"
+
+
+def extract_goods_qty(qty_str: str) -> str:
+    """
+    提取过机/货物数据，展示 件数 / 重量 (差额件数 / 差额重量)：
+    例如："3 / 1469 / 8.80 (0 / 14 / 0.08)" -> "3 / 1469 (0 / 14)"
+    "0 / 0 / 0 (35 / 2000 / 0)" -> "0 / 0 (35 / 2000)"
+    """
+    if not qty_str or str(qty_str).strip() in ("", "/"):
         return "/"
     
     qty_str = str(qty_str).strip()
-    
     if "(" in qty_str and qty_str.endswith(")"):
         part1, part2 = qty_str.split("(", 1)
         part2 = part2.rstrip(")")
         
         p1_parts = [x.strip() for x in part1.split("/")]
         if len(p1_parts) >= 2:
-            base_str = f"{p1_parts[0]} /{p1_parts[1]}"
+            try:
+                base_str = f"{int(float(p1_parts[0]))} / {int(float(p1_parts[1]))}"
+            except ValueError:
+                base_str = f"{p1_parts[0]} / {p1_parts[1]}"
         else:
             base_str = part1.strip()
             
         p2_parts = [x.strip() for x in part2.split("/")]
         if len(p2_parts) >= 2:
-            diff_str = f"{p2_parts[0]} / {p2_parts[1]}"
+            try:
+                diff_str = f"{int(float(p2_parts[0]))} / {int(float(p2_parts[1]))}"
+            except ValueError:
+                diff_str = f"{p2_parts[0]} / {p2_parts[1]}"
         else:
             diff_str = part2.strip()
             
@@ -55,7 +93,10 @@ def extract_base_qty(qty_str: str) -> str:
     else:
         parts = [x.strip() for x in qty_str.split("/")]
         if len(parts) >= 2:
-            return f"{parts[0]} /{parts[1]}"
+            try:
+                return f"{int(float(parts[0]))} / {int(float(parts[1]))}"
+            except ValueError:
+                return f"{parts[0]} / {parts[1]}"
         return qty_str
 
 
@@ -134,49 +175,62 @@ class CsaLoadingAlertManager:
                 billing_flight = flight_parts[0] if len(flight_parts) > 0 else ""
                 routing = flight_parts[2] if len(flight_parts) > 2 else ""
                 
-                ready_dt = None
-                display_planned_time = ""
-
+                planned_dt = None
                 if appv.planned_takeoff and str(appv.planned_takeoff).strip():
                     bt_clean = str(appv.planned_takeoff).strip().replace(":", "")
                     if len(bt_clean) >= 4:
                         try:
                             hour = int(bt_clean[:2])
                             minute = int(bt_clean[2:4])
-                            ready_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
+                            planned_dt = datetime.strptime(today_str, "%Y-%m-%d").replace(hour=hour, minute=minute)
+                        except ValueError:
+                            pass
+                
+                if not planned_dt and billing_flight and routing:
+                    routing_clean = routing.replace(" ", "")
+                    ctrip_times = await ctrip_client.get_flight_times(
+                        flight_no=billing_flight,
+                        flight_date=today_str,
+                        routing=routing_clean
+                    )
+                    if ctrip_times and ctrip_times.get("planned_time"):
+                        try:
+                            planned_time_str = ctrip_times.get("planned_time")
+                            if len(planned_time_str) > 16:
+                                planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M:%S")
+                            else:
+                                planned_dt = datetime.strptime(planned_time_str, "%Y-%m-%d %H:%M")
                         except ValueError:
                             pass
 
-                if billing_flight and routing:
-                    routing_clean = routing.replace(" ", "") 
+                if not planned_dt:
+                    continue
+
+                # 展示用的预飞时间 (expected_takeoff -> 携程 ready_time -> "/")
+                display_ready_time = "/"
+                if appv.expected_takeoff and str(appv.expected_takeoff).strip():
+                    exp_clean = str(appv.expected_takeoff).strip()
+                    if len(exp_clean) >= 4:
+                        display_ready_time = exp_clean
+                
+                if display_ready_time == "/" and billing_flight and routing:
+                    routing_clean = routing.replace(" ", "")
                     ctrip_times = await ctrip_client.get_flight_times(
                         flight_no=billing_flight,
                         flight_date=today_str,
                         routing=routing_clean
                     )
                     if ctrip_times and ctrip_times.get("ready_time"):
-                        ready_time_str = ctrip_times.get("ready_time")
-                        display_planned_time = ready_time_str
-                        try:
-                            if len(ready_time_str) > 16:
-                                ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
-                            else:
-                                ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
-                        except ValueError:
-                            pass
+                        ready_time_str = str(ctrip_times.get("ready_time")).strip()
+                        if ready_time_str:
+                            display_ready_time = ready_time_str[:16]
 
-                if not display_planned_time:
-                    display_planned_time = ready_dt.strftime("%Y-%m-%d %H:%M") if ready_dt else "未知预飞时间"
-
-                if not ready_dt:
-                    continue
-
-                trigger_dt = ready_dt - timedelta(minutes=100)
+                trigger_dt = planned_dt - timedelta(minutes=100)
                 new_task = CsaLoadingAlertTask(
                     approval_data_id=appv_id,
                     waybill_number=waybill_num,
                     flight_date=today_str,
-                    planned_time=display_planned_time,
+                    planned_time=display_ready_time,
                     trigger_time=trigger_dt,
                     status="pending"
                 )
@@ -226,7 +280,7 @@ class CsaLoadingAlertManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"南航装机预警执行任务异常: {e}")
+                print(f"南航装机预警 _exec_loop 异常: {e}")
                 traceback.print_exc()
                 await asyncio.sleep(60)
 
@@ -266,8 +320,8 @@ class CsaLoadingAlertManager:
         export_qty = self._safe_float(appv.booking_pieces)
         export_wt = self._safe_float(appv.booking_weight)
         
-        billing_str = extract_base_qty(appv.billing_qty)
-        goods_str = extract_base_qty(appv.goods_qty)
+        billing_str = extract_billing_qty_only(appv.billing_qty, appv.booking_pieces, appv.booking_weight)
+        goods_str = extract_goods_qty(appv.goods_qty)
         machine_data_str = goods_str if goods_str != "/" else "/"
 
         lalamoves = db.query(CsaLalamoveInformation).filter(

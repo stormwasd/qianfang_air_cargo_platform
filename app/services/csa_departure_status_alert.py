@@ -13,6 +13,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.utils.ctrip_client import ctrip_client
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
+from app.models.csa_departure_tracking import CsaLalamoveInformation
 from app.models.csa_departure_manual_data import CsaDepartureManualData
 from app.models.customer import Customer
 from app.models.waybill import Waybill
@@ -119,23 +120,28 @@ class CsaDepartureStatusAlertService:
         
     def _extract_billing_qty(self, qty_str: str):
         if not qty_str: return "0 / 0"
-        match = re.search(r"([\d\.]+)\s*/\s*([\d\.]+)", str(qty_str))
-        if match:
-            return f"{match.group(1)} / {match.group(2)}"
+        if "(" in str(qty_str):
+            qty_str = str(qty_str).split("(", 1)[0].strip()
+        parts = [x.strip() for x in str(qty_str).split("/") if x.strip()]
+        if len(parts) >= 2:
+            try:
+                return f"{int(float(parts[0]))} / {int(float(parts[1]))}"
+            except ValueError:
+                return f"{parts[0]} / {parts[1]}"
         return "0 / 0"
 
     def _extract_actual_qty(self, qty_str: str):
         if not qty_str: return "0 / 0 (0 / 0)", 0.0, 0.0
         match = re.search(r"([\d\.]+)\s*/\s*([\d\.]+).*?\(([\-\d\.]+)\s*/\s*([\-\d\.]+)", str(qty_str))
         if match:
-            display = f"{match.group(1)} / {match.group(2)} ({match.group(3)} / {match.group(4)})"
+            display = f"{int(float(match.group(1)))} / {int(float(match.group(2)))} ({int(float(match.group(3)))} / {int(float(match.group(4)))})"
             diff_p = float(match.group(3))
             diff_w = float(match.group(4))
             return display, diff_p, diff_w
         
         match = re.search(r"([\d\.]+)\s*/\s*([\d\.]+)", str(qty_str))
         if match:
-            return f"{match.group(1)} / {match.group(2)} (0 / 0)", 0.0, 0.0
+            return f"{int(float(match.group(1)))} / {int(float(match.group(2)))} (0 / 0)", 0.0, 0.0
         return "0 / 0 (0 / 0)", 0.0, 0.0
 
     async def _scan_and_alert(self) -> None:
@@ -166,8 +172,65 @@ class CsaDepartureStatusAlertService:
         waybill_num = record.waybill_number
         if not waybill_num or is_uu_booking(record.booking_no):
             return
-            
+
+        # 条件 1：必须在 csa_lalamove_information 表中有记录且包含集装器
+        lalamoves = db.query(CsaLalamoveInformation).filter(
+            CsaLalamoveInformation.approval_data_id == record.id
+        ).all()
+        
+        valid_containers = [
+            l for l in lalamoves 
+            if (l.capacity_lalamove and str(l.capacity_lalamove).strip() not in ("", "/")) or
+               (l.container_type and str(l.container_type).strip() not in ("", "/"))
+        ]
+        if not valid_containers:
+            return
+
         billing_flight, flight_date, routing = self._parse_flight_info(record.flight_info)
+
+        # 条件 2：通过预计/预飞时间判定，当前时间 >= 预飞时间 才触发
+        now = datetime.now()
+        ready_dt = None
+        planned_time_str = ""
+
+        if record.expected_takeoff and str(record.expected_takeoff).strip():
+            exp_clean = str(record.expected_takeoff).strip().replace(":", "")
+            if len(exp_clean) >= 4 and flight_date:
+                try:
+                    hour = int(exp_clean[:2])
+                    minute = int(exp_clean[2:4])
+                    ready_dt = datetime.strptime(flight_date, "%Y-%m-%d").replace(hour=hour, minute=minute)
+                except ValueError:
+                    pass
+
+        if not ready_dt and routing and "-" in routing and billing_flight and flight_date:
+            flight_res = await ctrip_client.get_flight_times(billing_flight, flight_date, routing)
+            if flight_res:
+                if flight_res.get("planned_time"):
+                    planned_time_str = flight_res.get("planned_time")
+                if flight_res.get("ready_time"):
+                    ready_time_str = flight_res.get("ready_time")
+                    try:
+                        if len(ready_time_str) > 16:
+                            ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M:%S")
+                        else:
+                            ready_dt = datetime.strptime(ready_time_str, "%Y-%m-%d %H:%M")
+                    except ValueError:
+                        pass
+
+        if not ready_dt and record.planned_takeoff and str(record.planned_takeoff).strip():
+            bt_clean = str(record.planned_takeoff).strip().replace(":", "")
+            if len(bt_clean) >= 4 and flight_date:
+                try:
+                    hour = int(bt_clean[:2])
+                    minute = int(bt_clean[2:4])
+                    ready_dt = datetime.strptime(flight_date, "%Y-%m-%d").replace(hour=hour, minute=minute)
+                except ValueError:
+                    pass
+
+        # 触发判定：若无法获取预飞时间或当前时间尚未到达预飞时间，则阻断
+        if not ready_dt or now < ready_dt:
+            return
         
         billing_data_display = self._extract_billing_qty(record.billing_qty)
         actual_data_display, diff_pieces, diff_weight = self._extract_actual_qty(record.actual_qty)
