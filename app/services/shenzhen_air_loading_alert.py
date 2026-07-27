@@ -201,7 +201,7 @@ class ShenzhenAirLoadingAlertManager:
             ).first()
 
         if not export:
-            waybill_num = task.waybill_number
+            waybill_num = task.waybill_number or ""
             flight_date = task.flight_date
             clean_waybill = waybill_num.replace("479-", "") if waybill_num.startswith("479-") else waybill_num
             full_waybill = f"479-{clean_waybill}"
@@ -215,6 +215,10 @@ class ShenzhenAirLoadingAlertManager:
         if not export:
             task.status = "ignored"
             return
+
+        raw_waybill = export.waybill_number or task.waybill_number or ""
+        clean_waybill = raw_waybill.replace("479-", "") if raw_waybill.startswith("479-") else raw_waybill
+        full_waybill = f"479-{clean_waybill}" if clean_waybill else "/"
         
         export_qty = 0
         export_wt = 0.0
@@ -299,7 +303,7 @@ class ShenzhenAirLoadingAlertManager:
             f"<font color=\"{'info' if alert_type == '装机正常' else 'warning'}\">{alert_type}</font>",
             "",
             f"客户名称：{shipper_unit}",
-            f"运单号：{waybill_num}",
+            f"运单号：{full_waybill}",
             f"开单航班/航程：{billing_flight} / {export.routing or '/'}",
             f"预飞时间：{task.planned_time}",
             f"制单数据：{export_qty} / {int(export_wt)}",
