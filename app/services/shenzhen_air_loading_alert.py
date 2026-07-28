@@ -216,6 +216,7 @@ class ShenzhenAirLoadingAlertManager:
         return val
 
     async def _process_single_task(self, task: ShenzhenAirLoadingAlertTask, db):
+        flight_date = task.flight_date or ""
         export = None
         if task.booking_export_id:
             export = db.query(ShenzhenAirBookingExport).filter(
@@ -224,7 +225,6 @@ class ShenzhenAirLoadingAlertManager:
 
         if not export:
             waybill_num = task.waybill_number or ""
-            flight_date = task.flight_date
             clean_waybill = waybill_num.replace("479-", "") if waybill_num.startswith("479-") else waybill_num
             full_waybill = f"479-{clean_waybill}"
             waybill_candidates = list(set([waybill_num, clean_waybill, full_waybill]))
