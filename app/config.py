@@ -39,6 +39,7 @@ class Settings(BaseSettings):
         "customer": "客户管理",
         "bill": "单号管理",
         "robot": "机器人管理",
+        "customer_service": "客服接单台",
         "admin": "管理员"
     }
     

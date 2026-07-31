@@ -1,0 +1,52 @@
+-- 创建客服接单台-委托信息登记表 (系统唯一记录)
+CREATE TABLE IF NOT EXISTS `consignment_registrations` (
+    `id` bigint(20) NOT NULL COMMENT '登记表记录ID',
+    `create_time` datetime DEFAULT NULL COMMENT '制单时间',
+    `internal_doc_id` varchar(100) DEFAULT NULL COMMENT '内部单据ID',
+    `warehouse_entry_date` date DEFAULT NULL COMMENT '进仓日期',
+    `customer_name` varchar(100) DEFAULT NULL COMMENT '客户名称',
+    `origin_destination` varchar(100) DEFAULT NULL COMMENT '始发站-目的站',
+    `customs_declaration` varchar(50) DEFAULT NULL COMMENT '报关',
+    `bill_of_lading` varchar(100) DEFAULT NULL COMMENT '提单',
+    `flight_date` date DEFAULT NULL COMMENT '航班日期',
+    `flight_no` varchar(50) DEFAULT NULL COMMENT '航班号',
+    `flight_doc_no` varchar(100) DEFAULT NULL COMMENT '航班单号',
+    `pieces` int(11) DEFAULT NULL COMMENT '件数',
+    `actual_weight` decimal(10,2) DEFAULT NULL COMMENT '实际重量',
+    `chargeable_weight` decimal(10,2) DEFAULT NULL COMMENT '计费重量',
+    `volume` decimal(10,3) DEFAULT NULL COMMENT '体积',
+    `first_leg_weight` decimal(10,2) DEFAULT NULL COMMENT '一程重量',
+    `agent` varchar(100) DEFAULT NULL COMMENT '代理',
+    `remark` text DEFAULT NULL COMMENT '备注',
+    `created_at` datetime NOT NULL COMMENT '创建时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='委托信息登记表（系统唯一记录）';
+
+-- 创建客服接单台-委托信息表 (委托信息列表)
+CREATE TABLE IF NOT EXISTS `consignment_infos` (
+    `id` bigint(20) NOT NULL COMMENT '委托信息ID',
+    `create_time` datetime DEFAULT NULL COMMENT '制单时间',
+    `internal_doc_id` varchar(100) DEFAULT NULL COMMENT '内部单据ID',
+    `warehouse_entry_date` date DEFAULT NULL COMMENT '进仓日期',
+    `customer_name` varchar(100) DEFAULT NULL COMMENT '客户名称',
+    `origin_destination` varchar(100) DEFAULT NULL COMMENT '始发站-目的站',
+    `customs_declaration` varchar(50) DEFAULT NULL COMMENT '报关',
+    `bill_of_lading` varchar(100) DEFAULT NULL COMMENT '提单',
+    `flight_date` date DEFAULT NULL COMMENT '航班日期',
+    `flight_no` varchar(50) DEFAULT NULL COMMENT '航班号',
+    `flight_doc_no` varchar(100) DEFAULT NULL COMMENT '航班单号',
+    `pieces` int(11) DEFAULT NULL COMMENT '件数',
+    `actual_weight` decimal(10,2) DEFAULT NULL COMMENT '实际重量',
+    `chargeable_weight` decimal(10,2) DEFAULT NULL COMMENT '计费重量',
+    `volume` decimal(10,3) DEFAULT NULL COMMENT '体积',
+    `first_leg_weight` decimal(10,2) DEFAULT NULL COMMENT '一程重量',
+    `agent` varchar(100) DEFAULT NULL COMMENT '代理',
+    `remark` text DEFAULT NULL COMMENT '备注',
+    `creator_id` bigint(20) DEFAULT NULL COMMENT '创建者ID',
+    `created_at` datetime NOT NULL COMMENT '创建时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_create_time` (`create_time`),
+    KEY `idx_customer_name` (`customer_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='委托信息表';
