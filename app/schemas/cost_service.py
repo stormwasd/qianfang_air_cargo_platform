@@ -1,13 +1,16 @@
 """
-费用登记台 Pydantic Schemas
+费用登记台 Pydantic Schemas（层级化/结构化设计，方便前端分类渲染与提交）
 """
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
-class CostRegistrationSave(BaseModel):
-    """保存/编辑 费用信息登记 数据结构"""
-    # (1) 货主委托信息
+# ============================================================================
+# 1. 业务层级子模型定义
+# ============================================================================
+
+class ConsignorInfo(BaseModel):
+    """(1) 货主委托信息"""
     create_time: Optional[str] = Field(None, description="制单时间 (YYYY-MM-DD HH:MM:SS)")
     internal_doc_id: Optional[str] = Field(None, description="内部单据ID")
     warehouse_entry_date: Optional[str] = Field(None, description="进仓日期 (YYYY-MM-DD)")
@@ -25,121 +28,157 @@ class CostRegistrationSave(BaseModel):
     first_leg_weight: Optional[float] = Field(None, description="一程重量")
     agent: Optional[str] = Field(None, description="代理")
     remark: Optional[str] = Field(None, description="备注")
-    
-    # (2) 应收款项
+
+
+class ReceivablesInfo(BaseModel):
+    """(2) 应收款项"""
     unit_price: Optional[float] = Field(None, description="单价")
-    receivable_freight: Optional[float] = Field(None, description="运费")
-    receivable_lading_info_fee: Optional[float] = Field(None, description="提单费/信息录入费")
-    receivable_split_offset_telex_fee: Optional[float] = Field(None, description="分单费/抵账费/电报费")
-    receivable_customs_fee: Optional[float] = Field(None, description="报关费")
-    receivable_continuation_sheet_fee: Optional[float] = Field(None, description="续页费")
-    receivable_customs_inspection_fee: Optional[float] = Field(None, description="海关查验费")
-    receivable_magnetic_security_fee: Optional[float] = Field(None, description="磁检费/安检费")
-    receivable_tc_express_fee: Optional[float] = Field(None, description="TC操作费/快件中心过站费")
-    receivable_warehouse_ground_fee: Optional[float] = Field(None, description="前置仓/国际货站地面费")
-    receivable_doc_make_fee: Optional[float] = Field(None, description="制单费")
-    receivable_doc_split_fee: Optional[float] = Field(None, description="制单分单费")
-    receivable_skid_fee: Optional[float] = Field(None, description="垫板费")
-    receivable_pallet_packing_fee: Optional[float] = Field(None, description="打板/装箱费")
-    receivable_probe_fee: Optional[float] = Field(None, description="探板费")
-    receivable_consumables_fee: Optional[float] = Field(None, description="耗材费")
-    receivable_first_leg_fee: Optional[float] = Field(None, description="一程费用")
-    receivable_total: Optional[float] = Field(None, description="应收合计")
-    receivable_agent: Optional[str] = Field(None, description="代理")
-    
-    # (3) 应付款项 - [1] 国际空运信息
-    pay_intl_air_subtotal: Optional[float] = Field(None, description="国际空运-应付小计")
-    pay_intl_air_date: Optional[str] = Field(None, description="国际空运-托运日期 (YYYY-MM-DD)")
-    pay_intl_air_outsource_unit: Optional[str] = Field(None, description="国际空运-外发单位")
-    pay_intl_air_origin: Optional[str] = Field(None, description="国际空运-始发站")
-    pay_intl_air_destination: Optional[str] = Field(None, description="国际空运-到达站")
-    pay_intl_air_airline: Optional[str] = Field(None, description="国际空运-航空公司")
-    pay_intl_air_flight_doc_no: Optional[str] = Field(None, description="国际空运-航班单号/航空单号")
-    pay_intl_air_flight_no: Optional[str] = Field(None, description="国际空运-航班号")
-    pay_intl_air_flight_date: Optional[str] = Field(None, description="国际空运-航班日期 (YYYY-MM-DD)")
-    pay_intl_air_pieces: Optional[int] = Field(None, description="国际空运-件数")
-    pay_intl_air_weight: Optional[float] = Field(None, description="国际空运-重量")
-    pay_intl_air_volume: Optional[float] = Field(None, description="国际空运-体积")
-    pay_intl_air_chargeable_weight: Optional[float] = Field(None, description="国际空运-计费重量")
-    pay_intl_air_rate: Optional[float] = Field(None, description="国际空运-费率")
-    pay_intl_air_freight: Optional[float] = Field(None, description="国际空运-运费")
-    pay_intl_air_lading_fee: Optional[float] = Field(None, description="国际空运-提单费")
-    pay_intl_air_split_fee: Optional[float] = Field(None, description="国际空运-分单")
-    pay_intl_air_borrow_magnetic_fuel_pickup_fee: Optional[float] = Field(None, description="国际空运-借单费/磁检费/燃油费/国内提货费")
-    pay_intl_air_tc_network_disposal_fee: Optional[float] = Field(None, description="国际空运-TC费/入网费/国际处置费")
-    pay_intl_air_customs_fee: Optional[float] = Field(None, description="国际空运-报关费")
-    pay_intl_air_continuation_sheet_fee: Optional[float] = Field(None, description="国际空运-续页费")
-    pay_intl_air_consumables_fee: Optional[float] = Field(None, description="国际空运-耗材费")
-    pay_intl_air_front_warehouse: Optional[float] = Field(None, description="国际空运-前置仓")
-    pay_intl_air_other_fee: Optional[float] = Field(None, description="国际空运-其他费用")
-    pay_intl_air_remark: Optional[str] = Field(None, description="国际空运-备注")
-    
-    # (3) 应付款项 - [2] 汽运信息
-    pay_trucking_subtotal: Optional[float] = Field(None, description="汽运-应付小计")
-    pay_trucking_date: Optional[str] = Field(None, description="汽运-托运日期 (YYYY-MM-DD)")
-    pay_trucking_outsource_unit: Optional[str] = Field(None, description="汽运-外发单位")
-    pay_trucking_pieces: Optional[int] = Field(None, description="汽运-件数")
-    pay_trucking_weight: Optional[float] = Field(None, description="汽运-重量")
-    pay_trucking_volume: Optional[float] = Field(None, description="汽运-体积")
-    pay_trucking_unit_price: Optional[float] = Field(None, description="汽运-单价")
-    pay_trucking_freight: Optional[float] = Field(None, description="汽运-运费")
-    pay_trucking_doc_fee: Optional[float] = Field(None, description="汽运-制单费")
-    pay_trucking_other_fee: Optional[float] = Field(None, description="汽运-其他费用")
-    pay_trucking_remark: Optional[str] = Field(None, description="汽运-备注")
-    
-    # (3) 应付款项 - [3] 国内空运信息
-    pay_dom_air_subtotal: Optional[float] = Field(None, description="国内空运-应付小计")
-    pay_dom_air_date: Optional[str] = Field(None, description="国内空运-托运日期 (YYYY-MM-DD)")
-    pay_dom_air_outsource_unit: Optional[str] = Field(None, description="国内空运-外发单位")
-    pay_dom_air_origin: Optional[str] = Field(None, description="国内空运-始发站")
-    pay_dom_air_destination: Optional[str] = Field(None, description="国内空运-到达站")
-    pay_dom_air_airline: Optional[str] = Field(None, description="国内空运-航空公司")
-    pay_dom_air_airline_unit: Optional[str] = Field(None, description="国内空运-航空单位")
-    pay_dom_air_flight_doc_no: Optional[str] = Field(None, description="国内空运-航空单号")
-    pay_dom_air_flight_no: Optional[str] = Field(None, description="国内空运-航班号")
-    pay_dom_air_flight_date: Optional[str] = Field(None, description="国内空运-航班日期 (YYYY-MM-DD)")
-    pay_dom_air_pieces: Optional[int] = Field(None, description="国内空运-件数")
-    pay_dom_air_weight: Optional[float] = Field(None, description="国内空运-重量")
-    pay_dom_air_chargeable_weight: Optional[float] = Field(None, description="国内空运-计费重量")
-    pay_dom_air_rate: Optional[float] = Field(None, description="国内空运-费率")
-    pay_dom_air_freight: Optional[float] = Field(None, description="国内空运-运费")
-    pay_dom_air_other_fee: Optional[float] = Field(None, description="国内空运-其他费用")
-    pay_dom_air_remark: Optional[str] = Field(None, description="国内空运-备注")
-    
-    # (3) 应付款项 - [4] 报关信息
-    pay_customs_subtotal: Optional[float] = Field(None, description="报关-应付小计")
-    pay_customs_date: Optional[str] = Field(None, description="报关-报关日期 (YYYY-MM-DD)")
-    pay_customs_agent: Optional[str] = Field(None, description="报关-报关代理")
-    pay_customs_fee: Optional[float] = Field(None, description="报关-报关费")
-    pay_customs_continuation_sheet_fee: Optional[float] = Field(None, description="报关-续页费")
-    pay_customs_inspection_delete_fee: Optional[float] = Field(None, description="报关-查验费/删单费")
-    pay_customs_rebate: Optional[float] = Field(None, description="报关-回扣栏")
-    pay_customs_other_fee: Optional[float] = Field(None, description="报关-其他费用")
-    pay_customs_remark: Optional[str] = Field(None, description="报关-备注")
-    
-    # (3) 应付款项 - [5] 地面操作信息
-    pay_ground_subtotal: Optional[float] = Field(None, description="地面操作-应付小计")
-    pay_ground_date: Optional[str] = Field(None, description="地面操作-托运日期 (YYYY-MM-DD)")
-    pay_ground_outsource_unit: Optional[str] = Field(None, description="地面操作-外发单位")
-    pay_ground_chargeable_weight: Optional[float] = Field(None, description="地面操作-计费重量")
-    pay_ground_rate: Optional[float] = Field(None, description="地面操作-费率")
-    pay_ground_freight: Optional[float] = Field(None, description="地面操作-运费")
-    pay_ground_lading_express_fee: Optional[float] = Field(None, description="地面操作-提单费/快件处置费")
-    pay_ground_security_customs_fee: Optional[float] = Field(None, description="地面操作-安检费/报关费")
-    pay_ground_pallet_exit_fee: Optional[float] = Field(None, description="地面操作-打板费/退场费")
-    pay_ground_other_fee: Optional[float] = Field(None, description="地面操作-其他费用")
-    pay_ground_remark: Optional[str] = Field(None, description="地面操作-备注")
-    
-    # (3) 应付款项 - 合计
+    freight: Optional[float] = Field(None, description="运费")
+    lading_info_fee: Optional[float] = Field(None, description="提单费/信息录入费")
+    split_offset_telex_fee: Optional[float] = Field(None, description="分单费/抵账费/电报费")
+    customs_fee: Optional[float] = Field(None, description="报关费")
+    continuation_sheet_fee: Optional[float] = Field(None, description="续页费")
+    customs_inspection_fee: Optional[float] = Field(None, description="海关查验费")
+    magnetic_security_fee: Optional[float] = Field(None, description="磁检费/安检费")
+    tc_express_fee: Optional[float] = Field(None, description="TC操作费/快件中心过站费")
+    warehouse_ground_fee: Optional[float] = Field(None, description="前置仓/国际货站地面费")
+    doc_make_fee: Optional[float] = Field(None, description="制单费")
+    doc_split_fee: Optional[float] = Field(None, description="制单分单费")
+    skid_fee: Optional[float] = Field(None, description="垫板费")
+    pallet_packing_fee: Optional[float] = Field(None, description="打板/装箱费")
+    probe_fee: Optional[float] = Field(None, description="探板费")
+    consumables_fee: Optional[float] = Field(None, description="耗材费")
+    first_leg_fee: Optional[float] = Field(None, description="一程费用")
+    total: Optional[float] = Field(None, description="应收合计")
+    agent: Optional[str] = Field(None, description="代理")
+
+
+class PayableIntlAir(BaseModel):
+    """(3) 应付款项 - [1] 国际空运信息"""
+    subtotal: Optional[float] = Field(None, description="应付小计")
+    date: Optional[str] = Field(None, description="托运日期 (YYYY-MM-DD)")
+    outsource_unit: Optional[str] = Field(None, description="外发单位")
+    origin: Optional[str] = Field(None, description="始发站")
+    destination: Optional[str] = Field(None, description="到达站")
+    airline: Optional[str] = Field(None, description="航空公司")
+    flight_doc_no: Optional[str] = Field(None, description="航班单号/航空单号")
+    flight_no: Optional[str] = Field(None, description="航班号")
+    flight_date: Optional[str] = Field(None, description="航班日期 (YYYY-MM-DD)")
+    pieces: Optional[int] = Field(None, description="件数")
+    weight: Optional[float] = Field(None, description="重量")
+    volume: Optional[float] = Field(None, description="体积")
+    chargeable_weight: Optional[float] = Field(None, description="计费重量")
+    rate: Optional[float] = Field(None, description="费率")
+    freight: Optional[float] = Field(None, description="运费")
+    lading_fee: Optional[float] = Field(None, description="提单费")
+    split_fee: Optional[float] = Field(None, description="分单")
+    borrow_magnetic_fuel_pickup_fee: Optional[float] = Field(None, description="借单费/磁检费/燃油费/国内提货费")
+    tc_network_disposal_fee: Optional[float] = Field(None, description="TC费/入网费/国际处置费")
+    customs_fee: Optional[float] = Field(None, description="报关费")
+    continuation_sheet_fee: Optional[float] = Field(None, description="续页费")
+    consumables_fee: Optional[float] = Field(None, description="耗材费")
+    front_warehouse: Optional[float] = Field(None, description="前置仓")
+    other_fee: Optional[float] = Field(None, description="其他费用")
+    remark: Optional[str] = Field(None, description="备注")
+
+
+class PayableTrucking(BaseModel):
+    """(3) 应付款项 - [2] 汽运信息"""
+    subtotal: Optional[float] = Field(None, description="应付小计")
+    date: Optional[str] = Field(None, description="托运日期 (YYYY-MM-DD)")
+    outsource_unit: Optional[str] = Field(None, description="外发单位")
+    pieces: Optional[int] = Field(None, description="件数")
+    weight: Optional[float] = Field(None, description="重量")
+    volume: Optional[float] = Field(None, description="体积")
+    unit_price: Optional[float] = Field(None, description="单价")
+    freight: Optional[float] = Field(None, description="运费")
+    doc_fee: Optional[float] = Field(None, description="制单费")
+    other_fee: Optional[float] = Field(None, description="其他费用")
+    remark: Optional[str] = Field(None, description="备注")
+
+
+class PayableDomAir(BaseModel):
+    """(3) 应付款项 - [3] 国内空运信息"""
+    subtotal: Optional[float] = Field(None, description="应付小计")
+    date: Optional[str] = Field(None, description="托运日期 (YYYY-MM-DD)")
+    outsource_unit: Optional[str] = Field(None, description="外发单位")
+    origin: Optional[str] = Field(None, description="始发站")
+    destination: Optional[str] = Field(None, description="到达站")
+    airline: Optional[str] = Field(None, description="航空公司")
+    airline_unit: Optional[str] = Field(None, description="航空单位")
+    flight_doc_no: Optional[str] = Field(None, description="航空单号")
+    flight_no: Optional[str] = Field(None, description="航班号")
+    flight_date: Optional[str] = Field(None, description="航班日期 (YYYY-MM-DD)")
+    pieces: Optional[int] = Field(None, description="件数")
+    weight: Optional[float] = Field(None, description="重量")
+    chargeable_weight: Optional[float] = Field(None, description="计费重量")
+    rate: Optional[float] = Field(None, description="费率")
+    freight: Optional[float] = Field(None, description="运费")
+    other_fee: Optional[float] = Field(None, description="其他费用")
+    remark: Optional[str] = Field(None, description="备注")
+
+
+class PayableCustoms(BaseModel):
+    """(3) 应付款项 - [4] 报关信息"""
+    subtotal: Optional[float] = Field(None, description="应付小计")
+    date: Optional[str] = Field(None, description="报关日期 (YYYY-MM-DD)")
+    agent: Optional[str] = Field(None, description="报关代理")
+    customs_fee: Optional[float] = Field(None, description="报关费")
+    continuation_sheet_fee: Optional[float] = Field(None, description="续页费")
+    inspection_delete_fee: Optional[float] = Field(None, description="查验费/删单费")
+    rebate: Optional[float] = Field(None, description="回扣栏")
+    other_fee: Optional[float] = Field(None, description="其他费用")
+    remark: Optional[str] = Field(None, description="备注")
+
+
+class PayableGround(BaseModel):
+    """(3) 应付款项 - [5] 地面操作信息"""
+    subtotal: Optional[float] = Field(None, description="应付小计")
+    date: Optional[str] = Field(None, description="托运日期 (YYYY-MM-DD)")
+    outsource_unit: Optional[str] = Field(None, description="外发单位")
+    chargeable_weight: Optional[float] = Field(None, description="计费重量")
+    rate: Optional[float] = Field(None, description="费率")
+    freight: Optional[float] = Field(None, description="运费")
+    lading_express_fee: Optional[float] = Field(None, description="提单费/快件处置费")
+    security_customs_fee: Optional[float] = Field(None, description="安检费/报关费")
+    pallet_exit_fee: Optional[float] = Field(None, description="打板费/退场费")
+    other_fee: Optional[float] = Field(None, description="其他费用")
+    remark: Optional[str] = Field(None, description="备注")
+
+
+class PayablesInfo(BaseModel):
+    """(3) 应付款项整体结构"""
+    intl_air: Optional[PayableIntlAir] = Field(default_factory=PayableIntlAir, description="国际空运信息")
+    trucking: Optional[PayableTrucking] = Field(default_factory=PayableTrucking, description="汽运信息")
+    dom_air: Optional[PayableDomAir] = Field(default_factory=PayableDomAir, description="国内空运信息")
+    customs: Optional[PayableCustoms] = Field(default_factory=PayableCustoms, description="报关信息")
+    ground: Optional[PayableGround] = Field(default_factory=PayableGround, description="地面操作信息")
     pay_total: Optional[float] = Field(None, description="应付合计")
-    
-    # (4) 销售提成
+
+
+class SalesCommission(BaseModel):
+    """(4) 销售提成"""
     salesperson: Optional[str] = Field(None, description="业务员")
     commission_amount: Optional[float] = Field(None, description="提成金额")
-    
-    # (5) 经营信息
+
+
+class OperatingInfo(BaseModel):
+    """(5) 经营信息"""
     profit: Optional[float] = Field(None, description="利润")
     profit_margin: Optional[float] = Field(None, description="利润率")
+
+
+# ============================================================================
+# 2. 顶级请求与查询 Schema 定义
+# ============================================================================
+
+class CostRegistrationSave(BaseModel):
+    """费用信息登记 保存/修改 层级结构"""
+    consignor_info: Optional[ConsignorInfo] = Field(default_factory=ConsignorInfo, description="货主委托信息")
+    receivables: Optional[ReceivablesInfo] = Field(default_factory=ReceivablesInfo, description="应收款项")
+    payables: Optional[PayablesInfo] = Field(default_factory=PayablesInfo, description="应付款项")
+    sales_commission: Optional[SalesCommission] = Field(default_factory=SalesCommission, description="销售提成")
+    operating_info: Optional[OperatingInfo] = Field(default_factory=OperatingInfo, description="经营信息")
 
 
 class CostConsignmentCreate(CostRegistrationSave):

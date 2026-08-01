@@ -1,5 +1,5 @@
 """
-费用登记台 API 接口
+费用登记台 API 接口（层级化结构支持）
 """
 import io
 from datetime import datetime, date
@@ -70,7 +70,7 @@ def _parse_date(val: Any) -> Optional[date]:
 
 
 def _format_cost_record(record: Any) -> Dict[str, Any]:
-    """将 SQLAlchemy 记录格式化为字典响应格式"""
+    """将 SQLAlchemy 记录格式化为包含层级关系的字典响应格式"""
     if not record:
         return {}
     
@@ -93,139 +93,150 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
 
     data = {
         "id": str(record.id),
+        
         # (1) 货主委托信息
-        "create_time": _to_dt_str(record.create_time),
-        "internal_doc_id": record.internal_doc_id or "",
-        "warehouse_entry_date": _to_date_str(record.warehouse_entry_date),
-        "customer_name": record.customer_name or "",
-        "origin_destination": record.origin_destination or "",
-        "customs_declaration": record.customs_declaration or "",
-        "bill_of_lading": record.bill_of_lading or "",
-        "flight_date": _to_date_str(record.flight_date),
-        "flight_no": record.flight_no or "",
-        "flight_doc_no": record.flight_doc_no or "",
-        "pieces": record.pieces,
-        "actual_weight": _to_float(record.actual_weight),
-        "chargeable_weight": _to_float(record.chargeable_weight),
-        "volume": _to_float(record.volume),
-        "first_leg_weight": _to_float(record.first_leg_weight),
-        "agent": record.agent or "",
-        "remark": record.remark or "",
+        "consignor_info": {
+            "create_time": _to_dt_str(record.create_time),
+            "internal_doc_id": record.internal_doc_id or "",
+            "warehouse_entry_date": _to_date_str(record.warehouse_entry_date),
+            "customer_name": record.customer_name or "",
+            "origin_destination": record.origin_destination or "",
+            "customs_declaration": record.customs_declaration or "",
+            "bill_of_lading": record.bill_of_lading or "",
+            "flight_date": _to_date_str(record.flight_date),
+            "flight_no": record.flight_no or "",
+            "flight_doc_no": record.flight_doc_no or "",
+            "pieces": record.pieces,
+            "actual_weight": _to_float(record.actual_weight),
+            "chargeable_weight": _to_float(record.chargeable_weight),
+            "volume": _to_float(record.volume),
+            "first_leg_weight": _to_float(record.first_leg_weight),
+            "agent": record.agent or "",
+            "remark": record.remark or "",
+        },
         
         # (2) 应收款项
-        "unit_price": _to_float(record.unit_price),
-        "receivable_freight": _to_float(record.receivable_freight),
-        "receivable_lading_info_fee": _to_float(record.receivable_lading_info_fee),
-        "receivable_split_offset_telex_fee": _to_float(record.receivable_split_offset_telex_fee),
-        "receivable_customs_fee": _to_float(record.receivable_customs_fee),
-        "receivable_continuation_sheet_fee": _to_float(record.receivable_continuation_sheet_fee),
-        "receivable_customs_inspection_fee": _to_float(record.receivable_customs_inspection_fee),
-        "receivable_magnetic_security_fee": _to_float(record.receivable_magnetic_security_fee),
-        "receivable_tc_express_fee": _to_float(record.receivable_tc_express_fee),
-        "receivable_warehouse_ground_fee": _to_float(record.receivable_warehouse_ground_fee),
-        "receivable_doc_make_fee": _to_float(record.receivable_doc_make_fee),
-        "receivable_doc_split_fee": _to_float(record.receivable_doc_split_fee),
-        "receivable_skid_fee": _to_float(record.receivable_skid_fee),
-        "receivable_pallet_packing_fee": _to_float(record.receivable_pallet_packing_fee),
-        "receivable_probe_fee": _to_float(record.receivable_probe_fee),
-        "receivable_consumables_fee": _to_float(record.receivable_consumables_fee),
-        "receivable_first_leg_fee": _to_float(record.receivable_first_leg_fee),
-        "receivable_total": _to_float(record.receivable_total),
-        "receivable_agent": record.receivable_agent or "",
+        "receivables": {
+            "unit_price": _to_float(record.unit_price),
+            "freight": _to_float(record.receivable_freight),
+            "lading_info_fee": _to_float(record.receivable_lading_info_fee),
+            "split_offset_telex_fee": _to_float(record.receivable_split_offset_telex_fee),
+            "customs_fee": _to_float(record.receivable_customs_fee),
+            "continuation_sheet_fee": _to_float(record.receivable_continuation_sheet_fee),
+            "customs_inspection_fee": _to_float(record.receivable_customs_inspection_fee),
+            "magnetic_security_fee": _to_float(record.receivable_magnetic_security_fee),
+            "tc_express_fee": _to_float(record.receivable_tc_express_fee),
+            "warehouse_ground_fee": _to_float(record.receivable_warehouse_ground_fee),
+            "doc_make_fee": _to_float(record.receivable_doc_make_fee),
+            "doc_split_fee": _to_float(record.receivable_doc_split_fee),
+            "skid_fee": _to_float(record.receivable_skid_fee),
+            "pallet_packing_fee": _to_float(record.receivable_pallet_packing_fee),
+            "probe_fee": _to_float(record.receivable_probe_fee),
+            "consumables_fee": _to_float(record.receivable_consumables_fee),
+            "first_leg_fee": _to_float(record.receivable_first_leg_fee),
+            "total": _to_float(record.receivable_total),
+            "agent": record.receivable_agent or "",
+        },
         
-        # (3) 应付款项 - [1] 国际空运信息
-        "pay_intl_air_subtotal": _to_float(record.pay_intl_air_subtotal),
-        "pay_intl_air_date": _to_date_str(record.pay_intl_air_date),
-        "pay_intl_air_outsource_unit": record.pay_intl_air_outsource_unit or "",
-        "pay_intl_air_origin": record.pay_intl_air_origin or "",
-        "pay_intl_air_destination": record.pay_intl_air_destination or "",
-        "pay_intl_air_airline": record.pay_intl_air_airline or "",
-        "pay_intl_air_flight_doc_no": record.pay_intl_air_flight_doc_no or "",
-        "pay_intl_air_flight_no": record.pay_intl_air_flight_no or "",
-        "pay_intl_air_flight_date": _to_date_str(record.pay_intl_air_flight_date),
-        "pay_intl_air_pieces": record.pay_intl_air_pieces,
-        "pay_intl_air_weight": _to_float(record.pay_intl_air_weight),
-        "pay_intl_air_volume": _to_float(record.pay_intl_air_volume),
-        "pay_intl_air_chargeable_weight": _to_float(record.pay_intl_air_chargeable_weight),
-        "pay_intl_air_rate": _to_float(record.pay_intl_air_rate),
-        "pay_intl_air_freight": _to_float(record.pay_intl_air_freight),
-        "pay_intl_air_lading_fee": _to_float(record.pay_intl_air_lading_fee),
-        "pay_intl_air_split_fee": _to_float(record.pay_intl_air_split_fee),
-        "pay_intl_air_borrow_magnetic_fuel_pickup_fee": _to_float(record.pay_intl_air_borrow_magnetic_fuel_pickup_fee),
-        "pay_intl_air_tc_network_disposal_fee": _to_float(record.pay_intl_air_tc_network_disposal_fee),
-        "pay_intl_air_customs_fee": _to_float(record.pay_intl_air_customs_fee),
-        "pay_intl_air_continuation_sheet_fee": _to_float(record.pay_intl_air_continuation_sheet_fee),
-        "pay_intl_air_consumables_fee": _to_float(record.pay_intl_air_consumables_fee),
-        "pay_intl_air_front_warehouse": _to_float(record.pay_intl_air_front_warehouse),
-        "pay_intl_air_other_fee": _to_float(record.pay_intl_air_other_fee),
-        "pay_intl_air_remark": record.pay_intl_air_remark or "",
-        
-        # (3) 应付款项 - [2] 汽运信息
-        "pay_trucking_subtotal": _to_float(record.pay_trucking_subtotal),
-        "pay_trucking_date": _to_date_str(record.pay_trucking_date),
-        "pay_trucking_outsource_unit": record.pay_trucking_outsource_unit or "",
-        "pay_trucking_pieces": record.pay_trucking_pieces,
-        "pay_trucking_weight": _to_float(record.pay_trucking_weight),
-        "pay_trucking_volume": _to_float(record.pay_trucking_volume),
-        "pay_trucking_unit_price": _to_float(record.pay_trucking_unit_price),
-        "pay_trucking_freight": _to_float(record.pay_trucking_freight),
-        "pay_trucking_doc_fee": _to_float(record.pay_trucking_doc_fee),
-        "pay_trucking_other_fee": _to_float(record.pay_trucking_other_fee),
-        "pay_trucking_remark": record.pay_trucking_remark or "",
-        
-        # (3) 应付款项 - [3] 国内空运信息
-        "pay_dom_air_subtotal": _to_float(record.pay_dom_air_subtotal),
-        "pay_dom_air_date": _to_date_str(record.pay_dom_air_date),
-        "pay_dom_air_outsource_unit": record.pay_dom_air_outsource_unit or "",
-        "pay_dom_air_origin": record.pay_dom_air_origin or "",
-        "pay_dom_air_destination": record.pay_dom_air_destination or "",
-        "pay_dom_air_airline": record.pay_dom_air_airline or "",
-        "pay_dom_air_airline_unit": record.pay_dom_air_airline_unit or "",
-        "pay_dom_air_flight_doc_no": record.pay_dom_air_flight_doc_no or "",
-        "pay_dom_air_flight_no": record.pay_dom_air_flight_no or "",
-        "pay_dom_air_flight_date": _to_date_str(record.pay_dom_air_flight_date),
-        "pay_dom_air_pieces": record.pay_dom_air_pieces,
-        "pay_dom_air_weight": _to_float(record.pay_dom_air_weight),
-        "pay_dom_air_chargeable_weight": _to_float(record.pay_dom_air_chargeable_weight),
-        "pay_dom_air_rate": _to_float(record.pay_dom_air_rate),
-        "pay_dom_air_freight": _to_float(record.pay_dom_air_freight),
-        "pay_dom_air_other_fee": _to_float(record.pay_dom_air_other_fee),
-        "pay_dom_air_remark": record.pay_dom_air_remark or "",
-        
-        # (3) 应付款项 - [4] 报关信息
-        "pay_customs_subtotal": _to_float(record.pay_customs_subtotal),
-        "pay_customs_date": _to_date_str(record.pay_customs_date),
-        "pay_customs_agent": record.pay_customs_agent or "",
-        "pay_customs_fee": _to_float(record.pay_customs_fee),
-        "pay_customs_continuation_sheet_fee": _to_float(record.pay_customs_continuation_sheet_fee),
-        "pay_customs_inspection_delete_fee": _to_float(record.pay_customs_inspection_delete_fee),
-        "pay_customs_rebate": _to_float(record.pay_customs_rebate),
-        "pay_customs_other_fee": _to_float(record.pay_customs_other_fee),
-        "pay_customs_remark": record.pay_customs_remark or "",
-        
-        # (3) 应付款项 - [5] 地面操作信息
-        "pay_ground_subtotal": _to_float(record.pay_ground_subtotal),
-        "pay_ground_date": _to_date_str(record.pay_ground_date),
-        "pay_ground_outsource_unit": record.pay_ground_outsource_unit or "",
-        "pay_ground_chargeable_weight": _to_float(record.pay_ground_chargeable_weight),
-        "pay_ground_rate": _to_float(record.pay_ground_rate),
-        "pay_ground_freight": _to_float(record.pay_ground_freight),
-        "pay_ground_lading_express_fee": _to_float(record.pay_ground_lading_express_fee),
-        "pay_ground_security_customs_fee": _to_float(record.pay_ground_security_customs_fee),
-        "pay_ground_pallet_exit_fee": _to_float(record.pay_ground_pallet_exit_fee),
-        "pay_ground_other_fee": _to_float(record.pay_ground_other_fee),
-        "pay_ground_remark": record.pay_ground_remark or "",
-        
-        # (3) 应付款项 - 合计
-        "pay_total": _to_float(record.pay_total),
+        # (3) 应付款项
+        "payables": {
+            "intl_air": {
+                "subtotal": _to_float(record.pay_intl_air_subtotal),
+                "date": _to_date_str(record.pay_intl_air_date),
+                "outsource_unit": record.pay_intl_air_outsource_unit or "",
+                "origin": record.pay_intl_air_origin or "",
+                "destination": record.pay_intl_air_destination or "",
+                "airline": record.pay_intl_air_airline or "",
+                "flight_doc_no": record.pay_intl_air_flight_doc_no or "",
+                "flight_no": record.pay_intl_air_flight_no or "",
+                "flight_date": _to_date_str(record.pay_intl_air_flight_date),
+                "pieces": record.pay_intl_air_pieces,
+                "weight": _to_float(record.pay_intl_air_weight),
+                "volume": _to_float(record.pay_intl_air_volume),
+                "chargeable_weight": _to_float(record.pay_intl_air_chargeable_weight),
+                "rate": _to_float(record.pay_intl_air_rate),
+                "freight": _to_float(record.pay_intl_air_freight),
+                "lading_fee": _to_float(record.pay_intl_air_lading_fee),
+                "split_fee": _to_float(record.pay_intl_air_split_fee),
+                "borrow_magnetic_fuel_pickup_fee": _to_float(record.pay_intl_air_borrow_magnetic_fuel_pickup_fee),
+                "tc_network_disposal_fee": _to_float(record.pay_intl_air_tc_network_disposal_fee),
+                "customs_fee": _to_float(record.pay_intl_air_customs_fee),
+                "continuation_sheet_fee": _to_float(record.pay_intl_air_continuation_sheet_fee),
+                "consumables_fee": _to_float(record.pay_intl_air_consumables_fee),
+                "front_warehouse": _to_float(record.pay_intl_air_front_warehouse),
+                "other_fee": _to_float(record.pay_intl_air_other_fee),
+                "remark": record.pay_intl_air_remark or "",
+            },
+            "trucking": {
+                "subtotal": _to_float(record.pay_trucking_subtotal),
+                "date": _to_date_str(record.pay_trucking_date),
+                "outsource_unit": record.pay_trucking_outsource_unit or "",
+                "pieces": record.pay_trucking_pieces,
+                "weight": _to_float(record.pay_trucking_weight),
+                "volume": _to_float(record.pay_trucking_volume),
+                "unit_price": _to_float(record.pay_trucking_unit_price),
+                "freight": _to_float(record.pay_trucking_freight),
+                "doc_fee": _to_float(record.pay_trucking_doc_fee),
+                "other_fee": _to_float(record.pay_trucking_other_fee),
+                "remark": record.pay_trucking_remark or "",
+            },
+            "dom_air": {
+                "subtotal": _to_float(record.pay_dom_air_subtotal),
+                "date": _to_date_str(record.pay_dom_air_date),
+                "outsource_unit": record.pay_dom_air_outsource_unit or "",
+                "origin": record.pay_dom_air_origin or "",
+                "destination": record.pay_dom_air_destination or "",
+                "airline": record.pay_dom_air_airline or "",
+                "airline_unit": record.pay_dom_air_airline_unit or "",
+                "flight_doc_no": record.pay_dom_air_flight_doc_no or "",
+                "flight_no": record.pay_dom_air_flight_no or "",
+                "flight_date": _to_date_str(record.pay_dom_air_flight_date),
+                "pieces": record.pay_dom_air_pieces,
+                "weight": _to_float(record.pay_dom_air_weight),
+                "chargeable_weight": _to_float(record.pay_dom_air_chargeable_weight),
+                "rate": _to_float(record.pay_dom_air_rate),
+                "freight": _to_float(record.pay_dom_air_freight),
+                "other_fee": _to_float(record.pay_dom_air_other_fee),
+                "remark": record.pay_dom_air_remark or "",
+            },
+            "customs": {
+                "subtotal": _to_float(record.pay_customs_subtotal),
+                "date": _to_date_str(record.pay_customs_date),
+                "agent": record.pay_customs_agent or "",
+                "customs_fee": _to_float(record.pay_customs_fee),
+                "continuation_sheet_fee": _to_float(record.pay_customs_continuation_sheet_fee),
+                "inspection_delete_fee": _to_float(record.pay_customs_inspection_delete_fee),
+                "rebate": _to_float(record.pay_customs_rebate),
+                "other_fee": _to_float(record.pay_customs_other_fee),
+                "remark": record.pay_customs_remark or "",
+            },
+            "ground": {
+                "subtotal": _to_float(record.pay_ground_subtotal),
+                "date": _to_date_str(record.pay_ground_date),
+                "outsource_unit": record.pay_ground_outsource_unit or "",
+                "chargeable_weight": _to_float(record.pay_ground_chargeable_weight),
+                "rate": _to_float(record.pay_ground_rate),
+                "freight": _to_float(record.pay_ground_freight),
+                "lading_express_fee": _to_float(record.pay_ground_lading_express_fee),
+                "security_customs_fee": _to_float(record.pay_ground_security_customs_fee),
+                "pallet_exit_fee": _to_float(record.pay_ground_pallet_exit_fee),
+                "other_fee": _to_float(record.pay_ground_other_fee),
+                "remark": record.pay_ground_remark or "",
+            },
+            "pay_total": _to_float(record.pay_total),
+        },
         
         # (4) 销售提成
-        "salesperson": record.salesperson or "",
-        "commission_amount": _to_float(record.commission_amount),
+        "sales_commission": {
+            "salesperson": record.salesperson or "",
+            "commission_amount": _to_float(record.commission_amount),
+        },
         
         # (5) 经营信息
-        "profit": _to_float(record.profit),
-        "profit_margin": _to_float(record.profit_margin),
+        "operating_info": {
+            "profit": _to_float(record.profit),
+            "profit_margin": _to_float(record.profit_margin),
+        },
         
         "created_at": format_datetime_china(record.created_at),
         "updated_at": format_datetime_china(record.updated_at),
@@ -236,140 +247,160 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
 
 
 def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
-    """将 Payload 属性赋值到 ORM 模型对象"""
-    # (1) 货主委托信息
-    record.create_time = _parse_datetime(payload.create_time) if payload.create_time is not None else record.create_time
-    record.internal_doc_id = payload.internal_doc_id if payload.internal_doc_id is not None else record.internal_doc_id
-    record.warehouse_entry_date = _parse_date(payload.warehouse_entry_date) if payload.warehouse_entry_date is not None else record.warehouse_entry_date
-    record.customer_name = payload.customer_name if payload.customer_name is not None else record.customer_name
-    record.origin_destination = payload.origin_destination if payload.origin_destination is not None else record.origin_destination
-    record.customs_declaration = payload.customs_declaration if payload.customs_declaration is not None else record.customs_declaration
-    record.bill_of_lading = payload.bill_of_lading if payload.bill_of_lading is not None else record.bill_of_lading
-    record.flight_date = _parse_date(payload.flight_date) if payload.flight_date is not None else record.flight_date
-    record.flight_no = payload.flight_no if payload.flight_no is not None else record.flight_no
-    record.flight_doc_no = payload.flight_doc_no if payload.flight_doc_no is not None else record.flight_doc_no
-    record.pieces = payload.pieces if payload.pieces is not None else record.pieces
-    record.actual_weight = payload.actual_weight if payload.actual_weight is not None else record.actual_weight
-    record.chargeable_weight = payload.chargeable_weight if payload.chargeable_weight is not None else record.chargeable_weight
-    record.volume = payload.volume if payload.volume is not None else record.volume
-    record.first_leg_weight = payload.first_leg_weight if payload.first_leg_weight is not None else record.first_leg_weight
-    record.agent = payload.agent if payload.agent is not None else record.agent
-    record.remark = payload.remark if payload.remark is not None else record.remark
+    """从层级化 Payload 赋值属性到 ORM 模型对象"""
+    # 1. 货主委托信息
+    if payload.consignor_info is not None:
+        info = payload.consignor_info
+        record.create_time = _parse_datetime(info.create_time) if info.create_time is not None else record.create_time
+        record.internal_doc_id = info.internal_doc_id if info.internal_doc_id is not None else record.internal_doc_id
+        record.warehouse_entry_date = _parse_date(info.warehouse_entry_date) if info.warehouse_entry_date is not None else record.warehouse_entry_date
+        record.customer_name = info.customer_name if info.customer_name is not None else record.customer_name
+        record.origin_destination = info.origin_destination if info.origin_destination is not None else record.origin_destination
+        record.customs_declaration = info.customs_declaration if info.customs_declaration is not None else record.customs_declaration
+        record.bill_of_lading = info.bill_of_lading if info.bill_of_lading is not None else record.bill_of_lading
+        record.flight_date = _parse_date(info.flight_date) if info.flight_date is not None else record.flight_date
+        record.flight_no = info.flight_no if info.flight_no is not None else record.flight_no
+        record.flight_doc_no = info.flight_doc_no if info.flight_doc_no is not None else record.flight_doc_no
+        record.pieces = info.pieces if info.pieces is not None else record.pieces
+        record.actual_weight = info.actual_weight if info.actual_weight is not None else record.actual_weight
+        record.chargeable_weight = info.chargeable_weight if info.chargeable_weight is not None else record.chargeable_weight
+        record.volume = info.volume if info.volume is not None else record.volume
+        record.first_leg_weight = info.first_leg_weight if info.first_leg_weight is not None else record.first_leg_weight
+        record.agent = info.agent if info.agent is not None else record.agent
+        record.remark = info.remark if info.remark is not None else record.remark
 
-    # (2) 应收款项
-    record.unit_price = payload.unit_price if payload.unit_price is not None else record.unit_price
-    record.receivable_freight = payload.receivable_freight if payload.receivable_freight is not None else record.receivable_freight
-    record.receivable_lading_info_fee = payload.receivable_lading_info_fee if payload.receivable_lading_info_fee is not None else record.receivable_lading_info_fee
-    record.receivable_split_offset_telex_fee = payload.receivable_split_offset_telex_fee if payload.receivable_split_offset_telex_fee is not None else record.receivable_split_offset_telex_fee
-    record.receivable_customs_fee = payload.receivable_customs_fee if payload.receivable_customs_fee is not None else record.receivable_customs_fee
-    record.receivable_continuation_sheet_fee = payload.receivable_continuation_sheet_fee if payload.receivable_continuation_sheet_fee is not None else record.receivable_continuation_sheet_fee
-    record.receivable_customs_inspection_fee = payload.receivable_customs_inspection_fee if payload.receivable_customs_inspection_fee is not None else record.receivable_customs_inspection_fee
-    record.receivable_magnetic_security_fee = payload.receivable_magnetic_security_fee if payload.receivable_magnetic_security_fee is not None else record.receivable_magnetic_security_fee
-    record.receivable_tc_express_fee = payload.receivable_tc_express_fee if payload.receivable_tc_express_fee is not None else record.receivable_tc_express_fee
-    record.receivable_warehouse_ground_fee = payload.receivable_warehouse_ground_fee if payload.receivable_warehouse_ground_fee is not None else record.receivable_warehouse_ground_fee
-    record.receivable_doc_make_fee = payload.receivable_doc_make_fee if payload.receivable_doc_make_fee is not None else record.receivable_doc_make_fee
-    record.receivable_doc_split_fee = payload.receivable_doc_split_fee if payload.receivable_doc_split_fee is not None else record.receivable_doc_split_fee
-    record.receivable_skid_fee = payload.receivable_skid_fee if payload.receivable_skid_fee is not None else record.receivable_skid_fee
-    record.receivable_pallet_packing_fee = payload.receivable_pallet_packing_fee if payload.receivable_pallet_packing_fee is not None else record.receivable_pallet_packing_fee
-    record.receivable_probe_fee = payload.receivable_probe_fee if payload.receivable_probe_fee is not None else record.receivable_probe_fee
-    record.receivable_consumables_fee = payload.receivable_consumables_fee if payload.receivable_consumables_fee is not None else record.receivable_consumables_fee
-    record.receivable_first_leg_fee = payload.receivable_first_leg_fee if payload.receivable_first_leg_fee is not None else record.receivable_first_leg_fee
-    record.receivable_total = payload.receivable_total if payload.receivable_total is not None else record.receivable_total
-    record.receivable_agent = payload.receivable_agent if payload.receivable_agent is not None else record.receivable_agent
+    # 2. 应收款项
+    if payload.receivables is not None:
+        rec = payload.receivables
+        record.unit_price = rec.unit_price if rec.unit_price is not None else record.unit_price
+        record.receivable_freight = rec.freight if rec.freight is not None else record.receivable_freight
+        record.receivable_lading_info_fee = rec.lading_info_fee if rec.lading_info_fee is not None else record.receivable_lading_info_fee
+        record.receivable_split_offset_telex_fee = rec.split_offset_telex_fee if rec.split_offset_telex_fee is not None else record.receivable_split_offset_telex_fee
+        record.receivable_customs_fee = rec.customs_fee if rec.customs_fee is not None else record.receivable_customs_fee
+        record.receivable_continuation_sheet_fee = rec.continuation_sheet_fee if rec.continuation_sheet_fee is not None else record.receivable_continuation_sheet_fee
+        record.receivable_customs_inspection_fee = rec.customs_inspection_fee if rec.customs_inspection_fee is not None else record.receivable_customs_inspection_fee
+        record.receivable_magnetic_security_fee = rec.magnetic_security_fee if rec.magnetic_security_fee is not None else record.receivable_magnetic_security_fee
+        record.receivable_tc_express_fee = rec.tc_express_fee if rec.tc_express_fee is not None else record.receivable_tc_express_fee
+        record.receivable_warehouse_ground_fee = rec.warehouse_ground_fee if rec.warehouse_ground_fee is not None else record.receivable_warehouse_ground_fee
+        record.receivable_doc_make_fee = rec.doc_make_fee if rec.doc_make_fee is not None else record.receivable_doc_make_fee
+        record.receivable_doc_split_fee = rec.doc_split_fee if rec.doc_split_fee is not None else record.receivable_doc_split_fee
+        record.receivable_skid_fee = rec.skid_fee if rec.skid_fee is not None else record.receivable_skid_fee
+        record.receivable_pallet_packing_fee = rec.pallet_packing_fee if rec.pallet_packing_fee is not None else record.receivable_pallet_packing_fee
+        record.receivable_probe_fee = rec.probe_fee if rec.probe_fee is not None else record.receivable_probe_fee
+        record.receivable_consumables_fee = rec.consumables_fee if rec.consumables_fee is not None else record.receivable_consumables_fee
+        record.receivable_first_leg_fee = rec.first_leg_fee if rec.first_leg_fee is not None else record.receivable_first_leg_fee
+        record.receivable_total = rec.total if rec.total is not None else record.receivable_total
+        record.receivable_agent = rec.agent if rec.agent is not None else record.receivable_agent
 
-    # (3) 应付款项 - [1] 国际空运
-    record.pay_intl_air_subtotal = payload.pay_intl_air_subtotal if payload.pay_intl_air_subtotal is not None else record.pay_intl_air_subtotal
-    record.pay_intl_air_date = _parse_date(payload.pay_intl_air_date) if payload.pay_intl_air_date is not None else record.pay_intl_air_date
-    record.pay_intl_air_outsource_unit = payload.pay_intl_air_outsource_unit if payload.pay_intl_air_outsource_unit is not None else record.pay_intl_air_outsource_unit
-    record.pay_intl_air_origin = payload.pay_intl_air_origin if payload.pay_intl_air_origin is not None else record.pay_intl_air_origin
-    record.pay_intl_air_destination = payload.pay_intl_air_destination if payload.pay_intl_air_destination is not None else record.pay_intl_air_destination
-    record.pay_intl_air_airline = payload.pay_intl_air_airline if payload.pay_intl_air_airline is not None else record.pay_intl_air_airline
-    record.pay_intl_air_flight_doc_no = payload.pay_intl_air_flight_doc_no if payload.pay_intl_air_flight_doc_no is not None else record.pay_intl_air_flight_doc_no
-    record.pay_intl_air_flight_no = payload.pay_intl_air_flight_no if payload.pay_intl_air_flight_no is not None else record.pay_intl_air_flight_no
-    record.pay_intl_air_flight_date = _parse_date(payload.pay_intl_air_flight_date) if payload.pay_intl_air_flight_date is not None else record.pay_intl_air_flight_date
-    record.pay_intl_air_pieces = payload.pay_intl_air_pieces if payload.pay_intl_air_pieces is not None else record.pay_intl_air_pieces
-    record.pay_intl_air_weight = payload.pay_intl_air_weight if payload.pay_intl_air_weight is not None else record.pay_intl_air_weight
-    record.pay_intl_air_volume = payload.pay_intl_air_volume if payload.pay_intl_air_volume is not None else record.pay_intl_air_volume
-    record.pay_intl_air_chargeable_weight = payload.pay_intl_air_chargeable_weight if payload.pay_intl_air_chargeable_weight is not None else record.pay_intl_air_chargeable_weight
-    record.pay_intl_air_rate = payload.pay_intl_air_rate if payload.pay_intl_air_rate is not None else record.pay_intl_air_rate
-    record.pay_intl_air_freight = payload.pay_intl_air_freight if payload.pay_intl_air_freight is not None else record.pay_intl_air_freight
-    record.pay_intl_air_lading_fee = payload.pay_intl_air_lading_fee if payload.pay_intl_air_lading_fee is not None else record.pay_intl_air_lading_fee
-    record.pay_intl_air_split_fee = payload.pay_intl_air_split_fee if payload.pay_intl_air_split_fee is not None else record.pay_intl_air_split_fee
-    record.pay_intl_air_borrow_magnetic_fuel_pickup_fee = payload.pay_intl_air_borrow_magnetic_fuel_pickup_fee if payload.pay_intl_air_borrow_magnetic_fuel_pickup_fee is not None else record.pay_intl_air_borrow_magnetic_fuel_pickup_fee
-    record.pay_intl_air_tc_network_disposal_fee = payload.pay_intl_air_tc_network_disposal_fee if payload.pay_intl_air_tc_network_disposal_fee is not None else record.pay_intl_air_tc_network_disposal_fee
-    record.pay_intl_air_customs_fee = payload.pay_intl_air_customs_fee if payload.pay_intl_air_customs_fee is not None else record.pay_intl_air_customs_fee
-    record.pay_intl_air_continuation_sheet_fee = payload.pay_intl_air_continuation_sheet_fee if payload.pay_intl_air_continuation_sheet_fee is not None else record.pay_intl_air_continuation_sheet_fee
-    record.pay_intl_air_consumables_fee = payload.pay_intl_air_consumables_fee if payload.pay_intl_air_consumables_fee is not None else record.pay_intl_air_consumables_fee
-    record.pay_intl_air_front_warehouse = payload.pay_intl_air_front_warehouse if payload.pay_intl_air_front_warehouse is not None else record.pay_intl_air_front_warehouse
-    record.pay_intl_air_other_fee = payload.pay_intl_air_other_fee if payload.pay_intl_air_other_fee is not None else record.pay_intl_air_other_fee
-    record.pay_intl_air_remark = payload.pay_intl_air_remark if payload.pay_intl_air_remark is not None else record.pay_intl_air_remark
+    # 3. 应付款项
+    if payload.payables is not None:
+        p = payload.payables
+        record.pay_total = p.pay_total if p.pay_total is not None else record.pay_total
 
-    # (3) 应付款项 - [2] 汽运
-    record.pay_trucking_subtotal = payload.pay_trucking_subtotal if payload.pay_trucking_subtotal is not None else record.pay_trucking_subtotal
-    record.pay_trucking_date = _parse_date(payload.pay_trucking_date) if payload.pay_trucking_date is not None else record.pay_trucking_date
-    record.pay_trucking_outsource_unit = payload.pay_trucking_outsource_unit if payload.pay_trucking_outsource_unit is not None else record.pay_trucking_outsource_unit
-    record.pay_trucking_pieces = payload.pay_trucking_pieces if payload.pay_trucking_pieces is not None else record.pay_trucking_pieces
-    record.pay_trucking_weight = payload.pay_trucking_weight if payload.pay_trucking_weight is not None else record.pay_trucking_weight
-    record.pay_trucking_volume = payload.pay_trucking_volume if payload.pay_trucking_volume is not None else record.pay_trucking_volume
-    record.pay_trucking_unit_price = payload.pay_trucking_unit_price if payload.pay_trucking_unit_price is not None else record.pay_trucking_unit_price
-    record.pay_trucking_freight = payload.pay_trucking_freight if payload.pay_trucking_freight is not None else record.pay_trucking_freight
-    record.pay_trucking_doc_fee = payload.pay_trucking_doc_fee if payload.pay_trucking_doc_fee is not None else record.pay_trucking_doc_fee
-    record.pay_trucking_other_fee = payload.pay_trucking_other_fee if payload.pay_trucking_other_fee is not None else record.pay_trucking_other_fee
-    record.pay_trucking_remark = payload.pay_trucking_remark if payload.pay_trucking_remark is not None else record.pay_trucking_remark
+        # [1] 国际空运
+        if p.intl_air is not None:
+            ia = p.intl_air
+            record.pay_intl_air_subtotal = ia.subtotal if ia.subtotal is not None else record.pay_intl_air_subtotal
+            record.pay_intl_air_date = _parse_date(ia.date) if ia.date is not None else record.pay_intl_air_date
+            record.pay_intl_air_outsource_unit = ia.outsource_unit if ia.outsource_unit is not None else record.pay_intl_air_outsource_unit
+            record.pay_intl_air_origin = ia.origin if ia.origin is not None else record.pay_intl_air_origin
+            record.pay_intl_air_destination = ia.destination if ia.destination is not None else record.pay_intl_air_destination
+            record.pay_intl_air_airline = ia.airline if ia.airline is not None else record.pay_intl_air_airline
+            record.pay_intl_air_flight_doc_no = ia.flight_doc_no if ia.flight_doc_no is not None else record.pay_intl_air_flight_doc_no
+            record.pay_intl_air_flight_no = ia.flight_no if ia.flight_no is not None else record.pay_intl_air_flight_no
+            record.pay_intl_air_flight_date = _parse_date(ia.flight_date) if ia.flight_date is not None else record.pay_intl_air_flight_date
+            record.pay_intl_air_pieces = ia.pieces if ia.pieces is not None else record.pay_intl_air_pieces
+            record.pay_intl_air_weight = ia.weight if ia.weight is not None else record.pay_intl_air_weight
+            record.pay_intl_air_volume = ia.volume if ia.volume is not None else record.pay_intl_air_volume
+            record.pay_intl_air_chargeable_weight = ia.chargeable_weight if ia.chargeable_weight is not None else record.pay_intl_air_chargeable_weight
+            record.pay_intl_air_rate = ia.rate if ia.rate is not None else record.pay_intl_air_rate
+            record.pay_intl_air_freight = ia.freight if ia.freight is not None else record.pay_intl_air_freight
+            record.pay_intl_air_lading_fee = ia.lading_fee if ia.lading_fee is not None else record.pay_intl_air_lading_fee
+            record.pay_intl_air_split_fee = ia.split_fee if ia.split_fee is not None else record.pay_intl_air_split_fee
+            record.pay_intl_air_borrow_magnetic_fuel_pickup_fee = ia.borrow_magnetic_fuel_pickup_fee if ia.borrow_magnetic_fuel_pickup_fee is not None else record.pay_intl_air_borrow_magnetic_fuel_pickup_fee
+            record.pay_intl_air_tc_network_disposal_fee = ia.tc_network_disposal_fee if ia.tc_network_disposal_fee is not None else record.pay_intl_air_tc_network_disposal_fee
+            record.pay_intl_air_customs_fee = ia.customs_fee if ia.customs_fee is not None else record.pay_intl_air_customs_fee
+            record.pay_intl_air_continuation_sheet_fee = ia.continuation_sheet_fee if ia.continuation_sheet_fee is not None else record.pay_intl_air_continuation_sheet_fee
+            record.pay_intl_air_consumables_fee = ia.consumables_fee if ia.consumables_fee is not None else record.pay_intl_air_consumables_fee
+            record.pay_intl_air_front_warehouse = ia.front_warehouse if ia.front_warehouse is not None else record.pay_intl_air_front_warehouse
+            record.pay_intl_air_other_fee = ia.other_fee if ia.other_fee is not None else record.pay_intl_air_other_fee
+            record.pay_intl_air_remark = ia.remark if ia.remark is not None else record.pay_intl_air_remark
 
-    # (3) 应付款项 - [3] 国内空运
-    record.pay_dom_air_subtotal = payload.pay_dom_air_subtotal if payload.pay_dom_air_subtotal is not None else record.pay_dom_air_subtotal
-    record.pay_dom_air_date = _parse_date(payload.pay_dom_air_date) if payload.pay_dom_air_date is not None else record.pay_dom_air_date
-    record.pay_dom_air_outsource_unit = payload.pay_dom_air_outsource_unit if payload.pay_dom_air_outsource_unit is not None else record.pay_dom_air_outsource_unit
-    record.pay_dom_air_origin = payload.pay_dom_air_origin if payload.pay_dom_air_origin is not None else record.pay_dom_air_origin
-    record.pay_dom_air_destination = payload.pay_dom_air_destination if payload.pay_dom_air_destination is not None else record.pay_dom_air_destination
-    record.pay_dom_air_airline = payload.pay_dom_air_airline if payload.pay_dom_air_airline is not None else record.pay_dom_air_airline
-    record.pay_dom_air_airline_unit = payload.pay_dom_air_airline_unit if payload.pay_dom_air_airline_unit is not None else record.pay_dom_air_airline_unit
-    record.pay_dom_air_flight_doc_no = payload.pay_dom_air_flight_doc_no if payload.pay_dom_air_flight_doc_no is not None else record.pay_dom_air_flight_doc_no
-    record.pay_dom_air_flight_no = payload.pay_dom_air_flight_no if payload.pay_dom_air_flight_no is not None else record.pay_dom_air_flight_no
-    record.pay_dom_air_flight_date = _parse_date(payload.pay_dom_air_flight_date) if payload.pay_dom_air_flight_date is not None else record.pay_dom_air_flight_date
-    record.pay_dom_air_pieces = payload.pay_dom_air_pieces if payload.pay_dom_air_pieces is not None else record.pay_dom_air_pieces
-    record.pay_dom_air_weight = payload.pay_dom_air_weight if payload.pay_dom_air_weight is not None else record.pay_dom_air_weight
-    record.pay_dom_air_chargeable_weight = payload.pay_dom_air_chargeable_weight if payload.pay_dom_air_chargeable_weight is not None else record.pay_dom_air_chargeable_weight
-    record.pay_dom_air_rate = payload.pay_dom_air_rate if payload.pay_dom_air_rate is not None else record.pay_dom_air_rate
-    record.pay_dom_air_freight = payload.pay_dom_air_freight if payload.pay_dom_air_freight is not None else record.pay_dom_air_freight
-    record.pay_dom_air_other_fee = payload.pay_dom_air_other_fee if payload.pay_dom_air_other_fee is not None else record.pay_dom_air_other_fee
-    record.pay_dom_air_remark = payload.pay_dom_air_remark if payload.pay_dom_air_remark is not None else record.pay_dom_air_remark
+        # [2] 汽运
+        if p.trucking is not None:
+            tr = p.trucking
+            record.pay_trucking_subtotal = tr.subtotal if tr.subtotal is not None else record.pay_trucking_subtotal
+            record.pay_trucking_date = _parse_date(tr.date) if tr.date is not None else record.pay_trucking_date
+            record.pay_trucking_outsource_unit = tr.outsource_unit if tr.outsource_unit is not None else record.pay_trucking_outsource_unit
+            record.pay_trucking_pieces = tr.pieces if tr.pieces is not None else record.pay_trucking_pieces
+            record.pay_trucking_weight = tr.weight if tr.weight is not None else record.pay_trucking_weight
+            record.pay_trucking_volume = tr.volume if tr.volume is not None else record.pay_trucking_volume
+            record.pay_trucking_unit_price = tr.unit_price if tr.unit_price is not None else record.pay_trucking_unit_price
+            record.pay_trucking_freight = tr.freight if tr.freight is not None else record.pay_trucking_freight
+            record.pay_trucking_doc_fee = tr.doc_fee if tr.doc_fee is not None else record.pay_trucking_doc_fee
+            record.pay_trucking_other_fee = tr.other_fee if tr.other_fee is not None else record.pay_trucking_other_fee
+            record.pay_trucking_remark = tr.remark if tr.remark is not None else record.pay_trucking_remark
 
-    # (3) 应付款项 - [4] 报关信息
-    record.pay_customs_subtotal = payload.pay_customs_subtotal if payload.pay_customs_subtotal is not None else record.pay_customs_subtotal
-    record.pay_customs_date = _parse_date(payload.pay_customs_date) if payload.pay_customs_date is not None else record.pay_customs_date
-    record.pay_customs_agent = payload.pay_customs_agent if payload.pay_customs_agent is not None else record.pay_customs_agent
-    record.pay_customs_fee = payload.pay_customs_fee if payload.pay_customs_fee is not None else record.pay_customs_fee
-    record.pay_customs_continuation_sheet_fee = payload.pay_customs_continuation_sheet_fee if payload.pay_customs_continuation_sheet_fee is not None else record.pay_customs_continuation_sheet_fee
-    record.pay_customs_inspection_delete_fee = payload.pay_customs_inspection_delete_fee if payload.pay_customs_inspection_delete_fee is not None else record.pay_customs_inspection_delete_fee
-    record.pay_customs_rebate = payload.pay_customs_rebate if payload.pay_customs_rebate is not None else record.pay_customs_rebate
-    record.pay_customs_other_fee = payload.pay_customs_other_fee if payload.pay_customs_other_fee is not None else record.pay_customs_other_fee
-    record.pay_customs_remark = payload.pay_customs_remark if payload.pay_customs_remark is not None else record.pay_customs_remark
+        # [3] 国内空运
+        if p.dom_air is not None:
+            da = p.dom_air
+            record.pay_dom_air_subtotal = da.subtotal if da.subtotal is not None else record.pay_dom_air_subtotal
+            record.pay_dom_air_date = _parse_date(da.date) if da.date is not None else record.pay_dom_air_date
+            record.pay_dom_air_outsource_unit = da.outsource_unit if da.outsource_unit is not None else record.pay_dom_air_outsource_unit
+            record.pay_dom_air_origin = da.origin if da.origin is not None else record.pay_dom_air_origin
+            record.pay_dom_air_destination = da.destination if da.destination is not None else record.pay_dom_air_destination
+            record.pay_dom_air_airline = da.airline if da.airline is not None else record.pay_dom_air_airline
+            record.pay_dom_air_airline_unit = da.airline_unit if da.airline_unit is not None else record.pay_dom_air_airline_unit
+            record.pay_dom_air_flight_doc_no = da.flight_doc_no if da.flight_doc_no is not None else record.pay_dom_air_flight_doc_no
+            record.pay_dom_air_flight_no = da.flight_no if da.flight_no is not None else record.pay_dom_air_flight_no
+            record.pay_dom_air_flight_date = _parse_date(da.flight_date) if da.flight_date is not None else record.pay_dom_air_flight_date
+            record.pay_dom_air_pieces = da.pieces if da.pieces is not None else record.pay_dom_air_pieces
+            record.pay_dom_air_weight = da.weight if da.weight is not None else record.pay_dom_air_weight
+            record.pay_dom_air_chargeable_weight = da.chargeable_weight if da.chargeable_weight is not None else record.pay_dom_air_chargeable_weight
+            record.pay_dom_air_rate = da.rate if da.rate is not None else record.pay_dom_air_rate
+            record.pay_dom_air_freight = da.freight if da.freight is not None else record.pay_dom_air_freight
+            record.pay_dom_air_other_fee = da.other_fee if da.other_fee is not None else record.pay_dom_air_other_fee
+            record.pay_dom_air_remark = da.remark if da.remark is not None else record.pay_dom_air_remark
 
-    # (3) 应付款项 - [5] 地面操作信息
-    record.pay_ground_subtotal = payload.pay_ground_subtotal if payload.pay_ground_subtotal is not None else record.pay_ground_subtotal
-    record.pay_ground_date = _parse_date(payload.pay_ground_date) if payload.pay_ground_date is not None else record.pay_ground_date
-    record.pay_ground_outsource_unit = payload.pay_ground_outsource_unit if payload.pay_ground_outsource_unit is not None else record.pay_ground_outsource_unit
-    record.pay_ground_chargeable_weight = payload.pay_ground_chargeable_weight if payload.pay_ground_chargeable_weight is not None else record.pay_ground_chargeable_weight
-    record.pay_ground_rate = payload.pay_ground_rate if payload.pay_ground_rate is not None else record.pay_ground_rate
-    record.pay_ground_freight = payload.pay_ground_freight if payload.pay_ground_freight is not None else record.pay_ground_freight
-    record.pay_ground_lading_express_fee = payload.pay_ground_lading_express_fee if payload.pay_ground_lading_express_fee is not None else record.pay_ground_lading_express_fee
-    record.pay_ground_security_customs_fee = payload.pay_ground_security_customs_fee if payload.pay_ground_security_customs_fee is not None else record.pay_ground_security_customs_fee
-    record.pay_ground_pallet_exit_fee = payload.pay_ground_pallet_exit_fee if payload.pay_ground_pallet_exit_fee is not None else record.pay_ground_pallet_exit_fee
-    record.pay_ground_other_fee = payload.pay_ground_other_fee if payload.pay_ground_other_fee is not None else record.pay_ground_other_fee
-    record.pay_ground_remark = payload.pay_ground_remark if payload.pay_ground_remark is not None else record.pay_ground_remark
+        # [4] 报关信息
+        if p.customs is not None:
+            c = p.customs
+            record.pay_customs_subtotal = c.subtotal if c.subtotal is not None else record.pay_customs_subtotal
+            record.pay_customs_date = _parse_date(c.date) if c.date is not None else record.pay_customs_date
+            record.pay_customs_agent = c.agent if c.agent is not None else record.pay_customs_agent
+            record.pay_customs_fee = c.customs_fee if c.customs_fee is not None else record.pay_customs_fee
+            record.pay_customs_continuation_sheet_fee = c.continuation_sheet_fee if c.continuation_sheet_fee is not None else record.pay_customs_continuation_sheet_fee
+            record.pay_customs_inspection_delete_fee = c.inspection_delete_fee if c.inspection_delete_fee is not None else record.pay_customs_inspection_delete_fee
+            record.pay_customs_rebate = c.rebate if c.rebate is not None else record.pay_customs_rebate
+            record.pay_customs_other_fee = c.other_fee if c.other_fee is not None else record.pay_customs_other_fee
+            record.pay_customs_remark = c.remark if c.remark is not None else record.pay_customs_remark
 
-    # (3) 应付款项 - 合计
-    record.pay_total = payload.pay_total if payload.pay_total is not None else record.pay_total
+        # [5] 地面操作信息
+        if p.ground is not None:
+            g = p.ground
+            record.pay_ground_subtotal = g.subtotal if g.subtotal is not None else record.pay_ground_subtotal
+            record.pay_ground_date = _parse_date(g.date) if g.date is not None else record.pay_ground_date
+            record.pay_ground_outsource_unit = g.outsource_unit if g.outsource_unit is not None else record.pay_ground_outsource_unit
+            record.pay_ground_chargeable_weight = g.chargeable_weight if g.chargeable_weight is not None else record.pay_ground_chargeable_weight
+            record.pay_ground_rate = g.rate if g.rate is not None else record.pay_ground_rate
+            record.pay_ground_freight = g.freight if g.freight is not None else record.pay_ground_freight
+            record.pay_ground_lading_express_fee = g.lading_express_fee if g.lading_express_fee is not None else record.pay_ground_lading_express_fee
+            record.pay_ground_security_customs_fee = g.security_customs_fee if g.security_customs_fee is not None else record.pay_ground_security_customs_fee
+            record.pay_ground_pallet_exit_fee = g.pallet_exit_fee if g.pallet_exit_fee is not None else record.pay_ground_pallet_exit_fee
+            record.pay_ground_other_fee = g.other_fee if g.other_fee is not None else record.pay_ground_other_fee
+            record.pay_ground_remark = g.remark if g.remark is not None else record.pay_ground_remark
 
-    # (4) 销售提成
-    record.salesperson = payload.salesperson if payload.salesperson is not None else record.salesperson
-    record.commission_amount = payload.commission_amount if payload.commission_amount is not None else record.commission_amount
+    # 4. 销售提成
+    if payload.sales_commission is not None:
+        sc = payload.sales_commission
+        record.salesperson = sc.salesperson if sc.salesperson is not None else record.salesperson
+        record.commission_amount = sc.commission_amount if sc.commission_amount is not None else record.commission_amount
 
-    # (5) 经营信息
-    record.profit = payload.profit if payload.profit is not None else record.profit
-    record.profit_margin = payload.profit_margin if payload.profit_margin is not None else record.profit_margin
+    # 5. 经营信息
+    if payload.operating_info is not None:
+        op = payload.operating_info
+        record.profit = op.profit if op.profit is not None else record.profit
+        record.profit_margin = op.profit_margin if op.profit_margin is not None else record.profit_margin
 
 
 # ============================================================================
@@ -748,7 +779,6 @@ async def export_cost_consignments_to_excel(
             cell = ws.cell(row=r_idx, column=c_idx)
             cell.font = data_font
             cell.border = thin_border
-            # 数字和日期居中，文本左对齐
             if c_idx in (2, 7, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 22):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             else:
