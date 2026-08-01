@@ -5,6 +5,7 @@ from app.models.config import BusinessConfig
 from app.models.dict_type import DictType
 from app.models.dict_option import DictOption
 from app.models.customer_service import ConsignmentRegistration, ConsignmentInfo
+from app.models.cost_service import CostRegistration, CostConsignment
 
 __all__ = [
     "User",
@@ -15,6 +16,9 @@ __all__ = [
     "DictOption",
     "ConsignmentRegistration",
     "ConsignmentInfo",
+    "CostRegistration",
+    "CostConsignment",
 ]
+
 
 

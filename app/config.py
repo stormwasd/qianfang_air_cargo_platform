@@ -40,6 +40,7 @@ class Settings(BaseSettings):
         "bill": "单号管理",
         "robot": "机器人管理",
         "customer_service": "客服接单台",
+        "cost_service": "费用登记台",
         "admin": "管理员"
     }
     
