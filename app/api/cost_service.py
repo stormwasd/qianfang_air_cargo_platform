@@ -694,6 +694,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
+    涵盖 5 大业务层级结构（货主委托、应收明细、应付明细[国空/汽运/国内/报关/地面]、销售提成、经营信息）共 114 列全量字段。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -711,21 +712,67 @@ async def export_cost_consignments_to_excel(
     
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "费用单据信息列表"
+    ws.title = "费用单据信息全量列表"
     
     headers = [
-        "内部单据ID", "进仓日期", "客户名称", "始发站-目的站",
+        # (1) 货主委托信息
+        "制单时间", "内部单据ID", "进仓日期", "客户名称", "始发站-目的站",
         "报关", "提单", "航班日期", "航班号", "航班单号",
         "件数", "实际重量(kg)", "计费重量(kg)", "体积(m³)", "一程重量(kg)",
-        "代理", "应收运费", "应收合计", "应付合计", "利润", "利润率(%)", "业务员", "提成金额", "备注"
+        "代理", "委托备注",
+        
+        # (2) 应收款项
+        "应收-单价", "应收-运费", "应收-提单费/信息录入费", "应收-分单费/抵账费/电报费",
+        "应收-报关费", "应收-续页费", "应收-海关查验费", "应收-磁检费/安检费",
+        "应收-TC操作费/快件中心过站费", "应收-前置仓/国际货站地面费", "应收-制单费",
+        "应收-制单分单费", "应收-垫板费", "应收-打板/装箱费", "应收-探板费",
+        "应收-耗材费", "应收-一程费用", "应收-合计", "应收-代理",
+        
+        # (3) 应付款项 - 国际空运
+        "国空应付-小计", "国空应付-托运日期", "国空应付-外发单位", "国空应付-始发站",
+        "国空应付-到达站", "国空应付-航空公司", "国空应付-航班单号", "国空应付-航班号",
+        "国空应付-航班日期", "国空应付-件数", "国空应付-重量", "国空应付-体积",
+        "国空应付-计费重量", "国空应付-费率", "国空应付-运费", "国空应付-提单费",
+        "国空应付-分单费", "国空应付-借单/磁检/燃油/提货费", "国空应付-TC/入网/处置费",
+        "国空应付-报关费", "国空应付-续页费", "国空应付-耗材费", "国空应付-前置仓",
+        "国空应付-其他费用", "国空应付-备注",
+        
+        # (3) 应付款项 - 汽运
+        "汽运应付-小计", "汽运应付-托运日期", "汽运应付-外发单位", "汽运应付-件数",
+        "汽运应付-重量", "汽运应付-体积", "汽运应付-单价", "汽运应付-运费",
+        "汽运应付-制单费", "汽运应付-其他费用", "汽运应付-备注",
+        
+        # (3) 应付款项 - 国内空运
+        "国空内应付-小计", "国空内应付-托运日期", "国空内应付-外发单位", "国空内应付-始发站",
+        "国空内应付-到达站", "国空内应付-航空公司", "国空内应付-航空单位", "国空内应付-航空单号",
+        "国空内应付-航班号", "国空内应付-航班日期", "国空内应付-件数", "国空内应付-重量",
+        "国空内应付-计费重量", "国空内应付-费率", "国空内应付-运费", "国空内应付-其他费用", "国空内应付-备注",
+        
+        # (3) 应付款项 - 报关
+        "报关应付-小计", "报关应付-报关日期", "报关应付-报关代理", "报关应付-报关费",
+        "报关应付-续页费", "报关应付-查验/删单费", "报关应付-回扣栏", "报关应付-其他费用", "报关应付-备注",
+        
+        # (3) 应付款项 - 地面操作
+        "地面应付-小计", "地面应付-托运日期", "地面应付-外发单位", "地面应付-计费重量",
+        "地面应付-费率", "地面应付-运费", "地面应付-提单/快件处置费", "地面应付-安检/报关费",
+        "地面应付-打板/退场费", "地面应付-其他费用", "地面应付-备注",
+        
+        # (3) 应付款项 - 总计
+        "应付合计",
+        
+        # (4) 销售提成
+        "业务员", "提成金额",
+        
+        # (5) 经营信息
+        "利润", "利润率(%)"
     ]
     
     ws.append(headers)
     
     # 样式配置
     header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
-    header_font = Font(name="微软雅黑", size=11, bold=True, color="FFFFFF")
-    data_font = Font(name="微软雅黑", size=10)
+    header_font = Font(name="微软雅黑", size=10, bold=True, color="FFFFFF")
+    data_font = Font(name="微软雅黑", size=9)
     thin_border = Border(
         left=Side(style='thin', color='D3D3D3'),
         right=Side(style='thin', color='D3D3D3'),
@@ -733,7 +780,7 @@ async def export_cost_consignments_to_excel(
         bottom=Side(style='thin', color='D3D3D3')
     )
     
-    for col_num, _ in enumerate(headers, 1):
+    for col_num in range(1, len(headers) + 1):
         cell = ws.cell(row=1, column=col_num)
         cell.fill = header_fill
         cell.font = header_font
@@ -742,44 +789,173 @@ async def export_cost_consignments_to_excel(
     
     ws.row_dimensions[1].height = 28
     
+    def _v_str(val):
+        return str(val) if val is not None else ""
+
+    def _v_num(val):
+        return float(val) if val is not None else ""
+
+    def _v_date(val):
+        if not val:
+            return ""
+        if isinstance(val, (datetime, date)):
+            return val.strftime("%Y-%m-%d")
+        return str(val)
+
+    def _v_dt(val):
+        if not val:
+            return ""
+        if isinstance(val, datetime):
+            return val.strftime("%Y-%m-%d %H:%M:%S")
+        return str(val)
+
     for r_idx, rec in enumerate(records, 2):
-        wh_date_str = rec.warehouse_entry_date.strftime("%Y-%m-%d") if rec.warehouse_entry_date else ""
-        fl_date_str = rec.flight_date.strftime("%Y-%m-%d") if rec.flight_date else ""
-        
         row_data = [
-            rec.internal_doc_id or "",
-            wh_date_str,
-            rec.customer_name or "",
-            rec.origin_destination or "",
-            rec.customs_declaration or "",
-            rec.bill_of_lading or "",
-            fl_date_str,
-            rec.flight_no or "",
-            rec.flight_doc_no or "",
+            # (1) 货主委托信息
+            _v_dt(rec.create_time),
+            _v_str(rec.internal_doc_id),
+            _v_date(rec.warehouse_entry_date),
+            _v_str(rec.customer_name),
+            _v_str(rec.origin_destination),
+            _v_str(rec.customs_declaration),
+            _v_str(rec.bill_of_lading),
+            _v_date(rec.flight_date),
+            _v_str(rec.flight_no),
+            _v_str(rec.flight_doc_no),
             rec.pieces if rec.pieces is not None else "",
-            float(rec.actual_weight) if rec.actual_weight is not None else "",
-            float(rec.chargeable_weight) if rec.chargeable_weight is not None else "",
-            float(rec.volume) if rec.volume is not None else "",
-            float(rec.first_leg_weight) if rec.first_leg_weight is not None else "",
-            rec.agent or "",
-            float(rec.receivable_freight) if rec.receivable_freight is not None else "",
-            float(rec.receivable_total) if rec.receivable_total is not None else "",
-            float(rec.pay_total) if rec.pay_total is not None else "",
-            float(rec.profit) if rec.profit is not None else "",
-            float(rec.profit_margin) if rec.profit_margin is not None else "",
-            rec.salesperson or "",
-            float(rec.commission_amount) if rec.commission_amount is not None else "",
-            rec.remark or ""
+            _v_num(rec.actual_weight),
+            _v_num(rec.chargeable_weight),
+            _v_num(rec.volume),
+            _v_num(rec.first_leg_weight),
+            _v_str(rec.agent),
+            _v_str(rec.remark),
+
+            # (2) 应收款项
+            _v_num(rec.unit_price),
+            _v_num(rec.receivable_freight),
+            _v_num(rec.receivable_lading_info_fee),
+            _v_num(rec.receivable_split_offset_telex_fee),
+            _v_num(rec.receivable_customs_fee),
+            _v_num(rec.receivable_continuation_sheet_fee),
+            _v_num(rec.receivable_customs_inspection_fee),
+            _v_num(rec.receivable_magnetic_security_fee),
+            _v_num(rec.receivable_tc_express_fee),
+            _v_num(rec.receivable_warehouse_ground_fee),
+            _v_num(rec.receivable_doc_make_fee),
+            _v_num(rec.receivable_doc_split_fee),
+            _v_num(rec.receivable_skid_fee),
+            _v_num(rec.receivable_pallet_packing_fee),
+            _v_num(rec.receivable_probe_fee),
+            _v_num(rec.receivable_consumables_fee),
+            _v_num(rec.receivable_first_leg_fee),
+            _v_num(rec.receivable_total),
+            _v_str(rec.receivable_agent),
+
+            # (3) 应付款项 - 国际空运
+            _v_num(rec.pay_intl_air_subtotal),
+            _v_date(rec.pay_intl_air_date),
+            _v_str(rec.pay_intl_air_outsource_unit),
+            _v_str(rec.pay_intl_air_origin),
+            _v_str(rec.pay_intl_air_destination),
+            _v_str(rec.pay_intl_air_airline),
+            _v_str(rec.pay_intl_air_flight_doc_no),
+            _v_str(rec.pay_intl_air_flight_no),
+            _v_date(rec.pay_intl_air_flight_date),
+            rec.pay_intl_air_pieces if rec.pay_intl_air_pieces is not None else "",
+            _v_num(rec.pay_intl_air_weight),
+            _v_num(rec.pay_intl_air_volume),
+            _v_num(rec.pay_intl_air_chargeable_weight),
+            _v_num(rec.pay_intl_air_rate),
+            _v_num(rec.pay_intl_air_freight),
+            _v_num(rec.pay_intl_air_lading_fee),
+            _v_num(rec.pay_intl_air_split_fee),
+            _v_num(rec.pay_intl_air_borrow_magnetic_fuel_pickup_fee),
+            _v_num(rec.pay_intl_air_tc_network_disposal_fee),
+            _v_num(rec.pay_intl_air_customs_fee),
+            _v_num(rec.pay_intl_air_continuation_sheet_fee),
+            _v_num(rec.pay_intl_air_consumables_fee),
+            _v_num(rec.pay_intl_air_front_warehouse),
+            _v_num(rec.pay_intl_air_other_fee),
+            _v_str(rec.pay_intl_air_remark),
+
+            # (3) 应付款项 - 汽运
+            _v_num(rec.pay_trucking_subtotal),
+            _v_date(rec.pay_trucking_date),
+            _v_str(rec.pay_trucking_outsource_unit),
+            rec.pay_trucking_pieces if rec.pay_trucking_pieces is not None else "",
+            _v_num(rec.pay_trucking_weight),
+            _v_num(rec.pay_trucking_volume),
+            _v_num(rec.pay_trucking_unit_price),
+            _v_num(rec.pay_trucking_freight),
+            _v_num(rec.pay_trucking_doc_fee),
+            _v_num(rec.pay_trucking_other_fee),
+            _v_str(rec.pay_trucking_remark),
+
+            # (3) 应付款项 - 国内空运
+            _v_num(rec.pay_dom_air_subtotal),
+            _v_date(rec.pay_dom_air_date),
+            _v_str(rec.pay_dom_air_outsource_unit),
+            _v_str(rec.pay_dom_air_origin),
+            _v_str(rec.pay_dom_air_destination),
+            _v_str(rec.pay_dom_air_airline),
+            _v_str(rec.pay_dom_air_airline_unit),
+            _v_str(rec.pay_dom_air_flight_doc_no),
+            _v_str(rec.pay_dom_air_flight_no),
+            _v_date(rec.pay_dom_air_flight_date),
+            rec.pay_dom_air_pieces if rec.pay_dom_air_pieces is not None else "",
+            _v_num(rec.pay_dom_air_weight),
+            _v_num(rec.pay_dom_air_chargeable_weight),
+            _v_num(rec.pay_dom_air_rate),
+            _v_num(rec.pay_dom_air_freight),
+            _v_num(rec.pay_dom_air_other_fee),
+            _v_str(rec.pay_dom_air_remark),
+
+            # (3) 应付款项 - 报关
+            _v_num(rec.pay_customs_subtotal),
+            _v_date(rec.pay_customs_date),
+            _v_str(rec.pay_customs_agent),
+            _v_num(rec.pay_customs_fee),
+            _v_num(rec.pay_customs_continuation_sheet_fee),
+            _v_num(rec.pay_customs_inspection_delete_fee),
+            _v_num(rec.pay_customs_rebate),
+            _v_num(rec.pay_customs_other_fee),
+            _v_str(rec.pay_customs_remark),
+
+            # (3) 应付款项 - 地面操作
+            _v_num(rec.pay_ground_subtotal),
+            _v_date(rec.pay_ground_date),
+            _v_str(rec.pay_ground_outsource_unit),
+            _v_num(rec.pay_ground_chargeable_weight),
+            _v_num(rec.pay_ground_rate),
+            _v_num(rec.pay_ground_freight),
+            _v_num(rec.pay_ground_lading_express_fee),
+            _v_num(rec.pay_ground_security_customs_fee),
+            _v_num(rec.pay_ground_pallet_exit_fee),
+            _v_num(rec.pay_ground_other_fee),
+            _v_str(rec.pay_ground_remark),
+
+            # (3) 应付款项 - 总计
+            _v_num(rec.pay_total),
+
+            # (4) 销售提成
+            _v_str(rec.salesperson),
+            _v_num(rec.commission_amount),
+
+            # (5) 经营信息
+            _v_num(rec.profit),
+            _v_num(rec.profit_margin),
         ]
         
         ws.append(row_data)
         ws.row_dimensions[r_idx].height = 22
         
-        for c_idx in range(1, len(row_data) + 1):
+        for c_idx, val in enumerate(row_data, 1):
             cell = ws.cell(row=r_idx, column=c_idx)
             cell.font = data_font
             cell.border = thin_border
-            if c_idx in (2, 7, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 22):
+            if isinstance(val, (int, float)):
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+            elif any(k in headers[c_idx - 1] for k in ("时间", "日期")):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 cell.alignment = Alignment(horizontal="left", vertical="center")
@@ -793,7 +969,7 @@ async def export_cost_consignments_to_excel(
             length = sum(2 if ord(char) > 127 else 1 for char in val_str)
             if length > max_len:
                 max_len = length
-        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 11)
 
     output = io.BytesIO()
     wb.save(output)
