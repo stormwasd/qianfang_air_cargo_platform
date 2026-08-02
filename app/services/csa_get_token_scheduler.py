@@ -1,0 +1,137 @@
+"""
+南航获取Token定时调度器
+定期为分配了“南航获取token”权限的机器人触发 Token 获取任务
+"""
+
+import json
+import asyncio
+import threading
+import traceback
+from typing import Optional
+
+from app.database import SessionLocal
+from app.config import settings
+from app.models.rpa_task import RPATaskType
+from app.models.robot import Robot, TaskProcess
+from app.services.rpa_task_service import rpa_task_service
+
+TARGET_TYPE = "csa_get_token"
+
+
+class CsaGetTokenScheduler:
+    def __init__(self):
+        self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        print("[CsaGetTokenScheduler] 已启动南航获取Token定时调度器")
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        print("[CsaGetTokenScheduler] 已停止南航获取Token定时调度器")
+
+    def _run(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._async_main())
+        finally:
+            loop.close()
+
+    async def _async_main(self) -> None:
+        """主循环"""
+        if not self._stop_event.is_set():
+            try:
+                await self._enqueue_tasks()
+            except Exception as e:
+                print(f"[CsaGetTokenScheduler] 启动时入队任务失败: {repr(e)}")
+
+        while not self._stop_event.is_set():
+            try:
+                interval = getattr(settings, "RPA_CHINA_SOUTHERN_AIR_GET_TOKEN_INTERVAL_SECONDS", 1800)
+                remaining = interval if interval and interval > 0 else 1800
+
+                while remaining > 0 and not self._stop_event.is_set():
+                    step = min(5.0, float(remaining))
+                    await asyncio.sleep(step)
+                    remaining -= step
+
+                if not self._stop_event.is_set():
+                    await self._enqueue_tasks()
+
+            except Exception as e:
+                print(f"[CsaGetTokenScheduler] 调度循环异常: {repr(e)}\n{traceback.format_exc()}")
+                await asyncio.sleep(60)
+
+    async def _enqueue_tasks(self) -> None:
+        """为所有拥有权限的启用机器人创建获取 Token 任务"""
+        db = SessionLocal()
+        try:
+            task_type = RPATaskType.CHINA_SOUTHERN_AIR_GET_TOKEN.value
+
+            robots = db.query(Robot).filter(Robot.status == 1).all()
+            target_robots = []
+
+            for robot in robots:
+                if not robot.task_permissions:
+                    continue
+                try:
+                    perms = json.loads(robot.task_permissions) if isinstance(robot.task_permissions, str) else robot.task_permissions
+                    if isinstance(perms, list) and task_type in perms:
+                        target_robots.append(robot)
+                except Exception:
+                    continue
+
+            if not target_robots:
+                return
+
+            task_process = db.query(TaskProcess).filter(
+                TaskProcess.task_name == task_type
+            ).first()
+
+            base_params = {}
+            if task_process and task_process.process_param:
+                try:
+                    base_params = json.loads(task_process.process_param)
+                except Exception:
+                    base_params = {}
+
+            if not base_params:
+                base_params = {
+                    "system_url": "https://cargo.csair.com/tangb2gweb/order-management",
+                    "queue_token_name": ""
+                }
+
+            for robot in target_robots:
+                existing = rpa_task_service.get_pending_task_for_target(
+                    db,
+                    target_type=TARGET_TYPE,
+                    target_id=robot.id,
+                    task_type=task_type,
+                )
+                if existing:
+                    continue
+
+                rpa_task_service.create_task(
+                    db=db,
+                    task_type=task_type,
+                    target_type=TARGET_TYPE,
+                    target_id=robot.id,
+                    params=base_params,
+                    job_uuid=None,
+                    priority=2,
+                    created_by=None,
+                    robot_id=robot.id,
+                )
+                print(f"[CsaGetTokenScheduler] 已为机器人 '{robot.name}' (ID: {robot.id}) 生成南航获取Token任务({task_type})")
+        finally:
+            db.close()
+
+
+csa_get_token_scheduler = CsaGetTokenScheduler()

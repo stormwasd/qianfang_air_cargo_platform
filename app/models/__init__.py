@@ -45,5 +45,7 @@ from app.models.alert_notification_record import AlertNotificationRecord
 from app.models.peer_air_manual_data import PeerAirDepartureManualData
 from app.models.peer_road_manual_data import PeerRoadDepartureManualData
 from app.models.air_financial_audit_data import AirFinancialAuditData
+from app.models.nanhang_token import NanHangToken
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport", "ShenzhenAirBillingTimeContainer", "ShenzhenAirApprovalData", "ChinaSouthernAirApprovalData", "CsaProductInformation", "CsaLalamoveInformation", "CsaDepartureManualData", "ShenzhenAirDepartureAlertTask", "CsaDepartureAlertTask", "ShenzhenAirLoadingAlertTask", "CsaLoadingAlertTask", "AlertNotificationRecord", "PeerAirDepartureManualData", "PeerRoadDepartureManualData", "AirFinancialAuditData"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport", "ShenzhenAirBillingTimeContainer", "ShenzhenAirApprovalData", "ChinaSouthernAirApprovalData", "CsaProductInformation", "CsaLalamoveInformation", "CsaDepartureManualData", "ShenzhenAirDepartureAlertTask", "CsaDepartureAlertTask", "ShenzhenAirLoadingAlertTask", "CsaLoadingAlertTask", "AlertNotificationRecord", "PeerAirDepartureManualData", "PeerRoadDepartureManualData", "AirFinancialAuditData", "NanHangToken"]
+

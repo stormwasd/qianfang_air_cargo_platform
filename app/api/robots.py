@@ -189,6 +189,7 @@ async def get_task_types(
         "CHINA_SOUTHERN_AIR_SECURITY_PRINT": "南航货运安检申报单打印",
         "CHINA_SOUTHERN_AIR_LABEL_PRINT": "南航标签单打印",
         "CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING": "南航订舱-本站货物+货拉数据获取",
+        "CHINA_SOUTHERN_AIR_GET_TOKEN": "南航获取token",
         "SHENZHEN_AIR_KEEP_LOGIN": "深航保持登录",
         "CHINA_SOUTHERN_AIR_KEEP_LOGIN": "南航保持登录",
         "TANGYI_KEEP_LOGIN": "唐翼保持登录",

@@ -128,6 +128,10 @@ class Settings(BaseSettings):
         default=900, ge=1, le=86400,
         description="南航出港跟踪数据（本站货物+货拉信息）定时获取执行间隔（秒），默认900秒"
     )
+    RPA_CHINA_SOUTHERN_AIR_GET_TOKEN_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=1, le=86400,
+        description="南航获取Token任务定时调度间隔（秒），默认1800秒（30分钟）"
+    )
     RPA_GENERATED_FILES_DIR: str = Field(
         default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "generated_files"),
         description="后台扫描的RPA下载文件存放目录"

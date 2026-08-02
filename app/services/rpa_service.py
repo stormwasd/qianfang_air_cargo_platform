@@ -1768,5 +1768,56 @@ class RPAService:
                 return {"code": -1, "msg": str(e), "data": []}
 
 
+    async def create_china_southern_air_get_token(
+        self,
+        system_url: str,
+        job_uuid: str,
+        queue_names: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        调用南航获取token任务RPA接口
+
+        Args:
+            system_url: 系统URL (如 https://cargo.csair.com/tangb2gweb/order-management)
+            job_uuid: 任务的 UUID
+            queue_names: 队列名称字典，如 {"queue_token_name": "china_southern_air_get_token_queue_token_name_xxx"}
+
+        Returns:
+            RPA接口返回的数据，包含workUuid等信息
+        """
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+
+        input_param = {
+            "system_url": system_url
+        }
+        if queue_names:
+            input_param.update(queue_names)
+
+        payload = {
+            "jobUuid": job_uuid,
+            "operation": 1,
+            "inputParam": input_param
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=self._get_headers(), json=payload)
+                response.raise_for_status()
+                result = response.json()
+
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "RPA获取Token接口调用失败")
+                    raise BadRequestException(f"RPA获取Token接口调用失败: {error_msg}")
+
+                return result.get("data", {})
+            except httpx.HTTPStatusError as e:
+                raise BadRequestException(f"RPA获取Token接口HTTP错误: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise BadRequestException(f"RPA获取Token接口请求失败: {repr(e)}")
+            except Exception as e:
+                raise BadRequestException(f"RPA获取Token接口调用异常: {repr(e)}")
+
+
 rpa_service = RPAService()
+
 

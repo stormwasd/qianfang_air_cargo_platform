@@ -31,6 +31,7 @@ TASK_QUEUE_CONFIGS = {
     "CHINA_SOUTHERN_AIR_DIRECT_INVOICE": ["rate", "freight", "fuel_costs", "extended_service_fee"],
     "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA": ["rate", "freight", "fuel_costs", "extended_service_fee"],
     "CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING": ["product_information_on_this_site", "lalamove_information"],
+    "CHINA_SOUTHERN_AIR_GET_TOKEN": ["token_name"],
 }
 
 SINGLETON_TASK_TYPES: set = {

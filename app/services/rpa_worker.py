@@ -18,6 +18,7 @@ from app.models.booking import Booking
 from app.models.settlement import Settlement
 from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
+from app.models.nanhang_token import NanHangToken
 from app.services.rpa_service import rpa_service
 from app.services.rpa_task_service import rpa_task_service, PRINT_TASK_TYPES, PRINT_TYPE_REVERSE_MAPPING, PRINT_TYPE_MAPPING
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
@@ -409,6 +410,8 @@ class RPAWorker:
                     await self._execute_shenzhen_air_billing_time_container(db, task)
                 elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value:
                     await self._execute_china_southern_air_departure_tracking(db, task)
+                elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_GET_TOKEN.value:
+                    await self._execute_china_southern_air_get_token(db, task)
                 else:
                     print(f"{self._log_prefix} 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -3265,8 +3268,159 @@ class RPAWorker:
         finally:
             await self._cleanup_queues(queues_info)
 
+    async def _execute_china_southern_air_get_token(self, db, task: RPATask):
+        """执行南航获取token任务"""
+        print(f"{self._log_prefix} 准备执行南航获取Token任务: {task.id}")
+        
+        job_uuid = task.job_uuid
+        if not job_uuid:
+            job = db.query(RobotJob).filter(
+                RobotJob.robot_id == task.robot_id,
+                RobotJob.task_name == task.task_type
+            ).first()
+            if job:
+                job_uuid = job.job_uuid
+        
+        if not job_uuid:
+            error_msg = f"未找到南航获取Token任务 (task_type={task.task_type}) 对应的 job_uuid"
+            print(f"{self._log_prefix} {error_msg}")
+            rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+            return
+
+        queues_info = {}
+        try:
+            queues_info = await self._create_queues_for_task(db, task)
+            queue_names = self._build_queue_names_for_flow(queues_info)
+            
+            params = json.loads(task.params) if task.params else {}
+            system_url = params.get("system_url", "https://cargo.csair.com/tangb2gweb/order-management")
+
+            print(f"{self._log_prefix} [CHINA_SOUTHERN_AIR_GET_TOKEN] 实际发送给RPA的参数: system_url={system_url}, queues={queue_names}")
+
+            response_data = await rpa_service.create_china_southern_air_get_token(
+                system_url=system_url,
+                job_uuid=job_uuid,
+                queue_names=queue_names
+            )
+            
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(response_data)
+            if not work_uuid:
+                raise ValueError("RPA 接口未返回有效的 workUuid")
+
+            print(f"{self._log_prefix} 成功创建南航获取Token任务, workUuid: {work_uuid}")
+            
+            await self._poll_china_southern_air_get_token_status(db, task, work_uuid, queues_info)
+
+        except Exception as e:
+            error_msg = _get_error_detail(e)
+            print(f"{self._log_prefix} 执行南航获取Token任务异常: {error_msg}\n{traceback.format_exc()}")
+            await self._cleanup_queues(queues_info)
+            rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+
+    async def _poll_china_southern_air_get_token_status(self, db, task: RPATask, work_uuid: str, queues_info: dict):
+        """轮询南航获取Token任务状态"""
+        poll_count = 0
+        job_uuid = task.job_uuid
+        if not job_uuid:
+            job = db.query(RobotJob).filter(
+                RobotJob.robot_id == task.robot_id,
+                RobotJob.task_name == task.task_type
+            ).first()
+            if job:
+                job_uuid = job.job_uuid
+
+        while poll_count < settings.RPA_POLL_MAX_COUNT:
+            try:
+                response_data = await rpa_service.query_shenzhen_air_waybill_status(
+                    job_uuid=job_uuid
+                )
+                
+                status_info = rpa_service.extract_status_from_query_response(response_data, work_uuid)
+                
+                if status_info:
+                    status = status_info.get("status")
+                    status_desc = status_info.get("statusDesc", "")
+                    
+                    if status == 5:
+                        print(f"{self._log_prefix} 南航获取Token任务执行成功: {work_uuid}")
+                        await self._process_china_southern_air_get_token_result(db, task, queues_info)
+                        return
+                    elif status in [3, 4]:
+                        error_msg = f"RPA任务执行失败: {status_desc} (status={status})"
+                        print(f"{self._log_prefix} {error_msg}")
+                        await self._cleanup_queues(queues_info)
+                        rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+                        return
+                    else:
+                        print(f"{self._log_prefix} 任务状态: {status_desc} ({status})，等待中... ({poll_count + 1}/{settings.RPA_POLL_MAX_COUNT})")
+                else:
+                    print(f"{self._log_prefix} 未找到workUuid={work_uuid}的状态信息，等待中... ({poll_count + 1}/{settings.RPA_POLL_MAX_COUNT})")
+                
+                await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+                poll_count += 1
+                
+            except Exception as e:
+                print(f"{self._log_prefix} 轮询任务状态异常: {_get_error_detail(e)}")
+                await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+                poll_count += 1
+        
+        error_msg = f"轮询任务状态超时 (超过 {settings.RPA_POLL_MAX_COUNT * settings.RPA_POLL_INTERVAL} 秒)"
+        print(f"{self._log_prefix} {error_msg}")
+        await self._cleanup_queues(queues_info)
+        rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+
+    async def _process_china_southern_air_get_token_result(self, db, task: RPATask, queues_info: dict):
+        """处理南航获取Token的返回数据，消费队列并存库"""
+        try:
+            token_val = None
+            if "token_name" in queues_info:
+                queue_uuid = queues_info["token_name"]["queueUUID"]
+                try:
+                    raw_data = await rpa_service.consume_queue_data(queue_uuid)
+                    if raw_data is not None:
+                        if isinstance(raw_data, str):
+                            token_val = raw_data.strip('"').strip("'")
+                        else:
+                            token_val = json.dumps(raw_data, ensure_ascii=False)
+                    print(f"[{self._log_prefix}] 南航获取Token任务 {task.id} -> 消费队列成功，获取到Token length={len(token_val) if token_val else 0}")
+                except Exception as e:
+                    print(f"{self._log_prefix} 消费Token队列失败: {_get_error_detail(e)}")
+
+            if not token_val:
+                raise ValueError("未从队列中消费到有效的 Token 数据")
+
+            existing_record = db.query(NanHangToken).filter(
+                NanHangToken.robot_id == task.robot_id
+            ).first()
+
+            if existing_record:
+                existing_record.token = token_val
+                existing_record.updated_at = get_china_now()
+                print(f"[{self._log_prefix}] 更新 robot_id={task.robot_id} 的 nanhang_token 记录: id={existing_record.id}")
+            else:
+                new_record = NanHangToken(
+                    robot_id=task.robot_id,
+                    token=token_val,
+                    created_at=get_china_now(),
+                    updated_at=get_china_now()
+                )
+                db.add(new_record)
+                print(f"[{self._log_prefix}] 新增 robot_id={task.robot_id} 的 nanhang_token 记录")
+
+            db.commit()
+            rpa_task_service.complete_task(db, task.id, True)
+
+        except Exception as e:
+            db.rollback()
+            error_msg = f"处理Token入库异常: {_get_error_detail(e)}"
+            print(f"{self._log_prefix} {error_msg}\n{traceback.format_exc()}")
+            rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+        finally:
+            await self._cleanup_queues(queues_info)
+
 
 class RPAWorkerManager:
+
     """RPA Worker管理器 - 为每台启用的机器人创建独立的Worker"""
     
     def __init__(self):
