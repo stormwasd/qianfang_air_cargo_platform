@@ -21,6 +21,18 @@ class RobotJobService:
     """机器人Job同步服务"""
 
     @staticmethod
+    async def sync_all_active_robots(db: Session):
+        """
+        同步所有启用机器人的 Job 及队列配置
+        """
+        try:
+            robots = db.query(Robot).filter(Robot.status == 1).all()
+            for robot in robots:
+                await RobotJobService.sync_robot_jobs(db, robot)
+        except Exception as e:
+            logger.error(f"同步所有机器人 Job 失败: {str(e)}")
+
+    @staticmethod
     async def sync_robot_jobs(db: Session, robot: Robot):
         """
         根据机器人的任务权限同步生成 RPA Job

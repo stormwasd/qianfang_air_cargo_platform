@@ -70,7 +70,7 @@ class CsaGetTokenScheduler:
                 await asyncio.sleep(60)
 
     async def _enqueue_tasks(self) -> None:
-        """为所有南航机器人（包含分配了“南航获取token”或拥有任意南航业务权限的启用机器人）创建获取 Token 任务"""
+        """为所有分配了“南航获取token”权限的启用机器人创建获取 Token 任务"""
         db = SessionLocal()
         try:
             task_type = RPATaskType.CHINA_SOUTHERN_AIR_GET_TOKEN.value
@@ -83,15 +83,13 @@ class CsaGetTokenScheduler:
                     continue
                 try:
                     perms = json.loads(robot.task_permissions) if isinstance(robot.task_permissions, str) else robot.task_permissions
-                    if isinstance(perms, list):
-                        is_csa_robot = task_type in perms or any(isinstance(p, str) and p.startswith("CHINA_SOUTHERN_AIR_") for p in perms)
-                        if is_csa_robot:
-                            target_robots.append((robot, perms))
+                    if isinstance(perms, list) and task_type in perms:
+                        target_robots.append(robot)
                 except Exception:
                     continue
 
             if not target_robots:
-                print("[CsaGetTokenScheduler] 当前没有启用的南航机器人，暂不生成 Token 任务")
+                print(f"[CsaGetTokenScheduler] 当前未找到开启 '{task_type}' 权限的启用机器人，跳过生成")
                 return
 
             task_process = db.query(TaskProcess).filter(
@@ -113,13 +111,7 @@ class CsaGetTokenScheduler:
 
             from app.services.robot_job_service import RobotJobService
 
-            for robot, perms in target_robots:
-                # 自动为南航机器人补充 CHINA_SOUTHERN_AIR_GET_TOKEN 权限及专属队列记录
-                if task_type not in perms:
-                    perms.append(task_type)
-                    robot.task_permissions = json.dumps(perms, ensure_ascii=False)
-                    db.commit()
-
+            for robot in target_robots:
                 # 保证该机器人的 robot_queues 关联记录自动建立
                 RobotJobService._sync_robot_queues(db, robot, [task_type])
 
@@ -130,6 +122,7 @@ class CsaGetTokenScheduler:
                     task_type=task_type,
                 )
                 if existing:
+                    print(f"[CsaGetTokenScheduler] 机器人 '{robot.name}' (ID: {robot.id}) 已存在待处理/运行中的 Token 任务 (task_id={existing.id}, status={existing.status})")
                     continue
 
                 new_task = rpa_task_service.create_task(
@@ -146,9 +139,10 @@ class CsaGetTokenScheduler:
                 print(f"[CsaGetTokenScheduler] 已成功为机器人 '{robot.name}' (ID: {robot.id}) 生成南航获取Token任务: task_id={new_task.id}")
         except Exception as e:
             db.rollback()
-            print(f"[CsaGetTokenScheduler] 生成 Token 任务过程发生异常: {str(e)}\n{traceback.format_exc()}")
+            print(f"[CsaGetTokenScheduler] 生成 Token 任务异常: {str(e)}\n{traceback.format_exc()}")
         finally:
             db.close()
+
 
 
 
