@@ -3378,11 +3378,8 @@ class RPAWorker:
                 try:
                     raw_data = await rpa_service.consume_queue_data(queue_uuid)
                     if raw_data is not None:
-                        if isinstance(raw_data, str):
-                            token_val = raw_data.strip('"').strip("'")
-                        else:
-                            token_val = json.dumps(raw_data, ensure_ascii=False)
-                    print(f"[{self._log_prefix}] 南航获取Token任务 {task.id} -> 消费队列成功，获取到Token length={len(token_val) if token_val else 0}")
+                        token_val = self._reconstruct_nanhang_token(raw_data)
+                    print(f"[{self._log_prefix}] 南航获取Token任务 {task.id} -> 消费队列成功，重组Token length={len(token_val) if token_val else 0}")
                 except Exception as e:
                     print(f"{self._log_prefix} 消费Token队列失败: {_get_error_detail(e)}")
 
@@ -3417,6 +3414,52 @@ class RPAWorker:
             rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
         finally:
             await self._cleanup_queues(queues_info)
+
+    @staticmethod
+    def _reconstruct_nanhang_token(raw_data: Any) -> Optional[str]:
+        """
+        重组南航 Token。
+        RPA 队列中存储的数据可能是列表（例如分段的 JWT 片段：["eyJhbGci...", "JpZCI6...", ...]）
+        或者是 JSON 字符串表示的列表、或是单个字符串。
+        本方法将列表片段无缝拼接为一个完整的字符串 Token。
+        """
+        if raw_data is None:
+            return None
+
+        data_to_process = raw_data
+
+        # 若是字符串，尝试解析 JSON 列表
+        if isinstance(raw_data, str):
+            cleaned = raw_data.strip()
+            if (cleaned.startswith("[") and cleaned.endswith("]")) or (cleaned.startswith("{") and cleaned.endswith("}")):
+                try:
+                    data_to_process = json.loads(cleaned)
+                except Exception:
+                    data_to_process = cleaned
+            else:
+                data_to_process = cleaned.strip('"').strip("'")
+
+        # 若为列表或元组（包含字符串片段）
+        if isinstance(data_to_process, (list, tuple)):
+            parts = []
+            for item in data_to_process:
+                if item is not None:
+                    if isinstance(item, str):
+                        parts.append(item.strip('"').strip("'"))
+                    else:
+                        parts.append(str(item))
+            res = "".join(parts).strip()
+            return res if res else None
+
+        # 若为字符串
+        if isinstance(data_to_process, str):
+            res = data_to_process.strip().strip('"').strip("'")
+            return res if res else None
+
+        # 其他类型转为字符串
+        res = str(data_to_process).strip()
+        return res if res else None
+
 
 
 class RPAWorkerManager:
