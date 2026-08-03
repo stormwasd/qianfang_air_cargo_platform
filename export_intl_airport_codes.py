@@ -70,8 +70,10 @@ def clean_text(text: str) -> str:
     return cleaned.strip()
 
 
-def fetch_page(page_index: int, max_retries: int = 3) -> list:
-    """请求单页数据并解析返回的列表项"""
+def fetch_page(page_index: int, max_retries: int = 5) -> list:
+    """请求单页数据并解析返回的列表项，确保获取完整的行数量"""
+    expected_count = 17 if page_index == DEFAULT_TOTAL_PAGES else 20
+
     payload_dict = {
         "Condition": {
             "Code": "",
@@ -87,7 +89,7 @@ def fetch_page(page_index: int, max_retries: int = 3) -> list:
     for attempt in range(1, max_retries + 1):
         try:
             resp = requests.post(
-                API_URL, headers=HEADERS, data=payload, timeout=12
+                API_URL, headers=HEADERS, data=payload, timeout=15
             )
             if resp.status_code == 200:
                 html_text = resp.content.decode("utf-8", errors="ignore")
@@ -104,22 +106,27 @@ def fetch_page(page_index: int, max_retries: int = 3) -> list:
                     city_name = clean_text(city_elem.text) if city_elem else ""
                     name_cn = clean_text(name_elem.text) if name_elem else ""
 
-                    # label 优先使用 CityName_CN（城市名称），若为空则降级使用 Name（中文名）
-                    label = city_name if city_name else name_cn
+                    # label 优先使用 CityName_CN（城市名称），若为空则降级使用 Name（中文名），若均为空则降级使用 AirportCode
+                    label = city_name if city_name else (name_cn if name_cn else airport_code)
 
-                    if airport_code and label:
+                    if airport_code:
                         page_items.append(
                             {"label": label, "value": airport_code, "status": 1}
                         )
 
-                return page_items
+                if len(page_items) == expected_count:
+                    return page_items
+                else:
+                    print(
+                        f"[Warn] 第 {page_index} 页数量不匹配 (获取 {len(page_items)}/{expected_count} 条)，正在重试 ({attempt}/{max_retries})..."
+                    )
             else:
                 print(f"[Warn] 第 {page_index} 页响应异常 HTTP status: {resp.status_code}")
         except Exception as e:
             if attempt == max_retries:
                 print(f"[Error] 第 {page_index} 页抓取失败 (重试 {max_retries} 次): {e}")
-            else:
-                time.sleep(1)
+        
+        time.sleep(1)
 
     return []
 

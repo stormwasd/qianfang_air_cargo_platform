@@ -4471,6 +4471,11 @@
             "status": 1
         },
         {
+            "label": "BPM",
+            "value": "BPM",
+            "status": 1
+        },
+        {
             "label": "巴里巴板",
             "value": "BPN",
             "status": 1
@@ -8726,6 +8731,11 @@
             "status": 1
         },
         {
+            "label": "DGX",
+            "value": "DGX",
+            "status": 1
+        },
+        {
             "label": "达勒姆当斯机场",
             "value": "DHD",
             "status": 1
@@ -11533,6 +11543,11 @@
         {
             "label": "卡莱米机场",
             "value": "FMI",
+            "status": 1
+        },
+        {
+            "label": "FMM",
+            "value": "FMM",
             "status": 1
         },
         {
@@ -16338,6 +16353,11 @@
         {
             "label": "因弗卡吉尔机场",
             "value": "IVC",
+            "status": 1
+        },
+        {
+            "label": "IVG",
+            "value": "IVG",
             "status": 1
         },
         {
@@ -26043,6 +26063,11 @@
         {
             "label": "下瓦尔托夫斯克机场",
             "value": "NJC",
+            "status": 1
+        },
+        {
+            "label": "NJF",
+            "value": "NJF",
             "status": 1
         },
         {
@@ -35871,6 +35896,11 @@
             "status": 1
         },
         {
+            "label": "SXD",
+            "value": "SXD",
+            "status": 1
+        },
+        {
             "label": "塞尔",
             "value": "SXE",
             "status": 1
@@ -38421,6 +38451,11 @@
             "status": 1
         },
         {
+            "label": "TXC",
+            "value": "TXC",
+            "status": 1
+        },
+        {
             "label": "泰赫拉德－弗雷塔斯机场",
             "value": "TXF",
             "status": 1
@@ -39743,6 +39778,11 @@
         {
             "label": "弗纳尔",
             "value": "VEL",
+            "status": 1
+        },
+        {
+            "label": "VEN",
+            "value": "VEN",
             "status": 1
         },
         {
@@ -42048,6 +42088,11 @@
         {
             "label": "哥德堡",
             "value": "XWL",
+            "status": 1
+        },
+        {
+            "label": "XWY",
+            "value": "XWY",
             "status": 1
         },
         {
@@ -45528,6 +45573,11 @@
         {
             "label": "安特卫普",
             "value": "ZYZ",
+            "status": 1
+        },
+        {
+            "label": "ZZC",
+            "value": "ZZC",
             "status": 1
         },
         {
