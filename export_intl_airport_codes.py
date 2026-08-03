@@ -219,14 +219,13 @@ def main():
 
     for item in all_items:
         val = item["AirportCode"]
-        city_cn = item["CityName_CN"]
         name_cn = item["Name"]
-        label = city_cn if city_cn else (name_cn if name_cn else val)
 
-        if val not in seen_values:
+        # 需求要求：label 使用 Name 对应的中文；若 Name 为空，则不包含该条数据
+        if name_cn and val not in seen_values:
             seen_values.add(val)
             json_options.append({
-                "label": label,
+                "label": name_cn,
                 "value": val,
                 "status": 1
             })
