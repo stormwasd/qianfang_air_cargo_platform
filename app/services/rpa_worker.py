@@ -3418,17 +3418,23 @@ class RPAWorker:
     @staticmethod
     def _reconstruct_nanhang_token(raw_data: Any) -> Optional[str]:
         """
-        重组南航 Token。
-        RPA 队列中存储的数据可能是列表（例如分段的 JWT 片段：["eyJhbGci...", "JpZCI6...", ...]）
-        或者是 JSON 字符串表示的列表、或是单个字符串。
-        本方法将列表片段无缝拼接为一个完整的字符串 Token。
+        重组并清洗南航 Token。
+        RPA 队列中存储的数据可能是：
+        1. 带有末尾 "\r\n" 或 "\n" 的单个 Token 字符串
+        2. JSON 格式编码的字符串或列表
+        3. 分段字符串数组（例如 ["eyJhbGci...", "JpZCI6...", ...]）
+
+        本方法会：
+        - 自动解析 JSON 包装（若有）
+        - 拼接分段数组片段
+        - 彻底去除末尾及两端的 "\r\n"、"\n"、"\r"、空格以及内外层双/单引号
         """
         if raw_data is None:
             return None
 
         data_to_process = raw_data
 
-        # 若是字符串，尝试解析 JSON 列表
+        # 若是字符串，尝试解析 JSON 包装
         if isinstance(raw_data, str):
             cleaned = raw_data.strip()
             if (cleaned.startswith("[") and cleaned.endswith("]")) or (cleaned.startswith("{") and cleaned.endswith("}")):
@@ -3437,27 +3443,21 @@ class RPAWorker:
                 except Exception:
                     data_to_process = cleaned
             else:
-                data_to_process = cleaned.strip('"').strip("'")
+                data_to_process = cleaned
 
         # 若为列表或元组（包含字符串片段）
         if isinstance(data_to_process, (list, tuple)):
             parts = []
             for item in data_to_process:
                 if item is not None:
-                    if isinstance(item, str):
-                        parts.append(item.strip('"').strip("'"))
-                    else:
-                        parts.append(str(item))
-            res = "".join(parts).strip()
+                    item_str = str(item).replace("\r", "").replace("\n", "").strip().strip('"').strip("'")
+                    if item_str:
+                        parts.append(item_str)
+            res = "".join(parts).replace("\r", "").replace("\n", "").strip().strip('"').strip("'")
             return res if res else None
 
-        # 若为字符串
-        if isinstance(data_to_process, str):
-            res = data_to_process.strip().strip('"').strip("'")
-            return res if res else None
-
-        # 其他类型转为字符串
-        res = str(data_to_process).strip()
+        # 若为字符串或其它类型
+        res = str(data_to_process).replace("\r", "").replace("\n", "").strip().strip('"').strip("'")
         return res if res else None
 
 
