@@ -3416,18 +3416,33 @@ class RPAWorker:
             await self._cleanup_queues(queues_info)
 
     @staticmethod
-    def _reconstruct_nanhang_token(raw_data: Any) -> Optional[str]:
+    def _clean_single_token_str(s: Any) -> str:
+        """清洗单个 Token 字符串，彻底替换字面量 \\r\\n 及 ASCII 控制字符"""
+        if s is None:
+            return ""
+        text = str(s)
+        for _ in range(3):
+            prev = text
+            text = text.replace("\\r", "").replace("\\n", "").replace("\\t", "")
+            text = text.replace("\r", "").replace("\n", "").replace("\t", "")
+            text = text.strip().strip('"').strip("'").strip('\\').strip()
+            if text == prev:
+                break
+        return text
+
+    @classmethod
+    def _reconstruct_nanhang_token(cls, raw_data: Any) -> Optional[str]:
         """
         重组并清洗南航 Token。
         RPA 队列中存储的数据可能是：
-        1. 带有末尾 "\r\n" 或 "\n" 的单个 Token 字符串
+        1. 带有末尾 "\\r\\n"、"\\n" 或 ASCII \\r\\n 的单个 Token 字符串
         2. JSON 格式编码的字符串或列表
         3. 分段字符串数组（例如 ["eyJhbGci...", "JpZCI6...", ...]）
 
         本方法会：
         - 自动解析 JSON 包装（若有）
         - 拼接分段数组片段
-        - 彻底去除末尾及两端的 "\r\n"、"\n"、"\r"、空格以及内外层双/单引号
+        - 彻底去除字面量及控制字符 "\\r\\n"、"\\n"、"\\r"、空格以及内外层双/单引号
         """
         if raw_data is None:
             return None
@@ -3436,7 +3451,7 @@ class RPAWorker:
 
         # 若是字符串，尝试解析 JSON 包装
         if isinstance(raw_data, str):
-            cleaned = raw_data.strip()
+            cleaned = cls._clean_single_token_str(raw_data)
             if (cleaned.startswith("[") and cleaned.endswith("]")) or (cleaned.startswith("{") and cleaned.endswith("}")):
                 try:
                     data_to_process = json.loads(cleaned)
@@ -3447,17 +3462,12 @@ class RPAWorker:
 
         # 若为列表或元组（包含字符串片段）
         if isinstance(data_to_process, (list, tuple)):
-            parts = []
-            for item in data_to_process:
-                if item is not None:
-                    item_str = str(item).replace("\r", "").replace("\n", "").strip().strip('"').strip("'")
-                    if item_str:
-                        parts.append(item_str)
-            res = "".join(parts).replace("\r", "").replace("\n", "").strip().strip('"').strip("'")
-            return res if res else None
+            parts = [cls._clean_single_token_str(item) for item in data_to_process if item is not None]
+            res = "".join(parts)
+            return cls._clean_single_token_str(res) if res else None
 
         # 若为字符串或其它类型
-        res = str(data_to_process).replace("\r", "").replace("\n", "").strip().strip('"').strip("'")
+        res = cls._clean_single_token_str(data_to_process)
         return res if res else None
 
 

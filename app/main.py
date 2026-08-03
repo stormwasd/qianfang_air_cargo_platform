@@ -28,6 +28,22 @@ def _init_nanhang_token_process():
 
         db = SessionLocal()
         try:
+            # 1. 自动清洗数据库中已存在的 nanhang_token 历史记录（清除字面量 \\r\\n 及控制字符）
+            from app.services.rpa_worker import RPAWorker
+            tokens = db.query(NanHangToken).all()
+            cleaned_count = 0
+            for t in tokens:
+                if t.token:
+                    cleaned_val = RPAWorker._clean_single_token_str(t.token)
+                    if cleaned_val and cleaned_val != t.token:
+                        t.token = cleaned_val
+                        t.updated_at = get_china_now()
+                        cleaned_count += 1
+            if cleaned_count > 0:
+                db.commit()
+                print(f"[Init] 自动清洗存量 nanhang_token 历史数据: {cleaned_count} 条")
+
+            # 2. 校验补齐 task_processes 流程配置
             process = db.query(TaskProcess).filter(TaskProcess.task_name == "CHINA_SOUTHERN_AIR_GET_TOKEN").first()
             if not process:
                 new_process = TaskProcess(
