@@ -2,14 +2,14 @@
 国际机场三字代码抓取与导出脚本
 
 功能：
-- 遍历 infoccsp 接口（共456页），获取全量国际机场三字代码及其对应中文城市/名称
-- 按照项目统一的数据字典结构生成 intl_airport_three_letter_code.json
-- 支持多线程并发与自动重试机制，抓取高效且稳定
+- 遍历 infoccsp 接口（共456页），获取全量 9117 条国际机场信息
+- 导出 JSON 数据字典文件：intl_airport_three_letter_code.json (供后台数据字典导入)
+- 导出 Excel 文件：国际机场三字代码.xlsx (包含 机场代码, 机场四字码, 中文名, 英文名, 城市代码, 城市名称, 国家和地区, 国内/国际 8项数据)
 
 使用方法：
     python export_intl_airport_codes.py
-    # 或指定输出路径
-    python export_intl_airport_codes.py --output intl_airport_three_letter_code.json
+    # 或自定义导出路径与并发数
+    python export_intl_airport_codes.py --json-output intl_airport_three_letter_code.json --excel-output 国际机场三字代码.xlsx --workers 6
 """
 
 import sys
@@ -17,6 +17,7 @@ import json
 import time
 import argparse
 import requests
+import pandas as pd
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
@@ -30,7 +31,8 @@ if sys.platform == "win32":
 
 API_URL = "https://www.infoccsp.com/iportal/ajax/servicecenter/ajaxsearchairportbycondition.aspx"
 DEFAULT_TOTAL_PAGES = 456
-DEFAULT_OUTPUT_FILE = "intl_airport_three_letter_code.json"
+DEFAULT_JSON_FILE = "intl_airport_three_letter_code.json"
+DEFAULT_EXCEL_FILE = "国际机场三字代码.xlsx"
 
 HEADERS = {
     "Accept": "text/plain, */*; q=0.01",
@@ -57,7 +59,7 @@ HEADERS = {
 
 
 def clean_text(text: str) -> str:
-    """清洗文本，包含去除全角空格、\r\n、Tab及首尾空格"""
+    """清洗文本，去除全角空格、\\r\\n、Tab及首尾空格"""
     if not text:
         return ""
     cleaned = (
@@ -71,7 +73,7 @@ def clean_text(text: str) -> str:
 
 
 def fetch_page(page_index: int, max_retries: int = 5) -> list:
-    """请求单页数据并解析返回的列表项，确保获取完整的行数量"""
+    """请求单页数据并解析返回全量字段"""
     expected_count = 17 if page_index == DEFAULT_TOTAL_PAGES else 20
 
     payload_dict = {
@@ -99,20 +101,34 @@ def fetch_page(page_index: int, max_retries: int = 5) -> list:
                 page_items = []
                 for row in rows:
                     code_elem = row.find("span", {"name": "AirportCode"})
-                    city_elem = row.find("span", {"name": "CityName_CN"})
+                    code4_elem = row.find("span", {"name": "Airport4Code"})
                     name_elem = row.find("span", {"name": "Name"})
+                    continent_elem = row.find("span", {"name": "Continent"})
+                    city_elem = row.find("span", {"name": "City"})
+                    city_cn_elem = row.find("span", {"name": "CityName_CN"})
+                    country_elem = row.find("span", {"name": "CountryName_CN"})
+                    di_elem = row.find("span", {"name": "DI"})
 
                     airport_code = clean_text(code_elem.text) if code_elem else ""
-                    city_name = clean_text(city_elem.text) if city_elem else ""
+                    airport4_code = clean_text(code4_elem.text) if code4_elem else ""
                     name_cn = clean_text(name_elem.text) if name_elem else ""
-
-                    # label 优先使用 CityName_CN（城市名称），若为空则降级使用 Name（中文名），若均为空则降级使用 AirportCode
-                    label = city_name if city_name else (name_cn if name_cn else airport_code)
+                    name_en = clean_text(continent_elem.text) if continent_elem else ""
+                    city_code = clean_text(city_elem.text) if city_elem else ""
+                    city_name_cn = clean_text(city_cn_elem.text) if city_cn_elem else ""
+                    country_cn = clean_text(country_elem.text) if country_elem else ""
+                    di_type = clean_text(di_elem.text) if di_elem else "国际"
 
                     if airport_code:
-                        page_items.append(
-                            {"label": label, "value": airport_code, "status": 1}
-                        )
+                        page_items.append({
+                            "AirportCode": airport_code,
+                            "Airport4Code": airport4_code,
+                            "Name": name_cn,
+                            "Continent": name_en,
+                            "City": city_code,
+                            "CityName_CN": city_name_cn,
+                            "CountryName_CN": country_cn,
+                            "DI": di_type
+                        })
 
                 if len(page_items) == expected_count:
                     return page_items
@@ -132,12 +148,18 @@ def fetch_page(page_index: int, max_retries: int = 5) -> list:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="抓取国际机场三字代码导出为JSON字典")
+    parser = argparse.ArgumentParser(description="抓取国际机场三字代码导出为JSON及Excel")
     parser.add_argument(
-        "--output",
-        "-o",
-        default=DEFAULT_OUTPUT_FILE,
-        help=f"导出的JSON文件名 (默认: {DEFAULT_OUTPUT_FILE})",
+        "--json-output",
+        "-j",
+        default=DEFAULT_JSON_FILE,
+        help=f"导出的JSON文件名 (默认: {DEFAULT_JSON_FILE})",
+    )
+    parser.add_argument(
+        "--excel-output",
+        "-e",
+        default=DEFAULT_EXCEL_FILE,
+        help=f"导出的Excel文件名 (默认: {DEFAULT_EXCEL_FILE})",
     )
     parser.add_argument(
         "--pages",
@@ -150,20 +172,20 @@ def main():
         "--workers",
         "-w",
         type=int,
-        default=8,
-        help="并发线程数 (默认: 8)",
+        default=6,
+        help="并发线程数 (默认: 6)",
     )
     args = parser.parse_args()
 
     total_pages = args.pages
-    output_file = args.output
+    json_output_file = args.json_output
+    excel_output_file = args.excel_output
     max_workers = args.workers
 
-    print(f"=== 开始抓取国际机场三字代码 (共 {total_pages} 页, 并发线程数: {max_workers}) ===")
+    print(f"=== 开始抓取国际机场数据 (共 {total_pages} 页, 并发线程数: {max_workers}) ===")
 
     all_results = {}
     completed_count = 0
-
     start_time = time.time()
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -187,19 +209,27 @@ def main():
                 )
 
     # 按照页码顺序汇总所有抓取结果
-    raw_options = []
+    all_items = []
     for p in sorted(all_results.keys()):
-        raw_options.extend(all_results[p])
+        all_items.extend(all_results[p])
 
-    # 去重处理（相同 airport_code 保留首次出现的数据）
-    unique_options = []
+    # 1. 构建字典 JSON 格式数据
+    json_options = []
     seen_values = set()
 
-    for item in raw_options:
-        val = item["value"]
+    for item in all_items:
+        val = item["AirportCode"]
+        city_cn = item["CityName_CN"]
+        name_cn = item["Name"]
+        label = city_cn if city_cn else (name_cn if name_cn else val)
+
         if val not in seen_values:
             seen_values.add(val)
-            unique_options.append(item)
+            json_options.append({
+                "label": label,
+                "value": val,
+                "status": 1
+            })
 
     dict_data = {
         "dict_type": {
@@ -207,20 +237,38 @@ def main():
             "type": "intl_airport_three_letter_code",
             "status": 1,
         },
-        "options": unique_options,
+        "options": json_options,
     }
 
     # 写入 JSON 文件
-    output_path = Path(output_file)
-    with open(output_path, "w", encoding="utf-8") as f:
+    json_path = Path(json_output_file)
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump(dict_data, f, ensure_ascii=False, indent=4)
 
+    # 2. 构建 Excel 数据表
+    excel_rows = []
+    for item in all_items:
+        excel_rows.append({
+            "机场代码": item["AirportCode"],
+            "机场四字码": item["Airport4Code"],
+            "中文名": item["Name"],
+            "英文名": item["Continent"],
+            "城市代码": item["City"],
+            "城市名称": item["CityName_CN"],
+            "国家和地区": item["CountryName_CN"],
+            "国内/国际": item["DI"]
+        })
+
+    df = pd.DataFrame(excel_rows)
+    excel_path = Path(excel_output_file)
+    df.to_excel(excel_path, index=False, engine="openpyxl")
+
     total_time = time.time() - start_time
-    print(f"\n=== 抓取完成！ ===")
+    print(f"\n=== 抓取与导出完成！ ===")
     print(f"数据总页数: {total_pages}")
-    print(f"抓取记录条数: {len(raw_options)}")
-    print(f"去重后选项数: {len(unique_options)}")
-    print(f"文件已保存至: {output_path.resolve()}")
+    print(f"抓取记录总条数: {len(all_items)}")
+    print(f"JSON 字典文件已保存至: {json_path.resolve()}")
+    print(f"Excel 数据文件已保存至: {excel_path.resolve()}")
     print(f"总耗时: {total_time:.2f} 秒")
 
 
