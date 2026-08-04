@@ -220,12 +220,13 @@ def main():
     for item in all_items:
         val = item["AirportCode"]
         name_cn = item["Name"]
+        # 如果 Name 为空，依次使用 英文名(Continent)、城市中文名(CityName_CN) 或 机场代码(AirportCode) 作为 fallback label
+        label_val = name_cn or item.get("Continent") or item.get("CityName_CN") or val
 
-        # 需求要求：label 使用 Name 对应的中文；若 Name 为空，则不包含该条数据
-        if name_cn and val not in seen_values:
+        if val not in seen_values:
             seen_values.add(val)
             json_options.append({
-                "label": name_cn,
+                "label": label_val,
                 "value": val,
                 "status": 1
             })

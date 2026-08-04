@@ -796,6 +796,11 @@
             "status": 1
         },
         {
+            "label": "Fertilia Airport",
+            "value": "AHO",
+            "status": 1
+        },
+        {
             "label": "阿华斯机场",
             "value": "AHS",
             "status": 1
@@ -1441,6 +1446,11 @@
             "status": 1
         },
         {
+            "label": "ANTWERP",
+            "value": "ANR",
+            "status": 1
+        },
+        {
             "label": "安达韦拉斯机场",
             "value": "ANS",
             "status": 1
@@ -1673,6 +1683,11 @@
         {
             "label": "阿拉拉夸拉机场",
             "value": "AQA",
+            "status": 1
+        },
+        {
+            "label": "Hafar al Batin",
+            "value": "AQI",
             "status": 1
         },
         {
@@ -2013,6 +2028,11 @@
         {
             "label": "阿特卡什克机场",
             "value": "ATK",
+            "status": 1
+        },
+        {
+            "label": "ATLANTA",
+            "value": "ATL",
             "status": 1
         },
         {
@@ -2606,6 +2626,11 @@
             "status": 1
         },
         {
+            "label": "BAKU",
+            "value": "BAK",
+            "status": 1
+        },
+        {
             "label": "巴特曼机场",
             "value": "BAL",
             "status": 1
@@ -3131,6 +3156,11 @@
             "status": 1
         },
         {
+            "label": "柏林",
+            "value": "BER",
+            "status": 1
+        },
+        {
             "label": "吉帕瓦斯机场",
             "value": "BES",
             "status": 1
@@ -3508,6 +3538,11 @@
         {
             "label": "巴加坦瓦拉机场",
             "value": "BHW",
+            "status": 1
+        },
+        {
+            "label": "BHX,Birmingham",
+            "value": "BHX",
             "status": 1
         },
         {
@@ -4436,6 +4471,11 @@
             "status": 1
         },
         {
+            "label": "BAGRAM",
+            "value": "BPM",
+            "status": 1
+        },
+        {
             "label": "塞平甘机场",
             "value": "BPN",
             "status": 1
@@ -4533,6 +4573,11 @@
         {
             "label": "巴尔戈希尔机场",
             "value": "BQW",
+            "status": 1
+        },
+        {
+            "label": "Bologna",
+            "value": "BQY",
             "status": 1
         },
         {
@@ -5621,6 +5666,11 @@
             "status": 1
         },
         {
+            "label": "CASABLANCA",
+            "value": "CAS",
+            "status": 1
+        },
+        {
             "label": "卡特岛机场",
             "value": "CAT",
             "status": 1
@@ -6291,6 +6341,11 @@
             "status": 1
         },
         {
+            "label": "CHITTAGONG",
+            "value": "CGP",
+            "status": 1
+        },
+        {
             "label": "大坎普国际机场",
             "value": "CGR",
             "status": 1
@@ -6341,6 +6396,11 @@
             "status": 1
         },
         {
+            "label": "CHRISTCHURCH",
+            "value": "CHC",
+            "status": 1
+        },
+        {
             "label": "钱德勒机场",
             "value": "CHD",
             "status": 1
@@ -6353,6 +6413,11 @@
         {
             "label": "查查波亚斯机场",
             "value": "CHH",
+            "status": 1
+        },
+        {
+            "label": "Metropolitan Area",
+            "value": "CHI",
             "status": 1
         },
         {
@@ -6701,6 +6766,11 @@
             "status": 1
         },
         {
+            "label": "CONAKRY",
+            "value": "CKY",
+            "status": 1
+        },
+        {
             "label": "恰纳卡莱机场",
             "value": "CKZ",
             "status": 1
@@ -6793,6 +6863,11 @@
         {
             "label": "森特勒里亚机场",
             "value": "CLS",
+            "status": 1
+        },
+        {
+            "label": "CHARLOTTE",
+            "value": "CLT",
             "status": 1
         },
         {
@@ -7278,6 +7353,11 @@
         {
             "label": "卡斯珀机场",
             "value": "CPR",
+            "status": 1
+        },
+        {
+            "label": "ST LOUIS",
+            "value": "CPS",
             "status": 1
         },
         {
@@ -8651,6 +8731,11 @@
             "status": 1
         },
         {
+            "label": "DGX",
+            "value": "DGX",
+            "status": 1
+        },
+        {
             "label": "达勒姆当斯机场",
             "value": "DHD",
             "status": 1
@@ -9343,6 +9428,11 @@
         {
             "label": "得梅因机场",
             "value": "DSM",
+            "status": 1
+        },
+        {
+            "label": "Blaise Diagne Intl",
+            "value": "DSS",
             "status": 1
         },
         {
@@ -10138,6 +10228,11 @@
         {
             "label": "埃尔多拉多机场",
             "value": "ELO",
+            "status": 1
+        },
+        {
+            "label": "EL PASO",
+            "value": "ELP",
             "status": 1
         },
         {
@@ -11451,8 +11546,18 @@
             "status": 1
         },
         {
+            "label": "FMM",
+            "value": "FMM",
+            "status": 1
+        },
+        {
             "label": "法明顿地方机场",
             "value": "FMN",
+            "status": 1
+        },
+        {
+            "label": "MUNSTER",
+            "value": "FMO",
             "status": 1
         },
         {
@@ -11643,6 +11748,11 @@
         {
             "label": "费拉岛机场",
             "value": "FRE",
+            "status": 1
+        },
+        {
+            "label": "Frankfurt Rhein Main AFB",
+            "value": "FRF",
             "status": 1
         },
         {
@@ -13611,6 +13721,11 @@
             "status": 1
         },
         {
+            "label": "Berlin Royal Air Force Gatow",
+            "value": "GWW",
+            "status": 1
+        },
+        {
             "label": "戈尔韦机场",
             "value": "GWY",
             "status": 1
@@ -14048,6 +14163,11 @@
         {
             "label": "州立机场",
             "value": "HES",
+            "status": 1
+        },
+        {
+            "label": "雅典",
+            "value": "HEW",
             "status": 1
         },
         {
@@ -15101,6 +15221,11 @@
             "status": 1
         },
         {
+            "label": "杜塞尔多夫",
+            "value": "HXU",
+            "status": 1
+        },
+        {
             "label": "海伊机场",
             "value": "HXX",
             "status": 1
@@ -15178,6 +15303,11 @@
         {
             "label": "威奇塔－麦克奈尔空军基地",
             "value": "IAB",
+            "status": 1
+        },
+        {
+            "label": "WASHINGTON",
+            "value": "IAD",
             "status": 1
         },
         {
@@ -15376,6 +15506,11 @@
             "status": 1
         },
         {
+            "label": "KIEV",
+            "value": "IEV",
+            "status": 1
+        },
+        {
             "label": "艾奥瓦福尔斯机场",
             "value": "IFA",
             "status": 1
@@ -15438,6 +15573,11 @@
         {
             "label": "英厄姆机场",
             "value": "IGH",
+            "status": 1
+        },
+        {
+            "label": "Izmir Cigli Military",
+            "value": "IGL",
             "status": 1
         },
         {
@@ -16216,6 +16356,11 @@
             "status": 1
         },
         {
+            "label": "Dolac Airport",
+            "value": "IVG",
+            "status": 1
+        },
+        {
             "label": "伊维沙克机场",
             "value": "IVH",
             "status": 1
@@ -16511,6 +16656,11 @@
             "status": 1
         },
         {
+            "label": "圣多明各",
+            "value": "JBQ",
+            "status": 1
+        },
+        {
             "label": "琼斯伯勒机场",
             "value": "JBR",
             "status": 1
@@ -16598,6 +16748,11 @@
         {
             "label": "多卡里里地区机场",
             "value": "JDO",
+            "status": 1
+        },
+        {
+            "label": "Paris Heliport De Paris",
+            "value": "JDP",
             "status": 1
         },
         {
@@ -16881,6 +17036,11 @@
             "status": 1
         },
         {
+            "label": "Malmo Harbour Heliport",
+            "value": "JMM",
+            "status": 1
+        },
+        {
             "label": "曼凯托市机场",
             "value": "JMN",
             "status": 1
@@ -17018,6 +17178,11 @@
         {
             "label": "休斯顿十公园机场",
             "value": "JPT",
+            "status": 1
+        },
+        {
+            "label": "Paris La Defense H/P",
+            "value": "JPU",
             "status": 1
         },
         {
@@ -18631,6 +18796,11 @@
             "status": 1
         },
         {
+            "label": "MEDAN",
+            "value": "KNO",
+            "status": 1
+        },
+        {
             "label": "卡潘达机场",
             "value": "KNP",
             "status": 1
@@ -18971,6 +19141,11 @@
             "status": 1
         },
         {
+            "label": "KRAKOW",
+            "value": "KRK",
+            "status": 1
+        },
+        {
             "label": "卡拉纳姆波机场",
             "value": "KRM",
             "status": 1
@@ -19288,6 +19463,11 @@
         {
             "label": "关丹机场",
             "value": "KUA",
+            "status": 1
+        },
+        {
+            "label": "文莱达鲁萨兰国马来奕",
+            "value": "KUB",
             "status": 1
         },
         {
@@ -20541,6 +20721,11 @@
             "status": 1
         },
         {
+            "label": "LILLE",
+            "value": "LIL",
+            "status": 1
+        },
+        {
             "label": "查维兹国际机场",
             "value": "LIM",
             "status": 1
@@ -21063,6 +21248,11 @@
         {
             "label": "梅克拉雷格机场",
             "value": "LOO",
+            "status": 1
+        },
+        {
+            "label": "Lombok International Airport",
+            "value": "LOP",
             "status": 1
         },
         {
@@ -21878,6 +22068,11 @@
         {
             "label": "斯瓦尔巴德机场",
             "value": "LYR",
+            "status": 1
+        },
+        {
+            "label": "LYON",
+            "value": "LYS",
             "status": 1
         },
         {
@@ -24291,6 +24486,11 @@
             "status": 1
         },
         {
+            "label": "MINSK",
+            "value": "MSQ",
+            "status": 1
+        },
+        {
             "label": "穆什机场",
             "value": "MSR",
             "status": 1
@@ -24828,6 +25028,11 @@
         {
             "label": "穆斯克龙机场",
             "value": "MWW",
+            "status": 1
+        },
+        {
+            "label": "务安",
+            "value": "MWX",
             "status": 1
         },
         {
@@ -25858,6 +26063,11 @@
         {
             "label": "下瓦尔托夫斯克机场",
             "value": "NJC",
+            "status": 1
+        },
+        {
+            "label": "NJF",
+            "value": "NJF",
             "status": 1
         },
         {
@@ -27541,6 +27751,11 @@
             "status": 1
         },
         {
+            "label": "ONTARIO",
+            "value": "ONT",
+            "status": 1
+        },
+        {
             "label": "奥诺劳机场",
             "value": "ONU",
             "status": 1
@@ -27761,6 +27976,11 @@
             "status": 1
         },
         {
+            "label": "Osaka",
+            "value": "OSA",
+            "status": 1
+        },
+        {
             "label": "欧塞奇海滩机场",
             "value": "OSB",
             "status": 1
@@ -27801,6 +28021,11 @@
             "status": 1
         },
         {
+            "label": "OSLO",
+            "value": "OSL",
+            "status": 1
+        },
+        {
             "label": "摩苏尔国际机场",
             "value": "OSM",
             "status": 1
@@ -27813,6 +28038,11 @@
         {
             "label": "斯武普斯克机场",
             "value": "OSP",
+            "status": 1
+        },
+        {
+            "label": "OSTRAVA",
+            "value": "OSR",
             "status": 1
         },
         {
@@ -29966,6 +30196,11 @@
             "status": 1
         },
         {
+            "label": "PRAGUE",
+            "value": "PRG",
+            "status": 1
+        },
+        {
             "label": "帕府机场",
             "value": "PRH",
             "status": 1
@@ -30796,6 +31031,11 @@
             "status": 1
         },
         {
+            "label": "Verona Brescia Off-Line Point",
+            "value": "QBS",
+            "status": 1
+        },
+        {
             "label": "倍特曼海湾机场",
             "value": "QBW",
             "status": 1
@@ -30891,6 +31131,11 @@
             "status": 1
         },
         {
+            "label": "Chattanooga Greyhound Bus Station",
+            "value": "QDK",
+            "status": 1
+        },
+        {
             "label": "艾登机场",
             "value": "QDN",
             "status": 1
@@ -30916,8 +31161,18 @@
             "status": 1
         },
         {
+            "label": "Dusseldorf Main Rail Station",
+            "value": "QDU",
+            "status": 1
+        },
+        {
             "label": "迪亚德马机场",
             "value": "QDW",
+            "status": 1
+        },
+        {
+            "label": "Leicester Off-Line Point",
+            "value": "QEW",
             "status": 1
         },
         {
@@ -30951,6 +31206,11 @@
             "status": 1
         },
         {
+            "label": "St.Gallen-Altenrhein",
+            "value": "QGL",
+            "status": 1
+        },
+        {
             "label": "加拉尼温斯机场",
             "value": "QGP",
             "status": 1
@@ -30963,6 +31223,11 @@
         {
             "label": "阿拉奎恩雅斯机场",
             "value": "QGS",
+            "status": 1
+        },
+        {
+            "label": "Frankfurt Neu Isenburg Rail Station",
+            "value": "QGV",
             "status": 1
         },
         {
@@ -31041,8 +31306,23 @@
             "status": 1
         },
         {
+            "label": "Nantes Rail Station",
+            "value": "QJZ",
+            "status": 1
+        },
+        {
             "label": "布雷肯里奇机场",
             "value": "QKB",
+            "status": 1
+        },
+        {
+            "label": "Cologne Main Rail Station",
+            "value": "QKL",
+            "status": 1
+        },
+        {
+            "label": "Cologne Deutz Rail Station",
+            "value": "QKU",
             "status": 1
         },
         {
@@ -31141,6 +31421,11 @@
             "status": 1
         },
         {
+            "label": "Berlin off-line point",
+            "value": "QPP",
+            "status": 1
+        },
+        {
             "label": "帕里榭山谷机场",
             "value": "QPV",
             "status": 1
@@ -31151,8 +31436,23 @@
             "status": 1
         },
         {
+            "label": "Birmingham New Street Rail Station",
+            "value": "QQN",
+            "status": 1
+        },
+        {
             "label": "伦敦－帕丁顿机场",
             "value": "QQP",
+            "status": 1
+        },
+        {
+            "label": "London Euston Rail Station",
+            "value": "QQU",
+            "status": 1
+        },
+        {
+            "label": "London Waterloo Rail Station",
+            "value": "QQW",
             "status": 1
         },
         {
@@ -31163,6 +31463,11 @@
         {
             "label": "伯拉加多机场",
             "value": "QRF",
+            "status": 1
+        },
+        {
+            "label": "Rotterdam Central Rail Station",
+            "value": "QRH",
             "status": 1
         },
         {
@@ -31283,6 +31588,31 @@
         {
             "label": "杜林区奥沙瓦",
             "value": "QWA",
+            "status": 1
+        },
+        {
+            "label": "Berlin Hauptbahnhof Rail Station",
+            "value": "QWB",
+            "status": 1
+        },
+        {
+            "label": "Berlin Zoo Rail Station",
+            "value": "QWC",
+            "status": 1
+        },
+        {
+            "label": "Berlin Friedrichstrasse Rail Station",
+            "value": "QWE",
+            "status": 1
+        },
+        {
+            "label": "Fort Collins Bus Station",
+            "value": "QWF",
+            "status": 1
+        },
+        {
+            "label": "Loveland Bus Station",
+            "value": "QWH",
             "status": 1
         },
         {
@@ -31756,6 +32086,11 @@
             "status": 1
         },
         {
+            "label": "雷克雅未克",
+            "value": "REK",
+            "status": 1
+        },
+        {
             "label": "特雷利乌机场",
             "value": "REL",
             "status": 1
@@ -31853,6 +32188,11 @@
         {
             "label": "里奥格兰德机场",
             "value": "RGA",
+            "status": 1
+        },
+        {
+            "label": "雷根斯堡",
+            "value": "RGB",
             "status": 1
         },
         {
@@ -32666,6 +33006,11 @@
             "status": 1
         },
         {
+            "label": "ROTTERDAM",
+            "value": "RTM",
+            "status": 1
+        },
+        {
             "label": "克鲁斯机场",
             "value": "RTN",
             "status": 1
@@ -33331,6 +33676,11 @@
             "status": 1
         },
         {
+            "label": "LOUISVILLE",
+            "value": "SDF",
+            "status": 1
+        },
+        {
             "label": "萨南达吉机场",
             "value": "SDG",
             "status": 1
@@ -33378,6 +33728,11 @@
         {
             "label": "桑德波因特地方机场",
             "value": "SDP",
+            "status": 1
+        },
+        {
+            "label": "SANTO DOMINGO",
+            "value": "SDQ",
             "status": 1
         },
         {
@@ -33458,6 +33813,11 @@
         {
             "label": "森霍尔－多邦菲姆机场",
             "value": "SEI",
+            "status": 1
+        },
+        {
+            "label": "Seoul",
+            "value": "SEL",
             "status": 1
         },
         {
@@ -33811,6 +34171,11 @@
             "status": 1
         },
         {
+            "label": "沙迦",
+            "value": "SHJ",
+            "status": 1
+        },
+        {
             "label": "瑟洪洪机场",
             "value": "SHK",
             "status": 1
@@ -34093,6 +34458,11 @@
         {
             "label": "马希斯机场",
             "value": "SJT",
+            "status": 1
+        },
+        {
+            "label": "SAN JUAN",
+            "value": "SJU",
             "status": 1
         },
         {
@@ -34661,6 +35031,11 @@
             "status": 1
         },
         {
+            "label": "SOFIA",
+            "value": "SOF",
+            "status": 1
+        },
+        {
             "label": "豪卡森机场",
             "value": "SOG",
             "status": 1
@@ -34793,6 +35168,11 @@
         {
             "label": "新千",
             "value": "SPK",
+            "status": 1
+        },
+        {
+            "label": "阿姆斯特丹",
+            "value": "SPL",
             "status": 1
         },
         {
@@ -34941,6 +35321,11 @@
             "status": 1
         },
         {
+            "label": "SANTA CRUZ",
+            "value": "SRZ",
+            "status": 1
+        },
+        {
             "label": "萨尔瓦多机场",
             "value": "SSA",
             "status": 1
@@ -35051,6 +35436,11 @@
             "status": 1
         },
         {
+            "label": "ST LOUIS",
+            "value": "STL",
+            "status": 1
+        },
+        {
             "label": "麦斯托-威尔逊-丰塞卡机场",
             "value": "STM",
             "status": 1
@@ -35058,6 +35448,11 @@
         {
             "label": "斯坦斯特德",
             "value": "STN",
+            "status": 1
+        },
+        {
+            "label": "STOCKHOLM",
+            "value": "STO",
             "status": 1
         },
         {
@@ -35491,8 +35886,18 @@
             "status": 1
         },
         {
+            "label": "STRASBOURG",
+            "value": "SXB",
+            "status": 1
+        },
+        {
             "label": "阿法隆佛尔/WP机场",
             "value": "SXC",
+            "status": 1
+        },
+        {
+            "label": "SOPHIA ANTIPO",
+            "value": "SXD",
             "status": 1
         },
         {
@@ -36511,6 +36916,11 @@
             "status": 1
         },
         {
+            "label": "Berlin Tempelhof Apt",
+            "value": "THF",
+            "status": 1
+        },
+        {
             "label": "桑古尔机场",
             "value": "THG",
             "status": 1
@@ -37296,6 +37706,11 @@
             "status": 1
         },
         {
+            "label": "Madrid Torrejon AFB",
+            "value": "TOJ",
+            "status": 1
+        },
+        {
             "label": "托罗基纳机场",
             "value": "TOK",
             "status": 1
@@ -38036,6 +38451,11 @@
             "status": 1
         },
         {
+            "label": "TXC",
+            "value": "TXC",
+            "status": 1
+        },
+        {
             "label": "泰赫拉德－弗雷塔斯机场",
             "value": "TXF",
             "status": 1
@@ -38108,6 +38528,11 @@
         {
             "label": "斯坦尼尔凯机场",
             "value": "TYM",
+            "status": 1
+        },
+        {
+            "label": "Tokoy",
+            "value": "TYO",
             "status": 1
         },
         {
@@ -38313,6 +38738,11 @@
         {
             "label": "伏尔克尔机场",
             "value": "UDE",
+            "status": 1
+        },
+        {
+            "label": "Tn Cl Av C.Bombonato Airport",
+            "value": "UDI",
             "status": 1
         },
         {
@@ -39291,6 +39721,11 @@
             "status": 1
         },
         {
+            "label": "维也纳",
+            "value": "VDD",
+            "status": 1
+        },
+        {
             "label": "希罗机场",
             "value": "VDE",
             "status": 1
@@ -39343,6 +39778,11 @@
         {
             "label": "弗纳尔机场",
             "value": "VEL",
+            "status": 1
+        },
+        {
+            "label": "VEN",
+            "value": "VEN",
             "status": 1
         },
         {
@@ -39678,6 +40118,11 @@
         {
             "label": "韦恩克塞机场",
             "value": "VNG",
+            "status": 1
+        },
+        {
+            "label": "VILNIUS",
+            "value": "VNO",
             "status": 1
         },
         {
@@ -41211,6 +41656,11 @@
             "status": 1
         },
         {
+            "label": "Lille Europe Rail Station",
+            "value": "XDB",
+            "status": 1
+        },
+        {
             "label": "迪波果机场",
             "value": "XDE",
             "status": 1
@@ -41218,6 +41668,11 @@
         {
             "label": "吉博机场",
             "value": "XDJ",
+            "status": 1
+        },
+        {
+            "label": "巴黎",
+            "value": "XDT",
             "status": 1
         },
         {
@@ -41231,8 +41686,33 @@
             "status": 1
         },
         {
+            "label": "Strasbourg Bus Station",
+            "value": "XER",
+            "status": 1
+        },
+        {
             "label": "日内瓦湖城地方机场",
             "value": "XES",
+            "status": 1
+        },
+        {
+            "label": "Stockholm C Rail Station",
+            "value": "XEV",
+            "status": 1
+        },
+        {
+            "label": "Lille Flandres Rail Station",
+            "value": "XFA",
+            "status": 1
+        },
+        {
+            "label": "Malmo C Rail Station",
+            "value": "XFP",
+            "status": 1
+        },
+        {
+            "label": "Malmo South Rail Station",
+            "value": "XFR",
             "status": 1
         },
         {
@@ -41243,6 +41723,11 @@
         {
             "label": "阿米尔卡卡布拉尔机场",
             "value": "XGA",
+            "status": 1
+        },
+        {
+            "label": "Paris Gare Montparnasse Bus Station",
+            "value": "XGB",
             "status": 1
         },
         {
@@ -41278,6 +41763,11 @@
         {
             "label": "伊利马纳克机场",
             "value": "XIQ",
+            "status": 1
+        },
+        {
+            "label": "Barcelona Bus Station",
+            "value": "XJB",
             "status": 1
         },
         {
@@ -41406,6 +41896,11 @@
             "status": 1
         },
         {
+            "label": "Nottingham Rail Station",
+            "value": "XNM",
+            "status": 1
+        },
+        {
             "label": "努纳机场",
             "value": "XNU",
             "status": 1
@@ -41436,6 +41931,11 @@
             "status": 1
         },
         {
+            "label": "Paris Gare du Nord Rail Station",
+            "value": "XPG",
+            "status": 1
+        },
+        {
             "label": "霍普港",
             "value": "XPH",
             "status": 1
@@ -41463,6 +41963,16 @@
         {
             "label": "潘托特朗布勒",
             "value": "XPX",
+            "status": 1
+        },
+        {
+            "label": "Derby Rail Station",
+            "value": "XQH",
+            "status": 1
+        },
+        {
+            "label": "Loughborough Rail Station",
+            "value": "XQI",
             "status": 1
         },
         {
@@ -41576,8 +42086,23 @@
             "status": 1
         },
         {
+            "label": "哥德堡",
+            "value": "XWL",
+            "status": 1
+        },
+        {
+            "label": "Wyoming Rail Station",
+            "value": "XWY",
+            "status": 1
+        },
+        {
             "label": "曼彻斯特－伍德福德机场",
             "value": "XXB",
+            "status": 1
+        },
+        {
+            "label": "松兹瓦尔",
+            "value": "XXZ",
             "status": 1
         },
         {
@@ -41586,13 +42111,38 @@
             "status": 1
         },
         {
+            "label": "Lyon Part-Dieu Rail Station",
+            "value": "XYD",
+            "status": 1
+        },
+        {
             "label": "耶城机场",
             "value": "XYE",
             "status": 1
         },
         {
+            "label": "诺尔雪平",
+            "value": "XYK",
+            "status": 1
+        },
+        {
+            "label": "Lyon Perrache Rail Station",
+            "value": "XYL",
+            "status": 1
+        },
+        {
             "label": "耶洛河机场",
             "value": "XYR",
+            "status": 1
+        },
+        {
+            "label": "Toulouse Montaudran Apt",
+            "value": "XYT",
+            "status": 1
+        },
+        {
+            "label": "里昂",
+            "value": "XYV",
             "status": 1
         },
         {
@@ -41613,6 +42163,16 @@
         {
             "label": "埃德蒙顿",
             "value": "XZL",
+            "status": 1
+        },
+        {
+            "label": "Oslo Central Rail Station",
+            "value": "XZO",
+            "status": 1
+        },
+        {
+            "label": "Trondheim Central Rail Station",
+            "value": "XZT",
             "status": 1
         },
         {
@@ -42121,6 +42681,11 @@
             "status": 1
         },
         {
+            "label": "Edmonton",
+            "value": "YEG",
+            "status": 1
+        },
+        {
             "label": "耶尼塞希尔机场",
             "value": "YEI",
             "status": 1
@@ -42483,6 +43048,11 @@
         {
             "label": "斯坦菲尔德国际机场",
             "value": "YHZ",
+            "status": 1
+        },
+        {
+            "label": "New Yogyakarta Int.",
+            "value": "YIA",
             "status": 1
         },
         {
@@ -44201,13 +44771,33 @@
             "status": 1
         },
         {
+            "label": "Nuremberg Main Railway Station",
+            "value": "ZAQ",
+            "status": 1
+        },
+        {
             "label": "扎里亚机场",
             "value": "ZAR",
             "status": 1
         },
         {
+            "label": "Antwerp De Keyserlei Bus Station",
+            "value": "ZAY",
+            "status": 1
+        },
+        {
+            "label": "Zaragoza",
+            "value": "ZAZ",
+            "status": 1
+        },
+        {
             "label": "伯灵顿机场",
             "value": "ZBA",
+            "status": 1
+        },
+        {
+            "label": "Birmingham Colmore Row Bus Station",
+            "value": "ZBC",
             "status": 1
         },
         {
@@ -44276,6 +44866,16 @@
             "status": 1
         },
         {
+            "label": "Berne Rail Station",
+            "value": "ZDJ",
+            "status": 1
+        },
+        {
+            "label": "Brno Bus Station",
+            "value": "ZDN",
+            "status": 1
+        },
+        {
             "label": "瑟昆达机场",
             "value": "ZEC",
             "status": 1
@@ -44326,6 +44926,11 @@
             "status": 1
         },
         {
+            "label": "Rennes Rail Station",
+            "value": "ZFJ",
+            "status": 1
+        },
+        {
             "label": "南特劳特莱克机场",
             "value": "ZFL",
             "status": 1
@@ -44338,6 +44943,11 @@
         {
             "label": "图利塔机场",
             "value": "ZFN",
+            "status": 1
+        },
+        {
+            "label": "Bordeaux Rail Station",
+            "value": "ZFQ",
             "status": 1
         },
         {
@@ -44356,8 +44966,23 @@
             "status": 1
         },
         {
+            "label": "Nottingham Bus Station",
+            "value": "ZGB",
+            "status": 1
+        },
+        {
             "label": "大福克斯机场",
             "value": "ZGF",
+            "status": 1
+        },
+        {
+            "label": "Glasgow Central Rail Station",
+            "value": "ZGG",
+            "status": 1
+        },
+        {
+            "label": "Copenhagen Rail Station",
+            "value": "ZGH",
             "status": 1
         },
         {
@@ -44421,6 +45046,11 @@
             "status": 1
         },
         {
+            "label": "Aarhus Bus Service",
+            "value": "ZID",
+            "status": 1
+        },
+        {
             "label": "济金绍尔机场",
             "value": "ZIG",
             "status": 1
@@ -44471,6 +45101,11 @@
             "status": 1
         },
         {
+            "label": "莫斯科",
+            "value": "ZKD",
+            "status": 1
+        },
+        {
             "label": "卡斯切彻瓦恩机场",
             "value": "ZKE",
             "status": 1
@@ -44491,6 +45126,16 @@
             "status": 1
         },
         {
+            "label": "Zurich HBF Rail Station",
+            "value": "ZLP",
+            "status": 1
+        },
+        {
+            "label": "苏黎世",
+            "value": "ZLQ",
+            "status": 1
+        },
+        {
             "label": "拉塔巴蒂埃耶机场",
             "value": "ZLT",
             "status": 1
@@ -44501,6 +45146,11 @@
             "status": 1
         },
         {
+            "label": "Hamburg HBF Rail Station",
+            "value": "ZMB",
+            "status": 1
+        },
+        {
             "label": "塞纳马杜雷拉机场",
             "value": "ZMD",
             "status": 1
@@ -44508,6 +45158,11 @@
         {
             "label": "108英里兰奇机场",
             "value": "ZMH",
+            "status": 1
+        },
+        {
+            "label": "Naples Mergellina Rail Station",
+            "value": "ZMI",
             "status": 1
         },
         {
@@ -44526,8 +45181,23 @@
             "status": 1
         },
         {
+            "label": "曼切斯特",
+            "value": "ZMP",
+            "status": 1
+        },
+        {
+            "label": "Florence S.M. Novella Rail Stn",
+            "value": "ZMS",
+            "status": 1
+        },
+        {
             "label": "马塞特机场",
             "value": "ZMT",
+            "status": 1
+        },
+        {
+            "label": "Munich HBF Rail Station",
+            "value": "ZMU",
             "status": 1
         },
         {
@@ -44621,8 +45291,18 @@
             "status": 1
         },
         {
+            "label": "Frankfurt Hauptbahnhof Rail Station",
+            "value": "ZRB",
+            "status": 1
+        },
+        {
             "label": "罗克福德机场",
             "value": "ZRF",
+            "status": 1
+        },
+        {
+            "label": "Bratislava Bus Station",
+            "value": "ZRG",
             "status": 1
         },
         {
@@ -44658,6 +45338,16 @@
         {
             "label": "哈特福德机场",
             "value": "ZRT",
+            "status": 1
+        },
+        {
+            "label": "Boston RT128 Rail Stationn",
+            "value": "ZRU",
+            "status": 1
+        },
+        {
+            "label": "Washington New Carrolton Rail Station",
+            "value": "ZRZ",
             "status": 1
         },
         {
@@ -44721,6 +45411,11 @@
             "status": 1
         },
         {
+            "label": "Turin Bus Station",
+            "value": "ZTC",
+            "status": 1
+        },
+        {
             "label": "韦斯特切斯特机场",
             "value": "ZTF",
             "status": 1
@@ -44741,6 +45436,16 @@
             "status": 1
         },
         {
+            "label": "Philadelphia Trenton Rail Station",
+            "value": "ZTN",
+            "status": 1
+        },
+        {
+            "label": "Boston South Rail Station",
+            "value": "ZTO",
+            "status": 1
+        },
+        {
             "label": "日托米尔机场",
             "value": "ZTR",
             "status": 1
@@ -44748,6 +45453,11 @@
         {
             "label": "塔西斯机场",
             "value": "ZTS",
+            "status": 1
+        },
+        {
+            "label": "Boston BKbay Rail Station",
+            "value": "ZTY",
             "status": 1
         },
         {
@@ -44801,6 +45511,11 @@
             "status": 1
         },
         {
+            "label": "Hanover Hauptbahnhof Rail Station",
+            "value": "ZVR",
+            "status": 1
+        },
+        {
             "label": "安达帕机场",
             "value": "ZWA",
             "status": 1
@@ -44816,13 +45531,53 @@
             "status": 1
         },
         {
+            "label": "West Palm Beach Rail Station",
+            "value": "ZWP",
+            "status": 1
+        },
+        {
+            "label": "Stuttgart Rail Station",
+            "value": "ZWS",
+            "status": 1
+        },
+        {
+            "label": "Washington DC Rail Station",
+            "value": "ZWU",
+            "status": 1
+        },
+        {
             "label": "扎布拉特机场",
             "value": "ZXT",
             "status": 1
         },
         {
+            "label": "Eindhoven Rail Station",
+            "value": "ZYE",
+            "status": 1
+        },
+        {
             "label": "奥斯玛尼国际机场",
             "value": "ZYL",
+            "status": 1
+        },
+        {
+            "label": "Brussels Midi Rail Station",
+            "value": "ZYR",
+            "status": 1
+        },
+        {
+            "label": "Maastricht Rail Station",
+            "value": "ZYT",
+            "status": 1
+        },
+        {
+            "label": "Antwerp Berchem Rail Station",
+            "value": "ZYZ",
+            "status": 1
+        },
+        {
+            "label": "New Carrollton Rail Station",
+            "value": "ZZC",
             "status": 1
         },
         {
