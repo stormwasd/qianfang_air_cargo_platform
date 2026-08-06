@@ -50,7 +50,6 @@ class ReceivablesInfo(BaseModel):
     consumables_fee: Optional[float] = Field(None, description="耗材费")
     first_leg_fee: Optional[float] = Field(None, description="一程费用")
     total: Optional[float] = Field(None, description="应收合计")
-    agent: Optional[str] = Field(None, description="代理")
 
 
 class PayableIntlAir(BaseModel):

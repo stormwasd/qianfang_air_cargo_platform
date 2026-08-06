@@ -135,7 +135,6 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
             "consumables_fee": _to_float(record.receivable_consumables_fee),
             "first_leg_fee": _to_float(record.receivable_first_leg_fee),
             "total": _to_float(record.receivable_total),
-            "agent": record.receivable_agent or "",
         },
         
         # (3) 应付款项
@@ -290,7 +289,6 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
         record.receivable_consumables_fee = rec.consumables_fee if rec.consumables_fee is not None else record.receivable_consumables_fee
         record.receivable_first_leg_fee = rec.first_leg_fee if rec.first_leg_fee is not None else record.receivable_first_leg_fee
         record.receivable_total = rec.total if rec.total is not None else record.receivable_total
-        record.receivable_agent = rec.agent if rec.agent is not None else record.receivable_agent
 
     # 3. 应付款项
     if payload.payables is not None:
@@ -694,7 +692,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    涵盖 5 大业务层级结构（货主委托、应收明细、应付明细[国空/汽运/国内/报关/地面]、销售提成、经营信息）共 114 列全量字段。
+    涵盖 5 大业务层级结构（货主委托、应收明细、应付明细[国空/汽运/国内/报关/地面]、销售提成、经营信息）共 113 列全量字段。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -726,7 +724,7 @@ async def export_cost_consignments_to_excel(
         "应收-报关费", "应收-续页费", "应收-海关查验费", "应收-磁检费/安检费",
         "应收-TC操作费/快件中心过站费", "应收-前置仓/国际货站地面费", "应收-制单费",
         "应收-制单分单费", "应收-垫板费", "应收-打板/装箱费", "应收-探板费",
-        "应收-耗材费", "应收-一程费用", "应收-合计", "应收-代理",
+        "应收-耗材费", "应收-一程费用", "应收-合计",
         
         # (3) 应付款项 - 国际空运
         "国空应付-小计", "国空应付-托运日期", "国空应付-外发单位", "国空应付-始发站",
@@ -849,7 +847,6 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.receivable_consumables_fee),
             _v_num(rec.receivable_first_leg_fee),
             _v_num(rec.receivable_total),
-            _v_str(rec.receivable_agent),
 
             # (3) 应付款项 - 国际空运
             _v_num(rec.pay_intl_air_subtotal),

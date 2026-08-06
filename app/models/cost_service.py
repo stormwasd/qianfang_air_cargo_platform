@@ -51,7 +51,6 @@ class CostRegistration(Base):
     receivable_consumables_fee = Column(Numeric(10, 2), nullable=True, comment="耗材费")
     receivable_first_leg_fee = Column(Numeric(10, 2), nullable=True, comment="一程费用")
     receivable_total = Column(Numeric(10, 2), nullable=True, comment="应收合计")
-    receivable_agent = Column(String(100), nullable=True, comment="代理")
     
     # (3) 应付款项 - [1] 国际空运信息
     pay_intl_air_subtotal = Column(Numeric(10, 2), nullable=True, comment="国际空运-应付小计")
@@ -195,7 +194,6 @@ class CostConsignment(Base):
     receivable_consumables_fee = Column(Numeric(10, 2), nullable=True, comment="耗材费")
     receivable_first_leg_fee = Column(Numeric(10, 2), nullable=True, comment="一程费用")
     receivable_total = Column(Numeric(10, 2), nullable=True, comment="应收合计")
-    receivable_agent = Column(String(100), nullable=True, comment="代理")
     
     # (3) 应付款项 - [1] 国际空运信息
     pay_intl_air_subtotal = Column(Numeric(10, 2), nullable=True, comment="国际空运-应付小计")
