@@ -18,6 +18,7 @@ from app.core.response import success_response
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.models.cost_service import CostRegistration, CostConsignment
+from app.models.customer_service import ConsignmentInfo
 from app.schemas.cost_service import (
     CostRegistrationSave,
     CostConsignmentCreate,
@@ -470,6 +471,31 @@ async def create_cost_consignment(
         new_record.create_time = get_china_now()
 
     db.add(new_record)
+    db.flush()
+    
+    # 同步在客服接单台 (ConsignmentInfo) 中创建对应记录
+    cs_record = ConsignmentInfo(
+        id=new_record.id,
+        create_time=new_record.create_time,
+        internal_doc_id=new_record.internal_doc_id,
+        warehouse_entry_date=new_record.warehouse_entry_date,
+        customer_name=new_record.customer_name,
+        origin_destination=new_record.origin_destination,
+        customs_declaration=new_record.customs_declaration,
+        bill_of_lading=new_record.bill_of_lading,
+        flight_date=new_record.flight_date,
+        flight_no=new_record.flight_no,
+        flight_doc_no=new_record.flight_doc_no,
+        pieces=new_record.pieces,
+        actual_weight=new_record.actual_weight,
+        chargeable_weight=new_record.chargeable_weight,
+        volume=new_record.volume,
+        first_leg_weight=new_record.first_leg_weight,
+        agent=new_record.agent,
+        remark=new_record.remark,
+        creator_id=current_user.id
+    )
+    db.add(cs_record)
     db.commit()
     db.refresh(new_record)
     
@@ -617,6 +643,51 @@ async def update_cost_consignment(
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
         
     _apply_cost_payload(record, payload)
+    
+    # 同步更新客服接单台 (ConsignmentInfo) 中的对应记录
+    cs_record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
+    if cs_record:
+        cs_record.create_time = record.create_time
+        cs_record.internal_doc_id = record.internal_doc_id
+        cs_record.warehouse_entry_date = record.warehouse_entry_date
+        cs_record.customer_name = record.customer_name
+        cs_record.origin_destination = record.origin_destination
+        cs_record.customs_declaration = record.customs_declaration
+        cs_record.bill_of_lading = record.bill_of_lading
+        cs_record.flight_date = record.flight_date
+        cs_record.flight_no = record.flight_no
+        cs_record.flight_doc_no = record.flight_doc_no
+        cs_record.pieces = record.pieces
+        cs_record.actual_weight = record.actual_weight
+        cs_record.chargeable_weight = record.chargeable_weight
+        cs_record.volume = record.volume
+        cs_record.first_leg_weight = record.first_leg_weight
+        cs_record.agent = record.agent
+        cs_record.remark = record.remark
+    else:
+        cs_record = ConsignmentInfo(
+            id=record.id,
+            create_time=record.create_time,
+            internal_doc_id=record.internal_doc_id,
+            warehouse_entry_date=record.warehouse_entry_date,
+            customer_name=record.customer_name,
+            origin_destination=record.origin_destination,
+            customs_declaration=record.customs_declaration,
+            bill_of_lading=record.bill_of_lading,
+            flight_date=record.flight_date,
+            flight_no=record.flight_no,
+            flight_doc_no=record.flight_doc_no,
+            pieces=record.pieces,
+            actual_weight=record.actual_weight,
+            chargeable_weight=record.chargeable_weight,
+            volume=record.volume,
+            first_leg_weight=record.first_leg_weight,
+            agent=record.agent,
+            remark=record.remark,
+            creator_id=record.creator_id
+        )
+        db.add(cs_record)
+
     db.commit()
     db.refresh(record)
     
@@ -649,6 +720,8 @@ async def batch_delete_cost_consignments(
         except ValueError:
             raise BadRequestException(f"ID '{raw_id}' 格式无效")
             
+    # 同步删除客服接单台中对应的记录
+    db.query(ConsignmentInfo).filter(ConsignmentInfo.id.in_(int_ids)).delete(synchronize_session=False)
     deleted_count = db.query(CostConsignment).filter(CostConsignment.id.in_(int_ids)).delete(synchronize_session=False)
     db.commit()
     
@@ -674,6 +747,8 @@ async def delete_cost_consignment(
     if not record:
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
         
+    # 同步删除客服接单台中对应的记录
+    db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).delete(synchronize_session=False)
     db.delete(record)
     db.commit()
     
