@@ -228,7 +228,7 @@ class CsaDepartureAlertManager:
                 if not planned_dt:
                     continue
 
-                trigger_dt = planned_dt - timedelta(minutes=135)
+                trigger_dt = planned_dt - timedelta(minutes=115)
                 new_task = CsaDepartureAlertTask(
                     approval_data_id=appv_id,
                     waybill_number=waybill_num,

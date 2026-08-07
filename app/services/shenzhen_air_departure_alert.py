@@ -148,7 +148,7 @@ class ShenzhenAirDepartureAlertManager:
                 if not planned_dt:
                     continue
 
-                trigger_dt = planned_dt - timedelta(minutes=135)
+                trigger_dt = planned_dt - timedelta(minutes=115)
                 new_task = ShenzhenAirDepartureAlertTask(
                     booking_export_id=export.id,
                     waybill_number=full_waybill,
