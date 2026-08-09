@@ -1,7 +1,7 @@
 """
 运单相关的Pydantic schemas
 """
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 
@@ -109,6 +109,30 @@ class WaybillCreate(BaseModel):
     """
     form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），根据航司类型包含不同的字段结构")
 
+
+class ChinaSouthernAirServiceChargeOptionsQuery(BaseModel):
+    """查询南航出港货邮处理费选项的必要航班与货物信息。"""
+
+    origin_station: str = Field(..., min_length=3, max_length=10, description="始发站三字码")
+    destination: str = Field(..., min_length=3, max_length=10, description="目的站三字码")
+    flight_number: str = Field(..., min_length=2, max_length=20, description="航班号")
+    flight_date: date = Field(..., description="航班日期，格式 YYYY-MM-DD")
+    cargo_type: str = Field(..., min_length=1, max_length=50, description="货物类型代码，对应南航 shipmentType")
+    cargo_name: str = Field(..., min_length=1, max_length=100, description="货物类型名称，对应南航 shipmentTypeName")
+
+    @field_validator("origin_station", "destination", "flight_number", mode="before")
+    @classmethod
+    def normalize_airport_and_flight_fields(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip().upper()
+        return value
+
+    @field_validator("cargo_type", "cargo_name", mode="before")
+    @classmethod
+    def normalize_cargo_fields(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 class WaybillUpdate(BaseModel):
     """

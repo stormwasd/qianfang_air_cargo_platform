@@ -6,18 +6,23 @@ from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from sqlalchemy.dialects.mysql import JSON
-from app.core.exceptions import NotFoundException, BadRequestException
+from app.core.exceptions import BaseAPIException, NotFoundException, BadRequestException
 from app.core.response import success_response
 from app.database import get_db
 from app.models.waybill import Waybill
+from app.models.nanhang_token import NanHangToken
 from app.models.settlement import Settlement
 from app.models.config import BusinessConfig
 from app.schemas.waybill import (
-    WaybillCreate, WaybillUpdate, WaybillQuery
+    ChinaSouthernAirServiceChargeOptionsQuery, WaybillCreate, WaybillUpdate, WaybillQuery
 )
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china, get_china_today, get_china_now
 from app.services.rpa_service import rpa_service
+from app.services.china_southern_air_service_client import (
+    ChinaSouthernAirServiceError,
+    china_southern_air_service,
+)
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.airport_code_mapper import search_airport_codes_by_keyword
 
@@ -252,6 +257,40 @@ async def get_waybills(
         msg="查询成功"
     )
 
+
+@router.post(
+    "/china-southern-air/departure-cargo-mail-handling-charge-options",
+    summary="查询南航出港货邮处理费选项",
+)
+async def get_china_southern_air_departure_cargo_mail_handling_charge_options(
+    query: ChinaSouthernAirServiceChargeOptionsQuery,
+    current_user=Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """按航班和货物类型查询南航的出港货邮处理费选项。"""
+    token_record = (
+        db.query(NanHangToken)
+        .filter(NanHangToken.token.isnot(None), NanHangToken.token != "")
+        .order_by(NanHangToken.updated_at.desc(), NanHangToken.id.desc())
+        .first()
+    )
+    if token_record is None:
+        raise BaseAPIException(503, "暂无可用的南航 Token，请先完成南航 Token 获取任务")
+
+    try:
+        charge_options = await china_southern_air_service.query_departure_cargo_mail_handling_charge(
+            token=token_record.token,
+            origin_station=query.origin_station,
+            destination=query.destination,
+            flight_number=query.flight_number,
+            flight_date=query.flight_date.isoformat(),
+            cargo_type=query.cargo_type,
+            cargo_name=query.cargo_name,
+        )
+    except ChinaSouthernAirServiceError as exc:
+        raise BaseAPIException(502, str(exc)) from exc
+
+    return success_response(data=charge_options, msg="查询成功")
 
 @router.get("/{waybill_id}", summary="查询运单详情")
 async def get_waybill(
