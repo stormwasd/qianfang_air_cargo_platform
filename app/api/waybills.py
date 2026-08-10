@@ -1,6 +1,7 @@
 """
 运单管理接口
 """
+import asyncio
 import json
 from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from app.database import get_db
 from app.models.waybill import Waybill
 from app.models.nanhang_token import NanHangToken
 from app.models.settlement import Settlement
+from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
 from app.models.config import BusinessConfig
 from app.schemas.waybill import (
     ChinaSouthernAirServiceChargeOptionsQuery, WaybillCreate, WaybillUpdate, WaybillQuery
@@ -22,6 +24,10 @@ from app.services.rpa_service import rpa_service
 from app.services.china_southern_air_service_client import (
     ChinaSouthernAirServiceError,
     china_southern_air_service,
+)
+from app.services.china_southern_air_direct_order import (
+    ChinaSouthernAirDirectOrderError,
+    china_southern_air_direct_order_service,
 )
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.airport_code_mapper import search_airport_codes_by_keyword
@@ -727,6 +733,169 @@ def _get_business_config(db: Session) -> dict:
     return json.loads(config.config_data)
 
 
+def _reserve_china_southern_air_stock_item(db: Session) -> WaybillStockItem:
+    """以行锁预占一个南航可用单号，避免并发开单重复分配。"""
+    stock_item = (
+        db.query(WaybillStockItem)
+        .join(WaybillStockBatch, WaybillStockItem.batch_id == WaybillStockBatch.id)
+        .join(WaybillStock, WaybillStockBatch.stock_id == WaybillStock.id)
+        .filter(
+            WaybillStock.airline_name == "china_southern_air",
+            WaybillStockItem.usage_status == "0",
+            WaybillStockItem.is_abnormal == "1",
+            WaybillStockItem.is_invalid == "0",
+        )
+        .order_by(WaybillStockBatch.id.desc(), WaybillStockItem.id.asc())
+        .with_for_update(skip_locked=True)
+        .first()
+    )
+    if stock_item is None:
+        raise BadRequestException("南航单号库中没有可用单号，请先补充单号库")
+
+    stock_item.usage_status = "1"
+    stock_item.usage_date = get_china_now().date()
+    return stock_item
+
+
+def _release_stock_item(db: Session, stock_item_id: int) -> None:
+    """归还尚未提交到南航的单号。"""
+    stock_item = (
+        db.query(WaybillStockItem)
+        .filter(WaybillStockItem.id == stock_item_id)
+        .with_for_update()
+        .first()
+    )
+    if stock_item is not None:
+        stock_item.usage_status = "0"
+        stock_item.usage_date = None
+
+
+def _mark_stock_item_unavailable(db: Session, stock_item_id: int, reason: str) -> None:
+    """隔离已被南航使用或结果不确定的单号，避免再次抢占。"""
+    stock_item = (
+        db.query(WaybillStockItem)
+        .filter(WaybillStockItem.id == stock_item_id)
+        .with_for_update()
+        .first()
+    )
+    if stock_item is not None:
+        stock_item.usage_status = "1"
+        stock_item.usage_date = get_china_now().date()
+        stock_item.is_invalid = "1"
+        stock_item.invalid_reason = (reason or "南航开单结果不确定")[:255]
+
+
+def _create_china_southern_air_settlement(
+    db: Session,
+    waybill: Waybill,
+    form_data: dict,
+    calculation_result: dict,
+) -> None:
+    """沿用南航 RPA 开单成功后的结算单落库语义。"""
+    flight_info = form_data.get("flight_info", {})
+    cargo_info = form_data.get("cargo_info", {})
+    contact_info = form_data.get("contact_info", {})
+    other_fees = form_data.get("other_fees", {})
+    flight_price = calculation_result.get("flightPriceCalculateResult") or {}
+
+    settlement_data = {
+        "airline_record_time": get_china_now().strftime("%Y-%m-%d"),
+        "settlement_method": "1",
+        "settlement_status": "0",
+        "financial_review": "0",
+        "master_airwaybill_number": waybill.waybill_number or "",
+        "transport_method": "2",
+        "airline": "2",
+        "origin_station": flight_info.get("origin_station", ""),
+        "destination": flight_info.get("destination", ""),
+        "flight_number": flight_info.get("flight_number", ""),
+        "flight_date": flight_info.get("flight_date", ""),
+        "customer_name": contact_info.get("shipper_unit", ""),
+        "recipient_name": contact_info.get("consignee", ""),
+        "cargo_name": cargo_info.get("cargo_name", ""),
+        "quantity": cargo_info.get("quantity", ""),
+        "weight": cargo_info.get("weight", ""),
+        "chargeable_weight": calculation_result.get("cweight", ""),
+        "sub_rate": "",
+        "sub_airline_fee": "",
+        "sub_document_fee": "",
+        "sub_telegraph_fee": "",
+        "sub_telegraph_number": "",
+        "sub_cca_fee": "",
+        "sub_packaging_fee": other_fees.get("packaging_fee", ""),
+        "sub_pickup_fee": other_fees.get("pickup_fee", ""),
+        "sub_airport_pickup_fee": "",
+        "sub_delivery_fee": other_fees.get("delivery_fee", ""),
+        "sub_carrier_deduction": "",
+        "sub_other_fee": "",
+        "sub_other_fee_remark": "",
+        "sub_total_amount": "",
+        "sub_remark": "",
+        "master_rate": flight_price.get("norRate", ""),
+        "master_airline_fee": calculation_result.get("weightCharge", ""),
+        "master_fuel_surcharge": calculation_result.get("oilFee", ""),
+        "master_transit_weight": "",
+        "master_transit_fee": calculation_result.get("totalExtensionCharge", ""),
+        "master_cca_cost": "",
+        "master_packaging_fee": "",
+        "master_telegraph_fee": "",
+        "master_pickup_unit": "",
+        "master_pickup_fee": "",
+        "master_delivery_unit": "",
+        "master_airport_pickup_fee": "",
+        "master_delivery_fee": "",
+        "master_other_fee": "",
+        "master_total_cost": calculation_result.get("totalCharge", ""),
+        "master_remark": "",
+    }
+    db.add(Settlement(
+        form_data=json.dumps(settlement_data, ensure_ascii=False),
+        waybill_void_status=waybill.waybill_void_status or "0",
+    ))
+
+
+async def _post_process_china_southern_air_waybill(
+    waybill_id: int,
+    form_data: dict,
+    business_config: dict,
+) -> None:
+    """开单成功后异步生成南航货站文件并创建打印任务。"""
+    from app.database import SessionLocal
+    from app.services.cargo_station_record_service import generate_csa_all_documents
+
+    db = SessionLocal()
+    try:
+        waybill = db.query(Waybill).filter(Waybill.id == waybill_id).first()
+        if waybill is None or waybill.airline_record_status != "3":
+            return
+
+        waybill.cargo_station_record_status = "1"
+        db.commit()
+        documents_result = await asyncio.to_thread(
+            generate_csa_all_documents,
+            waybill_id=waybill.id,
+            waybill_number=waybill.waybill_number,
+            form_data=form_data,
+            business_config=business_config,
+        )
+        all_success = all(
+            not document.get("error") and document.get("excel")
+            for document in documents_result.values()
+        )
+        waybill.cargo_station_record_status = "3" if all_success else "2"
+        db.commit()
+        if all_success:
+            _auto_trigger_document_print(db, waybill, form_data, business_config)
+    except Exception:
+        db.rollback()
+        waybill = db.query(Waybill).filter(Waybill.id == waybill_id).first()
+        if waybill is not None:
+            waybill.cargo_station_record_status = "2"
+            db.commit()
+    finally:
+        db.close()
+
+
 def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, business_config: dict):
     """
     货站录单成功后自动触发打单
@@ -1215,89 +1384,239 @@ async def void_waybill(
 @router.post("/{waybill_id}/execute-china-southern-air", summary="南航新增运单")
 async def execute_china_southern_air_waybill(
     waybill_id: str,
+    background_tasks: BackgroundTasks,
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    南航新增运单接口（队列模式）
-    
-    此接口会：
-    1. 根据运单的airline判断是否为南航（airline="2"或"南方航空"）
-    2. 如果是南航，创建4个队列（waybill_number, freight_rate, freight, delivery_fee）
-    3. 创建RPA任务并加入队列
-    4. Worker会从队列中取出任务执行RPA调用
-    5. RPA任务完成后（成功或失败），Worker会：
-       - 成功：从队列中获取数据，创建结算记录，然后销毁队列
-       - 失败：直接销毁队列
-    6. 前端可以通过任务ID或运单状态轮询获取执行结果
-    
-    - **waybill_id**: 运单ID（字符串格式）
-    
-    返回：
-    - task_id: RPA任务ID，可用于查询任务状态
+    通过南航 B2E 接口同步计算费用并开单。
+
+    本接口不创建南航开单 RPA 任务，也不依赖机器人；开单成功后会异步沿用
+    既有的货站文件生成和打印任务流程。
     """
-    from app.config import settings
-    from app.services.rpa_task_service import rpa_task_service
-    from app.models.rpa_task import RPATaskType, RPATargetType
-    
-    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    try:
+        waybill_id_int = int(waybill_id)
+    except (TypeError, ValueError) as exc:
+        raise BadRequestException("运单ID格式不正确") from exc
+
+    waybill = db.query(Waybill).filter(Waybill.id == waybill_id_int).first()
     if not waybill:
         raise NotFoundException("运单不存在")
-    
-    form_data_dict = json.loads(waybill.form_data)
+
+    try:
+        form_data_dict = json.loads(waybill.form_data)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise BadRequestException("运单表单数据格式不正确") from exc
     airline = form_data_dict.get("airline", "")
-    
-    is_china_southern_air = airline == "2" or airline == "南方航空"
+
+    is_china_southern_air = airline in {"2", "南方航空", "china_southern_air"}
     if not is_china_southern_air:
         raise BadRequestException("此接口仅支持南方航空的运单执行，深圳航空请使用 /execute 接口")
-    
-    existing_task = rpa_task_service.get_pending_task_for_target(
+
+    # 历史上已创建、但尚未结束的 RPA 开单任务不能与直连开单并发执行。
+    # 该检查仅用于兼容旧任务，直连流程本身不会创建任何 RPA 开单任务。
+    from app.models.rpa_task import RPATaskType, RPATargetType
+    from app.services.rpa_task_service import rpa_task_service
+    legacy_task = rpa_task_service.get_pending_task_for_target(
         db,
         target_type=RPATargetType.WAYBILL.value,
-        target_id=int(waybill_id),
-        task_type=RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value
-    )
-    if existing_task:
-        raise BadRequestException(f"该运单已有待执行或执行中的南航新增运单任务，任务ID: {existing_task.id}")
-    
-    business_config = _get_business_config(db)
-    if not business_config:
-        raise BadRequestException("业务参数配置不存在，无法调用南航新增运单接口")
-    
-    rpa_params = _extract_china_southern_air_waybill_params(form_data_dict, business_config)
-    
-    required_params = [
-        "address_of_the_application_executable_file_tangyi",
-        "system_account",
-        "login_password",
-        "system_url",
-        "origin_station",
-        "destination",
-        "flight_date",
-        "flight_number",
-        "cargo_name",
-        "quantity",
-        "weight",
-        "consignee",
-        "consignee_phone",
-        "shipper",
-        "shipper_phone"
-    ]
-    
-    missing_params = [key for key in required_params if not rpa_params.get(key)]
-    if missing_params:
-        raise BadRequestException(f"缺少必填参数: {', '.join(missing_params)}")
-    
-    task = rpa_task_service.create_task(
-        db=db,
+        target_id=waybill_id_int,
         task_type=RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value,
-        target_type=RPATargetType.WAYBILL.value,
-        target_id=int(waybill_id),
-        params=rpa_params,
-        priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
-        created_by=current_user.id if current_user else None
     )
-    
+    if legacy_task is not None:
+        raise BadRequestException(
+            f"该运单存在历史南航开单 RPA 任务（ID: {legacy_task.id}），请待其结束后再使用直连接口"
+        )
+
+    business_config = _get_business_config(db)
+
+    try:
+        calculate_payload = china_southern_air_direct_order_service.build_calculate_payload(
+            form_data_dict, business_config
+        )
+    except ChinaSouthernAirDirectOrderError as exc:
+        raise BadRequestException(str(exc)) from exc
+
+    token_record = (
+        db.query(NanHangToken)
+        .filter(NanHangToken.token.isnot(None), NanHangToken.token != "")
+        .order_by(NanHangToken.updated_at.desc(), NanHangToken.id.desc())
+        .first()
+    )
+    if token_record is None:
+        raise BaseAPIException(503, "暂无可用的南航 Token，请先完成南航 Token 获取任务")
+
+    # 短事务内锁定运单并预占单号；外部网络调用期间不持有数据库锁。
+    try:
+        locked_waybill = (
+            db.query(Waybill)
+            .filter(Waybill.id == waybill_id_int)
+            .with_for_update()
+            .first()
+        )
+        if locked_waybill is None:
+            raise NotFoundException("运单不存在")
+        if locked_waybill.airline_record_status not in {"0", "2"}:
+            raise BadRequestException("该运单正在开单或已开单成功，不能重复提交")
+
+        stock_item = _reserve_china_southern_air_stock_item(db)
+        locked_waybill.waybill_number = stock_item.full_number
+        locked_waybill.airline_record_status = "1"
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    # 费用计算不包含运单号；同一份成功的计算结果可用于后续单号重试。
+    try:
+        calculation_result = await china_southern_air_direct_order_service.calculate_charge(
+            token=token_record.token,
+            payload=calculate_payload,
+            business_config=business_config,
+        )
+    except ChinaSouthernAirDirectOrderError as exc:
+        db.rollback()
+        locked_waybill = (
+            db.query(Waybill).filter(Waybill.id == waybill_id_int).with_for_update().first()
+        )
+        if locked_waybill is not None:
+            _release_stock_item(db, stock_item.id)
+            locked_waybill.waybill_number = None
+            locked_waybill.airline_record_status = "2"
+            db.commit()
+        raise BaseAPIException(502, str(exc)) from exc
+    except Exception:
+        db.rollback()
+        locked_waybill = (
+            db.query(Waybill).filter(Waybill.id == waybill_id_int).with_for_update().first()
+        )
+        if locked_waybill is not None:
+            _release_stock_item(db, stock_item.id)
+            locked_waybill.waybill_number = None
+            locked_waybill.airline_record_status = "2"
+            db.commit()
+        raise
+
+    while True:
+        create_started = False
+        try:
+            create_payload = china_southern_air_direct_order_service.build_create_payload(
+                form_data_dict,
+                business_config,
+                number_prefix=stock_item.number_prefix,
+                number_suffix=stock_item.number_suffix,
+                calculation_result=calculation_result,
+            )
+            create_started = True
+            await china_southern_air_direct_order_service.create_order(
+                token=token_record.token,
+                payload=create_payload,
+                business_config=business_config,
+            )
+            break
+        except ChinaSouthernAirDirectOrderError as exc:
+            db.rollback()
+            locked_waybill = (
+                db.query(Waybill).filter(Waybill.id == waybill_id_int).with_for_update().first()
+            )
+            if locked_waybill is None:
+                raise NotFoundException("运单不存在") from exc
+
+            if exc.number_is_used:
+                # 南航确认该号已被占用：本地也标记为已使用/失效，随后继续尝试下一张可用单号。
+                _mark_stock_item_unavailable(db, stock_item.id, "南航提示运单号已被使用")
+                locked_waybill.waybill_number = None
+                locked_waybill.airline_record_status = "1"
+                db.commit()
+
+                try:
+                    locked_waybill = (
+                        db.query(Waybill)
+                        .filter(Waybill.id == waybill_id_int)
+                        .with_for_update()
+                        .first()
+                    )
+                    if locked_waybill is None:
+                        raise NotFoundException("运单不存在")
+                    stock_item = _reserve_china_southern_air_stock_item(db)
+                    locked_waybill.waybill_number = stock_item.full_number
+                    locked_waybill.airline_record_status = "1"
+                    db.commit()
+                except BadRequestException as stock_exc:
+                    db.rollback()
+                    locked_waybill = (
+                        db.query(Waybill)
+                        .filter(Waybill.id == waybill_id_int)
+                        .with_for_update()
+                        .first()
+                    )
+                    if locked_waybill is not None:
+                        locked_waybill.waybill_number = None
+                        locked_waybill.airline_record_status = "2"
+                        db.commit()
+                    raise BaseAPIException(
+                        409,
+                        "南航提示可用单号均已被使用，未能完成开单，请补充单号库后重试",
+                    ) from stock_exc
+                except Exception:
+                    db.rollback()
+                    raise
+                continue
+
+            if exc.outcome_unknown:
+                # 请求可能已经被南航接收，不能把该号重新投入池中。
+                _mark_stock_item_unavailable(db, stock_item.id, "南航开单完成状态不确定")
+                locked_waybill.waybill_number = None
+                locked_waybill.airline_record_status = "2"
+                db.commit()
+                raise BaseAPIException(502, str(exc)) from exc
+
+            # 对于南航已经明确返回的业务/参数错误，可确认未开单，单号回流。
+            _release_stock_item(db, stock_item.id)
+            locked_waybill.waybill_number = None
+            locked_waybill.airline_record_status = "2"
+            db.commit()
+            raise BaseAPIException(502, str(exc)) from exc
+        except Exception:
+            db.rollback()
+            locked_waybill = (
+                db.query(Waybill).filter(Waybill.id == waybill_id_int).with_for_update().first()
+            )
+            if locked_waybill is not None:
+                if create_started:
+                    _mark_stock_item_unavailable(db, stock_item.id, "南航开单完成状态不确定")
+                else:
+                    _release_stock_item(db, stock_item.id)
+                locked_waybill.waybill_number = None
+                locked_waybill.airline_record_status = "2"
+                db.commit()
+            raise
+
+    # 先持久化开单成功状态；结算落库异常不得导致远端已开单的单号被重新使用。
+    try:
+        waybill = db.query(Waybill).filter(Waybill.id == waybill_id_int).with_for_update().first()
+        if waybill is None:
+            raise NotFoundException("运单不存在")
+        waybill.airline_record_status = "3"
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    try:
+        _create_china_southern_air_settlement(db, waybill, form_data_dict, calculation_result)
+        db.commit()
+    except Exception:
+        # 远端已成功开单，保留已使用单号和成功状态，避免因本地结算异常诱发重复开单。
+        db.rollback()
+
+    db.refresh(waybill)
+    background_tasks.add_task(
+        _post_process_china_southern_air_waybill,
+        waybill.id,
+        form_data_dict,
+        business_config,
+    )
     waybill_data = {
         "id": str(waybill.id),
         "waybill_number": waybill.waybill_number,
@@ -1315,10 +1634,9 @@ async def execute_china_southern_air_waybill(
         "rpa_queue_uuids": waybill.rpa_queue_uuids,
         "created_at": format_datetime_china(waybill.created_at),
         "updated_at": format_datetime_china(waybill.updated_at),
-        "task_id": str(task.id)  
     }
-    
-    return success_response(data=waybill_data, msg="南航新增运单已加入执行队列，请等待处理")
+
+    return success_response(data=waybill_data, msg="南航开单成功")
 
 
 @router.post("/{waybill_id}/cargo-station-record", summary="深航货站录单重新执行")
