@@ -15,14 +15,16 @@ import json
 import asyncio
 import threading
 import traceback
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models.config import BusinessConfig
-from app.models.robot import Robot, RobotJob
+from app.models.robot import Robot, RobotJob, RPARecurringTaskScheduleState
 from app.models.rpa_task import RPATaskType
 from app.services.rpa_task_service import rpa_task_service
+from app.utils.helpers import get_china_now
 
 
 KEEP_LOGIN_TARGET_TYPE = "keep_login"
@@ -86,6 +88,19 @@ def _load_creds_from_path(business_config: Dict[str, Any], config_path: list, fa
         "login_password": login_password,
         "address_of_the_application_executable_file_tangyi": tangyi_path,
     }
+
+
+def _is_interval_due(
+    last_enqueued_at: Optional[datetime], interval_seconds: int, now: Optional[datetime] = None
+) -> bool:
+    """判断周期任务是否已到达下一次可入队时间，兼容 MySQL 返回的无时区时间。"""
+    if last_enqueued_at is None:
+        return True
+
+    now = now or get_china_now()
+    if last_enqueued_at.tzinfo is None:
+        last_enqueued_at = last_enqueued_at.replace(tzinfo=now.tzinfo)
+    return now >= last_enqueued_at + timedelta(seconds=interval_seconds)
 
 
 class KeepLoginScheduler:
@@ -179,6 +194,18 @@ class KeepLoginScheduler:
                     if existing:
                         continue
 
+                    schedule_state = None
+                    if task_type_value == RPATaskType.TANGYI_RESTART.value:
+                        schedule_state = db.query(RPARecurringTaskScheduleState).filter(
+                            RPARecurringTaskScheduleState.robot_id == robot.id,
+                            RPARecurringTaskScheduleState.task_type == task_type_value,
+                        ).first()
+                        if not _is_interval_due(
+                            schedule_state.last_enqueued_at if schedule_state else None,
+                            interval,
+                        ):
+                            continue
+
                     creds = _load_creds_from_path(
                         business_config,
                         cfg["config_path"],
@@ -195,6 +222,19 @@ class KeepLoginScheduler:
                         RobotJob.task_name == task_type_value,
                     ).first()
                     job_uuid = robot_job.job_uuid if robot_job else None
+
+                    # 将打卡记录与任务一起提交，进程重启后也不会绕过重启间隔。
+                    if task_type_value == RPATaskType.TANGYI_RESTART.value:
+                        now = get_china_now()
+                        if schedule_state is None:
+                            schedule_state = RPARecurringTaskScheduleState(
+                                robot_id=robot.id,
+                                task_type=task_type_value,
+                                last_enqueued_at=now,
+                            )
+                            db.add(schedule_state)
+                        else:
+                            schedule_state.last_enqueued_at = now
 
                     rpa_task_service.create_task(
                         db=db,
