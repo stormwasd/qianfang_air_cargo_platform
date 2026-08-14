@@ -2,7 +2,7 @@
 业务参数配置接口
 """
 import json
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
 from app.core.response import success_response
 from sqlalchemy.orm import Session
@@ -448,6 +448,70 @@ async def get_dict_options(
     return success_response(
         data={"total": total, "items": items},
         msg="查询成功"
+    )
+
+
+@router.get("/dict-options/value-by-key", summary="根据字典key获取value")
+async def get_dict_value_by_key(
+    dict_type: str = Query(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="字典类型唯一标识，如：booking_status",
+    ),
+    key: str = Query(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="字典选项的业务代码，对应dict_options.value",
+    ),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    根据字典类型和业务代码获取展示值。
+
+    - **dict_type**: 字典类型的唯一标识，对应 `dict_types.type`
+    - **key**: 字典选项的业务代码，对应 `dict_options.value`
+
+    只查询启用状态的字典类型和字典选项，使用精确匹配。
+    """
+    normalized_dict_type = dict_type.strip()
+    normalized_key = key.strip()
+    if not normalized_dict_type:
+        raise BadRequestException("dict_type不能为空")
+    if not normalized_key:
+        raise BadRequestException("key不能为空")
+
+    matches = (
+        db.query(DictOption)
+        .join(DictType, DictOption.dict_type_id == DictType.id)
+        .filter(
+            DictType.type == normalized_dict_type,
+            DictType.status == 1,
+            DictOption.value == normalized_key,
+            DictOption.status == 1,
+        )
+        .order_by(DictOption.id.asc())
+        .limit(2)
+        .all()
+    )
+    if not matches:
+        raise NotFoundException(
+            f"未找到启用的字典选项（dict_type: {normalized_dict_type}, key: {normalized_key}）"
+        )
+    if len(matches) > 1:
+        raise ConflictException(
+            f"字典选项配置重复（dict_type: {normalized_dict_type}, key: {normalized_key}）"
+        )
+
+    return success_response(
+        data={
+            "dict_type": normalized_dict_type,
+            "key": normalized_key,
+            "value": matches[0].label,
+        },
+        msg="查询成功",
     )
 
 
