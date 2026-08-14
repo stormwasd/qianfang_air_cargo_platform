@@ -381,7 +381,9 @@ class ChinaSouthernAirDirectOrderService:
         if str(response_data.get("code", "")) in {"0000", "0"}:
             return response_data.get("result")
 
-        message = str(response_data.get("message") or "南航接口处理失败")
+        message = ChinaSouthernAirService._response_message(
+            response_data, "南航接口处理失败"
+        )
         response_text = json.dumps(response_data, ensure_ascii=False).lower()
         number_is_used = is_create and self._response_indicates_used_number(response_text)
         raise ChinaSouthernAirDirectOrderError(

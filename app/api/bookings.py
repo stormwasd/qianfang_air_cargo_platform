@@ -10,17 +10,28 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy.dialects.mysql import JSON
 from app.core.response import success_response
-from app.core.exceptions import BadRequestException, NotFoundException
+from app.core.exceptions import BaseAPIException, BadRequestException, NotFoundException
 from app.database import get_db, SessionLocal
 from app.models.booking import Booking
 from app.models.config import BusinessConfig
+from app.models.nanhang_token import NanHangToken
 from app.models.settlement import Settlement
+from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
 from app.schemas.booking import (
     BookingCreate, BookingQuery, BookingUpdate, BookingExecuteRequest, BookingExecuteItem, BookingExecuteResponse
 )
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china, get_china_now
 from app.services.rpa_service import rpa_service
+from app.services.china_southern_air_direct_booking import (
+    ChinaSouthernAirDirectBookingError,
+    china_southern_air_direct_booking_service,
+)
+from app.services.china_southern_air_direct_order import ChinaSouthernAirDirectOrderError
+from app.services.china_southern_air_service_client import (
+    ChinaSouthernAirServiceError,
+    china_southern_air_service,
+)
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.config import settings
 
@@ -172,6 +183,252 @@ def _get_business_config(db: Session) -> dict:
     return json.loads(config.config_data)
 
 
+def _reserve_china_southern_air_booking_stock_item(db: Session) -> WaybillStockItem:
+    """在短事务内预占一张南航单号，跳过其他并发请求已锁定的行。"""
+    stock_item = (
+        db.query(WaybillStockItem)
+        .join(WaybillStockBatch, WaybillStockItem.batch_id == WaybillStockBatch.id)
+        .join(WaybillStock, WaybillStockBatch.stock_id == WaybillStock.id)
+        .filter(
+            WaybillStock.airline_name == "china_southern_air",
+            WaybillStockItem.usage_status == "0",
+            WaybillStockItem.is_abnormal == "1",
+            WaybillStockItem.is_invalid == "0",
+        )
+        .order_by(WaybillStockBatch.id.desc(), WaybillStockItem.id.asc())
+        .with_for_update(skip_locked=True)
+        .first()
+    )
+    if stock_item is None:
+        raise ChinaSouthernAirDirectBookingError("南航单号库中没有可用单号，请先补充单号库")
+    stock_item.usage_status = "1"
+    stock_item.usage_date = get_china_now().date()
+    return stock_item
+
+
+def _release_china_southern_air_booking_stock_item(db: Session, stock_item_id: int) -> None:
+    stock_item = (
+        db.query(WaybillStockItem)
+        .filter(WaybillStockItem.id == stock_item_id)
+        .with_for_update()
+        .first()
+    )
+    if stock_item is not None:
+        stock_item.usage_status = "0"
+        stock_item.usage_date = None
+
+
+def _isolate_china_southern_air_booking_stock_item(
+    db: Session, stock_item_id: int, reason: str
+) -> None:
+    stock_item = (
+        db.query(WaybillStockItem)
+        .filter(WaybillStockItem.id == stock_item_id)
+        .with_for_update()
+        .first()
+    )
+    if stock_item is not None:
+        stock_item.usage_status = "1"
+        stock_item.usage_date = get_china_now().date()
+        stock_item.is_invalid = "1"
+        stock_item.invalid_reason = (reason or "南航订舱结果不确定")[:255]
+
+
+def _fail_china_southern_air_direct_booking(
+    db: Session,
+    booking_id: int,
+    message: str,
+    *,
+    stock_item_id: int = None,
+    isolate_stock: bool = False,
+) -> None:
+    """持久化失败状态，并根据结果确定单号回流或隔离。"""
+    db.rollback()
+    locked_booking = (
+        db.query(Booking).filter(Booking.id == booking_id).with_for_update().first()
+    )
+    if locked_booking is None:
+        db.rollback()
+        return
+    if locked_booking.booking_status == "3":
+        # 已成功的订舱可能已被南航受理，任何后续异常都不能清空其单号或回流库存。
+        db.rollback()
+        return
+    if stock_item_id is not None:
+        if isolate_stock:
+            _isolate_china_southern_air_booking_stock_item(db, stock_item_id, message)
+        else:
+            _release_china_southern_air_booking_stock_item(db, stock_item_id)
+    locked_booking.master_airwaybill_number = None
+    locked_booking.booking_status = "2"
+    locked_booking.booking_feedback = (message or "南航订舱失败")[:255]
+    db.commit()
+
+
+async def _execute_china_southern_air_direct_booking(
+    db: Session,
+    *,
+    booking_id: int,
+    form_data: dict,
+    business_config: dict,
+    token: str,
+) -> None:
+    """执行单条直连订舱；所有外部请求均在数据库锁释放后进行。"""
+    try:
+        locked_booking = (
+            db.query(Booking).filter(Booking.id == booking_id).with_for_update().first()
+        )
+        if locked_booking is None:
+            raise ChinaSouthernAirDirectBookingError("订舱不存在")
+        if locked_booking.booking_status not in {"0", "2"}:
+            raise ChinaSouthernAirDirectBookingError("该订舱正在执行或已订舱成功，不能重复提交")
+        locked_booking.booking_status = "1"
+        locked_booking.booking_feedback = None
+        locked_booking.master_airwaybill_number = None
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    try:
+        values = china_southern_air_direct_booking_service.get_form_values(
+            form_data, business_config
+        )
+        flight = await china_southern_air_direct_booking_service.query_matching_flight(
+            token=token, values=values, business_config=business_config
+        )
+        queried_charges = await china_southern_air_service.query_service_charges(
+            token=token,
+            origin_station=values["origin_station"],
+            destination=values["destination"],
+            flight_number=values["flight_number"],
+            flight_date=values["flight_date"],
+            cargo_type=values["shipment_type_name"],
+            cargo_name=values["commodity_name"],
+        )
+        selected_charges = china_southern_air_direct_booking_service.select_handling_fee(
+            queried_charges, values["selected_fee"]
+        )
+        calculate_payload = china_southern_air_direct_booking_service.build_calculate_payload(
+            values, selected_charges
+        )
+        calculation_result = await china_southern_air_direct_booking_service.calculate_charge(
+            token=token, payload=calculate_payload, business_config=business_config
+        )
+    except (
+        ChinaSouthernAirDirectBookingError,
+        ChinaSouthernAirDirectOrderError,
+        ChinaSouthernAirServiceError,
+    ) as exc:
+        _fail_china_southern_air_direct_booking(db, booking_id, str(exc))
+        raise ChinaSouthernAirDirectBookingError(str(exc)) from exc
+    except Exception as exc:
+        message = f"南航订舱前置调用异常：{exc}"
+        _fail_china_southern_air_direct_booking(db, booking_id, message)
+        raise ChinaSouthernAirDirectBookingError(message) from exc
+
+    stock_item = None
+    try:
+        locked_booking = (
+            db.query(Booking).filter(Booking.id == booking_id).with_for_update().first()
+        )
+        if locked_booking is None:
+            raise ChinaSouthernAirDirectBookingError("订舱不存在")
+        stock_item = _reserve_china_southern_air_booking_stock_item(db)
+        locked_booking.master_airwaybill_number = stock_item.full_number
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        message = str(exc)
+        _fail_china_southern_air_direct_booking(db, booking_id, message)
+        if isinstance(exc, ChinaSouthernAirDirectBookingError):
+            raise
+        raise ChinaSouthernAirDirectBookingError(message) from exc
+
+    while True:
+        create_started = False
+        try:
+            create_payload = china_southern_air_direct_booking_service.build_create_payload(
+                values,
+                business_config,
+                flight=flight,
+                number_prefix=stock_item.number_prefix,
+                number_suffix=stock_item.number_suffix,
+                calculation_result=calculation_result,
+            )
+            create_started = True
+            await china_southern_air_direct_booking_service.create_order(
+                token=token, payload=create_payload, business_config=business_config
+            )
+            break
+        except ChinaSouthernAirDirectOrderError as exc:
+            if exc.number_is_used:
+                db.rollback()
+                locked_booking = (
+                    db.query(Booking).filter(Booking.id == booking_id).with_for_update().first()
+                )
+                if locked_booking is None:
+                    raise ChinaSouthernAirDirectBookingError("订舱不存在") from exc
+                _isolate_china_southern_air_booking_stock_item(
+                    db, stock_item.id, "南航提示运单号已被使用"
+                )
+                locked_booking.master_airwaybill_number = None
+                db.commit()
+                stock_item = None
+
+                try:
+                    locked_booking = (
+                        db.query(Booking).filter(Booking.id == booking_id).with_for_update().first()
+                    )
+                    stock_item = _reserve_china_southern_air_booking_stock_item(db)
+                    locked_booking.master_airwaybill_number = stock_item.full_number
+                    db.commit()
+                except Exception as stock_exc:
+                    db.rollback()
+                    message = "南航提示可用单号均已被使用，未能完成订舱，请补充单号库后重试"
+                    _fail_china_southern_air_direct_booking(db, booking_id, message)
+                    raise ChinaSouthernAirDirectBookingError(message) from stock_exc
+                continue
+
+            _fail_china_southern_air_direct_booking(
+                db,
+                booking_id,
+                str(exc),
+                stock_item_id=stock_item.id,
+                isolate_stock=exc.outcome_unknown,
+            )
+            raise ChinaSouthernAirDirectBookingError(str(exc)) from exc
+        except ChinaSouthernAirDirectBookingError as exc:
+            _fail_china_southern_air_direct_booking(
+                db, booking_id, str(exc), stock_item_id=stock_item.id
+            )
+            raise
+        except Exception as exc:
+            message = f"南航订舱调用异常：{exc}"
+            _fail_china_southern_air_direct_booking(
+                db,
+                booking_id,
+                message,
+                stock_item_id=stock_item.id,
+                isolate_stock=create_started,
+            )
+            raise ChinaSouthernAirDirectBookingError(message) from exc
+
+    try:
+        locked_booking = (
+            db.query(Booking).filter(Booking.id == booking_id).with_for_update().first()
+        )
+        if locked_booking is None:
+            raise ChinaSouthernAirDirectBookingError("订舱不存在")
+        locked_booking.booking_status = "3"
+        locked_booking.booking_feedback = None
+        db.commit()
+    except Exception:
+        # 南航已经成功受理，绝不能把本地单号重新投入单号池。
+        db.rollback()
+        raise
+
+
 def _extract_china_southern_air_params(form_data: dict, business_config: dict) -> dict:
     """
     提取并映射南航订舱RPA接口所需的参数
@@ -293,7 +550,7 @@ async def create_booking(
     - 自动设置booking_time为当前时间（中国时间）
     - 订舱状态默认为"0"（未执行，数据字典值）
     - 开单状态默认为"0"（未开单，数据字典值）
-    - master_airwaybill_number初始为null，由RPA后续写入
+    - master_airwaybill_number初始为null，直连订舱成功后写入
     - 此接口仅保存订舱信息，不调用RPA接口
     
     示例：
@@ -383,24 +640,7 @@ async def execute_booking(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """
-    确认并执行订舱接口（队列模式，支持批量）
-    
-    此接口会：
-    1. 接收一个或多个订舱ID列表
-    2. 对每个订舱ID，根据其airline判断是否为南航（airline="2"或"南方航空"）
-    3. 如果是南航，创建RPA订舱任务并加入队列
-    4. Worker会从队列中取出任务执行RPA调用
-    5. 前端可以通过任务ID或订舱状态轮询获取执行结果
-    
-    - **booking_ids**: 订舱ID列表（字符串格式，至少包含一个ID）
-    
-    返回：
-    - items: 每个订舱的执行结果列表，包含booking_id、task_id、success、error_message
-    - total: 总数量
-    - success_count: 成功数量
-    - failed_count: 失败数量
-    """
+    """通过南航 B2E 接口同步执行批量订舱，不创建新的 RPA 任务。"""
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
@@ -410,8 +650,16 @@ async def execute_booking(
     business_config = _get_business_config(db)
     if not business_config:
         raise BadRequestException("业务参数配置不存在，无法调用南航订舱接口")
-    
 
+    token_record = (
+        db.query(NanHangToken)
+        .filter(NanHangToken.token.isnot(None), NanHangToken.token != "")
+        .order_by(NanHangToken.updated_at.desc(), NanHangToken.id.desc())
+        .first()
+    )
+    if token_record is None:
+        raise BaseAPIException(503, "暂无可用的南航 Token，请先完成南航 Token 获取任务")
+    nanhang_token = token_record.token
     
     execute_results = []
     success_count = 0
@@ -431,7 +679,16 @@ async def execute_booking(
                 failed_count += 1
                 continue
             
-            form_data_dict = json.loads(booking.form_data)
+            try:
+                form_data_dict = json.loads(booking.form_data)
+            except (TypeError, json.JSONDecodeError) as exc:
+                message = "订舱表单数据格式不正确"
+                _fail_china_southern_air_direct_booking(db, booking_id, message)
+                raise ChinaSouthernAirDirectBookingError(message) from exc
+            if not isinstance(form_data_dict, dict):
+                message = "订舱表单数据必须是JSON对象"
+                _fail_china_southern_air_direct_booking(db, booking_id, message)
+                raise ChinaSouthernAirDirectBookingError(message)
             airline = form_data_dict.get("airline", "")
             
             is_china_southern_air = airline == "2" or airline == "南方航空"
@@ -458,62 +715,41 @@ async def execute_booking(
                 ))
                 failed_count += 1
                 continue
-            
-            rpa_params = _extract_china_southern_air_params(form_data_dict, business_config)
-            
-            required_params = [
-                "address_of_the_application_executable_file_tangyi",
-                "system_account",
-                "login_password",
-                "system_url",
-                "origin_station",
-                "destination",
-                "flight_date",
-                "flight_number",
-                "cargo_type",
-                "cargo_code",
-                "cargo_name",
-                "quantity",
-                "weight",
-                "special_cargo_code"
-            ]
-            
-            missing_params = [key for key in required_params if not rpa_params.get(key)]
-            if missing_params:
-                execute_results.append(BookingExecuteItem(
-                    booking_id=booking_id_str,
-                    success=False,
-                    error_message=f"缺少必填参数: {', '.join(missing_params)}"
-                ))
-                failed_count += 1
-                continue
-            
-            task = rpa_task_service.create_task(
-                db=db,
-                task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
-                target_type=RPATargetType.BOOKING.value,
-                target_id=booking_id,
-                params=rpa_params,
-                priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
-                created_by=current_user.id if current_user else None
+
+            await _execute_china_southern_air_direct_booking(
+                db,
+                booking_id=booking_id,
+                form_data=form_data_dict,
+                business_config=business_config,
+                token=nanhang_token,
             )
             
             execute_results.append(BookingExecuteItem(
                 booking_id=booking_id_str,
-                task_id=str(task.id),
+                task_id=None,
                 success=True,
                 error_message=None
             ))
             success_count += 1
             
         except ValueError:
+            db.rollback()
             execute_results.append(BookingExecuteItem(
                 booking_id=booking_id_str,
                 success=False,
                 error_message="订舱ID格式错误，必须是数字"
             ))
             failed_count += 1
+        except ChinaSouthernAirDirectBookingError as exc:
+            db.rollback()
+            execute_results.append(BookingExecuteItem(
+                booking_id=booking_id_str,
+                success=False,
+                error_message=str(exc),
+            ))
+            failed_count += 1
         except Exception as e:
+            db.rollback()
             execute_results.append(BookingExecuteItem(
                 booking_id=booking_id_str,
                 success=False,

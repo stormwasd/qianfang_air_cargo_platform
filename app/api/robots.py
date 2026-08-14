@@ -196,9 +196,12 @@ async def get_task_types(
         "TANGYI_RESTART": "唐翼重启流程",
     }
 
-    # 南航新增运单已迁移至直连接口；枚举和 Worker 保留以处理历史任务，
-    # 但不再允许前端为机器人配置此任务类型。
-    excluded_task_types = {"CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE"}
+    # 南航新增运单和订舱均已迁移至直连接口；枚举和 Worker 保留以处理历史任务，
+    # 但不再允许前端为机器人配置这两种任务类型。
+    excluded_task_types = {
+        "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE",
+        "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE",
+    }
     task_types = []
     for task_type in RPATaskType:
         if task_type.value in excluded_task_types:

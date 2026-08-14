@@ -26,8 +26,10 @@ class BookingCreate(BaseModel):
           "flight_date": "",  // 航班日期（格式：YYYY-MM-DD）
           "shipper_unit": "",  // 托运单位
           "flight_number": "",  // 航班号
-          "booking_remark": "",  // 订舱备注
+          "booking_remark_wide": "",  // 宽体机订舱备注
+          "booking_remark_narrow": "",  // 窄体机订舱备注
           "cargo_type": "",  // 货物类型
+          "cargo_type_code": "",  // 货物类型费率代码
           "cargo_code": "",  // 货物代码
           "cargo_name": "",  // 货物名称
           "quantity": "",  // 件数
@@ -41,11 +43,13 @@ class BookingCreate(BaseModel):
           "consignee_phone": "",  // 收货人手机号
           "storage_and_transportation_precautions": ""  // 储运注意事项（可选）
         }
-      ]
+      ],
+      "outbound_cargo_and_mail_handling_fee_options": "普货"
     }
     
     说明：
-    - 所有字段的值都是字符串类型
+    - `outbound_cargo_and_mail_handling_fee_options` 只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活容腐、普货、急件快件
+    - 执行订舱时由服务端查询航班机型，按系统参数中的宽窄体规则选择对应备注
     - bookings 是数组类型，支持批量提交多条订舱信息
     - 不同航司的字段结构可能不同，前端需要根据 airline 字段来展示对应的表单字段
     - 目前仅支持南方航空，其他航司字段结构待定义
@@ -115,7 +119,9 @@ class BookingExecuteRequest(BaseModel):
 class BookingExecuteItem(BaseModel):
     """单个订舱执行结果schema"""
     booking_id: str
-    task_id: Optional[str] = None
+    task_id: Optional[str] = Field(
+        None, description="历史队列任务ID；南航直连订舱固定为null"
+    )
     success: bool
     error_message: Optional[str] = None
 
