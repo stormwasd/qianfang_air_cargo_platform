@@ -27,6 +27,7 @@ from app.schemas.cost_service import (
     CostBatchDeleteRequest,
     CostExportExcelRequest,
 )
+from app.services.cost_excel_export import append_cost_export_headers
 from app.utils.helpers import format_datetime_china, get_china_now
 
 router = APIRouter()
@@ -767,7 +768,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    涵盖 5 大业务层级结构（货主委托、应收明细、应付明细[国空/汽运/国内/报关/地面]、销售提成、经营信息）共 113 列全量字段。
+    导出文件包含三级分组表头及 113 列全量字段，数据从第 4 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -787,60 +788,7 @@ async def export_cost_consignments_to_excel(
     ws = wb.active
     ws.title = "费用单据信息全量列表"
     
-    headers = [
-        # (1) 货主委托信息
-        "制单时间", "内部单据ID", "进仓日期", "客户名称", "始发站-目的站",
-        "报关", "提单", "航班日期", "航班号", "航班单号",
-        "件数", "实际重量(kg)", "计费重量(kg)", "体积(m³)", "一程重量(kg)",
-        "代理", "委托备注",
-        
-        # (2) 应收款项
-        "应收-单价", "应收-运费", "应收-提单费/信息录入费", "应收-分单费/抵账费/电报费",
-        "应收-报关费", "应收-续页费", "应收-海关查验费", "应收-磁检费/安检费",
-        "应收-TC操作费/快件中心过站费", "应收-前置仓/国际货站地面费", "应收-制单费",
-        "应收-制单分单费", "应收-垫板费", "应收-打板/装箱费", "应收-探板费",
-        "应收-耗材费", "应收-一程费用", "应收-合计",
-        
-        # (3) 应付款项 - 国际空运
-        "国空应付-小计", "国空应付-托运日期", "国空应付-外发单位", "国空应付-始发站",
-        "国空应付-到达站", "国空应付-航空公司", "国空应付-航班单号", "国空应付-航班号",
-        "国空应付-航班日期", "国空应付-件数", "国空应付-重量", "国空应付-体积",
-        "国空应付-计费重量", "国空应付-费率", "国空应付-运费", "国空应付-提单费",
-        "国空应付-分单费", "国空应付-借单/磁检/燃油/提货费", "国空应付-TC/入网/处置费",
-        "国空应付-报关费", "国空应付-续页费", "国空应付-耗材费", "国空应付-前置仓",
-        "国空应付-其他费用", "国空应付-备注",
-        
-        # (3) 应付款项 - 汽运
-        "汽运应付-小计", "汽运应付-托运日期", "汽运应付-外发单位", "汽运应付-件数",
-        "汽运应付-重量", "汽运应付-体积", "汽运应付-单价", "汽运应付-运费",
-        "汽运应付-制单费", "汽运应付-其他费用", "汽运应付-备注",
-        
-        # (3) 应付款项 - 国内空运
-        "国空内应付-小计", "国空内应付-托运日期", "国空内应付-外发单位", "国空内应付-始发站",
-        "国空内应付-到达站", "国空内应付-航空公司", "国空内应付-航空单位", "国空内应付-航空单号",
-        "国空内应付-航班号", "国空内应付-航班日期", "国空内应付-件数", "国空内应付-重量",
-        "国空内应付-计费重量", "国空内应付-费率", "国空内应付-运费", "国空内应付-其他费用", "国空内应付-备注",
-        
-        # (3) 应付款项 - 报关
-        "报关应付-小计", "报关应付-报关日期", "报关应付-报关代理", "报关应付-报关费",
-        "报关应付-续页费", "报关应付-查验/删单费", "报关应付-回扣栏", "报关应付-其他费用", "报关应付-备注",
-        
-        # (3) 应付款项 - 地面操作
-        "地面应付-小计", "地面应付-托运日期", "地面应付-外发单位", "地面应付-计费重量",
-        "地面应付-费率", "地面应付-运费", "地面应付-提单/快件处置费", "地面应付-安检/报关费",
-        "地面应付-打板/退场费", "地面应付-其他费用", "地面应付-备注",
-        
-        # (3) 应付款项 - 总计
-        "应付合计",
-        
-        # (4) 销售提成
-        "业务员", "提成金额",
-        
-        # (5) 经营信息
-        "利润", "利润率(%)"
-    ]
-    
-    ws.append(headers)
+    headers = append_cost_export_headers(ws)
     
     # 样式配置
     header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
@@ -853,14 +801,17 @@ async def export_cost_consignments_to_excel(
         bottom=Side(style='thin', color='D3D3D3')
     )
     
-    for col_num in range(1, len(headers) + 1):
-        cell = ws.cell(row=1, column=col_num)
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.border = thin_border
-    
-    ws.row_dimensions[1].height = 28
+    for header_row in range(1, 4):
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=header_row, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+
+    ws.row_dimensions[1].height = 24
+    ws.row_dimensions[2].height = 24
+    ws.row_dimensions[3].height = 28
     
     def _v_str(val):
         return str(val) if val is not None else ""
@@ -882,7 +833,7 @@ async def export_cost_consignments_to_excel(
             return val.strftime("%Y-%m-%d %H:%M:%S")
         return str(val)
 
-    for r_idx, rec in enumerate(records, 2):
+    for r_idx, rec in enumerate(records, 4):
         row_data = [
             # (1) 货主委托信息
             _v_dt(rec.create_time),
@@ -1033,10 +984,11 @@ async def export_cost_consignments_to_excel(
                 cell.alignment = Alignment(horizontal="left", vertical="center")
 
     # 自动自适应列宽
-    for col in ws.columns:
+    for col_num in range(1, len(headers) + 1):
         max_len = 0
-        col_letter = openpyxl.utils.get_column_letter(col[0].column)
-        for cell in col:
+        col_letter = openpyxl.utils.get_column_letter(col_num)
+        for row_num in range(1, ws.max_row + 1):
+            cell = ws.cell(row=row_num, column=col_num)
             val_str = str(cell.value or '')
             length = sum(2 if ord(char) > 127 else 1 for char in val_str)
             if length > max_len:
