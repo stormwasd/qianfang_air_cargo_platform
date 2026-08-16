@@ -101,7 +101,6 @@ CREATE TABLE IF NOT EXISTS `cost_registrations` (
     `pay_customs_fee` decimal(10,2) DEFAULT NULL COMMENT '报关-报关费',
     `pay_customs_continuation_sheet_fee` decimal(10,2) DEFAULT NULL COMMENT '报关-续页费',
     `pay_customs_inspection_delete_fee` decimal(10,2) DEFAULT NULL COMMENT '报关-查验费/删单费',
-    `pay_customs_rebate` decimal(10,2) DEFAULT NULL COMMENT '报关-回扣栏',
     `pay_customs_other_fee` decimal(10,2) DEFAULT NULL COMMENT '报关-其他费用',
     `pay_customs_remark` text DEFAULT NULL COMMENT '报关-备注',
     -- (3) 应付款项 - [5] 地面操作信息
@@ -118,10 +117,13 @@ CREATE TABLE IF NOT EXISTS `cost_registrations` (
     `pay_ground_remark` text DEFAULT NULL COMMENT '地面操作-备注',
     -- (3) 应付款项 - 合计
     `pay_total` decimal(10,2) DEFAULT NULL COMMENT '应付合计',
-    -- (4) 销售提成
+    -- (4) 折让信息
+    `discount_person` varchar(100) DEFAULT NULL COMMENT '折让人员',
+    `discount_fee` decimal(10,2) DEFAULT NULL COMMENT '折让费',
+    -- (5) 销售提成
     `salesperson` varchar(100) DEFAULT NULL COMMENT '业务员',
     `commission_amount` decimal(10,2) DEFAULT NULL COMMENT '提成金额',
-    -- (5) 经营信息
+    -- (6) 经营信息
     `profit` decimal(10,2) DEFAULT NULL COMMENT '利润',
     `profit_margin` decimal(10,2) DEFAULT NULL COMMENT '利润率',
     -- 系统审计
@@ -234,7 +236,6 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     `pay_customs_fee` decimal(10,2) DEFAULT NULL COMMENT '报关-报关费',
     `pay_customs_continuation_sheet_fee` decimal(10,2) DEFAULT NULL COMMENT '报关-续页费',
     `pay_customs_inspection_delete_fee` decimal(10,2) DEFAULT NULL COMMENT '报关-查验费/删单费',
-    `pay_customs_rebate` decimal(10,2) DEFAULT NULL COMMENT '报关-回扣栏',
     `pay_customs_other_fee` decimal(10,2) DEFAULT NULL COMMENT '报关-其他费用',
     `pay_customs_remark` text DEFAULT NULL COMMENT '报关-备注',
     -- (3) 应付款项 - [5] 地面操作信息
@@ -251,10 +252,13 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     `pay_ground_remark` text DEFAULT NULL COMMENT '地面操作-备注',
     -- (3) 应付款项 - 合计
     `pay_total` decimal(10,2) DEFAULT NULL COMMENT '应付合计',
-    -- (4) 销售提成
+    -- (4) 折让信息
+    `discount_person` varchar(100) DEFAULT NULL COMMENT '折让人员',
+    `discount_fee` decimal(10,2) DEFAULT NULL COMMENT '折让费',
+    -- (5) 销售提成
     `salesperson` varchar(100) DEFAULT NULL COMMENT '业务员',
     `commission_amount` decimal(10,2) DEFAULT NULL COMMENT '提成金额',
-    -- (5) 经营信息
+    -- (6) 经营信息
     `profit` decimal(10,2) DEFAULT NULL COMMENT '利润',
     `profit_margin` decimal(10,2) DEFAULT NULL COMMENT '利润率',
     -- 系统审计

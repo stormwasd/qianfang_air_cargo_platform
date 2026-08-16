@@ -27,7 +27,10 @@ from app.schemas.cost_service import (
     CostBatchDeleteRequest,
     CostExportExcelRequest,
 )
-from app.services.cost_excel_export import append_cost_export_headers
+from app.services.cost_excel_export import (
+    append_cost_export_headers,
+    format_bill_of_lading_for_export,
+)
 from app.utils.helpers import format_datetime_china, get_china_now
 
 router = APIRouter()
@@ -207,7 +210,6 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
                 "customs_fee": _to_float(record.pay_customs_fee),
                 "continuation_sheet_fee": _to_float(record.pay_customs_continuation_sheet_fee),
                 "inspection_delete_fee": _to_float(record.pay_customs_inspection_delete_fee),
-                "rebate": _to_float(record.pay_customs_rebate),
                 "other_fee": _to_float(record.pay_customs_other_fee),
                 "remark": record.pay_customs_remark or "",
             },
@@ -226,14 +228,20 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
             },
             "pay_total": _to_float(record.pay_total),
         },
-        
-        # (4) 销售提成
+
+        # (4) 折让信息
+        "discount_info": {
+            "discount_person": record.discount_person or "",
+            "discount_fee": _to_float(record.discount_fee),
+        },
+
+        # (5) 销售提成
         "sales_commission": {
             "salesperson": record.salesperson or "",
             "commission_amount": _to_float(record.commission_amount),
         },
         
-        # (5) 经营信息
+        # (6) 经营信息
         "operating_info": {
             "profit": _to_float(record.profit),
             "profit_margin": _to_float(record.profit_margin),
@@ -371,7 +379,6 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
             record.pay_customs_fee = c.customs_fee if c.customs_fee is not None else record.pay_customs_fee
             record.pay_customs_continuation_sheet_fee = c.continuation_sheet_fee if c.continuation_sheet_fee is not None else record.pay_customs_continuation_sheet_fee
             record.pay_customs_inspection_delete_fee = c.inspection_delete_fee if c.inspection_delete_fee is not None else record.pay_customs_inspection_delete_fee
-            record.pay_customs_rebate = c.rebate if c.rebate is not None else record.pay_customs_rebate
             record.pay_customs_other_fee = c.other_fee if c.other_fee is not None else record.pay_customs_other_fee
             record.pay_customs_remark = c.remark if c.remark is not None else record.pay_customs_remark
 
@@ -390,13 +397,27 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
             record.pay_ground_other_fee = g.other_fee if g.other_fee is not None else record.pay_ground_other_fee
             record.pay_ground_remark = g.remark if g.remark is not None else record.pay_ground_remark
 
-    # 4. 销售提成
+    # 4. 折让信息
+    if payload.discount_info is not None:
+        discount = payload.discount_info
+        record.discount_person = (
+            discount.discount_person
+            if discount.discount_person is not None
+            else record.discount_person
+        )
+        record.discount_fee = (
+            discount.discount_fee
+            if discount.discount_fee is not None
+            else record.discount_fee
+        )
+
+    # 5. 销售提成
     if payload.sales_commission is not None:
         sc = payload.sales_commission
         record.salesperson = sc.salesperson if sc.salesperson is not None else record.salesperson
         record.commission_amount = sc.commission_amount if sc.commission_amount is not None else record.commission_amount
 
-    # 5. 经营信息
+    # 6. 经营信息
     if payload.operating_info is not None:
         op = payload.operating_info
         record.profit = op.profit if op.profit is not None else record.profit
@@ -513,8 +534,19 @@ async def get_cost_consignments(
     end_warehouse_date: Optional[str] = Query(None, description="进仓结束日期 (YYYY-MM-DD)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
     agent: Optional[str] = Query(None, description="代理单位 (模糊查询)"),
-    flight_doc_no: Optional[str] = Query(None, description="航司单号/航班单号 (模糊查询)"),
-    flight_no: Optional[str] = Query(None, description="航班号 (模糊查询)"),
+    flight_doc_no: Optional[str] = Query(
+        None,
+        description=(
+            "航司单号/航班单号 (模糊查询，同时匹配货主托运、国际空运应付、"
+            "国内空运应付中的航司单号，并兼容匹配提单)"
+        ),
+    ),
+    flight_no: Optional[str] = Query(
+        None,
+        description=(
+            "航班号 (模糊查询，同时匹配货主托运、国际空运应付、国内空运应付中的航班号)"
+        ),
+    ),
     page: Optional[int] = Query(1, ge=1, description="页码"),
     pageSize: Optional[int] = Query(10, ge=1, description="每页数量"),
     current_user: User = Depends(get_current_active_user),
@@ -528,8 +560,8 @@ async def get_cost_consignments(
     - **end_warehouse_date**: 进仓日期区间结束，例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
     - **agent**: 代理单位 (支持模糊匹配)
-    - **flight_doc_no**: 航司单号/航班单号 (支持模糊匹配)
-    - **flight_no**: 航班号 (支持模糊匹配)
+    - **flight_doc_no**: 航司单号/航班单号 (支持模糊匹配；任一货主托运、国际空运应付、国内空运应付航司单号或提单匹配即返回)
+    - **flight_no**: 航班号 (支持模糊匹配；任一货主托运、国际空运应付或国内空运应付航班号匹配即返回)
     - **page**: 页码
     - **pageSize**: 每页条数
     """
@@ -554,7 +586,8 @@ async def get_cost_consignments(
     if agent and agent.strip():
         query_obj = query_obj.filter(CostConsignment.agent.like(f"%{agent.strip()}%"))
         
-    # 4. 航司单号/航班单号模糊查询
+    # 4. 航司单号/航班单号模糊查询：覆盖响应中全部三个 flight_doc_no 字段，
+    #    并保留对货主托运提单 bill_of_lading 的兼容查询。
     if flight_doc_no and flight_doc_no.strip():
         doc_no = flight_doc_no.strip()
         query_obj = query_obj.filter(
@@ -564,7 +597,7 @@ async def get_cost_consignments(
             (CostConsignment.pay_dom_air_flight_doc_no.like(f"%{doc_no}%"))
         )
         
-    # 5. 航班号模糊查询
+    # 5. 航班号模糊查询：覆盖响应中全部三个 flight_no 字段。
     if flight_no and flight_no.strip():
         f_no = flight_no.strip()
         query_obj = query_obj.filter(
@@ -768,7 +801,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件包含三级分组表头及 113 列全量字段，数据从第 4 行开始。
+    导出文件包含三级分组表头及 114 列全量字段，数据从第 4 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -842,7 +875,7 @@ async def export_cost_consignments_to_excel(
             _v_str(rec.customer_name),
             _v_str(rec.origin_destination),
             _v_str(rec.customs_declaration),
-            _v_str(rec.bill_of_lading),
+            format_bill_of_lading_for_export(rec.bill_of_lading),
             _v_date(rec.flight_date),
             _v_str(rec.flight_no),
             _v_str(rec.flight_doc_no),
@@ -940,7 +973,6 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_customs_fee),
             _v_num(rec.pay_customs_continuation_sheet_fee),
             _v_num(rec.pay_customs_inspection_delete_fee),
-            _v_num(rec.pay_customs_rebate),
             _v_num(rec.pay_customs_other_fee),
             _v_str(rec.pay_customs_remark),
 
@@ -960,11 +992,15 @@ async def export_cost_consignments_to_excel(
             # (3) 应付款项 - 总计
             _v_num(rec.pay_total),
 
-            # (4) 销售提成
+            # (4) 折让信息
+            _v_str(rec.discount_person),
+            _v_num(rec.discount_fee),
+
+            # (5) 销售提成
             _v_str(rec.salesperson),
             _v_num(rec.commission_amount),
 
-            # (5) 经营信息
+            # (6) 经营信息
             _v_num(rec.profit),
             _v_num(rec.profit_margin),
         ]

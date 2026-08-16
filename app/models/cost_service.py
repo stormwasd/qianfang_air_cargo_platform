@@ -118,7 +118,6 @@ class CostRegistration(Base):
     pay_customs_fee = Column(Numeric(10, 2), nullable=True, comment="报关-报关费")
     pay_customs_continuation_sheet_fee = Column(Numeric(10, 2), nullable=True, comment="报关-续页费")
     pay_customs_inspection_delete_fee = Column(Numeric(10, 2), nullable=True, comment="报关-查验费/删单费")
-    pay_customs_rebate = Column(Numeric(10, 2), nullable=True, comment="报关-回扣栏")
     pay_customs_other_fee = Column(Numeric(10, 2), nullable=True, comment="报关-其他费用")
     pay_customs_remark = Column(Text, nullable=True, comment="报关-备注")
     
@@ -138,11 +137,15 @@ class CostRegistration(Base):
     # (3) 应付款项 - 合计
     pay_total = Column(Numeric(10, 2), nullable=True, comment="应付合计")
     
-    # (4) 销售提成
+    # (4) 折让信息
+    discount_person = Column(String(100), nullable=True, comment="折让人员")
+    discount_fee = Column(Numeric(10, 2), nullable=True, comment="折让费")
+
+    # (5) 销售提成
     salesperson = Column(String(100), nullable=True, comment="业务员")
     commission_amount = Column(Numeric(10, 2), nullable=True, comment="提成金额")
     
-    # (5) 经营信息
+    # (6) 经营信息
     profit = Column(Numeric(10, 2), nullable=True, comment="利润")
     profit_margin = Column(Numeric(10, 2), nullable=True, comment="利润率")
     
@@ -261,7 +264,6 @@ class CostConsignment(Base):
     pay_customs_fee = Column(Numeric(10, 2), nullable=True, comment="报关-报关费")
     pay_customs_continuation_sheet_fee = Column(Numeric(10, 2), nullable=True, comment="报关-续页费")
     pay_customs_inspection_delete_fee = Column(Numeric(10, 2), nullable=True, comment="报关-查验费/删单费")
-    pay_customs_rebate = Column(Numeric(10, 2), nullable=True, comment="报关-回扣栏")
     pay_customs_other_fee = Column(Numeric(10, 2), nullable=True, comment="报关-其他费用")
     pay_customs_remark = Column(Text, nullable=True, comment="报关-备注")
     
@@ -281,11 +283,15 @@ class CostConsignment(Base):
     # (3) 应付款项 - 合计
     pay_total = Column(Numeric(10, 2), nullable=True, comment="应付合计")
     
-    # (4) 销售提成
+    # (4) 折让信息
+    discount_person = Column(String(100), nullable=True, comment="折让人员")
+    discount_fee = Column(Numeric(10, 2), nullable=True, comment="折让费")
+
+    # (5) 销售提成
     salesperson = Column(String(100), nullable=True, comment="业务员")
     commission_amount = Column(Numeric(10, 2), nullable=True, comment="提成金额")
     
-    # (5) 经营信息
+    # (6) 经营信息
     profit = Column(Numeric(10, 2), nullable=True, comment="利润")
     profit_margin = Column(Numeric(10, 2), nullable=True, comment="利润率")
     

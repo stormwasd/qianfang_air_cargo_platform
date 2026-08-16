@@ -125,7 +125,6 @@ class PayableCustoms(BaseModel):
     customs_fee: Optional[float] = Field(None, description="报关费")
     continuation_sheet_fee: Optional[float] = Field(None, description="续页费")
     inspection_delete_fee: Optional[float] = Field(None, description="查验费/删单费")
-    rebate: Optional[float] = Field(None, description="回扣栏")
     other_fee: Optional[float] = Field(None, description="其他费用")
     remark: Optional[str] = Field(None, description="备注")
 
@@ -155,14 +154,20 @@ class PayablesInfo(BaseModel):
     pay_total: Optional[float] = Field(None, description="应付合计")
 
 
+class DiscountInfo(BaseModel):
+    """(4) 折让信息"""
+    discount_person: Optional[str] = Field(None, description="折让人员")
+    discount_fee: Optional[float] = Field(None, description="折让费")
+
+
 class SalesCommission(BaseModel):
-    """(4) 销售提成"""
+    """(5) 销售提成"""
     salesperson: Optional[str] = Field(None, description="业务员")
     commission_amount: Optional[float] = Field(None, description="提成金额")
 
 
 class OperatingInfo(BaseModel):
-    """(5) 经营信息"""
+    """(6) 经营信息"""
     profit: Optional[float] = Field(None, description="利润")
     profit_margin: Optional[float] = Field(None, description="利润率")
 
@@ -176,6 +181,7 @@ class CostRegistrationSave(BaseModel):
     consignor_info: Optional[ConsignorInfo] = Field(default_factory=ConsignorInfo, description="货主委托信息")
     receivables: Optional[ReceivablesInfo] = Field(default_factory=ReceivablesInfo, description="应收款项")
     payables: Optional[PayablesInfo] = Field(default_factory=PayablesInfo, description="应付款项")
+    discount_info: Optional[DiscountInfo] = Field(default_factory=DiscountInfo, description="折让信息")
     sales_commission: Optional[SalesCommission] = Field(default_factory=SalesCommission, description="销售提成")
     operating_info: Optional[OperatingInfo] = Field(default_factory=OperatingInfo, description="经营信息")
 
@@ -196,8 +202,19 @@ class CostConsignmentQuery(BaseModel):
     end_warehouse_date: Optional[str] = Field(None, description="进仓结束日期 (YYYY-MM-DD)")
     customer_name: Optional[str] = Field(None, description="客户名称 (模糊匹配)")
     agent: Optional[str] = Field(None, description="代理单位 (模糊匹配)")
-    flight_doc_no: Optional[str] = Field(None, description="航司单号/航班单号 (模糊匹配)")
-    flight_no: Optional[str] = Field(None, description="航班号 (模糊匹配)")
+    flight_doc_no: Optional[str] = Field(
+        None,
+        description=(
+            "航司单号/航班单号 (模糊匹配，同时匹配货主托运、国际空运应付、"
+            "国内空运应付中的航司单号，并兼容匹配提单)"
+        ),
+    )
+    flight_no: Optional[str] = Field(
+        None,
+        description=(
+            "航班号 (模糊匹配，同时匹配货主托运、国际空运应付、国内空运应付中的航班号)"
+        ),
+    )
     page: Optional[int] = Field(1, ge=1, description="页码")
     pageSize: Optional[int] = Field(10, ge=1, description="每页数量")
 
