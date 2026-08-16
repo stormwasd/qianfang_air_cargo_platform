@@ -9571,7 +9571,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 | 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-修改 |
 | 单据信息 | DELETE | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-删除（单个） |
 | 单据信息 | POST/DELETE | `/api/v1/cost-service/consignments/batch-delete` | 单据信息-批量删除 |
-| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为excel (113列全量字段) |
+| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（三级分组表头、114 列全量字段） |
 
 #### 23.2 数据结构规范说明
 
@@ -9579,8 +9579,36 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - 包含：`unit_price`（单价）、`freight`（运费）、`lading_info_fee`（提单费/信息录入费）、`split_offset_telex_fee`（分单费/抵账费/电报费）、`customs_fee`（报关费）、`continuation_sheet_fee`（续页费）、`customs_inspection_fee`（海关查验费）、`magnetic_security_fee`（磁检费/安检费）、`tc_express_fee`（TC操作费/快件中心过站费）、`warehouse_ground_fee`（前置仓/国际货站地面费）、`doc_make_fee`（制单费）、`doc_split_fee`（制单分单费）、`skid_fee`（垫板费）、`pallet_packing_fee`（打板/装箱费）、`probe_fee`（探板费）、`consumables_fee`（耗材费）、`first_leg_fee`（一程费用）、`total`（应收合计）。
    - **核心调整**：`receivables` 请求与响应中**不再包含** `agent` 字段（代理字段维护于 `consignor_info` 货主委托信息中）。
 
-2. **Excel 导出规范**：
-   - Excel 导出包含 5 大业务层级结构共 113 列全量字段，应收款项层级同步去除了“应收-代理”列。
+2. **`discount_info`（折让信息）字段结构**：
+   - 费用登记保存接口、单据新增接口和单据修改接口的顶层请求体新增 `discount_info`；费用登记查询、单据列表、单据详情以及新增/修改成功响应同步返回该对象。
+   - `discount_info.discount_person`：折让人员，字符串，可为空。
+   - `discount_info.discount_fee`：折让费，数值，可为空。
+   - 请求示例：`"discount_info": {"discount_person": "张三", "discount_fee": 100}`。
+
+3. **`payables.customs`（报关信息）字段调整**：
+   - 请求和响应中删除 `rebate`（回扣）字段；报关信息保留 `subtotal`、`date`、`agent`、`customs_fee`、`continuation_sheet_fee`、`inspection_delete_fee`、`other_fee`、`remark`。
+   - 数据库迁移 `sql/migration_add_cost_discount_info.sql` 只新增折让字段。历史数据库中的 `pay_customs_rebate` 列不再被业务代码映射或读写，但暂不物理删除，以避免迁移时丢失既有历史数据；全新建表脚本已不再创建该列。
+
+4. **Excel 导出规范**：
+   - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 114 列。
+   - 一级分组依次为：`货主托运信息`（第 1-17 列）、`应收款项`（第 18-35 列）、`应付款项`（第 36-108 列）、`折让信息`（第 109-110 列）、`业务信息`（第 111-112 列）、`经营信息`（第 113-114 列）。
+   - `应付款项`下设置二级分组：`国际空运信息`（第 36-60 列）、`汽运信息`（第 61-71 列）、`国内空运信息`（第 72-88 列）、`报关信息`（第 89-96 列）、`地面操作信息`（第 97-107 列）；第 108 列为独立的`应付合计`。
+   - `折让信息`包含第 109 列`折让人员`和第 110 列`折让费`；`报关信息`中不再导出`回扣`列。
+   - 原字段标题中的`应收-`、`国空应付-`、`汽运应付-`、`国空内应付-`、`报关应付-`、`地面应付-`前缀已上移到分组表头，第三行仅展示字段名称；`委托备注`显示为`备注`。
+   - “提单”列不会直接输出前端保存的编码，而是按页面展示语义转换：
+     - 一主多分：`1-1 → 一主`、`1-2 → 一主（一）分`、`1-3 → 一主（二）分`、`1-4 → 一主（三）分`、`1-5 → 一主（四）分`、`1-6 → 一主（五）分`、`1-7 → 一主（六）分`、`1-8 → 一主（七）分`、`1-9 → 一主（八）分`、`1-10 → 一主（九）分`。
+     - 直单：`2-1 → 虚拟分单*`、`2-2 → 虚拟分单*1`、`2-3 → 虚拟分单*2`、`2-4 → 虚拟分单*3`、`2-5 → 虚拟分单*4`、`2-6 → 虚拟分单*5`、`2-7 → 虚拟分单*6`、`2-8 → 虚拟分单*7`、`2-9 → 虚拟分单*8`、`2-10 → 虚拟分单*9`。
+     - 转换只作用于 Excel 导出结果，不修改数据库或其他接口的原始字段；空值导出为空，未知编码及真实提单号原样输出。
+   - 应收款项层级不包含“应收-代理”列。响应仍为 `.xlsx` 文件，媒体类型和下载响应头保持不变。
+
+5. **列表航班号筛选规范**：
+   - `GET /api/v1/cost-service/consignments` 的 `flight_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航班号字段：`consignor_info.flight_no`、`payables.intl_air.flight_no`、`payables.dom_air.flight_no`。
+   - 三个字段之间采用“或（OR）”关系；任一字段包含传入的 `flight_no` 即返回该单据。参数首尾空白会被去除，未传或仅传空白时不增加航班号筛选条件。
+
+6. **列表航司单号筛选规范**：
+   - `GET /api/v1/cost-service/consignments` 的 `flight_doc_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航司单号字段：`consignor_info.flight_doc_no`、`payables.intl_air.flight_doc_no`、`payables.dom_air.flight_doc_no`。
+   - 为保持既有查询能力，`flight_doc_no`同时兼容匹配`consignor_info.bill_of_lading`（提单）。上述四个数据库字段采用“或（OR）”关系；任一字段包含传入值即返回该单据。
+   - 参数首尾空白会被去除，未传或仅传空白时不增加航司单号筛选条件。该筛选只决定单据是否入选，不会改写响应中各字段的原始值。
 
 #### 23.3 客服接单台与费用登记台数据双向实时同步规范
 
