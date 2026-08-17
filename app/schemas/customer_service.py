@@ -1,6 +1,7 @@
 """
 客服接单台 Pydantic Schemas
 """
+from enum import Enum
 from pydantic import BaseModel, Field
 from typing import List, Optional, Union
 from datetime import datetime, date
@@ -49,11 +50,31 @@ class ConsignmentInfoUpdate(ConsignmentBase):
     pass
 
 
+class ConsignmentInfoSortField(str, Enum):
+    """委托信息列表支持的排序字段。"""
+    CREATE_TIME = "create_time"
+    WAREHOUSE_ENTRY_DATE = "warehouse_entry_date"
+
+
+class ConsignmentInfoSortOrder(str, Enum):
+    """委托信息列表支持的排序方向。"""
+    ASC = "asc"
+    DESC = "desc"
+
+
 class ConsignmentInfoQuery(BaseModel):
     """委托信息-列表查询 Schema"""
     start_date: Optional[str] = Field(None, description="制单日期区间-开始日期 (YYYY-MM-DD)")
     end_date: Optional[str] = Field(None, description="制单日期区间-结束日期 (YYYY-MM-DD)")
     customer_name: Optional[str] = Field(None, description="客户名称 (模糊查询)")
+    sort_by: ConsignmentInfoSortField = Field(
+        ConsignmentInfoSortField.CREATE_TIME,
+        description="排序字段：create_time（制单时间）或 warehouse_entry_date（进仓日期）",
+    )
+    sort_order: ConsignmentInfoSortOrder = Field(
+        ConsignmentInfoSortOrder.DESC,
+        description="排序方向：asc（正序）或 desc（倒序）",
+    )
     page: Optional[int] = Field(1, ge=1, description="页码，默认1")
     pageSize: Optional[int] = Field(10, ge=1, description="每页数量，默认10")
 

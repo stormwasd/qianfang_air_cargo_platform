@@ -24,6 +24,8 @@ from app.schemas.cost_service import (
     CostConsignmentCreate,
     CostConsignmentUpdate,
     CostConsignmentQuery,
+    CostConsignmentSortField,
+    CostConsignmentSortOrder,
     CostBatchDeleteRequest,
     CostExportExcelRequest,
 )
@@ -525,7 +527,7 @@ async def create_cost_consignment(
 
 
 # ============================================================================
-# 3. 单据信息-列表（支持进仓日期区间、客户名称、代理单位、航司单号、航班号等条件查询及分页）
+# 3. 单据信息-列表（支持条件查询、排序及分页）
 # ============================================================================
 
 @router.get("/consignments", summary="单据信息-列表")
@@ -547,6 +549,14 @@ async def get_cost_consignments(
             "航班号 (模糊查询，同时匹配货主托运、国际空运应付、国内空运应付中的航班号)"
         ),
     ),
+    sort_by: CostConsignmentSortField = Query(
+        CostConsignmentSortField.WAREHOUSE_ENTRY_DATE,
+        description="排序字段：create_time（制单时间）或 warehouse_entry_date（进仓日期）",
+    ),
+    sort_order: CostConsignmentSortOrder = Query(
+        CostConsignmentSortOrder.DESC,
+        description="排序方向：asc（正序）或 desc（倒序）",
+    ),
     page: Optional[int] = Query(1, ge=1, description="页码"),
     pageSize: Optional[int] = Query(10, ge=1, description="每页数量"),
     current_user: User = Depends(get_current_active_user),
@@ -562,6 +572,8 @@ async def get_cost_consignments(
     - **agent**: 代理单位 (支持模糊匹配)
     - **flight_doc_no**: 航司单号/航班单号 (支持模糊匹配；任一货主托运、国际空运应付、国内空运应付航司单号或提单匹配即返回)
     - **flight_no**: 航班号 (支持模糊匹配；任一货主托运、国际空运应付或国内空运应付航班号匹配即返回)
+    - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `warehouse_entry_date`
+    - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
     - **page**: 页码
     - **pageSize**: 每页条数
     """
@@ -608,12 +620,25 @@ async def get_cost_consignments(
             
     total = query_obj.count()
     
-    # 排序：进仓日期倒序，其次制单时间倒序，其次ID倒序
-    query_obj = query_obj.order_by(
-        CostConsignment.warehouse_entry_date.desc(),
-        CostConsignment.create_time.desc(),
-        CostConsignment.id.desc()
-    )
+    # 排序字段由枚举白名单约束；第二时间字段及 ID 作为稳定分页的并列值排序依据。
+    if sort_by == CostConsignmentSortField.CREATE_TIME:
+        sort_columns = (
+            CostConsignment.create_time,
+            CostConsignment.warehouse_entry_date,
+            CostConsignment.id,
+        )
+    else:
+        sort_columns = (
+            CostConsignment.warehouse_entry_date,
+            CostConsignment.create_time,
+            CostConsignment.id,
+        )
+
+    if sort_order == CostConsignmentSortOrder.ASC:
+        sort_expressions = [column.asc() for column in sort_columns]
+    else:
+        sort_expressions = [column.desc() for column in sort_columns]
+    query_obj = query_obj.order_by(*sort_expressions)
     
     # 分页
     if page is not None and pageSize is not None:

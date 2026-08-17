@@ -40,7 +40,7 @@ class ConsignmentInfo(Base):
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="委托信息ID")
     create_time = Column(DateTime(timezone=True), nullable=True, index=True, comment="制单时间")
     internal_doc_id = Column(String(100), nullable=True, comment="内部单据ID")
-    warehouse_entry_date = Column(Date, nullable=True, comment="进仓日期")
+    warehouse_entry_date = Column(Date, nullable=True, index=True, comment="进仓日期")
     customer_name = Column(String(100), nullable=True, index=True, comment="客户名称")
     origin_destination = Column(String(100), nullable=True, comment="始发站-目的站")
     customs_declaration = Column(String(50), nullable=True, comment="报关")

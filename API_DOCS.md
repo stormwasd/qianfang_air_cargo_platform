@@ -9566,7 +9566,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 | 费用信息登记 | GET | `/api/v1/cost-service/cost-registration` | 获取费用信息登记数据（系统唯一数据） |
 | 费用信息登记 | PUT | `/api/v1/cost-service/cost-registration` | 编辑并保存费用信息登记数据 |
 | 单据信息 | POST | `/api/v1/cost-service/consignments` | 单据信息-新增 |
-| 单据信息 | GET | `/api/v1/cost-service/consignments` | 单据信息-列表查询与筛选 |
+| 单据信息 | GET | `/api/v1/cost-service/consignments` | 单据信息-列表查询、筛选与排序 |
 | 单据信息 | GET | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-详情 |
 | 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-修改 |
 | 单据信息 | DELETE | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-删除（单个） |
@@ -9596,8 +9596,8 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - `折让信息`包含第 109 列`折让人员`和第 110 列`折让费`；`报关信息`中不再导出`回扣`列。
    - 原字段标题中的`应收-`、`国空应付-`、`汽运应付-`、`国空内应付-`、`报关应付-`、`地面应付-`前缀已上移到分组表头，第三行仅展示字段名称；`委托备注`显示为`备注`。
    - “提单”列不会直接输出前端保存的编码，而是按页面展示语义转换：
-     - 一主多分：`1-1 → 一主`、`1-2 → 一主（一）分`、`1-3 → 一主（二）分`、`1-4 → 一主（三）分`、`1-5 → 一主（四）分`、`1-6 → 一主（五）分`、`1-7 → 一主（六）分`、`1-8 → 一主（七）分`、`1-9 → 一主（八）分`、`1-10 → 一主（九）分`。
-     - 直单：`2-1 → 虚拟分单*`、`2-2 → 虚拟分单*1`、`2-3 → 虚拟分单*2`、`2-4 → 虚拟分单*3`、`2-5 → 虚拟分单*4`、`2-6 → 虚拟分单*5`、`2-7 → 虚拟分单*6`、`2-8 → 虚拟分单*7`、`2-9 → 虚拟分单*8`、`2-10 → 虚拟分单*9`。
+     - 一主多分：`1-0 → 一主`、`1-1 → 一主（一）分`、`1-2 → 一主（二）分`、`1-3 → 一主（三）分`、`1-4 → 一主（四）分`、`1-5 → 一主（五）分`、`1-6 → 一主（六）分`、`1-7 → 一主（七）分`、`1-8 → 一主（八）分`、`1-9 → 一主（九）分`。
+     - 直单：`2-0 → 虚拟分单*`、`2-1 → 虚拟分单1`、`2-2 → 虚拟分单2`、`2-3 → 虚拟分单3`、`2-4 → 虚拟分单4`、`2-5 → 虚拟分单5`、`2-6 → 虚拟分单6`、`2-7 → 虚拟分单7`、`2-8 → 虚拟分单8`、`2-9 → 虚拟分单*9`。
      - 转换只作用于 Excel 导出结果，不修改数据库或其他接口的原始字段；空值导出为空，未知编码及真实提单号原样输出。
    - 应收款项层级不包含“应收-代理”列。响应仍为 `.xlsx` 文件，媒体类型和下载响应头保持不变。
 
@@ -9609,6 +9609,14 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - `GET /api/v1/cost-service/consignments` 的 `flight_doc_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航司单号字段：`consignor_info.flight_doc_no`、`payables.intl_air.flight_doc_no`、`payables.dom_air.flight_doc_no`。
    - 为保持既有查询能力，`flight_doc_no`同时兼容匹配`consignor_info.bill_of_lading`（提单）。上述四个数据库字段采用“或（OR）”关系；任一字段包含传入值即返回该单据。
    - 参数首尾空白会被去除，未传或仅传空白时不增加航司单号筛选条件。该筛选只决定单据是否入选，不会改写响应中各字段的原始值。
+
+7. **列表排序规范**：
+   - `GET /api/v1/cost-service/consignments` 新增 `sort_by` 和 `sort_order` 查询参数，排序在分页前执行。
+   - `sort_by` 可选值：`create_time`（按`consignor_info.create_time`制单时间排序）、`warehouse_entry_date`（按`consignor_info.warehouse_entry_date`进仓日期排序）；默认值为 `warehouse_entry_date`。
+   - `sort_order` 可选值：`asc`（正序）、`desc`（倒序）；默认值为 `desc`。
+   - 不传排序参数时，继续保持原有的“进仓日期倒序、制单时间倒序、ID倒序”顺序，不影响现有调用方。
+   - 当主排序字段值相同时，系统依次使用另一个时间字段和 ID 以相同方向排序，保证分页结果稳定且不会因并列值产生随机顺序。
+   - 示例：按制单时间正序查询：`GET /api/v1/cost-service/consignments?sort_by=create_time&sort_order=asc&page=1&pageSize=10`；按进仓日期倒序查询：`GET /api/v1/cost-service/consignments?sort_by=warehouse_entry_date&sort_order=desc&page=1&pageSize=10`。
 
 #### 23.3 客服接单台与费用登记台数据双向实时同步规范
 
@@ -9623,6 +9631,17 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      - 在任意一方修改单据的货主委托信息时，系统自动联动更新另一方中对应 `id` 记录的各委托字段（若对方记录不存在则自动补全创建）。
    - **删除 (DELETE / Batch DELETE)**：
      - 在任意一方执行单条删除或批量删除时，系统自动同步物理删除另一方中相同 `id` 的记录，确保两边列表数据时刻保持高度一致。
+
+#### 23.4 客服接单台委托列表排序规范
+
+- `GET /api/v1/customer-service/consignments` 返回的委托信息包含 `create_time`（制单时间）和 `warehouse_entry_date`（进仓日期），现支持通过 `sort_by` 和 `sort_order` 查询参数在分页前排序。
+- `sort_by` 可选值：`create_time`、`warehouse_entry_date`；默认值为 `create_time`。
+- `sort_order` 可选值：`asc`（正序）、`desc`（倒序）；默认值为 `desc`。
+- 不传排序参数时，继续保持原有的“制单时间倒序、ID倒序”顺序，不影响现有调用方。
+- 按进仓日期排序时，若进仓日期相同，则依次按制单时间和 ID 使用相同方向排序；按制单时间排序时，ID 作为并列值排序依据，确保分页结果稳定。
+- 非法的排序字段或排序方向不进入数据库查询，由接口参数枚举校验直接拒绝。
+- 示例：按制单时间正序查询：`GET /api/v1/customer-service/consignments?sort_by=create_time&sort_order=asc&page=1&pageSize=10`；按进仓日期倒序查询：`GET /api/v1/customer-service/consignments?sort_by=warehouse_entry_date&sort_order=desc&page=1&pageSize=10`。
+- 为保证进仓日期排序性能，`consignment_infos.warehouse_entry_date` 已增加数据库索引；已有数据库需执行 `sql/migration_add_customer_consignment_warehouse_entry_date_index.sql`。
 
 
 

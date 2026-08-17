@@ -48,5 +48,6 @@ CREATE TABLE IF NOT EXISTS `consignment_infos` (
     `updated_at` datetime NOT NULL COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_create_time` (`create_time`),
+    KEY `idx_warehouse_entry_date` (`warehouse_entry_date`),
     KEY `idx_customer_name` (`customer_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='委托信息表';

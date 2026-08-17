@@ -1,6 +1,7 @@
 """
 费用登记台 Pydantic Schemas（层级化/结构化设计，方便前端分类渲染与提交）
 """
+from enum import Enum
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
@@ -196,6 +197,18 @@ class CostConsignmentUpdate(CostRegistrationSave):
     pass
 
 
+class CostConsignmentSortField(str, Enum):
+    """费用单据列表支持的排序字段。"""
+    CREATE_TIME = "create_time"
+    WAREHOUSE_ENTRY_DATE = "warehouse_entry_date"
+
+
+class CostConsignmentSortOrder(str, Enum):
+    """费用单据列表支持的排序方向。"""
+    ASC = "asc"
+    DESC = "desc"
+
+
 class CostConsignmentQuery(BaseModel):
     """单据信息-列表 查询参数"""
     start_warehouse_date: Optional[str] = Field(None, description="进仓开始日期 (YYYY-MM-DD)")
@@ -214,6 +227,14 @@ class CostConsignmentQuery(BaseModel):
         description=(
             "航班号 (模糊匹配，同时匹配货主托运、国际空运应付、国内空运应付中的航班号)"
         ),
+    )
+    sort_by: CostConsignmentSortField = Field(
+        CostConsignmentSortField.WAREHOUSE_ENTRY_DATE,
+        description="排序字段：create_time（制单时间）或 warehouse_entry_date（进仓日期）",
+    )
+    sort_order: CostConsignmentSortOrder = Field(
+        CostConsignmentSortOrder.DESC,
+        description="排序方向：asc（正序）或 desc（倒序）",
     )
     page: Optional[int] = Field(1, ge=1, description="页码")
     pageSize: Optional[int] = Field(10, ge=1, description="每页数量")

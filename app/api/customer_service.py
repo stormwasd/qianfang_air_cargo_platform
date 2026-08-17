@@ -25,6 +25,8 @@ from app.schemas.customer_service import (
     ConsignmentInfoCreate,
     ConsignmentInfoUpdate,
     ConsignmentInfoQuery,
+    ConsignmentInfoSortField,
+    ConsignmentInfoSortOrder,
     BatchDeleteRequest,
     ExportExcelRequest,
     ConsignmentInfoResponse,
@@ -273,7 +275,7 @@ async def create_consignment(
 
 
 # ============================================================================
-# 3. 委托信息-列表（支持制单日期区间与客户名称查询、分页）
+# 3. 委托信息-列表（支持筛选、排序及分页）
 # ============================================================================
 
 @router.get("/consignments", summary="委托信息-列表")
@@ -281,6 +283,14 @@ async def get_consignments(
     start_date: Optional[str] = Query(None, description="制单开始日期 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="制单结束日期 (YYYY-MM-DD)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
+    sort_by: ConsignmentInfoSortField = Query(
+        ConsignmentInfoSortField.CREATE_TIME,
+        description="排序字段：create_time（制单时间）或 warehouse_entry_date（进仓日期）",
+    ),
+    sort_order: ConsignmentInfoSortOrder = Query(
+        ConsignmentInfoSortOrder.DESC,
+        description="排序方向：asc（正序）或 desc（倒序）",
+    ),
     page: Optional[int] = Query(1, ge=1, description="页码"),
     pageSize: Optional[int] = Query(10, ge=1, description="每页数量"),
     current_user: User = Depends(get_current_active_user),
@@ -293,6 +303,8 @@ async def get_consignments(
     - **start_date**: 制单日期区间开始，例如 '2026-07-25'
     - **end_date**: 制单日期区间结束，例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
+    - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `create_time`
+    - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
     - **page**: 页码（不传或默认为 1）
     - **pageSize**: 每页条数（不传或默认为 10）
     """
@@ -319,8 +331,24 @@ async def get_consignments(
             
     total = query_obj.count()
     
-    # 排序：按制单时间倒序，其次按ID倒序
-    query_obj = query_obj.order_by(ConsignmentInfo.create_time.desc(), ConsignmentInfo.id.desc())
+    # 默认仍为制单时间、ID 倒序；进仓日期排序时增加制单时间作为并列值排序依据。
+    if sort_by == ConsignmentInfoSortField.WAREHOUSE_ENTRY_DATE:
+        sort_columns = (
+            ConsignmentInfo.warehouse_entry_date,
+            ConsignmentInfo.create_time,
+            ConsignmentInfo.id,
+        )
+    else:
+        sort_columns = (
+            ConsignmentInfo.create_time,
+            ConsignmentInfo.id,
+        )
+
+    if sort_order == ConsignmentInfoSortOrder.ASC:
+        sort_expressions = [column.asc() for column in sort_columns]
+    else:
+        sort_expressions = [column.desc() for column in sort_columns]
+    query_obj = query_obj.order_by(*sort_expressions)
     
     # 分页
     if page is not None and pageSize is not None:
