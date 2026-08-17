@@ -124,6 +124,13 @@ class BookingExecuteItem(BaseModel):
     )
     success: bool
     error_message: Optional[str] = None
+    error_details: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "结构化失败详情；南航费用选项不匹配时包含 selected_option、"
+            "normalized_selected_option、available_options 和不含敏感请求头的 upstream_response"
+        ),
+    )
 
 
 class BookingExecuteResponse(BaseModel):

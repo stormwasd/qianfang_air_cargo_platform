@@ -321,6 +321,9 @@ async def _execute_china_southern_air_direct_booking(
         ChinaSouthernAirServiceError,
     ) as exc:
         _fail_china_southern_air_direct_booking(db, booking_id, str(exc))
+        if isinstance(exc, ChinaSouthernAirDirectBookingError):
+            # 保留费用选项等结构化上下文，供批量执行接口安全返回。
+            raise
         raise ChinaSouthernAirDirectBookingError(str(exc)) from exc
     except Exception as exc:
         message = f"南航订舱前置调用异常：{exc}"
@@ -640,7 +643,12 @@ async def execute_booking(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """通过南航 B2E 接口同步执行批量订舱，不创建新的 RPA 任务。"""
+    """
+    通过南航 B2E 接口同步执行批量订舱，不创建新的 RPA 任务。
+
+    当出港货邮处理费选项不匹配时，单项结果的 `error_details` 会返回本次选择、
+    南航当前可选项及对应费用组原始响应；不会返回 Token、Cookie 或请求头。
+    """
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
@@ -746,6 +754,7 @@ async def execute_booking(
                 booking_id=booking_id_str,
                 success=False,
                 error_message=str(exc),
+                error_details=exc.details,
             ))
             failed_count += 1
         except Exception as e:

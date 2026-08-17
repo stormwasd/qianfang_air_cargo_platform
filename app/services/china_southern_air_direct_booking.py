@@ -1,7 +1,7 @@
 """南航订舱直连接口的数据映射与航班查询服务。"""
 import json
 from copy import deepcopy
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -11,6 +11,15 @@ from app.services.china_southern_air_service_client import ChinaSouthernAirServi
 
 class ChinaSouthernAirDirectBookingError(Exception):
     """南航直连订舱的参数或前置查询错误。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message)
+        self.details = deepcopy(details) if details is not None else None
 
 
 class ChinaSouthernAirDirectBookingService:
@@ -246,14 +255,18 @@ class ChinaSouthernAirDirectBookingService:
         cls, service_charges: List[Dict[str, Any]], selected_name: str
     ) -> List[Dict[str, Any]]:
         """在完整费用列表中仅勾选用户指定的出港货邮处理费。"""
+        requested_name = selected_name
         selected_name = "鲜活易腐" if selected_name == "鲜活容腐" else selected_name
         result = deepcopy(service_charges)
         found_group = False
         found_option = False
+        available_options: List[str] = []
+        upstream_group: Optional[Dict[str, Any]] = None
         for group in result:
             if group.get("serviceMainName") != cls.OUTBOUND_HANDLING_FEE_NAME:
                 continue
             found_group = True
+            upstream_group = deepcopy(group)
             details = group.get("serviceCharges")
             if not isinstance(details, list):
                 raise ChinaSouthernAirDirectBookingError("南航出港货邮处理费明细格式异常")
@@ -261,15 +274,35 @@ class ChinaSouthernAirDirectBookingService:
             for detail in details:
                 if not isinstance(detail, dict):
                     continue
-                matched = str(detail.get("otherChargeName") or "").strip() == selected_name
+                option_name = str(detail.get("otherChargeName") or "").strip()
+                if option_name and option_name not in available_options:
+                    available_options.append(option_name)
+                matched = option_name == selected_name
                 detail["checked"] = "Y" if matched else "N"
                 found_option = found_option or matched
             break
         if not found_group:
-            raise ChinaSouthernAirDirectBookingError("南航费用查询未返回出港货邮处理费")
-        if not found_option:
             raise ChinaSouthernAirDirectBookingError(
-                f"南航出港货邮处理费中没有选项：{selected_name}"
+                "南航费用查询未返回出港货邮处理费",
+                details={
+                    "selected_option": requested_name,
+                    "normalized_selected_option": selected_name,
+                    "available_options": [],
+                    "upstream_response": {
+                        "extServiceCharges": deepcopy(service_charges),
+                    },
+                },
+            )
+        if not found_option:
+            options_text = "、".join(available_options) if available_options else "无"
+            raise ChinaSouthernAirDirectBookingError(
+                f"南航出港货邮处理费中没有选项：{requested_name}；当前可选项：{options_text}",
+                details={
+                    "selected_option": requested_name,
+                    "normalized_selected_option": selected_name,
+                    "available_options": available_options,
+                    "upstream_response": upstream_group,
+                },
             )
         return result
 
