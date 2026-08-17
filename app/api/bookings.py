@@ -303,8 +303,8 @@ async def _execute_china_southern_air_direct_booking(
             destination=values["destination"],
             flight_number=values["flight_number"],
             flight_date=values["flight_date"],
-            cargo_type=values["shipment_type_name"],
-            cargo_name=values["commodity_name"],
+            cargo_type=values["rate_code"],
+            cargo_name=values["shipment_type_name"],
         )
         selected_charges = china_southern_air_direct_booking_service.select_handling_fee(
             queried_charges, values["selected_fee"]
