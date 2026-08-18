@@ -324,7 +324,8 @@ async def _execute_china_southern_air_direct_booking(
         if isinstance(exc, ChinaSouthernAirDirectBookingError):
             # 保留费用选项等结构化上下文，供批量执行接口安全返回。
             raise
-        raise ChinaSouthernAirDirectBookingError(str(exc)) from exc
+        details = exc.details if isinstance(exc, ChinaSouthernAirDirectOrderError) else None
+        raise ChinaSouthernAirDirectBookingError(str(exc), details=details) from exc
     except Exception as exc:
         message = f"南航订舱前置调用异常：{exc}"
         _fail_china_southern_air_direct_booking(db, booking_id, message)
@@ -390,7 +391,9 @@ async def _execute_china_southern_air_direct_booking(
                     db.rollback()
                     message = "南航提示可用单号均已被使用，未能完成订舱，请补充单号库后重试"
                     _fail_china_southern_air_direct_booking(db, booking_id, message)
-                    raise ChinaSouthernAirDirectBookingError(message) from stock_exc
+                    raise ChinaSouthernAirDirectBookingError(
+                        message, details=exc.details
+                    ) from stock_exc
                 continue
 
             _fail_china_southern_air_direct_booking(
@@ -400,7 +403,9 @@ async def _execute_china_southern_air_direct_booking(
                 stock_item_id=stock_item.id,
                 isolate_stock=exc.outcome_unknown,
             )
-            raise ChinaSouthernAirDirectBookingError(str(exc)) from exc
+            raise ChinaSouthernAirDirectBookingError(
+                str(exc), details=exc.details
+            ) from exc
         except ChinaSouthernAirDirectBookingError as exc:
             _fail_china_southern_air_direct_booking(
                 db, booking_id, str(exc), stock_item_id=stock_item.id
@@ -646,8 +651,9 @@ async def execute_booking(
     """
     通过南航 B2E 接口同步执行批量订舱，不创建新的 RPA 任务。
 
-    当出港货邮处理费选项不匹配时，单项结果的 `error_details` 会返回本次选择、
-    南航当前可选项及对应费用组原始响应；不会返回 Token、Cookie 或请求头。
+    南航上游调用失败时，单项结果的 `error_details` 会返回调用阶段、HTTP 状态和
+    完整上游响应体；费用选项不匹配时还会返回本次选择及当前可选项。
+    不会返回 Token、Cookie、请求头或完整请求参数。
     """
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType

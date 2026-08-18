@@ -17,10 +17,12 @@ class ChinaSouthernAirDirectOrderError(Exception):
         *,
         number_is_used: bool = False,
         outcome_unknown: bool = False,
+        details: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(message)
         self.number_is_used = number_is_used
         self.outcome_unknown = outcome_unknown
+        self.details = deepcopy(details) if details is not None else None
 
 
 class ChinaSouthernAirDirectOrderService:
@@ -33,6 +35,33 @@ class ChinaSouthernAirDirectOrderService:
         "https://cargo.csair.com/order-center/b2e-order/b2eOrder/createOrder"
     )
     OUTBOUND_HANDLING_FEE_NAME = "出港货邮处理费"
+
+    @staticmethod
+    def _upstream_error_details(
+        *,
+        is_create: bool,
+        upstream_response: Any = None,
+        http_status: Optional[int] = None,
+        network_error: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """构造可安全返回给调用方的南航错误上下文，不包含请求头或认证信息。"""
+        details: Dict[str, Any] = {
+            "stage": "create_order" if is_create else "calculate_charge",
+            "upstream_response": deepcopy(upstream_response),
+        }
+        if http_status is not None:
+            details["http_status"] = http_status
+        if network_error:
+            details["network_error"] = network_error
+        return details
+
+    @staticmethod
+    def _response_body(response: httpx.Response) -> Any:
+        """优先保留南航原始 JSON；非 JSON 响应则保留完整文本。"""
+        try:
+            return response.json()
+        except (ValueError, TypeError):
+            return response.text
 
     @staticmethod
     def _required_text(value: Any, field_name: str) -> str:
@@ -348,21 +377,31 @@ class ChinaSouthernAirDirectOrderService:
                 response = await client.post(url, headers=headers, json=payload)
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            response_text = ""
-            try:
-                response_text = json.dumps(exc.response.json(), ensure_ascii=False).lower()
-            except (ValueError, TypeError):
-                response_text = exc.response.text.lower()
+            upstream_response = self._response_body(exc.response)
+            response_text = (
+                json.dumps(upstream_response, ensure_ascii=False, default=str).lower()
+                if not isinstance(upstream_response, str)
+                else upstream_response.lower()
+            )
             number_is_used = is_create and self._response_indicates_used_number(response_text)
             raise ChinaSouthernAirDirectOrderError(
                 f"南航{'开单' if is_create else '费用计算'}失败（HTTP {exc.response.status_code}）",
                 number_is_used=number_is_used,
                 outcome_unknown=is_create and exc.response.status_code >= 500,
+                details=self._upstream_error_details(
+                    is_create=is_create,
+                    http_status=exc.response.status_code,
+                    upstream_response=upstream_response,
+                ),
             ) from exc
         except httpx.RequestError as exc:
             raise ChinaSouthernAirDirectOrderError(
                 f"南航{'开单' if is_create else '费用计算'}服务暂时不可用",
                 outcome_unknown=is_create,
+                details=self._upstream_error_details(
+                    is_create=is_create,
+                    network_error=str(exc),
+                ),
             ) from exc
 
         try:
@@ -371,12 +410,22 @@ class ChinaSouthernAirDirectOrderService:
             raise ChinaSouthernAirDirectOrderError(
                 f"南航{'开单' if is_create else '费用计算'}服务返回无效数据",
                 outcome_unknown=is_create,
+                details=self._upstream_error_details(
+                    is_create=is_create,
+                    http_status=response.status_code,
+                    upstream_response=response.text,
+                ),
             ) from exc
 
         if not isinstance(response_data, dict):
             raise ChinaSouthernAirDirectOrderError(
                 f"南航{'开单' if is_create else '费用计算'}服务返回格式异常",
                 outcome_unknown=is_create,
+                details=self._upstream_error_details(
+                    is_create=is_create,
+                    http_status=response.status_code,
+                    upstream_response=response_data,
+                ),
             )
         if str(response_data.get("code", "")) in {"0000", "0"}:
             return response_data.get("result")
@@ -389,6 +438,11 @@ class ChinaSouthernAirDirectOrderService:
         raise ChinaSouthernAirDirectOrderError(
             message,
             number_is_used=number_is_used,
+            details=self._upstream_error_details(
+                is_create=is_create,
+                http_status=response.status_code,
+                upstream_response=response_data,
+            ),
         )
 
 
