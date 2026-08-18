@@ -44,6 +44,7 @@ class ChinaSouthernAirDirectOrderService:
         http_status: Optional[int] = None,
         network_error: Optional[str] = None,
         request_context: Optional[Dict[str, Any]] = None,
+        request_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """构造可安全返回给调用方的南航错误上下文，不包含请求头或认证信息。"""
         details: Dict[str, Any] = {
@@ -56,6 +57,8 @@ class ChinaSouthernAirDirectOrderService:
             details["network_error"] = network_error
         if request_context:
             details["request_context"] = deepcopy(request_context)
+        if request_data is not None:
+            details["request_data"] = deepcopy(request_data)
         return details
 
     @staticmethod
@@ -372,6 +375,7 @@ class ChinaSouthernAirDirectOrderService:
     ) -> Any:
         config = self._direct_order_config(business_config)
         request_context = self._diagnostic_request_context(payload)
+        request_data = payload if is_create else None
         cleaned_token = ChinaSouthernAirService._clean_token(token)
         if not cleaned_token:
             raise ChinaSouthernAirDirectOrderError("南航登录令牌无效，请先刷新南航 Token")
@@ -412,6 +416,7 @@ class ChinaSouthernAirDirectOrderService:
                     http_status=exc.response.status_code,
                     upstream_response=upstream_response,
                     request_context=request_context,
+                    request_data=request_data,
                 ),
             ) from exc
         except httpx.RequestError as exc:
@@ -422,6 +427,7 @@ class ChinaSouthernAirDirectOrderService:
                     is_create=is_create,
                     network_error=str(exc),
                     request_context=request_context,
+                    request_data=request_data,
                 ),
             ) from exc
 
@@ -436,6 +442,7 @@ class ChinaSouthernAirDirectOrderService:
                     http_status=response.status_code,
                     upstream_response=response.text,
                     request_context=request_context,
+                    request_data=request_data,
                 ),
             ) from exc
 
@@ -448,6 +455,7 @@ class ChinaSouthernAirDirectOrderService:
                     http_status=response.status_code,
                     upstream_response=response_data,
                     request_context=request_context,
+                    request_data=request_data,
                 ),
             )
         if str(response_data.get("code", "")) in {"0000", "0"}:
@@ -466,6 +474,7 @@ class ChinaSouthernAirDirectOrderService:
                 http_status=response.status_code,
                 upstream_response=response_data,
                 request_context=request_context,
+                request_data=request_data,
             ),
         )
 
