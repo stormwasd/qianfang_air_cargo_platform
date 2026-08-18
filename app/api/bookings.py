@@ -652,7 +652,8 @@ async def execute_booking(
     通过南航 B2E 接口同步执行批量订舱，不创建新的 RPA 任务。
 
     南航上游调用失败时，单项结果的 `error_details` 会返回调用阶段、HTTP 状态和
-    完整上游响应体；费用选项不匹配时还会返回本次选择及当前可选项。
+    完整上游响应体；最终订舱失败时还会在 `request_context` 中返回实际提交的
+    `contactName`、`contactPhone`。费用选项不匹配时会返回本次选择及当前可选项。
     不会返回 Token、Cookie、请求头或完整请求参数。
     """
     from app.services.rpa_task_service import rpa_task_service

@@ -43,6 +43,7 @@ class ChinaSouthernAirDirectOrderService:
         upstream_response: Any = None,
         http_status: Optional[int] = None,
         network_error: Optional[str] = None,
+        request_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """构造可安全返回给调用方的南航错误上下文，不包含请求头或认证信息。"""
         details: Dict[str, Any] = {
@@ -53,7 +54,24 @@ class ChinaSouthernAirDirectOrderService:
             details["http_status"] = http_status
         if network_error:
             details["network_error"] = network_error
+        if request_context:
+            details["request_context"] = deepcopy(request_context)
         return details
+
+    @staticmethod
+    def _diagnostic_request_context(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """仅提取排查南航联系人校验所需的最终请求字段。"""
+        order_info = payload.get("orderInfo")
+        if not isinstance(order_info, dict):
+            return {}
+        order = order_info.get("order")
+        if not isinstance(order, dict):
+            return {}
+        return {
+            field: order.get(field)
+            for field in ("contactName", "contactPhone")
+            if field in order
+        }
 
     @staticmethod
     def _response_body(response: httpx.Response) -> Any:
@@ -353,6 +371,7 @@ class ChinaSouthernAirDirectOrderService:
         is_create: bool,
     ) -> Any:
         config = self._direct_order_config(business_config)
+        request_context = self._diagnostic_request_context(payload)
         cleaned_token = ChinaSouthernAirService._clean_token(token)
         if not cleaned_token:
             raise ChinaSouthernAirDirectOrderError("南航登录令牌无效，请先刷新南航 Token")
@@ -392,6 +411,7 @@ class ChinaSouthernAirDirectOrderService:
                     is_create=is_create,
                     http_status=exc.response.status_code,
                     upstream_response=upstream_response,
+                    request_context=request_context,
                 ),
             ) from exc
         except httpx.RequestError as exc:
@@ -401,6 +421,7 @@ class ChinaSouthernAirDirectOrderService:
                 details=self._upstream_error_details(
                     is_create=is_create,
                     network_error=str(exc),
+                    request_context=request_context,
                 ),
             ) from exc
 
@@ -414,6 +435,7 @@ class ChinaSouthernAirDirectOrderService:
                     is_create=is_create,
                     http_status=response.status_code,
                     upstream_response=response.text,
+                    request_context=request_context,
                 ),
             ) from exc
 
@@ -425,6 +447,7 @@ class ChinaSouthernAirDirectOrderService:
                     is_create=is_create,
                     http_status=response.status_code,
                     upstream_response=response_data,
+                    request_context=request_context,
                 ),
             )
         if str(response_data.get("code", "")) in {"0000", "0"}:
@@ -442,6 +465,7 @@ class ChinaSouthernAirDirectOrderService:
                 is_create=is_create,
                 http_status=response.status_code,
                 upstream_response=response_data,
+                request_context=request_context,
             ),
         )
 

@@ -132,7 +132,8 @@ class BookingExecuteItem(BaseModel):
         None,
         description=(
             "结构化失败详情；南航上游调用失败时包含 stage、http_status 和完整的 "
-            "upstream_response；费用选项不匹配时还包含 selected_option、"
+            "upstream_response；最终订舱失败时 request_context 包含实际提交的 "
+            "contactName、contactPhone；费用选项不匹配时还包含 selected_option、"
             "normalized_selected_option、available_options。不会包含 Token、Cookie、"
             "请求头或完整请求参数"
         ),
