@@ -19,6 +19,8 @@ class BookingCreate(BaseModel):
     南方航空字段结构：
     {
       "airline": "南方航空",
+      "order_contact_name": "张三",  // 订单联系人姓名（可选，未传时读取业务参数默认值）
+      "order_contact_phone": "13800138000",  // 订单联系人电话（可选，未传时读取业务参数默认值）
       "bookings": [
         {
           "origin_station": "",  // 始发站（三字码）
@@ -48,6 +50,8 @@ class BookingCreate(BaseModel):
     }
     
     说明：
+    - `order_contact_name` 和 `order_contact_phone` 位于 form_data 顶层，不在 bookings 数组元素中
+    - 执行南航订舱时，`contactName`、`contactPhone` 优先使用上述 form_data 字段；未传时分别读取业务参数配置中的 `business_default.order_contact_name`、`business_default.order_contact_phone`
     - `outbound_cargo_and_mail_handling_fee_options` 只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活容腐、普货、急件快件
     - 执行订舱时由服务端查询航班机型，按系统参数中的宽窄体规则选择对应备注
     - bookings 是数组类型，支持批量提交多条订舱信息
