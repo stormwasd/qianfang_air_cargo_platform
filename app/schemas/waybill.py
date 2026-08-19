@@ -61,6 +61,7 @@ class WaybillCreate(BaseModel):
       },
       "cargo_info": {
         "cargo_type": "",  // 货物类型
+        "cargo_type_code": "",  // 货物类型代码，对应南航 rateCode；历史数据未提供时兼容读取业务参数配置
         "cargo_code": "",  // 货物代码
         "cargo_name": "",  // 货物名称
         "quantity": "",  // 件数
@@ -104,6 +105,7 @@ class WaybillCreate(BaseModel):
     说明：
     - 所有字段的值都是字符串类型
     - address 是对象类型，包含 region（省/市/区）和 detail（详细地址）两个字段
+    - 南航 `cargo_info.cargo_type_code` 优先映射到开单和费用计算请求的 `rateCode`；历史运单未提供时回退到业务参数配置中的 `direct_order.rate_code`（默认 3006）
     - 不同航司的字段结构不同，前端需要根据 airline 字段来展示对应的表单字段
     - 深圳航空的运单可以选择性提供 flight_info.waybill_type 字段（运单类型），南方航空不需要此字段
     """

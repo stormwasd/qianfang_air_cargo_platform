@@ -155,6 +155,9 @@ class ChinaSouthernAirDirectOrderService:
             "flight_number": cls._required_text(flight_info.get("flight_number"), "flight_info.flight_number").upper(),
             "booking_remark": flight_info.get("booking_remark") or None,
             "shipment_type_name": cls._required_text(cargo_info.get("cargo_type"), "cargo_info.cargo_type"),
+            # 新版 form_data 直接携带南航货物类型代码；为空时由构建请求处兼容
+            # 历史运单，继续回退到既有业务参数配置。
+            "rate_code": str(cargo_info.get("cargo_type_code") or "").strip() or None,
             "commodity_code": cls._required_text(cargo_info.get("cargo_code"), "cargo_info.cargo_code"),
             "commodity_name": cls._required_text(cargo_info.get("cargo_name"), "cargo_info.cargo_name"),
             "piece": cls._number(cargo_info.get("quantity"), "cargo_info.quantity", integer=True),
@@ -281,7 +284,7 @@ class ChinaSouthernAirDirectOrderService:
                 "orderShipment": {
                     "agentCode": agent_code,
                     "agentIataCode": config.get("agent_iata_code", "08305167"),
-                    "rateCode": config.get("rate_code", "3006"),
+                    "rateCode": values["rate_code"] or config.get("rate_code", "3006"),
                     "shipmentTypeName": values["shipment_type_name"],
                     "accountingRule": values["accounting_rule"],
                     "accountingInfo": config.get("accounting_info", "文件：限南航承运"),
