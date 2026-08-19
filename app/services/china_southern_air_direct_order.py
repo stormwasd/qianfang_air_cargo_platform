@@ -1,7 +1,7 @@
 """南航直连接口的费用计算与开单服务。"""
 import json
 from copy import deepcopy
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -183,6 +183,22 @@ class ChinaSouthernAirDirectOrderService:
             "selected_fee": deepcopy(selected_fee),
         }
 
+    @classmethod
+    def get_form_values(
+        cls,
+        form_data: Dict[str, Any],
+        business_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """解析并校验南航运单表单，供费用选项查询与请求构建复用。"""
+        values = cls._get_form_values(form_data)
+        if business_config is not None:
+            config = cls._direct_order_config(business_config)
+            values["rate_code"] = cls._required_text(
+                values["rate_code"] or config.get("rate_code", "3006"),
+                "cargo_info.cargo_type_code",
+            )
+        return values
+
     @staticmethod
     def _direct_order_config(business_config: Dict[str, Any]) -> Dict[str, Any]:
         china_southern_air = business_config.get("china_southern_air") or {}
@@ -201,19 +217,111 @@ class ChinaSouthernAirDirectOrderService:
 
     @classmethod
     def build_calculate_payload(
-        cls, form_data: Dict[str, Any], business_config: Dict[str, Any]
+        cls,
+        form_data: Dict[str, Any],
+        business_config: Dict[str, Any],
+        *,
+        service_charges: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         values = cls._get_form_values(form_data)
         config = cls._direct_order_config(business_config)
-        # 南航的费用计算请求可附带由业务配置维护的其他费用分组；无配置时
-        # 仅传用户选择的必选费用。无论哪种情况，第一项始终由用户本次选择覆盖。
-        configured_fees = config.get("calculate_ext_service_charges")
-        if isinstance(configured_fees, list) and configured_fees:
-            ext_service_charges = deepcopy(configured_fees)
-            ext_service_charges[0] = values["selected_fee"]
+        if service_charges is None:
+            service_charges = config.get("calculate_ext_service_charges")
+        if not isinstance(service_charges, list) or not service_charges:
+            raise ChinaSouthernAirDirectOrderError(
+                "南航费用计算缺少完整的扩展服务费列表"
+            )
+        if not all(isinstance(item, dict) for item in service_charges):
+            raise ChinaSouthernAirDirectOrderError(
+                "南航费用计算扩展服务费列表格式不正确"
+            )
+
+        ext_service_charges = deepcopy(service_charges)
+        selected_fee = cls._normalize_selected_fee(
+            values["selected_fee"], values["shipment_type_name"]
+        )
+        for index, group in enumerate(ext_service_charges):
+            if group.get("serviceMainName") == cls.OUTBOUND_HANDLING_FEE_NAME:
+                ext_service_charges[index] = selected_fee
+                break
         else:
-            ext_service_charges = [values["selected_fee"]]
-        return cls._build_order_payload(values, config, ext_service_charges)
+            raise ChinaSouthernAirDirectOrderError(
+                "南航完整费用列表中缺少出港货邮处理费"
+            )
+
+        return cls._build_calculate_payload(values, config, ext_service_charges)
+
+    @classmethod
+    def _normalize_selected_fee(
+        cls, selected_fee: Dict[str, Any], shipment_type_name: str
+    ) -> Dict[str, Any]:
+        """确保出港货邮处理费分组及实际选中的子项带有 checked=Y。"""
+        normalized = deepcopy(selected_fee)
+        details = normalized.get("serviceCharges")
+        if not isinstance(details, list):
+            raise ChinaSouthernAirDirectOrderError("出港货邮处理费选项明细格式不正确")
+
+        checked_items = [
+            detail
+            for detail in details
+            if isinstance(detail, dict)
+            and str(detail.get("checked") or "").strip().upper() == "Y"
+        ]
+        if not checked_items:
+            matched_item = next(
+                (
+                    detail
+                    for detail in details
+                    if isinstance(detail, dict)
+                    and str(detail.get("otherChargeName") or "").strip()
+                    == shipment_type_name
+                ),
+                None,
+            )
+            if matched_item is None:
+                available_options = [
+                    str(detail.get("otherChargeName") or "").strip()
+                    for detail in details
+                    if isinstance(detail, dict)
+                    and str(detail.get("otherChargeName") or "").strip()
+                ]
+                options_text = "、".join(available_options) if available_options else "无"
+                raise ChinaSouthernAirDirectOrderError(
+                    "出港货邮处理费未勾选具体选项，且无法根据货物类型"
+                    f"“{shipment_type_name}”自动匹配；当前可选项：{options_text}"
+                )
+            matched_item["checked"] = "Y"
+
+        normalized["checked"] = "Y"
+        return normalized
+
+    @staticmethod
+    def _build_calculate_payload(
+        values: Dict[str, Any], config: Dict[str, Any], ext_service_charges: list
+    ) -> Dict[str, Any]:
+        """严格按南航 calculateCharge 接口所需的最小结构构造请求。"""
+        return {
+            "resAllInfoList": [{"resDto": {
+                "flightDep": values["origin_station"],
+                "flightDest": values["destination"],
+                "bookFlightno": values["flight_number"],
+                "bookFlightdate": values["flight_date"],
+            }}],
+            "orderInfo": {
+                "order": {},
+                "orderShipment": {
+                    "rateCode": values["rate_code"] or config.get("rate_code", "3006"),
+                    "shipmentTypeName": values["shipment_type_name"],
+                    "piece": values["piece"],
+                    "weight": values["weight"],
+                    "volume": values["volume"],
+                    "bookGrade": config.get("book_grade", "A"),
+                    "spaceClass": config.get("space_class", "A"),
+                    "subSpaceClass": config.get("sub_space_class", "A6"),
+                },
+            },
+            "extServiceCharges": deepcopy(ext_service_charges),
+        }
 
     @classmethod
     def build_create_payload(

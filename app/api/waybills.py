@@ -1397,6 +1397,9 @@ async def execute_china_southern_air_waybill(
     南航上游调用失败时，响应 `data.error_details` 会返回调用阶段、HTTP 状态、
     完整上游响应体以及发往 calculateCharge/createOrder 的完整 JSON 请求体。
     不会返回南航 Token、Cookie 或请求头。
+
+    费用计算前会实时查询南航完整扩展服务费列表，并合并表单选择；发送给
+    calculateCharge 的请求采用南航要求的最小字段结构，不复用 createOrder 请求体。
     """
     try:
         waybill_id_int = int(waybill_id)
@@ -1435,7 +1438,7 @@ async def execute_china_southern_air_waybill(
     business_config = _get_business_config(db)
 
     try:
-        calculate_payload = china_southern_air_direct_order_service.build_calculate_payload(
+        direct_order_values = china_southern_air_direct_order_service.get_form_values(
             form_data_dict, business_config
         )
     except ChinaSouthernAirDirectOrderError as exc:
@@ -1449,6 +1452,52 @@ async def execute_china_southern_air_waybill(
     )
     if token_record is None:
         raise BaseAPIException(503, "暂无可用的南航 Token，请先完成南航 Token 获取任务")
+
+    # calculateCharge 要求传入 queryServiceCharge 返回的完整费用列表，不能只传
+    # 前端保存的「出港货邮处理费」单个分组。查询后再用本次表单选项替换该分组。
+    service_charge_query_data = {
+        "resAllInfoList": [{"resDto": {
+            "flightDep": direct_order_values["origin_station"],
+            "flightDest": direct_order_values["destination"],
+            "bookFlightno": direct_order_values["flight_number"],
+            "bookFlightdate": direct_order_values["flight_date"],
+        }}],
+        "routing": (
+            f"{direct_order_values['origin_station']}/"
+            f"{direct_order_values['destination']}"
+        ),
+        "shipmentType": direct_order_values["rate_code"],
+        "shipmentTypeName": direct_order_values["shipment_type_name"],
+        "channel": "B2B",
+    }
+    try:
+        service_charges = await china_southern_air_service.query_service_charges(
+            token=token_record.token,
+            origin_station=direct_order_values["origin_station"],
+            destination=direct_order_values["destination"],
+            flight_number=direct_order_values["flight_number"],
+            flight_date=direct_order_values["flight_date"],
+            cargo_type=direct_order_values["rate_code"],
+            cargo_name=direct_order_values["shipment_type_name"],
+        )
+        calculate_payload = china_southern_air_direct_order_service.build_calculate_payload(
+            form_data_dict,
+            business_config,
+            service_charges=service_charges,
+        )
+    except ChinaSouthernAirServiceError as exc:
+        raise BaseAPIException(
+            502,
+            str(exc),
+            data={
+                "error_details": {
+                    "stage": "query_service_charges",
+                    "request_data": service_charge_query_data,
+                }
+            },
+        ) from exc
+    except ChinaSouthernAirDirectOrderError as exc:
+        raise BadRequestException(str(exc)) from exc
 
     # 短事务内锁定运单并预占单号；外部网络调用期间不持有数据库锁。
     try:
