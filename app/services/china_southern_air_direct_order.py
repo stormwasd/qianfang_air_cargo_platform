@@ -448,7 +448,9 @@ class ChinaSouthernAirDirectOrderService:
                     "driverTelephone": None,
                     "driverCertType": None,
                     "consigneeAccount": None,
-                    "consigneeAddress": None,
+                    "consigneeAddress": str(
+                        config.get("consignee_address") or "机场自提"
+                    ).strip(),
                     "consigneeCity": None,
                     "consigneeCountry": None,
                     "consigneeCountryCode": str(
