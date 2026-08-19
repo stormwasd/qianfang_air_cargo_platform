@@ -1393,6 +1393,10 @@ async def execute_china_southern_air_waybill(
 
     本接口不创建南航开单 RPA 任务，也不依赖机器人；开单成功后会异步沿用
     既有的货站文件生成和打印任务流程。
+
+    南航上游调用失败时，响应 `data.error_details` 会返回调用阶段、HTTP 状态和
+    完整上游响应体；createOrder 失败时还会返回发往南航的完整 JSON 请求体。
+    不会返回南航 Token、Cookie 或请求头。
     """
     try:
         waybill_id_int = int(waybill_id)
@@ -1484,7 +1488,11 @@ async def execute_china_southern_air_waybill(
             locked_waybill.waybill_number = None
             locked_waybill.airline_record_status = "2"
             db.commit()
-        raise BaseAPIException(502, str(exc)) from exc
+        raise BaseAPIException(
+            502,
+            str(exc),
+            data={"error_details": exc.details},
+        ) from exc
     except Exception:
         db.rollback()
         locked_waybill = (
@@ -1557,6 +1565,7 @@ async def execute_china_southern_air_waybill(
                     raise BaseAPIException(
                         409,
                         "南航提示可用单号均已被使用，未能完成开单，请补充单号库后重试",
+                        data={"error_details": exc.details},
                     ) from stock_exc
                 except Exception:
                     db.rollback()
@@ -1569,14 +1578,22 @@ async def execute_china_southern_air_waybill(
                 locked_waybill.waybill_number = None
                 locked_waybill.airline_record_status = "2"
                 db.commit()
-                raise BaseAPIException(502, str(exc)) from exc
+                raise BaseAPIException(
+                    502,
+                    str(exc),
+                    data={"error_details": exc.details},
+                ) from exc
 
             # 对于南航已经明确返回的业务/参数错误，可确认未开单，单号回流。
             _release_stock_item(db, stock_item.id)
             locked_waybill.waybill_number = None
             locked_waybill.airline_record_status = "2"
             db.commit()
-            raise BaseAPIException(502, str(exc)) from exc
+            raise BaseAPIException(
+                502,
+                str(exc),
+                data={"error_details": exc.details},
+            ) from exc
         except Exception:
             db.rollback()
             locked_waybill = (

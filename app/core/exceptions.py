@@ -14,11 +14,13 @@ class BaseAPIException(HTTPException):
         status_code: int,
         detail: Any = None,
         headers: Optional[Dict[str, Any]] = None,
+        data: Any = None,
     ):
         if detail is None:
             detail = "请求处理失败"
         elif not isinstance(detail, str):
             detail = str(detail)
+        self.data = data
         super().__init__(status_code=status_code, detail=detail, headers=headers)
 
 
