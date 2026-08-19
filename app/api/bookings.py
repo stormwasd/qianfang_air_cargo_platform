@@ -752,6 +752,8 @@ async def execute_booking(
     不匹配时会返回本次选择及当前可选项。
     对修复前已创建且缺少cargo_type_code的南航记录，执行前会按
     nanfang_air_cargo_type数据字典自动补齐并保存。
+    form_data中的special_cargo_code保持英文逗号分隔；发往南航的spCode和
+    productionCode会在请求构建阶段转换为斜杠分隔。
     不会返回 Token、Cookie 或请求头。
     """
     from app.services.rpa_task_service import rpa_task_service

@@ -1400,6 +1400,8 @@ async def execute_china_southern_air_waybill(
 
     费用计算前会实时查询南航完整扩展服务费列表，并合并表单选择；发送给
     calculateCharge 的请求采用南航要求的最小字段结构，不复用 createOrder 请求体。
+    form_data中的cargo_info.special_cargo_code保持英文逗号分隔；发往南航的
+    spCode和productionCode会在请求构建阶段转换为斜杠分隔。
     """
     try:
         waybill_id_int = int(waybill_id)

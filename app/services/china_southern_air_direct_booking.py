@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app.services.china_southern_air_direct_order import china_southern_air_direct_order_service
+from app.services.china_southern_air_field_utils import normalize_special_cargo_code
 from app.services.china_southern_air_service_client import ChinaSouthernAirService
 
 
@@ -129,7 +130,12 @@ class ChinaSouthernAirDirectBookingService:
                 allow_empty=True,
                 allow_zero=True,
             ),
-            "sp_code": cls._required_text(item.get("special_cargo_code"), "bookings[0].special_cargo_code"),
+            "sp_code": normalize_special_cargo_code(
+                cls._required_text(
+                    item.get("special_cargo_code"),
+                    "bookings[0].special_cargo_code",
+                )
+            ),
             "handling_info": str(item.get("storage_and_transportation_precautions") or "").strip() or None,
             "dangerous_check_required": str(item.get("no_dangerous_goods", "")).strip() == "0",
             "booking_remark_wide": str(item.get("booking_remark_wide") or defaults.get("booking_remark_wide") or "").strip(),

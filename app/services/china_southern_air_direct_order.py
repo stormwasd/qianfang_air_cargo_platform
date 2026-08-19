@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app.services.china_southern_air_service_client import ChinaSouthernAirService
+from app.services.china_southern_air_field_utils import normalize_special_cargo_code
 
 
 class ChinaSouthernAirDirectOrderError(Exception):
@@ -167,7 +168,9 @@ class ChinaSouthernAirDirectOrderService:
             "weight": cls._number(cargo_info.get("weight"), "cargo_info.weight"),
             "volume": cls._number(cargo_info.get("booking_volume", 0), "cargo_info.booking_volume"),
             "product_name": str(product_name or "").strip() or None,
-            "sp_code": str(cargo_info.get("special_cargo_code") or "").strip() or None,
+            "sp_code": normalize_special_cargo_code(
+                cargo_info.get("special_cargo_code")
+            ),
             "handling_info": str(cargo_info.get("storage_and_transportation_precautions") or "").strip() or None,
             "over_standard_cus": int(str(cargo_info.get("oversized_cargo", "0")).strip() or "0"),
             "consignee_name": cls._required_text(contact_info.get("consignee"), "contact_info.consignee"),

@@ -9,7 +9,7 @@
 返回标准 `.xlsx` 文件。模板约定：
 
 - 数据填写区统一使用文本格式并默认水平、垂直居中，避免航班号、货物代码等标识被 Excel 自动转换。
-- `特货码（多个特货码用/隔开）`：多个特货码使用 `/` 分隔，例如 `XPS/GEN`。
+- `特货码（多个用英文逗号隔开）`：多个特货码使用英文逗号分隔，例如 `XPS,GEN`。
 - `超规货`、`无隐含危险品`、`出港货邮处理费选项`均为单选下拉框。
 
 ### 后台解析批量订舱 Excel
@@ -53,3 +53,13 @@
 `POST /api/v1/bookings/execute`
 
 执行南航订舱前会再次检查 `cargo_type_code`。对于本次修复上线前，由旧版前端 Excel 解析流程创建且缺少该字段的未执行或失败记录，后端会按 `cargo_type` 自动补齐并保存，再调用南航接口；无法完成字典映射时，该条执行失败并返回明确错误。
+
+`form_data.bookings[0].special_cargo_code` 在平台内部保持英文逗号分隔，例如 `XPS,AKA`。调用南航 `createOrder` 时，服务端仅在请求构建阶段将英文逗号或中文逗号转换为 `/`，因此发往南航的 `orderInfo.orderShipment.spCode` 和 `productionCode` 均为 `XPS/AKA`；原始 `form_data` 不会被修改。历史上已经使用 `/` 分隔的数据仍兼容。
+
+## 南航开单
+
+### 新增南航运单
+
+`POST /api/v1/waybills/{waybill_id}/execute-china-southern-air`
+
+`form_data.cargo_info.special_cargo_code` 在平台内部使用英文逗号分隔。调用南航 `createOrder` 时，服务端将英文逗号或中文逗号转换为 `/`，并同时写入 `orderInfo.orderShipment.spCode` 和 `productionCode`；原始 `form_data` 保持不变，已有 `/` 分隔数据继续兼容。
