@@ -108,6 +108,7 @@ class WaybillCreate(BaseModel):
     - 南航 `cargo_info.cargo_type_code` 优先映射到开单和费用计算请求的 `rateCode`；历史运单未提供时回退到业务参数配置中的 `direct_order.rate_code`（默认 3006）
     - 南航开单时，发货人和收货人的国家代码默认传 `CN`；可分别通过业务参数 `direct_order.shipper_country_code`、`direct_order.consignee_country_code` 覆盖
     - 南航开单的收货人地址 `consigneeAddress` 默认传 `机场自提`，可通过业务参数 `direct_order.consignee_address` 覆盖
+    - 南航开单的提货方式 `selfPickUp` 默认传 `Y`，与收货人地址 `机场自提` 配套；可通过业务参数 `direct_order.self_pick_up` 覆盖
     - 不同航司的字段结构不同，前端需要根据 airline 字段来展示对应的表单字段
     - 深圳航空的运单可以选择性提供 flight_info.waybill_type 字段（运单类型），南方航空不需要此字段
     """

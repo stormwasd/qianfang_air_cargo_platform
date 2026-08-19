@@ -465,7 +465,9 @@ class ChinaSouthernAirDirectOrderService:
                     "consigneeTelephone": None,
                     "consigneeZipcode": None,
                     "consigneeCertType": None,
-                    "selfPickUp": "N",
+                    "selfPickUp": str(
+                        config.get("self_pick_up") or "Y"
+                    ).strip().upper(),
                     "notifyAddress": None,
                     "notifyCity": None,
                     "notifyContactId": None,
