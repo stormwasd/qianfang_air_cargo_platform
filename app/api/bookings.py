@@ -235,6 +235,46 @@ def _get_china_southern_air_cargo_type_codes(db: Session) -> dict:
     return result
 
 
+def _fill_missing_china_southern_air_cargo_type_codes(
+    form_data: dict,
+    db: Session,
+) -> bool:
+    """为南航订舱数据补齐缺失的货物类型代码，返回是否发生了修改。"""
+    airline = str(form_data.get("airline") or "").strip()
+    if airline not in {"2", "南方航空"}:
+        return False
+
+    bookings = form_data.get("bookings")
+    if not isinstance(bookings, list):
+        return False
+
+    missing_items = []
+    for index, booking_item in enumerate(bookings):
+        if not isinstance(booking_item, dict):
+            continue
+        cargo_type_code = str(booking_item.get("cargo_type_code") or "").strip()
+        if cargo_type_code:
+            continue
+        cargo_type = str(booking_item.get("cargo_type") or "").strip()
+        if cargo_type:
+            missing_items.append((index, booking_item, cargo_type))
+
+    if not missing_items:
+        return False
+
+    cargo_type_codes = _get_china_southern_air_cargo_type_codes(db)
+    for index, booking_item, cargo_type in missing_items:
+        cargo_type_code = cargo_type_codes.get(cargo_type)
+        if not cargo_type_code:
+            raise BadRequestException(
+                f"form_data.bookings[{index}].cargo_type“{cargo_type}”未在数据字典 "
+                "nanfang_air_cargo_type 中配置"
+            )
+        booking_item["cargo_type_code"] = cargo_type_code
+
+    return True
+
+
 def _reserve_china_southern_air_booking_stock_item(db: Session) -> WaybillStockItem:
     """在短事务内预占一张南航单号，跳过其他并发请求已锁定的行。"""
     stock_item = (
@@ -612,6 +652,7 @@ async def create_booking(
     - 开单状态默认为"0"（未开单，数据字典值）
     - master_airwaybill_number初始为null，直连订舱成功后写入
     - 此接口仅保存订舱信息，不调用RPA接口
+    - 南航数据缺少cargo_type_code时，按nanfang_air_cargo_type数据字典的label->value自动补齐
     
     示例：
     输入：
@@ -637,6 +678,8 @@ async def create_booking(
     
     if len(bookings_list) == 0:
         raise BadRequestException("form_data.bookings不能为空数组")
+
+    _fill_missing_china_southern_air_cargo_type_codes(form_data_dict, db)
     
     booking_time = get_china_now()
     
@@ -707,6 +750,8 @@ async def execute_booking(
     完整上游响应体以及发往南航 calculateCharge/createOrder 的完整 JSON 请求体；
     `request_context` 还会返回实际提交的 `contactName`、`contactPhone`。费用选项
     不匹配时会返回本次选择及当前可选项。
+    对修复前已创建且缺少cargo_type_code的南航记录，执行前会按
+    nanfang_air_cargo_type数据字典自动补齐并保存。
     不会返回 Token、Cookie 或请求头。
     """
     from app.services.rpa_task_service import rpa_task_service
@@ -768,7 +813,22 @@ async def execute_booking(
                 ))
                 failed_count += 1
                 continue
-            
+
+            try:
+                cargo_type_code_filled = (
+                    _fill_missing_china_southern_air_cargo_type_codes(
+                        form_data_dict,
+                        db,
+                    )
+                )
+            except BadRequestException as exc:
+                message = exc.detail
+                _fail_china_southern_air_direct_booking(db, booking_id, message)
+                raise ChinaSouthernAirDirectBookingError(message) from exc
+            if cargo_type_code_filled:
+                # 兼容修复上线前由前端 Excel 解析创建的历史未执行/失败记录。
+                booking.form_data = json.dumps(form_data_dict, ensure_ascii=False)
+
             existing_task = rpa_task_service.get_pending_task_for_target(
                 db,
                 target_type=RPATargetType.BOOKING.value,
@@ -1301,6 +1361,7 @@ async def update_booking(
     - 如果订舱已经执行或正在执行，不允许修改
     - form_data.bookings数组通常只包含一条记录（长度为1）
     - 修改后，booking_time保持不变，updated_at会自动更新
+    - 南航数据缺少cargo_type_code时，按nanfang_air_cargo_type数据字典的label->value自动补齐
     """
     existing_booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
     if not existing_booking:
@@ -1318,6 +1379,8 @@ async def update_booking(
     
     if len(bookings_list) > 1:
         raise BadRequestException("修改订舱时，form_data.bookings只能包含一条记录")
+
+    _fill_missing_china_southern_air_cargo_type_codes(form_data_dict, db)
     
     single_form_data = form_data_dict.copy()
     single_form_data["bookings"] = [bookings_list[0]]  

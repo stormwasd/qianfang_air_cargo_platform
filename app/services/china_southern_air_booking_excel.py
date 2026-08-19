@@ -51,6 +51,8 @@ class ChinaSouthernAirBookingExcelService:
     HEADER_ALIASES = {
         "重量（kg）": "重量(kg)",
         "出港货邮处理费": "出港货邮处理费选项",
+        "特货码（多个特货码用/隔开）": "特货码",
+        "特货码(多个特货码用/隔开)": "特货码",
     }
     REQUIRED_HEADERS = frozenset(HEADER_FIELDS)
     REQUIRED_FIELDS = {
