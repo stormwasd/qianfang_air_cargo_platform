@@ -1394,8 +1394,8 @@ async def execute_china_southern_air_waybill(
     本接口不创建南航开单 RPA 任务，也不依赖机器人；开单成功后会异步沿用
     既有的货站文件生成和打印任务流程。
 
-    南航上游调用失败时，响应 `data.error_details` 会返回调用阶段、HTTP 状态和
-    完整上游响应体；createOrder 失败时还会返回发往南航的完整 JSON 请求体。
+    南航上游调用失败时，响应 `data.error_details` 会返回调用阶段、HTTP 状态、
+    完整上游响应体以及发往 calculateCharge/createOrder 的完整 JSON 请求体。
     不会返回南航 Token、Cookie 或请求头。
     """
     try:

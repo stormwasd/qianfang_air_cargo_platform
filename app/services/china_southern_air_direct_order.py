@@ -378,7 +378,10 @@ class ChinaSouthernAirDirectOrderService:
     ) -> Any:
         config = self._direct_order_config(business_config)
         request_context = self._diagnostic_request_context(payload)
-        request_data = payload if is_create else None
+        # calculateCharge 与 createOrder 都可能返回只有简短提示的业务错误。
+        # 保留最终 JSON 请求体用于排查字段映射；认证信息仅存在于 headers，
+        # 不会进入错误详情。
+        request_data = payload
         cleaned_token = ChinaSouthernAirService._clean_token(token)
         if not cleaned_token:
             raise ChinaSouthernAirDirectOrderError("南航登录令牌无效，请先刷新南航 Token")
