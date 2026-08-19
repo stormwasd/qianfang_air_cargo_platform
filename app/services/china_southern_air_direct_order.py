@@ -137,6 +137,9 @@ class ChinaSouthernAirDirectOrderService:
 
         province, city, district = cls._region_parts(address.get("region"))
         no_hidden_dangerous_goods = str(dangerous.get("no_hidden_dangerous_goods", "")).strip()
+        product_name = cargo_info.get("product_name")
+        if isinstance(product_name, list):
+            product_name = product_name[0] if product_name else ""
 
         selected_fee = form_data.get("outbound_cargo_and_mail_handling_fee_options")
         if not isinstance(selected_fee, dict):
@@ -163,6 +166,7 @@ class ChinaSouthernAirDirectOrderService:
             "piece": cls._number(cargo_info.get("quantity"), "cargo_info.quantity", integer=True),
             "weight": cls._number(cargo_info.get("weight"), "cargo_info.weight"),
             "volume": cls._number(cargo_info.get("booking_volume", 0), "cargo_info.booking_volume"),
+            "product_name": str(product_name or "").strip() or None,
             "sp_code": str(cargo_info.get("special_cargo_code") or "").strip() or None,
             "handling_info": str(cargo_info.get("storage_and_transportation_precautions") or "").strip() or None,
             "over_standard_cus": int(str(cargo_info.get("oversized_cargo", "0")).strip() or "0"),
@@ -403,8 +407,17 @@ class ChinaSouthernAirDirectOrderService:
                     "bookGrade": config.get("book_grade", "A"),
                     "spaceClass": config.get("space_class", "A"),
                     "subSpaceClass": config.get("sub_space_class", "A6"),
-                    "parentProductionName": config.get("parent_production_name", "南航快运"),
-                    "parentProductionNameCn": config.get("parent_production_name_cn", "南航快运"),
+                    "parentProductionName": (
+                        values["product_name"]
+                        or config.get("parent_production_name")
+                        or "南航快运"
+                    ),
+                    "parentProductionNameCn": (
+                        values["product_name"]
+                        or config.get("parent_production_name_cn")
+                        or config.get("parent_production_name")
+                        or "南航快运"
+                    ),
                     "rateClass": config.get("rate_class", "M"),
                     "coldStorage": None,
                     "spCode": values["sp_code"],

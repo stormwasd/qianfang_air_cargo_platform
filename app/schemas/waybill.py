@@ -106,6 +106,7 @@ class WaybillCreate(BaseModel):
     - 所有字段的值都是字符串类型
     - address 是对象类型，包含 region（省/市/区）和 detail（详细地址）两个字段
     - 南航 `cargo_info.cargo_type_code` 优先映射到开单和费用计算请求的 `rateCode`；历史运单未提供时回退到业务参数配置中的 `direct_order.rate_code`（默认 3006）
+    - 南航接口开单时，`cargo_info.product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
     - 南航开单时，发货人和收货人的国家代码默认传 `CN`；可分别通过业务参数 `direct_order.shipper_country_code`、`direct_order.consignee_country_code` 覆盖
     - 南航开单的收货人地址 `consigneeAddress` 默认传 `机场自提`，可通过业务参数 `direct_order.consignee_address` 覆盖
     - 南航开单的提货方式 `selfPickUp` 默认传 `Y`，与收货人地址 `机场自提` 配套；可通过业务参数 `direct_order.self_pick_up` 覆盖

@@ -121,7 +121,7 @@ class ChinaSouthernAirDirectBookingService:
             "piece": cls._number(item.get("quantity"), "bookings[0].quantity", integer=True),
             "weight": cls._number(item.get("weight"), "bookings[0].weight"),
             "volume": cls._number(item.get("booking_volume"), "bookings[0].booking_volume", allow_empty=True),
-            "product_name": cls._required_text(product_name, "bookings[0].product_name"),
+            "product_name": str(product_name or "").strip() or None,
             "over_standard_cus": cls._number(
                 item.get("oversized_cargo", 0),
                 "bookings[0].oversized_cargo",
@@ -368,8 +368,17 @@ class ChinaSouthernAirDirectBookingService:
             "bookGrade": config.get("book_grade", "A"),
             "spaceClass": config.get("space_class", "A"),
             "subSpaceClass": config.get("sub_space_class", "A6"),
-            "parentProductionName": values["product_name"],
-            "parentProductionNameCn": values["product_name"],
+            "parentProductionName": (
+                values["product_name"]
+                or config.get("parent_production_name")
+                or "南航快运"
+            ),
+            "parentProductionNameCn": (
+                values["product_name"]
+                or config.get("parent_production_name_cn")
+                or config.get("parent_production_name")
+                or "南航快运"
+            ),
             "rateClass": flight_price.get("rateClass") or config.get("rate_class", "M"),
             "coldStorage": None,
             "spCode": values["sp_code"],

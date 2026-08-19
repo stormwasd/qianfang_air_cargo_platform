@@ -53,6 +53,7 @@ class BookingCreate(BaseModel):
     - `order_contact_name` 和 `order_contact_phone` 位于 form_data 顶层，不在 bookings 数组元素中
     - 执行南航订舱时，`contactName`、`contactPhone` 优先使用上述 form_data 字段；未传时分别读取业务参数配置中的 `business_default.order_contact_name`、`business_default.order_contact_phone`
     - `shipper_unit` 仅作为平台业务数据保存，不替换南航 createOrder 中的任何字段；`orderShipmentContact` 按南航请求结构传 null
+    - 南航接口订舱时，`bookings[0].product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
     - `outbound_cargo_and_mail_handling_fee_options` 只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活容腐、普货、急件快件
     - 执行订舱时由服务端查询航班机型，按系统参数中的宽窄体规则选择对应备注
     - bookings 是数组类型，支持批量提交多条订舱信息
