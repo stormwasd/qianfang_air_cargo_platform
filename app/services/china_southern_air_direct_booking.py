@@ -106,7 +106,7 @@ class ChinaSouthernAirDirectBookingService:
         )
         if selected_fee not in cls.ALLOWED_HANDLING_FEE_OPTIONS:
             raise ChinaSouthernAirDirectBookingError(
-                "出港货邮处理费选项仅支持：贵重物品、活体动物、危险品、鲜活容腐、普货、急件快件"
+                "出港货邮处理费选项仅支持：贵重物品、活体动物、危险品、鲜活易腐、鲜活容腐、普货、急件快件"
             )
 
         return {

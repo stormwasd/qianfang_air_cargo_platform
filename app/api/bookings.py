@@ -4,7 +4,7 @@
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks, File, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -14,6 +14,8 @@ from app.core.exceptions import BaseAPIException, BadRequestException, NotFoundE
 from app.database import get_db, SessionLocal
 from app.models.booking import Booking
 from app.models.config import BusinessConfig
+from app.models.dict_option import DictOption
+from app.models.dict_type import DictType
 from app.models.nanhang_token import NanHangToken
 from app.models.settlement import Settlement
 from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
@@ -28,6 +30,11 @@ from app.services.china_southern_air_direct_booking import (
     china_southern_air_direct_booking_service,
 )
 from app.services.china_southern_air_direct_order import ChinaSouthernAirDirectOrderError
+from app.services.china_southern_air_booking_excel import (
+    ChinaSouthernAirBookingExcelError,
+    ChinaSouthernAirBookingExcelService,
+    china_southern_air_booking_excel_service,
+)
 from app.services.china_southern_air_service_client import (
     ChinaSouthernAirServiceError,
     china_southern_air_service,
@@ -181,6 +188,51 @@ def _get_business_config(db: Session) -> dict:
     if not config:
         return {}
     return json.loads(config.config_data)
+
+
+def _get_china_southern_air_cargo_type_codes(db: Session) -> dict:
+    """按数据字典显示名称批量构建南航货物类型费率代码映射。"""
+    options = (
+        db.query(DictOption)
+        .join(DictType, DictOption.dict_type_id == DictType.id)
+        .filter(
+            DictType.type == "nanfang_air_cargo_type",
+            DictType.status == 1,
+            DictOption.status == 1,
+        )
+        .order_by(DictOption.id.asc())
+        .all()
+    )
+    if not options:
+        raise BadRequestException(
+            "数据字典 nanfang_air_cargo_type 不存在或没有启用的选项"
+        )
+
+    result = {}
+    duplicates = []
+    invalid_options = []
+    for option in options:
+        cargo_type = (option.label or "").strip()
+        cargo_type_code = (option.value or "").strip()
+        if not cargo_type or not cargo_type_code:
+            invalid_options.append(str(option.id))
+            continue
+        if cargo_type in result:
+            duplicates.append(cargo_type)
+            continue
+        result[cargo_type] = cargo_type_code
+
+    if invalid_options:
+        raise BadRequestException(
+            "数据字典 nanfang_air_cargo_type 存在空名称或空值的启用项："
+            + "、".join(invalid_options)
+        )
+    if duplicates:
+        raise BadRequestException(
+            "数据字典 nanfang_air_cargo_type 存在重复名称："
+            + "、".join(sorted(set(duplicates)))
+        )
+    return result
 
 
 def _reserve_china_southern_air_booking_stock_item(db: Session) -> WaybillStockItem:
@@ -919,6 +971,95 @@ async def download_china_southern_air_template(
         path=str(template_path),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename="南航订舱模板.xlsx",
+    )
+
+
+@router.post("/china-southern-air/import-excel", summary="导入南航批量订舱Excel")
+async def import_china_southern_air_booking_excel(
+    file: UploadFile = File(..., description="通过模板下载接口获取并填写的 .xlsx 文件"),
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    后端解析南航批量订舱模板，并原子创建多条未执行订舱记录。
+
+    - 请求使用 `multipart/form-data`，文件字段名为 `file`；仅支持标准 `.xlsx`。
+    - Excel 每个有效数据行创建一条订舱记录，全部校验通过后才统一提交；任一行失败时不创建任何记录。
+    - `货物类型` 按启用的数据字典 `nanfang_air_cargo_type` 的 `label` 精确匹配，
+      将对应 `value` 写入 `form_data.bookings[0].cargo_type_code`。
+    - `出港货邮处理费选项` 是单选字段，写入该行记录的
+      `form_data.outbound_cargo_and_mail_handling_fee_options`。
+    - 本接口只创建订舱记录，不直接调用南航；确认后使用 `POST /api/v1/bookings/execute`
+      执行返回的订舱 ID。
+    """
+    filename = (file.filename or "").strip()
+    if not filename.lower().endswith(".xlsx"):
+        raise BadRequestException("仅支持系统新版南航订舱模板（.xlsx）")
+
+    try:
+        content = await file.read(ChinaSouthernAirBookingExcelService.MAX_FILE_SIZE + 1)
+    finally:
+        await file.close()
+    if len(content) > ChinaSouthernAirBookingExcelService.MAX_FILE_SIZE:
+        raise BadRequestException("Excel文件不能超过5MB")
+
+    cargo_type_codes = _get_china_southern_air_cargo_type_codes(db)
+    try:
+        parsed_rows = china_southern_air_booking_excel_service.parse(
+            content,
+            cargo_type_codes=cargo_type_codes,
+            allowed_fee_options=(
+                china_southern_air_direct_booking_service.ALLOWED_HANDLING_FEE_OPTIONS
+            ),
+        )
+    except ChinaSouthernAirBookingExcelError as exc:
+        raise BaseAPIException(
+            400,
+            str(exc),
+            data={"errors": exc.errors} if exc.errors else None,
+        ) from exc
+
+    booking_time = get_china_now()
+    created = []
+    try:
+        for parsed_row in parsed_rows:
+            form_data = parsed_row["form_data"]
+            new_booking = Booking(
+                form_data=json.dumps(form_data, ensure_ascii=False),
+                booking_time=booking_time,
+                booking_status="0",
+                invoice_status="0",
+            )
+            db.add(new_booking)
+            created.append((parsed_row["excel_row"], form_data, new_booking))
+
+        db.flush()
+        db.commit()
+        for _, _, new_booking in created:
+            db.refresh(new_booking)
+    except Exception as exc:
+        db.rollback()
+        raise BaseAPIException(500, "批量创建订舱记录失败") from exc
+
+    items = []
+    for excel_row, form_data, new_booking in created:
+        items.append(
+            {
+                "excel_row": excel_row,
+                "id": str(new_booking.id),
+                "form_data": form_data,
+                "booking_status": new_booking.booking_status,
+                "invoice_status": new_booking.invoice_status,
+                "booking_time": format_datetime_china(new_booking.booking_time),
+                "master_airwaybill_number": new_booking.master_airwaybill_number,
+                "created_at": format_datetime_china(new_booking.created_at),
+                "updated_at": format_datetime_china(new_booking.updated_at),
+            }
+        )
+
+    return success_response(
+        data={"items": items, "count": len(items)},
+        msg=f"Excel导入成功，共创建{len(items)}条待执行订舱记录",
     )
 
 
