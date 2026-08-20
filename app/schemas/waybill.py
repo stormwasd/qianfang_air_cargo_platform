@@ -124,7 +124,7 @@ class ChinaSouthernAirServiceChargeOptionsQuery(BaseModel):
     destination: str = Field(..., min_length=3, max_length=10, description="目的站三字码")
     flight_number: str = Field(..., min_length=2, max_length=20, description="航班号")
     flight_date: date = Field(..., description="航班日期，格式 YYYY-MM-DD")
-    cargo_type: str = Field(..., min_length=1, max_length=50, description="货物类型代码，对应南航 shipmentType")
+    cargo_type_code: str = Field(..., min_length=1, max_length=50, description="货物类型代码，对应南航 shipmentType")
     cargo_name: str = Field(..., min_length=1, max_length=100, description="货物类型名称，对应南航 shipmentTypeName")
 
     @field_validator("origin_station", "destination", "flight_number", mode="before")
@@ -134,7 +134,7 @@ class ChinaSouthernAirServiceChargeOptionsQuery(BaseModel):
             return value.strip().upper()
         return value
 
-    @field_validator("cargo_type", "cargo_name", mode="before")
+    @field_validator("cargo_type_code", "cargo_name", mode="before")
     @classmethod
     def normalize_cargo_fields(cls, value: Any) -> Any:
         if isinstance(value, str):

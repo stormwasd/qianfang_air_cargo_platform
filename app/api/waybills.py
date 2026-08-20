@@ -290,7 +290,7 @@ async def get_china_southern_air_departure_cargo_mail_handling_charge_options(
             destination=query.destination,
             flight_number=query.flight_number,
             flight_date=query.flight_date.isoformat(),
-            cargo_type=query.cargo_type,
+            cargo_type=query.cargo_type_code,
             cargo_name=query.cargo_name,
         )
     except ChinaSouthernAirServiceError as exc:

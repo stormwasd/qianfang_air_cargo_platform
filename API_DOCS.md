@@ -58,6 +58,34 @@
 
 ## 南航开单
 
+### 查询南航出港货邮处理费选项
+
+`POST /api/v1/waybills/china-southern-air/departure-cargo-mail-handling-charge-options`
+
+请求体：
+
+```json
+{
+  "origin_station": "SZX",
+  "destination": "TAO",
+  "flight_number": "CZ8735",
+  "flight_date": "2026-08-20",
+  "cargo_type_code": "3006",
+  "cargo_name": "普货"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `origin_station` | string | 是 | 始发站三字码，服务端自动去除首尾空格并转为大写 |
+| `destination` | string | 是 | 目的站三字码，服务端自动去除首尾空格并转为大写 |
+| `flight_number` | string | 是 | 航班号，服务端自动去除首尾空格并转为大写 |
+| `flight_date` | string | 是 | 航班日期，格式为 `YYYY-MM-DD` |
+| `cargo_type_code` | string | 是 | 货物类型代码，例如普货对应 `3006`；内部映射至南航请求的 `shipmentType` |
+| `cargo_name` | string | 是 | 货物类型名称，例如 `普货`；内部映射至南航请求的 `shipmentTypeName` |
+
+接口入参使用 `cargo_type_code`，不再使用容易与货物类型名称混淆的 `cargo_type`。
+
 ### 新增南航运单
 
 `POST /api/v1/waybills/{waybill_id}/execute-china-southern-air`
