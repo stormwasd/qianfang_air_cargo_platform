@@ -7,6 +7,12 @@ from datetime import datetime, timezone, timedelta, date
 from app.config import settings
 
 
+# 历史权限代码读取时统一转换为当前前端使用的代码，保证账号编辑可以正确回显。
+PERMISSION_CODE_ALIASES = {
+    "cost_service": "expense_registration",
+}
+
+
 def parse_json_permissions(permissions_str: str) -> List[str]:
     """
     解析JSON格式的权限字符串，返回权限代码列表
@@ -73,18 +79,13 @@ def convert_permissions_to_codes(permissions: List[str]) -> List[str]:
     """
     codes = []
     for perm in permissions:
-        if perm in settings.PERMISSION_CODES:
-            codes.append(perm)
-        elif perm in settings.PERMISSION_NAMES:
-            code = convert_permission_name_to_code(perm)
+        normalized_perm = PERMISSION_CODE_ALIASES.get(perm, perm)
+        if normalized_perm in settings.PERMISSION_CODES:
+            codes.append(normalized_perm)
+        elif normalized_perm in settings.PERMISSION_NAMES:
+            code = convert_permission_name_to_code(normalized_perm)
             if code:
                 codes.append(code)
-        else:
-            code = convert_permission_name_to_code(perm)
-            if code:
-                codes.append(code)
-            elif perm in settings.PERMISSION_CODES:
-                codes.append(perm)
     return codes
 
 

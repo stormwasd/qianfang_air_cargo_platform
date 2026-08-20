@@ -10,6 +10,54 @@ MenuType = Dict[str, Any]
 ADMIN_PERMISSION_CODE = "admin"
 ADMIN_PERMISSION_NAME = settings.PERMISSIONS.get(ADMIN_PERMISSION_CODE, "管理员")
 
+USER_CENTER_MENU: MenuType = {
+    "name": "用户中心",
+    "children": [
+        {"name": "用户中心"}
+    ]
+}
+
+ORGANIZATIONAL_MANAGEMENT_MENUS: List[MenuType] = [
+    {
+        "name": "组织管理",
+        "children": [
+            {"name": "账号管理"},
+            {"name": "部门管理"}
+        ]
+    },
+    USER_CENTER_MENU,
+]
+
+SYSTEM_MENUS: List[MenuType] = [
+    {
+        "name": "系统管理",
+        "children": [
+            {"name": "业务参数管理"}
+        ]
+    },
+    USER_CENTER_MENU,
+]
+
+CUSTOMER_SERVICE_MENUS: List[MenuType] = [
+    {
+        "name": "客服接单台",
+        "children": [
+            {"name": "客服接单台"}
+        ]
+    },
+    USER_CENTER_MENU,
+]
+
+EXPENSE_REGISTRATION_MENUS: List[MenuType] = [
+    {
+        "name": "费用登记台",
+        "children": [
+            {"name": "费用登记台"}
+        ]
+    },
+    USER_CENTER_MENU,
+]
+
 ALL_MENUS: List[MenuType] = [
     {
         "name": "主单管理",
@@ -49,10 +97,22 @@ ALL_MENUS: List[MenuType] = [
         ]
     },
     {
-        "name": "账号管理",
+        "name": "组织管理",
         "children": [
             {"name": "账号管理"},
             {"name": "部门管理"}
+        ]
+    },
+    {
+        "name": "客服接单台",
+        "children": [
+            {"name": "客服接单台"}
+        ]
+    },
+    {
+        "name": "费用登记台",
+        "children": [
+            {"name": "费用登记台"}
         ]
     },
     {
@@ -66,6 +126,20 @@ ALL_MENUS: List[MenuType] = [
 PERMISSION_MENU_MAP: Dict[str, List[MenuType]] = {
     ADMIN_PERMISSION_CODE: ALL_MENUS,
     ADMIN_PERMISSION_NAME: ALL_MENUS,
+
+    "organizational_management": ORGANIZATIONAL_MANAGEMENT_MENUS,
+    "组织管理": ORGANIZATIONAL_MANAGEMENT_MENUS,
+
+    "system": SYSTEM_MENUS,
+    "系统管理": SYSTEM_MENUS,
+
+    "customer_service": CUSTOMER_SERVICE_MENUS,
+    "客服接单台": CUSTOMER_SERVICE_MENUS,
+
+    "expense_registration": EXPENSE_REGISTRATION_MENUS,
+    # 兼容历史账号中已经保存的旧权限代码 cost_service。
+    "cost_service": EXPENSE_REGISTRATION_MENUS,
+    "费用登记台": EXPENSE_REGISTRATION_MENUS,
     
     "waybill": [
         {
@@ -336,4 +410,9 @@ def generate_menus_by_permissions(permissions: List[str]) -> List[MenuType]:
                 
                 existing_menu["children"] = existing_children
     
+    # 用户中心是所有普通权限的公共菜单，合并多个权限后固定放在末尾。
+    user_center_menu = merged_menus.pop("用户中心", None)
+    if user_center_menu is not None:
+        merged_menus["用户中心"] = user_center_menu
+
     return list(merged_menus.values())

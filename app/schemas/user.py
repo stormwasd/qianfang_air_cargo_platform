@@ -11,7 +11,13 @@ class UserBase(BaseModel):
     phone: str = Field(..., description="手机号", min_length=11, max_length=11)
     name: str = Field(..., description="用户姓名", min_length=1, max_length=50)
     department_ids: List[str] = Field(default_factory=list, description="所属部门ID列表（字符串格式）")
-    permissions: List[str] = Field(..., description="权限列表（权限代码，如：admin, waybill, booking, settlement, bill, robot）")
+    permissions: List[str] = Field(
+        ...,
+        description=(
+            "权限列表（权限代码：organizational_management, system, "
+            "customer_service, expense_registration, admin）"
+        ),
+    )
     
     @validator("phone")
     def validate_phone(cls, v):
@@ -36,7 +42,13 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, description="密码", min_length=6, max_length=50)
     name: Optional[str] = Field(None, description="用户姓名", min_length=1, max_length=50)
     department_ids: Optional[List[str]] = Field(None, description="所属部门ID列表（字符串格式）")
-    permissions: Optional[List[str]] = Field(None, description="权限列表（权限代码，如：admin, waybill, booking, settlement, bill, robot）")
+    permissions: Optional[List[str]] = Field(
+        None,
+        description=(
+            "权限列表（权限代码：organizational_management, system, "
+            "customer_service, expense_registration, admin）"
+        ),
+    )
     
     @validator("phone")
     def validate_phone(cls, v):

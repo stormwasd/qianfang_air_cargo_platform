@@ -39,8 +39,12 @@ class Settings(BaseSettings):
         "customer": "客户管理",
         "bill": "单号管理",
         "robot": "机器人管理",
+        "organizational_management": "组织管理",
+        "system": "系统管理",
         "customer_service": "客服接单台",
+        # 兼容历史账号中已经保存的旧权限代码。
         "cost_service": "费用登记台",
+        "expense_registration": "费用登记台",
         "admin": "管理员"
     }
     

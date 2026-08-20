@@ -38,18 +38,25 @@ Authorization: Bearer <access_token>
 
 | 权限代码 | 对应一级菜单 |
 |---------|---------|
-| `admin` | 管理员 |
-| `waybill` | 主单管理 |
-| `bill` | 单号库 |
-| `robot` | 机器人管理 |
-| `customer` | 客户管理 |
-| `account` | 账号管理 |
+| `organizational_management` | 组织管理（账号管理、部门管理） |
 | `system` | 系统管理 |
-| `agent` | 代理管理 |
-| `finance` | 财务管理 |
-| `smart_tracking` | 智能跟单 |
-| `waybill_audit` | 运单单据审核 |
-| `company_info` | 公司信息 |
+| `customer_service` | 客服接单台 |
+| `expense_registration` | 费用登记台 |
+| `admin` | 管理员（返回全部菜单） |
+
+前端新增、修改账号时应提交上表中的固定权限代码。后端仍兼容历史权限代码
+`waybill`、`booking`、`settlement`、`customer`、`bill`、`robot` 和 `cost_service`；
+其中历史代码 `cost_service` 在读取和接口返回时会规范化为 `expense_registration`，二者均生成
+“费用登记台”菜单；数据库旧数据无需迁移，新数据统一使用 `expense_registration`。
+
+登录接口会根据账号保存的权限代码生成 `menus`：
+
+- `organizational_management`：返回“组织管理”，子菜单为“账号管理”和“部门管理”；
+- `system`：返回“系统管理”，子菜单为“业务参数管理”；
+- `customer_service`：返回“客服接单台”；
+- `expense_registration`：返回“费用登记台”；
+- 除 `admin` 外，上述权限生成的菜单均包含“用户中心”；多个权限的菜单会合并、去重，并将“用户中心”固定在末尾；
+- `admin`：直接返回系统全部菜单。
 
 ## 时间格式说明
 
@@ -85,7 +92,7 @@ Authorization: Bearer <access_token>
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "has_initialized": false,
-    "permissions": ["admin", "waybill", "booking"],
+    "permissions": ["admin"],
     "menus": [
       {
         "name": "主单管理",
@@ -95,15 +102,52 @@ Authorization: Bearer <access_token>
         ]
       },
       {
+        "name": "结算单管理",
+        "children": [
+          {"name": "结算单管理"}
+        ]
+      },
+      {
         "name": "客户管理",
         "children": [
           {"name": "客户管理"}
         ]
       },
       {
+        "name": "单号管理",
+        "children": [
+          {"name": "单号管理"}
+        ]
+      },
+      {
+        "name": "机器人管理",
+        "children": [
+          {"name": "机器人管理"}
+        ]
+      },
+      {
         "name": "系统管理",
         "children": [
           {"name": "业务参数管理"}
+        ]
+      },
+      {
+        "name": "组织管理",
+        "children": [
+          {"name": "账号管理"},
+          {"name": "部门管理"}
+        ]
+      },
+      {
+        "name": "客服接单台",
+        "children": [
+          {"name": "客服接单台"}
+        ]
+      },
+      {
+        "name": "费用登记台",
+        "children": [
+          {"name": "费用登记台"}
         ]
       },
       {
@@ -122,7 +166,7 @@ Authorization: Bearer <access_token>
         {"id": "260819415803760641", "name": "技术部"},
         {"id": "260819415803760642", "name": "运营部"}
       ],
-      "permissions": ["admin", "waybill", "booking"],
+      "permissions": ["admin"],
       "is_active": true,
       "created_at": "2025-01-01T12:00:00+08:00",
       "updated_at": "2025-01-01T12:00:00+08:00"
@@ -140,19 +184,18 @@ Authorization: Bearer <access_token>
   "data": {
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "permissions": ["waybill", "booking"],
+    "permissions": ["customer_service", "expense_registration"],
     "menus": [
       {
-        "name": "主单管理",
+        "name": "客服接单台",
         "children": [
-          {"name": "运单管理"},
-          {"name": "订舱管理"}
+          {"name": "客服接单台"}
         ]
       },
       {
-        "name": "客户管理",
+        "name": "费用登记台",
         "children": [
-          {"name": "客户管理"}
+          {"name": "费用登记台"}
         ]
       },
       {
@@ -170,7 +213,7 @@ Authorization: Bearer <access_token>
       "departments": [
         {"id": "260819415803760641", "name": "技术部"}
       ],
-      "permissions": ["waybill", "booking"],
+      "permissions": ["customer_service", "expense_registration"],
       "is_active": true,
       "created_at": "2025-01-01T12:00:00+08:00",
       "updated_at": "2025-01-01T12:00:00+08:00"
@@ -187,14 +230,14 @@ Authorization: Bearer <access_token>
 | `access_token` | string | 是 | 访问令牌，用于后续接口认证，格式：`Bearer <access_token>` |
 | `refresh_token` | string | 是 | 刷新令牌，用于刷新access_token，有效期90天 |
 | `has_initialized` | boolean | 否 | **仅管理员权限用户返回此字段**。表示业务参数配置是否已初始化，`true`表示已初始化，`false`表示未初始化。前端根据此字段决定是否显示业务参数初始化配置页面。非管理员用户不返回此字段，因为业务参数管理只有管理员权限才能看到 |
-| `permissions` | array[string] | 是 | 用户权限列表（权限代码），用于前端页面权限控制。权限代码包括：`waybill`（主单管理）、`bill`（单号库）、`robot`（机器人管理）、`customer`（客户管理）、`account`（账号管理）、`system`（系统管理）、`agent`（代理管理）、`finance`（财务管理）、`smart_tracking`（智能跟单）、`waybill_audit`（运单单据审核）、`company_info`（公司信息）、`admin`（管理员） |
+| `permissions` | array[string] | 是 | 用户权限列表（权限代码），用于生成可见菜单。前端使用：`organizational_management`（组织管理）、`system`（系统管理）、`customer_service`（客服接单台）、`expense_registration`（费用登记台）、`admin`（管理员） |
 | `menus` | array[object] | 是 | 用户菜单列表，根据用户权限动态生成。每个菜单项包含：<br>- `name`（string）：菜单名称<br>- `children`（array[object]）：子菜单列表，每个子菜单包含 `name` 字段 |
 | `user` | object | 是 | 用户完整信息对象，包含以下字段：<br>- `id`（string）：用户ID（BigInteger转字符串）<br>- `phone`（string）：手机号（11位）<br>- `name`（string）：用户姓名<br>- `department_ids`（array[string]）：所属部门ID列表（BigInteger转字符串）<br>- `departments`（array[object]）：所属部门详细信息列表，每个部门包含：<br>  - `id`（string）：部门ID<br>  - `name`（string）：部门名称<br>- `permissions`（array[string]）：用户权限列表（权限代码）<br>- `is_active`（boolean）：是否启用<br>- `created_at`（string）：创建时间（中国时间，UTC+8，ISO 8601格式）<br>- `updated_at`（string）：更新时间（中国时间，UTC+8，ISO 8601格式） |
 
 **说明**:
 
 - **权限控制**：`has_initialized` 字段仅对管理员权限（`admin`）用户返回，因为业务参数管理功能只有管理员权限才能访问。非管理员用户登录时不会返回此字段
-- **菜单生成**：`menus` 字段根据用户权限动态生成，管理员用户会看到"系统管理"菜单（包含"业务参数管理"），非管理员用户不会看到此菜单
+- **菜单生成**：`menus` 字段根据用户权限动态生成；拥有 `system` 权限的非管理员用户也会看到“系统管理”菜单，管理员用户返回全部菜单
 - **时间格式**：所有时间字段使用中国时间（UTC+8），格式为 ISO 8601 标准格式，例如：`2025-01-01T12:00:00+08:00`
 - **ID格式**：所有ID字段（用户ID、部门ID等）都是 `BigInteger` 类型，在API响应中统一转换为字符串格式返回
 
@@ -1315,11 +1358,11 @@ Authorization: Bearer <access_token>
   "password": "password123",
   "name": "张三",
   "department_ids": ["260819415803760641", "260819415803760642"],
-  "permissions": ["waybill", "booking"]
+  "permissions": ["organizational_management", "expense_registration"]
 }
 ```
 
-**权限代码选项**: `admin`（管理员）、`waybill`（运单管理）、`booking`（订舱管理）、`settlement`（结算单管理）
+**前端权限代码选项**：`organizational_management`（组织管理）、`system`（系统管理）、`customer_service`（客服接单台）、`expense_registration`（费用登记台）、`admin`（管理员）。历史代码继续兼容，但新数据应使用这五个代码。
 
 **响应示例**:
 
@@ -1335,7 +1378,7 @@ Authorization: Bearer <access_token>
       {"id": "260819415803760641", "name": "技术部"},
       {"id": "260819415803760642", "name": "运营部"}
     ],
-    "permissions": ["waybill", "booking"],
+    "permissions": ["organizational_management", "expense_registration"],
     "is_active": true,
     "created_at": "2025-01-01T12:00:00+08:00",
     "updated_at": "2025-01-01T12:00:00+08:00"
@@ -1350,7 +1393,8 @@ Authorization: Bearer <access_token>
 - 手机号必须为11位数字且以1开头
 - 密码长度6-50位
 - 支持多个部门（`department_ids` 为数组）
-- 权限使用权限代码（如 `waybill`, `booking`）
+- 权限使用固定权限代码（如 `organizational_management`, `expense_registration`）
+- 权限列表中任意一项不在后端权限白名单时，接口返回 `400` 和“权限列表包含无效的权限”，账号不会创建
 
 #### 4.2 查看已创建账号
 
