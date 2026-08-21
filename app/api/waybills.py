@@ -274,6 +274,18 @@ async def get_china_southern_air_departure_cargo_mail_handling_charge_options(
     db: Session = Depends(get_db),
 ):
     """按航班和货物类型查询南航的出港货邮处理费选项。"""
+    service_charge_query_data = {
+        "resAllInfoList": [{"resDto": {
+            "flightDep": query.origin_station,
+            "flightDest": query.destination,
+            "bookFlightno": query.flight_number,
+            "bookFlightdate": query.flight_date.isoformat(),
+        }}],
+        "routing": f"{query.origin_station}/{query.destination}",
+        "shipmentType": query.cargo_type_code,
+        "shipmentTypeName": query.cargo_name,
+        "channel": "B2B",
+    }
     token_record = (
         db.query(NanHangToken)
         .filter(NanHangToken.token.isnot(None), NanHangToken.token != "")
@@ -294,7 +306,17 @@ async def get_china_southern_air_departure_cargo_mail_handling_charge_options(
             cargo_name=query.cargo_name,
         )
     except ChinaSouthernAirServiceError as exc:
-        raise BaseAPIException(502, str(exc)) from exc
+        error_details = {
+            "stage": "query_service_charges",
+            "request_data": service_charge_query_data,
+        }
+        if exc.details:
+            error_details.update(exc.details)
+        raise BaseAPIException(
+            502,
+            str(exc),
+            data={"error_details": error_details},
+        ) from exc
 
     return success_response(data=charge_options, msg="查询成功")
 

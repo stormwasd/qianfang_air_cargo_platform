@@ -86,6 +86,45 @@
 
 接口入参使用 `cargo_type_code`，不再使用容易与货物类型名称混淆的 `cargo_type`。
 
+若南航查询成功但返回的 `extServiceCharges` 中没有名为“出港货邮处理费”的费用组，
+接口返回 `502`，并在 `data.error_details` 中提供安全的排查信息：
+
+```json
+{
+  "code": 502,
+  "data": {
+    "error_details": {
+      "stage": "select_departure_cargo_mail_handling_charge",
+      "request_data": {
+        "resAllInfoList": [
+          {
+            "resDto": {
+              "flightDep": "SZX",
+              "flightDest": "TAO",
+              "bookFlightno": "CZ8735",
+              "bookFlightdate": "2026-08-31"
+            }
+          }
+        ],
+        "routing": "SZX/TAO",
+        "shipmentType": "3006",
+        "shipmentTypeName": "普货",
+        "channel": "B2B"
+      },
+      "expected_service_main_name": "出港货邮处理费",
+      "available_service_main_names": [],
+      "upstream_response": {
+        "extServiceCharges": []
+      }
+    }
+  },
+  "msg": "未查询到南航出港货邮处理费选项"
+}
+```
+
+`upstream_response.extServiceCharges` 会保留南航实际返回的完整费用列表，便于判断是空列表、
+费用组名称发生变化，还是请求业务参数不匹配。诊断数据不会包含南航 Token、Cookie 或请求头。
+
 ### 新增南航运单
 
 `POST /api/v1/waybills/{waybill_id}/execute-china-southern-air`

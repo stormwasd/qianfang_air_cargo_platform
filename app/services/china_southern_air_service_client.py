@@ -1,11 +1,21 @@
 """南航 B2B 业务接口客户端。"""
-from typing import Any, Dict, List
+from copy import deepcopy
+from typing import Any, Dict, List, Optional
 
 import httpx
 
 
 class ChinaSouthernAirServiceError(Exception):
-    """南航 B2B 接口调用或响应不符合预期。"""
+    """南航 B2B 接口调用或响应不符合预期，并保留安全的诊断信息。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message)
+        self.details = deepcopy(details) if details is not None else None
 
 
 class ChinaSouthernAirService:
@@ -138,14 +148,25 @@ class ChinaSouthernAirService:
         )
 
         for service_charge in service_charges:
-            if (
-                isinstance(service_charge, dict)
-                and service_charge.get("serviceMainName")
-                == self.DEPARTURE_CARGO_MAIL_HANDLING_CHARGE
-            ):
+            service_main_name = str(service_charge.get("serviceMainName") or "").strip()
+            if service_main_name == self.DEPARTURE_CARGO_MAIL_HANDLING_CHARGE:
                 return service_charge
 
-        raise ChinaSouthernAirServiceError("未查询到南航出港货邮处理费选项")
+        service_main_names = [
+            str(item.get("serviceMainName") or "").strip()
+            for item in service_charges
+        ]
+        raise ChinaSouthernAirServiceError(
+            "未查询到南航出港货邮处理费选项",
+            details={
+                "stage": "select_departure_cargo_mail_handling_charge",
+                "expected_service_main_name": self.DEPARTURE_CARGO_MAIL_HANDLING_CHARGE,
+                "available_service_main_names": service_main_names,
+                "upstream_response": {
+                    "extServiceCharges": service_charges,
+                },
+            },
+        )
 
 
 china_southern_air_service = ChinaSouthernAirService()
