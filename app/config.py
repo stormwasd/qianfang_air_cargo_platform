@@ -132,6 +132,18 @@ class Settings(BaseSettings):
         default=1800, ge=1, le=86400,
         description="南航获取Token任务定时调度间隔（秒），默认1800秒（30分钟）"
     )
+    CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_ENABLED: bool = Field(
+        default=True,
+        description="是否启用南航货物类型数据字典自动同步"
+    )
+    CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_INTERVAL_SECONDS: int = Field(
+        default=43200, ge=60, le=604800,
+        description="南航货物类型数据字典同步间隔（秒），默认43200秒（12小时）"
+    )
+    CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_RETRY_SECONDS: int = Field(
+        default=300, ge=10, le=3600,
+        description="南航货物类型同步失败后的重试间隔（秒），默认300秒（5分钟）"
+    )
     RPA_GENERATED_FILES_DIR: str = Field(
         default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "generated_files"),
         description="后台扫描的RPA下载文件存放目录"

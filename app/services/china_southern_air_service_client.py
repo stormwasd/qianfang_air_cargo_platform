@@ -21,6 +21,10 @@ class ChinaSouthernAirServiceError(Exception):
 class ChinaSouthernAirService:
     """封装不经过 RPA 的南航 B2B 查询接口。"""
 
+    SHIPMENT_TYPE_URL = (
+        "https://cargo.csair.com/order-center/b2e-support/cesStaticdata/"
+        "listShipmentTypeByChannelandOrigin"
+    )
     SERVICE_CHARGE_URL = (
         "https://cargo.csair.com/order-center/b2e-order/b2eOrder/queryServiceCharge"
     )
@@ -50,6 +54,111 @@ class ChinaSouthernAirService:
         if detailed:
             return str(detailed)
         return str(response_data.get("message") or fallback)
+
+    @staticmethod
+    def normalize_shipment_types(response_data: Any) -> List[Dict[str, str]]:
+        """校验南航货物类型响应并转换为数据字典的 label/value 列表。"""
+        if not isinstance(response_data, dict):
+            raise ChinaSouthernAirServiceError("南航货物类型服务返回格式异常")
+        if str(response_data.get("code", "")) not in {"0000", "0"}:
+            raise ChinaSouthernAirServiceError(
+                ChinaSouthernAirService._response_message(
+                    response_data,
+                    "南航货物类型查询失败",
+                )
+            )
+
+        result = response_data.get("result")
+        if not isinstance(result, list) or not result:
+            raise ChinaSouthernAirServiceError("南航货物类型服务未返回可用数据")
+
+        normalized: List[Dict[str, str]] = []
+        seen_labels: Dict[str, str] = {}
+        for index, item in enumerate(result):
+            if not isinstance(item, dict):
+                raise ChinaSouthernAirServiceError(
+                    f"南航货物类型第 {index + 1} 项格式异常"
+                )
+            label = str(item.get("shipmentTypeName") or "").strip()
+            value = str(item.get("shipmentType") or "").strip()
+            if not label or not value:
+                raise ChinaSouthernAirServiceError(
+                    f"南航货物类型第 {index + 1} 项缺少 shipmentTypeName 或 shipmentType"
+                )
+
+            previous_value = seen_labels.get(label)
+            if previous_value is not None:
+                if previous_value != value:
+                    raise ChinaSouthernAirServiceError(
+                        f"南航货物类型名称“{label}”对应了多个不同代码"
+                    )
+                # 完全相同的重复项只写入一次，避免破坏按 label 查询的唯一性。
+                continue
+
+            seen_labels[label] = value
+            normalized.append({"label": label, "value": value})
+
+        return normalized
+
+    async def query_shipment_types(
+        self,
+        *,
+        token: str,
+        origin: str = "SZX",
+        destination: str = "TAO",
+        channel: str = "B",
+        direct_transfer: str = "D",
+        customer_no: str = "SZXFED",
+    ) -> List[Dict[str, str]]:
+        """查询南航货物类型，并返回可直接覆盖数据字典的选项。"""
+        cleaned_token = self._clean_token(token)
+        if not cleaned_token:
+            raise ChinaSouthernAirServiceError("南航登录令牌无效，请先刷新南航 Token")
+
+        params = {
+            "origin": origin,
+            "dest": destination,
+            "channel": channel,
+            "directTransfer": direct_transfer,
+            "customerno": customer_no,
+        }
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://cargo.csair.com",
+            "Referer": "https://cargo.csair.com/tangb2gweb/booking",
+            "User-Agent": "qianfang-air-cargo-platform/1.0",
+            "x-customs-user": cleaned_token,
+            "x-customs-userid": customer_no,
+        }
+
+        try:
+            timeout = httpx.Timeout(20.0, connect=5.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    self.SHIPMENT_TYPE_URL,
+                    params=params,
+                    headers=headers,
+                    content=b"",
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = ""
+            try:
+                detail = self._response_message(exc.response.json(), "")
+            except (ValueError, TypeError):
+                detail = exc.response.text.strip()
+            suffix = f"：{detail}" if detail else ""
+            raise ChinaSouthernAirServiceError(
+                f"南航货物类型查询失败（HTTP {exc.response.status_code}）{suffix}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise ChinaSouthernAirServiceError("南航货物类型服务暂时不可用") from exc
+
+        try:
+            response_data = response.json()
+        except ValueError as exc:
+            raise ChinaSouthernAirServiceError("南航货物类型服务返回了无效数据") from exc
+        return self.normalize_shipment_types(response_data)
 
     async def query_service_charges(
         self,
