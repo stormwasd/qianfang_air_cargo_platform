@@ -27,6 +27,11 @@ BILL_OF_LADING_EXPORT_LABELS: Dict[str, str] = {
     "2-9": "直单（虚拟分单*9）",
 }
 
+BILL_OF_LADING_STORED_PREFIXES: Dict[str, str] = {
+    "一主多分": "1",
+    "直单": "2",
+}
+
 
 def format_bill_of_lading_for_export(value: object) -> str:
     """将前端提单编码转换为页面展示名称，未知值保持原样。"""
@@ -34,7 +39,24 @@ def format_bill_of_lading_for_export(value: object) -> str:
         return ""
 
     raw_value = str(value)
-    return BILL_OF_LADING_EXPORT_LABELS.get(raw_value.strip(), raw_value)
+    lookup_key = raw_value.strip()
+    label = BILL_OF_LADING_EXPORT_LABELS.get(lookup_key)
+    if label is not None:
+        return label
+
+    # 新增、修改接口会原样保存 bill_of_lading。当前前端也可能提交
+    # “一主多分-6”或“直单-3”，需与“1-6”或“2-3”采用同一展示规则。
+    # 仅转换已知前缀，避免误改真实运单号或其他未知业务值。
+    prefix, separator, sequence = lookup_key.rpartition("-")
+    code_prefix = BILL_OF_LADING_STORED_PREFIXES.get(prefix.strip())
+    sequence = sequence.strip()
+    if separator and code_prefix and sequence.isdigit():
+        normalized_key = f"{code_prefix}-{int(sequence)}"
+        label = BILL_OF_LADING_EXPORT_LABELS.get(normalized_key)
+        if label is not None:
+            return label
+
+    return raw_value
 
 
 COST_EXPORT_HEADERS: Tuple[str, ...] = (

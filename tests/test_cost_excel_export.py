@@ -37,6 +37,24 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertEqual(format_bill_of_lading_for_export(code), label)
 
+    def test_current_stored_values_are_converted(self):
+        expected = {
+            "一主多分-0": "一主",
+            "一主多分-1": "一主（一）分",
+            "一主多分-6": "一主（六）分",
+            "一主多分-9": "一主（九）分",
+            "直单-0": "直单（虚拟分单）",
+            "直单-1": "直单（虚拟分单*1）",
+            "直单-3": "直单（虚拟分单*3）",
+            "直单-9": "直单（虚拟分单*9）",
+        }
+        for stored_value, label in expected.items():
+            with self.subTest(stored_value=stored_value):
+                self.assertEqual(
+                    format_bill_of_lading_for_export(stored_value),
+                    label,
+                )
+
     def test_empty_unknown_and_real_waybill_values_remain_compatible(self):
         self.assertEqual(format_bill_of_lading_for_export(None), "")
         self.assertEqual(format_bill_of_lading_for_export(""), "")
@@ -49,10 +67,14 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
     def test_both_export_layouts_write_converted_values_as_text(self):
         workbook = Workbook()
         worksheet = workbook.active
-        worksheet.cell(row=2, column=7).value = format_bill_of_lading_for_export("1-1")
-        worksheet.cell(row=4, column=7).value = format_bill_of_lading_for_export("2-3")
+        worksheet.cell(row=2, column=7).value = format_bill_of_lading_for_export(
+            "一主多分-6"
+        )
+        worksheet.cell(row=4, column=7).value = format_bill_of_lading_for_export(
+            "直单-3"
+        )
 
-        self.assertEqual(worksheet.cell(row=2, column=7).value, "一主（一）分")
+        self.assertEqual(worksheet.cell(row=2, column=7).value, "一主（六）分")
         self.assertEqual(worksheet.cell(row=2, column=7).data_type, "s")
         self.assertEqual(worksheet.cell(row=4, column=7).value, "直单（虚拟分单*3）")
         self.assertEqual(worksheet.cell(row=4, column=7).data_type, "s")
@@ -64,7 +86,7 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
 
             exported_workbook = load_workbook(output_path, read_only=True, data_only=True)
             exported_worksheet = exported_workbook.active
-            self.assertEqual(exported_worksheet.cell(row=2, column=7).value, "一主（一）分")
+            self.assertEqual(exported_worksheet.cell(row=2, column=7).value, "一主（六）分")
             self.assertEqual(exported_worksheet.cell(row=2, column=7).data_type, "s")
             self.assertEqual(
                 exported_worksheet.cell(row=4, column=7).value,
