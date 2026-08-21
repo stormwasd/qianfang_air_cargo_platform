@@ -31,6 +31,7 @@ from app.schemas.customer_service import (
     ExportExcelRequest,
     ConsignmentInfoResponse,
 )
+from app.services.cost_excel_export import format_bill_of_lading_for_export
 from app.utils.helpers import format_datetime_china, get_china_now
 
 router = APIRouter()
@@ -628,7 +629,7 @@ async def export_consignments_to_excel(
             rec.customer_name or "",
             rec.origin_destination or "",
             rec.customs_declaration or "",
-            rec.bill_of_lading or "",
+            format_bill_of_lading_for_export(rec.bill_of_lading),
             fl_date_str,
             rec.flight_no or "",
             rec.flight_doc_no or "",
