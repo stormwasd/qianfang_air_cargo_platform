@@ -61,11 +61,16 @@ class ChinaSouthernAirService:
         if not isinstance(response_data, dict):
             raise ChinaSouthernAirServiceError("南航货物类型服务返回格式异常")
         if str(response_data.get("code", "")) not in {"0000", "0"}:
-            raise ChinaSouthernAirServiceError(
-                ChinaSouthernAirService._response_message(
-                    response_data,
-                    "南航货物类型查询失败",
+            upstream_message = ChinaSouthernAirService._response_message(
+                response_data,
+                "南航货物类型查询失败",
+            )
+            if "获取Token为空" in upstream_message:
+                upstream_message = (
+                    "南航接口拒绝Token：获取Token为空，可能已过期或失效"
                 )
+            raise ChinaSouthernAirServiceError(
+                upstream_message
             )
 
         result = response_data.get("result")

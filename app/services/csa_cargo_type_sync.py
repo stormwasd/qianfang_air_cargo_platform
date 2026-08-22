@@ -18,7 +18,9 @@ from app.services.china_southern_air_service_client import (
 from app.utils.helpers import get_china_now
 
 
-logger = logging.getLogger(__name__)
+# 后台由 Uvicorn 启动。使用其错误日志器，确保调度器的 INFO 日志也会
+# 出现在服务控制台中，避免任务已启动但只有失败 WARNING 可见。
+logger = logging.getLogger("uvicorn.error")
 
 CARGO_TYPE_DICT_TYPE = "nanfang_air_cargo_type"
 CARGO_TYPE_DICT_NAME = "南航货物类型"
@@ -110,11 +112,11 @@ def _load_latest_nanhang_token() -> str:
             .order_by(NanHangToken.updated_at.desc(), NanHangToken.id.desc())
             .first()
         )
-        if token_record is None:
-            raise CsaCargoTypeSyncError(
-                "暂无可用的南航 Token，暂不覆盖货物类型数据字典"
-            )
-        return token_record.token
+        if token_record is not None:
+            cleaned_token = china_southern_air_service._clean_token(token_record.token)
+            if cleaned_token:
+                return cleaned_token
+        raise CsaCargoTypeSyncError("nanhang_token 中没有可用Token")
     finally:
         db.close()
 
@@ -157,7 +159,12 @@ class CsaCargoTypeSyncScheduler:
             daemon=True,
         )
         self._thread.start()
-        logger.info("[CsaCargoTypeSync] 已启动南航货物类型自动同步")
+        logger.info(
+            "[CsaCargoTypeSync] 调度器已启动，将立即执行一次；"
+            "成功间隔=%d秒，失败重试=%d秒",
+            settings.CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_INTERVAL_SECONDS,
+            settings.CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_RETRY_SECONDS,
+        )
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -172,24 +179,37 @@ class CsaCargoTypeSyncScheduler:
         asyncio.set_event_loop(loop)
         try:
             loop.run_until_complete(self._async_main())
+        except Exception:
+            logger.exception("[CsaCargoTypeSync] 调度线程异常退出")
         finally:
             loop.close()
 
     async def _async_main(self) -> None:
         while not self._stop_event.is_set():
             succeeded = False
+            logger.info("[CsaCargoTypeSync] 开始同步南航货物类型")
             try:
                 count = await sync_csa_cargo_types_once()
                 succeeded = True
                 logger.info(
-                    "[CsaCargoTypeSync] 已覆盖 %s，共写入 %d 个货物类型",
+                    "[CsaCargoTypeSync] 同步成功：已覆盖 %s，共写入 %d 个货物类型；"
+                    "下次将在 %d 秒后执行",
                     CARGO_TYPE_DICT_TYPE,
                     count,
+                    settings.CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_INTERVAL_SECONDS,
                 )
             except (ChinaSouthernAirServiceError, CsaCargoTypeSyncError) as exc:
-                logger.warning("[CsaCargoTypeSync] 同步未完成：%s", exc)
+                logger.warning(
+                    "[CsaCargoTypeSync] 同步未完成：%s；将在 %d 秒后重试",
+                    exc,
+                    settings.CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_RETRY_SECONDS,
+                )
             except Exception:
-                logger.exception("[CsaCargoTypeSync] 同步发生未预期异常，原字典已回滚保留")
+                logger.exception(
+                    "[CsaCargoTypeSync] 同步发生未预期异常，原字典已回滚保留；"
+                    "将在 %d 秒后重试",
+                    settings.CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_RETRY_SECONDS,
+                )
 
             delay = (
                 settings.CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_INTERVAL_SECONDS

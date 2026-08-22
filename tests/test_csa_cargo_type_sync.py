@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -15,6 +15,7 @@ from app.services.china_southern_air_service_client import (
 )
 from app.services.csa_cargo_type_sync import (
     CARGO_TYPE_DICT_TYPE,
+    CsaCargoTypeSyncScheduler,
     CsaCargoTypeSyncError,
     _load_latest_nanhang_token,
     replace_cargo_type_dict_options,
@@ -48,6 +49,20 @@ class ShipmentTypeResponseTests(unittest.TestCase):
         with self.assertRaises(ChinaSouthernAirServiceError):
             ChinaSouthernAirService.normalize_shipment_types(
                 {"code": "0000", "result": []}
+            )
+
+    def test_identifies_upstream_token_rejection(self):
+        with self.assertRaisesRegex(
+            ChinaSouthernAirServiceError,
+            "南航接口拒绝Token：获取Token为空，可能已过期或失效",
+        ):
+            ChinaSouthernAirService.normalize_shipment_types(
+                {
+                    "code": "0001",
+                    "message": "服务内部异常",
+                    "detailedMessage": {"message": "获取Token为空"},
+                    "result": None,
+                }
             )
 
     def test_query_uses_cleaned_token_as_x_customs_user(self):
@@ -201,6 +216,80 @@ class NanHangTokenSelectionTests(unittest.TestCase):
                 self.assertEqual(_load_latest_nanhang_token(), "latest-token")
         finally:
             engine.dispose()
+
+    def test_reports_no_locally_usable_token(self):
+        engine = create_engine("sqlite:///:memory:")
+        NanHangToken.__table__.create(engine)
+        TestSession = sessionmaker(bind=engine)
+        db = TestSession()
+        db.add(
+            NanHangToken(
+                id=1,
+                robot_id=1,
+                token=" \\r\\n ",
+                created_at=datetime(2026, 8, 21, 10, 0, 0),
+                updated_at=datetime(2026, 8, 21, 10, 0, 0),
+            )
+        )
+        db.commit()
+        db.close()
+
+        try:
+            with patch(
+                "app.services.csa_cargo_type_sync.SessionLocal",
+                TestSession,
+            ):
+                with self.assertRaisesRegex(
+                    CsaCargoTypeSyncError,
+                    "nanhang_token 中没有可用Token",
+                ):
+                    _load_latest_nanhang_token()
+        finally:
+            engine.dispose()
+
+
+class CargoTypeSyncSchedulerLoggingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_logs_each_attempt_and_success_schedule(self):
+        scheduler = CsaCargoTypeSyncScheduler()
+
+        async def stop_after_first_run(_delay_seconds):
+            scheduler._stop_event.set()
+
+        with patch(
+            "app.services.csa_cargo_type_sync.sync_csa_cargo_types_once",
+            AsyncMock(return_value=3),
+        ), patch.object(
+            scheduler,
+            "_wait_until_next_run",
+            side_effect=stop_after_first_run,
+        ), self.assertLogs("uvicorn.error", level="INFO") as captured:
+            await scheduler._async_main()
+
+        logs = "\n".join(captured.output)
+        self.assertIn("开始同步南航货物类型", logs)
+        self.assertIn("同步成功", logs)
+        self.assertIn("共写入 3 个货物类型", logs)
+
+    async def test_logs_failure_and_retry_schedule(self):
+        scheduler = CsaCargoTypeSyncScheduler()
+
+        async def stop_after_first_run(_delay_seconds):
+            scheduler._stop_event.set()
+
+        with patch(
+            "app.services.csa_cargo_type_sync.sync_csa_cargo_types_once",
+            AsyncMock(side_effect=CsaCargoTypeSyncError("测试失败")),
+        ), patch.object(
+            scheduler,
+            "_wait_until_next_run",
+            side_effect=stop_after_first_run,
+        ), self.assertLogs("uvicorn.error", level="INFO") as captured:
+            await scheduler._async_main()
+
+        logs = "\n".join(captured.output)
+        self.assertIn("开始同步南航货物类型", logs)
+        self.assertIn("同步未完成：测试失败", logs)
+        self.assertIn("秒后重试", logs)
 
 
 if __name__ == "__main__":
