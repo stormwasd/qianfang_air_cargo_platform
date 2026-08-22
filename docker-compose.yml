@@ -1,11 +1,12 @@
 # ============================================================
-# 千方航空物流平台 - Docker Compose 编排文件
+# 港利达物流平台 - Docker Compose 编排文件
 #
 # 使用方式：
 #   1. 复制 .env.example 为 .env 并修改配置
-#   2. docker-compose up -d
-#   3. 首次启动后初始化数据库：
-#      docker-compose exec app python init_db.py
+#   2. docker compose up -d
+#   3. 全新空数据库才执行初始化：
+#      docker compose exec app python init_db.py
+#      如果需要导入已有数据库，则不要执行 init_db.py，直接导入完整备份
 #
 # 挂载说明：
 #   - ./documents      → 模板文件目录，修改后立即生效
@@ -13,42 +14,44 @@
 #   - ./.env            → 项目配置文件，修改后需重启服务
 # ============================================================
 
+name: gld-air-cargo-platform
+
 services:
   # ========== MySQL 数据库 ==========
   mysql:
     image: mysql:8.0.39
-    container_name: qianfang-mysql
+    container_name: gld-mysql
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-QianFang@2026}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-qianfang_air_cargo}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Gld@2026}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gld_air_cargo}
       MYSQL_CHARSET: utf8mb4
       MYSQL_COLLATION: utf8mb4_unicode_ci
       TZ: Asia/Shanghai
     ports:
       - "${MYSQL_EXTERNAL_PORT:-3306}:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - gld_mysql_data:/var/lib/mysql
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --max-connections=500
       - --innodb-buffer-pool-size=256M
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-QianFang@2026}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-Gld@2026}"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
     networks:
-      - qianfang-network
+      - gld-network
 
-  # ========== 千方航空物流平台 API 服务 ==========
+  # ========== 港利达物流平台 API 服务 ==========
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: qianfang-app
+    container_name: gld-app
     restart: always
     env_file:
       - .env
@@ -65,12 +68,14 @@ services:
       mysql:
         condition: service_healthy
     networks:
-      - qianfang-network
+      - gld-network
 
 volumes:
-  mysql_data:
+  gld_mysql_data:
+    name: gld-mysql-data
     driver: local
 
 networks:
-  qianfang-network:
+  gld-network:
+    name: gld-network
     driver: bridge
