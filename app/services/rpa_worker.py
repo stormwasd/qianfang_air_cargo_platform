@@ -21,6 +21,7 @@ from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.nanhang_token import NanHangToken
 from app.services.rpa_service import rpa_service
 from app.services.rpa_task_service import rpa_task_service, PRINT_TASK_TYPES, PRINT_TYPE_REVERSE_MAPPING, PRINT_TYPE_MAPPING
+from app.services.document_print_service import is_post_waybill_automation_enabled
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.helpers import get_china_now
 
@@ -754,6 +755,13 @@ class RPAWorker:
                 waybill.airline_record_status = "2"  
                 print(f"{self._log_prefix} RPA返回成功但获取运单号失败（已重试{max_queue_retries}次），将状态设置为失败")
                 db.commit()
+                return
+
+            if not is_post_waybill_automation_enabled("1"):
+                print(
+                    f"{self._log_prefix} 深航开单后自动处理已关闭，"
+                    f"跳过费用读取、结算单、制单、文件生成及打印，运单ID: {waybill.id}"
+                )
                 return
             
             if "freight_rate" in queues_info:
@@ -1509,6 +1517,13 @@ class RPAWorker:
         extended_service_fee_data = None
         
         try:
+            if not is_post_waybill_automation_enabled("2"):
+                print(
+                    f"{self._log_prefix} 南航开单后自动处理已关闭，"
+                    f"跳过费用读取、结算单、运单同步、制单、文件生成及打印，订舱ID: {booking.id}"
+                )
+                return
+
             if "rate" in queues_info:
                 try:
                     rate_data = await rpa_service.get_china_southern_air_waybill_number(
@@ -1860,7 +1875,13 @@ class RPAWorker:
         extended_service_fee_data = None
         
         try:
-            
+            if not is_post_waybill_automation_enabled("2"):
+                print(
+                    f"{self._log_prefix} 南航开单后自动处理已关闭，"
+                    f"跳过费用读取、结算单、制单、文件生成及打印，运单ID: {waybill.id}"
+                )
+                return
+
             if "freight_rate" in queues_info:
                 try:
                     freight_rate_data = await rpa_service.get_china_southern_air_waybill_number(
@@ -2111,6 +2132,13 @@ class RPAWorker:
         extended_service_fee_data = None
         
         try:
+            if not is_post_waybill_automation_enabled("2"):
+                print(
+                    f"{self._log_prefix} 南航开单后自动处理已关闭，"
+                    f"跳过费用读取、结算单、运单同步、制单、文件生成及打印，订舱ID: {booking.id}"
+                )
+                return
+
             if "rate" in queues_info:
                 try:
                     rate_data = await rpa_service.get_china_southern_air_waybill_number(
@@ -2300,15 +2328,14 @@ class RPAWorker:
         """
         from app.services.document_print_service import (
             get_print_task_count,
-            is_auto_print_after_waybill_enabled,
             prepare_print_tasks,
         )
         from app.models.config import BusinessConfig
 
         airline = form_data_dict.get("airline", "")
-        if not is_auto_print_after_waybill_enabled(airline):
+        if not is_post_waybill_automation_enabled(airline):
             print(
-                f"{self._log_prefix} [自动打单] 航司开单后自动打印已关闭，"
+                f"{self._log_prefix} [自动打单] 航司开单后自动处理已关闭，"
                 f"跳过自动打单，运单ID: {waybill.id}, 航司: {airline}"
             )
             return

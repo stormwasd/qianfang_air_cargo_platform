@@ -2,7 +2,10 @@ import unittest
 from unittest.mock import patch
 
 from app.config import settings
-from app.services.document_print_service import is_auto_print_after_waybill_enabled
+from app.services.document_print_service import (
+    is_auto_print_after_waybill_enabled,
+    is_post_waybill_automation_enabled,
+)
 
 
 class AutoPrintAfterWaybillConfigTests(unittest.TestCase):
@@ -22,7 +25,7 @@ class AutoPrintAfterWaybillConfigTests(unittest.TestCase):
         ):
             for airline in ("1", "深圳航空", "shenzhen_air"):
                 with self.subTest(airline=airline):
-                    self.assertFalse(is_auto_print_after_waybill_enabled(airline))
+                    self.assertFalse(is_post_waybill_automation_enabled(airline))
 
     def test_china_southern_air_aliases_follow_csa_switch(self):
         with patch.object(
@@ -32,7 +35,7 @@ class AutoPrintAfterWaybillConfigTests(unittest.TestCase):
         ):
             for airline in ("2", "南方航空", "china_southern_air"):
                 with self.subTest(airline=airline):
-                    self.assertFalse(is_auto_print_after_waybill_enabled(airline))
+                    self.assertFalse(is_post_waybill_automation_enabled(airline))
 
     def test_airline_switches_are_independent(self):
         with patch.object(
@@ -44,11 +47,19 @@ class AutoPrintAfterWaybillConfigTests(unittest.TestCase):
             "RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED",
             True,
         ):
-            self.assertFalse(is_auto_print_after_waybill_enabled("1"))
-            self.assertTrue(is_auto_print_after_waybill_enabled("2"))
+            self.assertFalse(is_post_waybill_automation_enabled("1"))
+            self.assertTrue(is_post_waybill_automation_enabled("2"))
 
     def test_unknown_airline_does_not_auto_print(self):
-        self.assertFalse(is_auto_print_after_waybill_enabled("unknown"))
+        self.assertFalse(is_post_waybill_automation_enabled("unknown"))
+
+    def test_legacy_print_check_uses_post_process_switch(self):
+        with patch.object(
+            settings,
+            "RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED",
+            False,
+        ):
+            self.assertFalse(is_auto_print_after_waybill_enabled("2"))
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ from app.services.china_southern_air_direct_order import (
     ChinaSouthernAirDirectOrderError,
     china_southern_air_direct_order_service,
 )
+from app.services.document_print_service import is_post_waybill_automation_enabled
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.airport_code_mapper import search_airport_codes_by_keyword
 
@@ -882,6 +883,13 @@ async def _post_process_china_southern_air_waybill(
     business_config: dict,
 ) -> None:
     """开单成功后异步生成南航货站文件并创建打印任务。"""
+    if not is_post_waybill_automation_enabled("2"):
+        print(
+            "[南航直连开单] 开单后自动处理已关闭，"
+            f"取消异步制单及打印，运单ID: {waybill_id}"
+        )
+        return
+
     from app.database import SessionLocal
     from app.services.cargo_station_record_service import generate_csa_all_documents
 
@@ -933,16 +941,15 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
     import traceback
     from app.services.document_print_service import (
         get_print_task_count,
-        is_auto_print_after_waybill_enabled,
         prepare_print_tasks,
     )
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
     airline = form_data_dict.get("airline", "")
-    if not is_auto_print_after_waybill_enabled(airline):
+    if not is_post_waybill_automation_enabled(airline):
         print(
-            f"[自动打单] 航司开单后自动打印已关闭，跳过自动打单，"
+            f"[自动打单] 航司开单后自动处理已关闭，跳过自动打单，"
             f"运单ID: {waybill.id}, 航司: {airline}"
         )
         return
@@ -1704,20 +1711,27 @@ async def execute_china_southern_air_waybill(
         db.rollback()
         raise
 
-    try:
-        _create_china_southern_air_settlement(db, waybill, form_data_dict, calculation_result)
-        db.commit()
-    except Exception:
-        # 远端已成功开单，保留已使用单号和成功状态，避免因本地结算异常诱发重复开单。
-        db.rollback()
+    if is_post_waybill_automation_enabled("2"):
+        try:
+            _create_china_southern_air_settlement(db, waybill, form_data_dict, calculation_result)
+            db.commit()
+        except Exception:
+            # 远端已成功开单，保留已使用单号和成功状态，避免因本地结算异常诱发重复开单。
+            db.rollback()
 
-    db.refresh(waybill)
-    background_tasks.add_task(
-        _post_process_china_southern_air_waybill,
-        waybill.id,
-        form_data_dict,
-        business_config,
-    )
+        db.refresh(waybill)
+        background_tasks.add_task(
+            _post_process_china_southern_air_waybill,
+            waybill.id,
+            form_data_dict,
+            business_config,
+        )
+    else:
+        print(
+            "[南航直连开单] 开单后自动处理已关闭，"
+            f"跳过结算单、制单、文件生成及打印，运单ID: {waybill.id}"
+        )
+        db.refresh(waybill)
     waybill_data = {
         "id": str(waybill.id),
         "waybill_number": waybill.waybill_number,

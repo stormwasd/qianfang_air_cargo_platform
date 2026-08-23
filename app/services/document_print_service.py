@@ -29,17 +29,22 @@ SHENZHEN_AIR_ALIASES = frozenset({"1", "深圳航空", "shenzhen_air"})
 CHINA_SOUTHERN_AIR_ALIASES = frozenset({"2", "南方航空", "china_southern_air"})
 
 
-def is_auto_print_after_waybill_enabled(airline: str) -> bool:
-    """返回指定航司是否允许在开单成功后自动打印单据。
+def is_post_waybill_automation_enabled(airline: str) -> bool:
+    """返回指定航司是否允许执行开单成功后的自动后处理链。
 
-    该开关只控制自动触发流程，不影响单个文档手动打印接口。无法识别的
-    航司按关闭处理，避免错误地创建其他航司的打印任务。
+    配置项沿用既有 AUTO_PRINT 命名以保持部署配置兼容，但实际统一控制
+    结算、制单、文件生成和自动打印等连续后处理。无法识别的航司按关闭处理。
     """
     if airline in SHENZHEN_AIR_ALIASES:
         return settings.RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED
     if airline in CHINA_SOUTHERN_AIR_ALIASES:
         return settings.RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED
     return False
+
+
+def is_auto_print_after_waybill_enabled(airline: str) -> bool:
+    """兼容旧调用名称，自动打印遵循开单后自动处理总开关。"""
+    return is_post_waybill_automation_enabled(airline)
 
 
 def _get_project_root() -> Path:
