@@ -931,11 +931,22 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
         business_config: 业务参数配置
     """
     import traceback
-    from app.services.document_print_service import prepare_print_tasks, get_print_task_count
+    from app.services.document_print_service import (
+        get_print_task_count,
+        is_auto_print_after_waybill_enabled,
+        prepare_print_tasks,
+    )
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
     airline = form_data_dict.get("airline", "")
+    if not is_auto_print_after_waybill_enabled(airline):
+        print(
+            f"[自动打单] 航司开单后自动打印已关闭，跳过自动打单，"
+            f"运单ID: {waybill.id}, 航司: {airline}"
+        )
+        return
+
     print(f"[自动打单] 开始自动触发打单，运单ID: {waybill.id}, 运单号: {waybill.waybill_number}, 航司: {airline}")
     
     try:

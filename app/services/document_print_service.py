@@ -25,6 +25,22 @@ from app.config import settings
 
 GENERATED_FILES_DIR = "generated_files"
 
+SHENZHEN_AIR_ALIASES = frozenset({"1", "深圳航空", "shenzhen_air"})
+CHINA_SOUTHERN_AIR_ALIASES = frozenset({"2", "南方航空", "china_southern_air"})
+
+
+def is_auto_print_after_waybill_enabled(airline: str) -> bool:
+    """返回指定航司是否允许在开单成功后自动打印单据。
+
+    该开关只控制自动触发流程，不影响单个文档手动打印接口。无法识别的
+    航司按关闭处理，避免错误地创建其他航司的打印任务。
+    """
+    if airline in SHENZHEN_AIR_ALIASES:
+        return settings.RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED
+    if airline in CHINA_SOUTHERN_AIR_ALIASES:
+        return settings.RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED
+    return False
+
 
 def _get_project_root() -> Path:
     """获取项目根目录"""

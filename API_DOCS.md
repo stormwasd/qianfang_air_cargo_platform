@@ -1,5 +1,19 @@
 # API 文档
 
+## 开单成功后自动打印配置
+
+深航和南航分别提供独立的环境变量开关，用于控制开单成功后的自动单据打印：
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED` | `True` | 深航开单成功后是否自动创建单据打印任务 |
+| `RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED` | `True` | 南航开单成功后是否自动创建单据打印任务 |
+
+- 配置为 `True`：保持原有行为，在制单完成后自动创建该航司全部可执行的打印任务。
+- 配置为 `False`：开单仍正常完成，运单号、开单状态、结算单、货站制单及生成文件均不受影响；只跳过自动创建打印任务，`document_print_status` 保持未执行状态。
+- 两个航司的开关相互独立，修改 `.env` 后需要重启应用服务生效。
+- 该配置只控制开单链路中的自动打印；`POST /api/v1/waybills/{waybill_id}/print-document` 手动打印接口不受影响。
+
 ## 南航货物类型数据字典自动同步
 
 该功能为后台内部同步任务，不新增前端调用接口。

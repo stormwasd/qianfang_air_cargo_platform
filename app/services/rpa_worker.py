@@ -2298,13 +2298,24 @@ class RPAWorker:
             form_data_dict: 运单表单数据字典
             delay_for_file_transfer: 是否需要等待文件传输完成后再执行打单（货站录单生成文件后需要等待）
         """
-        from app.services.document_print_service import prepare_print_tasks, get_print_task_count
+        from app.services.document_print_service import (
+            get_print_task_count,
+            is_auto_print_after_waybill_enabled,
+            prepare_print_tasks,
+        )
         from app.models.config import BusinessConfig
-        
+
+        airline = form_data_dict.get("airline", "")
+        if not is_auto_print_after_waybill_enabled(airline):
+            print(
+                f"{self._log_prefix} [自动打单] 航司开单后自动打印已关闭，"
+                f"跳过自动打单，运单ID: {waybill.id}, 航司: {airline}"
+            )
+            return
+
         if delay_for_file_transfer:
             config = db.query(BusinessConfig).first()
             business_config = json.loads(config.config_data) if config else {}
-            airline = form_data_dict.get("airline", "")
             airline_code = "shenzhen_air" if airline in ["1", "深圳航空", "shenzhen_air"] else ("china_southern_air" if airline in ["2", "南方航空", "china_southern_air"] else "")
             doc_config = business_config.get(airline_code, {}).get("document", {}) if airline_code else {}
             delay_val = doc_config.get("print_delay_after_cargo_station_record")
@@ -2322,7 +2333,6 @@ class RPAWorker:
             print(f"{self._log_prefix} [自动打单] 运单号不存在，跳过自动打单，运单ID: {waybill.id}")
             return
         
-        airline = form_data_dict.get("airline", "")
         print(f"{self._log_prefix} [自动打单] 开始自动触发打单，运单ID: {waybill.id}, 运单号: {waybill.waybill_number}, 航司: {airline}")
         
         try:
