@@ -272,10 +272,10 @@ class ChinaSouthernAirBookingExcelService:
             )
             validation.errorTitle = "货物类型无效"
             validation.error = "请选择货物类型下拉框中的选项"
-            validation.promptTitle = "货物类型"
-            validation.prompt = "选项来自数据字典 nanfang_air_cargo_type"
             validation.showErrorMessage = True
-            validation.showInputMessage = True
+            # 不显示选中单元格时的黄色输入提示浮窗，仅保留下拉选择与
+            # 非法值校验，避免提示内容遮挡模板填写区域。
+            validation.showInputMessage = False
             sheet.add_data_validation(validation)
             validation.add(
                 sheet.cell(row=data_start_row, column=cargo_type_column).coordinate

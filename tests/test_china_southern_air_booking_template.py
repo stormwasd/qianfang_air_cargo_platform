@@ -82,6 +82,15 @@ class ChinaSouthernAirBookingTemplateTests(unittest.TestCase):
                 ("F4:F24", ChinaSouthernAirBookingExcelService.CARGO_TYPE_OPTIONS_RANGE),
                 generated_validations,
             )
+            cargo_type_validation = next(
+                item
+                for item in generated_sheet.data_validations.dataValidation
+                if str(item.sqref) == "F4:F24"
+            )
+            self.assertFalse(cargo_type_validation.showInputMessage)
+            self.assertIsNone(cargo_type_validation.promptTitle)
+            self.assertIsNone(cargo_type_validation.prompt)
+            self.assertTrue(cargo_type_validation.showErrorMessage)
 
             options_sheet = generated[
                 ChinaSouthernAirBookingExcelService.CARGO_TYPE_OPTIONS_SHEET
