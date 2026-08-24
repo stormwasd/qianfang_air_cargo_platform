@@ -30,6 +30,7 @@ from app.services.china_southern_air_direct_order import (
     china_southern_air_direct_order_service,
 )
 from app.services.document_print_service import is_post_waybill_automation_enabled
+from app.services.waybill_stock_service import confirm_stock_item_used
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.airport_code_mapper import search_airport_codes_by_keyword
 
@@ -1700,13 +1701,25 @@ async def execute_china_southern_air_waybill(
                 db.commit()
             raise
 
-    # 先持久化开单成功状态；结算落库异常不得导致远端已开单的单号被重新使用。
+    # 开单成功状态与单号库“已使用”必须在同一事务最终确认；结算落库异常
+    # 不得导致远端已开单的单号被重新使用。
     try:
         waybill = db.query(Waybill).filter(Waybill.id == waybill_id_int).with_for_update().first()
         if waybill is None:
             raise NotFoundException("运单不存在")
+        confirmed_stock_item = confirm_stock_item_used(
+            db,
+            stock_item.id,
+            expected_full_number=waybill.waybill_number,
+        )
         waybill.airline_record_status = "3"
         db.commit()
+        print(
+            "[南航直连开单] 开单成功状态与单号库状态已同步提交，"
+            f"运单ID: {waybill.id}, 单号: {confirmed_stock_item.full_number}, "
+            f"usage_status: {confirmed_stock_item.usage_status}, "
+            f"usage_date: {confirmed_stock_item.usage_date}"
+        )
     except Exception:
         db.rollback()
         raise

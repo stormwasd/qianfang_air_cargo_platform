@@ -40,6 +40,7 @@ from app.services.china_southern_air_service_client import (
     china_southern_air_service,
 )
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
+from app.services.waybill_stock_service import confirm_stock_item_used
 from app.config import settings
 
 router = APIRouter()
@@ -520,6 +521,11 @@ async def _execute_china_southern_air_direct_booking(
         )
         if locked_booking is None:
             raise ChinaSouthernAirDirectBookingError("订舱不存在")
+        confirm_stock_item_used(
+            db,
+            stock_item.id,
+            expected_full_number=locked_booking.master_airwaybill_number,
+        )
         locked_booking.booking_status = "3"
         locked_booking.booking_feedback = None
         db.commit()
