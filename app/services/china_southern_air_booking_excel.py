@@ -3,10 +3,13 @@
 from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
 from zipfile import BadZipFile
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 from openpyxl import load_workbook
+from openpyxl.workbook.defined_name import DefinedName
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.exceptions import InvalidFileException
 
 
@@ -26,6 +29,8 @@ class ChinaSouthernAirBookingExcelService:
     MAX_WORKSHEET_ROWS = 2000
     HEADER_SCAN_ROWS = 10
     HEADER_SCAN_COLUMNS = 60
+    CARGO_TYPE_OPTIONS_SHEET = "_cargo_type_options"
+    CARGO_TYPE_OPTIONS_RANGE = "CSA_CargoTypeOptions"
 
     HEADER_FIELDS = {
         "始发站": "origin_station",
@@ -185,6 +190,104 @@ class ChinaSouthernAirBookingExcelService:
                 errors=[{"type": "missing_headers", "headers": missing}],
             )
         return best_row, best_mapping
+
+    @classmethod
+    def build_template(
+        cls,
+        template_path: Path,
+        *,
+        cargo_type_labels: Iterable[str],
+    ) -> bytes:
+        """基于原模板动态添加货物类型下拉框，其他可见内容保持不变。"""
+        labels: List[str] = []
+        seen = set()
+        for raw_label in cargo_type_labels:
+            label = cls._text(raw_label)
+            if not label:
+                raise ChinaSouthernAirBookingExcelError(
+                    "数据字典 nanfang_air_cargo_type 存在空名称的启用项"
+                )
+            if label in seen:
+                raise ChinaSouthernAirBookingExcelError(
+                    f"数据字典 nanfang_air_cargo_type 存在重复名称：{label}"
+                )
+            seen.add(label)
+            labels.append(label)
+        if not labels:
+            raise ChinaSouthernAirBookingExcelError(
+                "数据字典 nanfang_air_cargo_type 不存在或没有启用的选项"
+            )
+
+        try:
+            workbook = load_workbook(template_path)
+        except (BadZipFile, InvalidFileException, OSError, ValueError, KeyError, EOFError) as exc:
+            raise ChinaSouthernAirBookingExcelError("南航订舱模板无法解析") from exc
+
+        try:
+            sheet = workbook.worksheets[0]
+            header_row, header_mapping = cls._find_header(sheet)
+            cargo_type_column = header_mapping["货物类型"]
+
+            # 当前模板的表头纵向合并两行。根据合并区域计算真实填写起始行，
+            # 避免把下拉校验误加到合并表头的占位单元格。
+            header_end_row = header_row
+            for merged_range in sheet.merged_cells.ranges:
+                if (
+                    merged_range.min_row <= header_row <= merged_range.max_row
+                    and merged_range.min_col
+                    <= cargo_type_column
+                    <= merged_range.max_col
+                ):
+                    header_end_row = max(header_end_row, merged_range.max_row)
+            data_start_row = header_end_row + 1
+            data_end_row = sheet.max_row
+            if data_start_row > data_end_row:
+                raise ChinaSouthernAirBookingExcelError("南航订舱模板没有数据填写区")
+
+            if cls.CARGO_TYPE_OPTIONS_SHEET in workbook.sheetnames:
+                workbook.remove(workbook[cls.CARGO_TYPE_OPTIONS_SHEET])
+            options_sheet = workbook.create_sheet(cls.CARGO_TYPE_OPTIONS_SHEET)
+            for row_number, label in enumerate(labels, start=1):
+                cell = options_sheet.cell(row=row_number, column=1, value=label)
+                # 数据字典内容始终按普通文本写入，避免以“=”开头的异常名称
+                # 被 Excel 当作公式执行。
+                cell.data_type = "s"
+            options_sheet.sheet_state = "veryHidden"
+
+            if cls.CARGO_TYPE_OPTIONS_RANGE in workbook.defined_names:
+                del workbook.defined_names[cls.CARGO_TYPE_OPTIONS_RANGE]
+            workbook.defined_names.add(
+                DefinedName(
+                    cls.CARGO_TYPE_OPTIONS_RANGE,
+                    attr_text=(
+                        f"'{cls.CARGO_TYPE_OPTIONS_SHEET}'!$A$1:$A${len(labels)}"
+                    ),
+                )
+            )
+
+            validation = DataValidation(
+                type="list",
+                formula1=cls.CARGO_TYPE_OPTIONS_RANGE,
+                allow_blank=True,
+            )
+            validation.errorTitle = "货物类型无效"
+            validation.error = "请选择货物类型下拉框中的选项"
+            validation.promptTitle = "货物类型"
+            validation.prompt = "选项来自数据字典 nanfang_air_cargo_type"
+            validation.showErrorMessage = True
+            validation.showInputMessage = True
+            sheet.add_data_validation(validation)
+            validation.add(
+                sheet.cell(row=data_start_row, column=cargo_type_column).coordinate
+                + ":"
+                + sheet.cell(row=data_end_row, column=cargo_type_column).coordinate
+            )
+
+            output = BytesIO()
+            workbook.save(output)
+            return output.getvalue()
+        finally:
+            workbook.close()
 
     @classmethod
     def _read_row(

@@ -4,8 +4,9 @@
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, BackgroundTasks, File, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy.dialects.mysql import JSON
@@ -1024,6 +1025,7 @@ async def get_bookings(
 @router.get("/china-southern-air/template", summary="下载南航订舱模板")
 async def download_china_southern_air_template(
     current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ):
     """
     下载南航订舱Excel模板文件
@@ -1035,10 +1037,26 @@ async def download_china_southern_air_template(
     if not template_path.exists():
         raise NotFoundException("南航订舱模板不存在，请联系管理员上传模板文件")
 
-    return FileResponse(
-        path=str(template_path),
+    cargo_type_codes = _get_china_southern_air_cargo_type_codes(db)
+    try:
+        content = china_southern_air_booking_excel_service.build_template(
+            template_path,
+            cargo_type_labels=cargo_type_codes.keys(),
+        )
+    except ChinaSouthernAirBookingExcelError as exc:
+        raise BaseAPIException(500, str(exc)) from exc
+
+    filename = "南航订舱模板.xlsx"
+    return Response(
+        content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename="南航订舱模板.xlsx",
+        headers={
+            "Content-Disposition": (
+                "attachment; filename*=UTF-8''" + quote(filename)
+            ),
+            # 模板中的货物类型选项来自动态数据字典，禁止客户端缓存旧模板。
+            "Cache-Control": "no-store",
+        },
     )
 
 
