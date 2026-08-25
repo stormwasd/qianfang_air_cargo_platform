@@ -28,6 +28,9 @@ class ChinaSouthernAirService:
     SERVICE_CHARGE_URL = (
         "https://cargo.csair.com/order-center/b2e-order/b2eOrder/queryServiceCharge"
     )
+    CALCULATE_CWEIGHT_URL = (
+        "https://cargo.csair.com/order-center/b2e-order/b2eOrder/calculateCWeight"
+    )
     DEPARTURE_CARGO_MAIL_HANDLING_CHARGE = "出港货邮处理费"
 
     @staticmethod
@@ -238,6 +241,172 @@ class ChinaSouthernAirService:
         if not all(isinstance(item, dict) for item in service_charges):
             raise ChinaSouthernAirServiceError("南航出港货邮处理费服务返回的费用选项格式异常")
         return service_charges
+
+    async def calculate_default_volume(
+        self,
+        *,
+        token: str,
+        origin_station: str,
+        weight: Any,
+        customer_no: str = "SZXFED",
+        cookie: Optional[str] = None,
+    ) -> float:
+        """按南航计费重量接口计算未填写时使用的默认订舱体积。"""
+        cleaned_token = self._clean_token(token)
+        if not cleaned_token:
+            raise ChinaSouthernAirServiceError("南航登录令牌无效，请先刷新南航 Token")
+
+        payload = {
+            "dimensions": None,
+            "volume": "",
+            "weight": weight,
+            "channel": "B2B",
+            "depCityCode": str(origin_station or "").strip().upper(),
+        }
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Content-Type": "application/json;charset=UTF-8",
+            "Origin": "https://cargo.csair.com",
+            "Referer": "https://cargo.csair.com/tangb2gweb/booking",
+            "User-Agent": "qianfang-air-cargo-platform/1.0",
+            "x-customs-user": cleaned_token,
+            "x-customs-userid": str(customer_no or "SZXFED").strip(),
+        }
+        if cookie:
+            headers["Cookie"] = str(cookie)
+
+        def error_details(
+            *,
+            upstream_response: Any = None,
+            http_status: Optional[int] = None,
+            network_error: Optional[str] = None,
+        ) -> Dict[str, Any]:
+            details: Dict[str, Any] = {
+                "stage": "calculate_cweight",
+                "request_data": deepcopy(payload),
+            }
+            if upstream_response is not None:
+                details["upstream_response"] = deepcopy(upstream_response)
+            if http_status is not None:
+                details["http_status"] = http_status
+            if network_error:
+                details["network_error"] = network_error
+            return details
+
+        try:
+            timeout = httpx.Timeout(20.0, connect=5.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    self.CALCULATE_CWEIGHT_URL,
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            try:
+                upstream_response = exc.response.json()
+            except (ValueError, TypeError):
+                upstream_response = exc.response.text
+            raise ChinaSouthernAirServiceError(
+                f"南航默认订舱体积计算失败（HTTP {exc.response.status_code}）",
+                details=error_details(
+                    upstream_response=upstream_response,
+                    http_status=exc.response.status_code,
+                ),
+            ) from exc
+        except httpx.RequestError as exc:
+            raise ChinaSouthernAirServiceError(
+                "南航默认订舱体积计算服务暂时不可用",
+                details=error_details(network_error=str(exc)),
+            ) from exc
+
+        try:
+            response_data = response.json()
+        except ValueError as exc:
+            raise ChinaSouthernAirServiceError(
+                "南航默认订舱体积计算服务返回了无效数据",
+                details=error_details(
+                    upstream_response=response.text,
+                    http_status=response.status_code,
+                ),
+            ) from exc
+        if not isinstance(response_data, dict):
+            raise ChinaSouthernAirServiceError(
+                "南航默认订舱体积计算服务返回格式异常",
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                ),
+            )
+        if str(response_data.get("code", "")) not in {"0000", "0"}:
+            raise ChinaSouthernAirServiceError(
+                self._response_message(response_data, "南航默认订舱体积计算失败"),
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                ),
+            )
+
+        result = response_data.get("result")
+        raw_volume = result.get("volume") if isinstance(result, dict) else None
+        try:
+            if isinstance(raw_volume, bool):
+                raise ValueError
+            volume = float(raw_volume)
+        except (TypeError, ValueError) as exc:
+            raise ChinaSouthernAirServiceError(
+                "南航默认订舱体积计算未返回有效 volume",
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                ),
+            ) from exc
+        if volume <= 0:
+            raise ChinaSouthernAirServiceError(
+                "南航默认订舱体积计算返回的 volume 必须大于 0",
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                ),
+            )
+        return volume
+
+    async def resolve_booking_volume(
+        self,
+        *,
+        token: str,
+        origin_station: str,
+        weight: Any,
+        volume: Any,
+        customer_no: str = "SZXFED",
+        cookie: Optional[str] = None,
+        cache: Optional[Dict[Any, float]] = None,
+    ) -> Any:
+        """用户已填写则原样返回，否则查询南航默认体积；缓存仅限调用方当前请求。"""
+        if volume is not None and not (
+            isinstance(volume, str) and not volume.strip()
+        ):
+            return volume
+
+        cache_key = (
+            str(customer_no or "SZXFED").strip(),
+            str(origin_station or "").strip().upper(),
+            str(weight),
+        )
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
+
+        resolved = await self.calculate_default_volume(
+            token=token,
+            origin_station=origin_station,
+            weight=weight,
+            customer_no=customer_no,
+            cookie=cookie,
+        )
+        if cache is not None:
+            cache[cache_key] = resolved
+        return resolved
 
     async def query_departure_cargo_mail_handling_charge(
         self,

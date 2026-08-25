@@ -5,7 +5,10 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from app.services.china_southern_air_service_client import ChinaSouthernAirService
+from app.services.china_southern_air_service_client import (
+    ChinaSouthernAirService,
+    china_southern_air_service,
+)
 from app.services.china_southern_air_field_utils import normalize_special_cargo_code
 
 
@@ -141,6 +144,7 @@ class ChinaSouthernAirDirectOrderService:
         product_name = cargo_info.get("product_name")
         if isinstance(product_name, list):
             product_name = product_name[0] if product_name else ""
+        booking_volume = cargo_info.get("booking_volume")
 
         selected_fee = form_data.get("outbound_cargo_and_mail_handling_fee_options")
         if not isinstance(selected_fee, dict):
@@ -166,7 +170,11 @@ class ChinaSouthernAirDirectOrderService:
             "commodity_name": cls._required_text(cargo_info.get("cargo_name"), "cargo_info.cargo_name"),
             "piece": cls._number(cargo_info.get("quantity"), "cargo_info.quantity", integer=True),
             "weight": cls._number(cargo_info.get("weight"), "cargo_info.weight"),
-            "volume": cls._number(cargo_info.get("booking_volume", 0), "cargo_info.booking_volume"),
+            "volume": (
+                None
+                if booking_volume is None or str(booking_volume).strip() == ""
+                else cls._number(booking_volume, "cargo_info.booking_volume")
+            ),
             "product_name": str(product_name or "").strip() or None,
             "sp_code": normalize_special_cargo_code(
                 cargo_info.get("special_cargo_code")
@@ -222,6 +230,26 @@ class ChinaSouthernAirDirectOrderService:
             or ("awb" in text and ("used" in text or "exist" in text))
         )
 
+    async def resolve_volume(
+        self,
+        *,
+        token: str,
+        values: Dict[str, Any],
+        business_config: Dict[str, Any],
+        cache: Optional[Dict[Any, float]] = None,
+    ) -> Any:
+        """确保发往南航的 volume 有值；用户未填时调用 calculateCWeight。"""
+        config = self._direct_order_config(business_config)
+        return await china_southern_air_service.resolve_booking_volume(
+            token=token,
+            origin_station=values["origin_station"],
+            weight=values["weight"],
+            volume=values["volume"],
+            customer_no=str(config.get("agent_code", "SZXFED")),
+            cookie=config.get("cookie"),
+            cache=cache,
+        )
+
     @classmethod
     def build_calculate_payload(
         cls,
@@ -229,8 +257,13 @@ class ChinaSouthernAirDirectOrderService:
         business_config: Dict[str, Any],
         *,
         service_charges: Optional[List[Dict[str, Any]]] = None,
+        form_values: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        values = cls._get_form_values(form_data)
+        values = (
+            form_values
+            if form_values is not None
+            else cls._get_form_values(form_data)
+        )
         config = cls._direct_order_config(business_config)
         if service_charges is None:
             service_charges = config.get("calculate_ext_service_charges")
@@ -339,8 +372,13 @@ class ChinaSouthernAirDirectOrderService:
         number_prefix: str,
         number_suffix: str,
         calculation_result: Dict[str, Any],
+        form_values: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        values = cls._get_form_values(form_data)
+        values = (
+            form_values
+            if form_values is not None
+            else cls._get_form_values(form_data)
+        )
         config = cls._direct_order_config(business_config)
         calculated_fees = calculation_result.get("extServiceCharges")
         if not isinstance(calculated_fees, list):

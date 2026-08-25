@@ -366,6 +366,7 @@ async def _execute_china_southern_air_direct_booking(
     form_data: dict,
     business_config: dict,
     token: str,
+    default_volume_cache: dict = None,
 ) -> None:
     """执行单条直连订舱；所有外部请求均在数据库锁释放后进行。"""
     try:
@@ -387,6 +388,14 @@ async def _execute_china_southern_air_direct_booking(
     try:
         values = china_southern_air_direct_booking_service.get_form_values(
             form_data, business_config
+        )
+        values["volume"] = (
+            await china_southern_air_direct_booking_service.resolve_volume(
+                token=token,
+                values=values,
+                business_config=business_config,
+                cache=default_volume_cache,
+            )
         )
         flight = await china_southern_air_direct_booking_service.query_matching_flight(
             token=token, values=values, business_config=business_config
@@ -418,7 +427,7 @@ async def _execute_china_southern_air_direct_booking(
         if isinstance(exc, ChinaSouthernAirDirectBookingError):
             # 保留费用选项等结构化上下文，供批量执行接口安全返回。
             raise
-        details = exc.details if isinstance(exc, ChinaSouthernAirDirectOrderError) else None
+        details = getattr(exc, "details", None)
         raise ChinaSouthernAirDirectBookingError(str(exc), details=details) from exc
     except Exception as exc:
         message = f"南航订舱前置调用异常：{exc}"
@@ -786,6 +795,9 @@ async def execute_booking(
     execute_results = []
     success_count = 0
     failed_count = 0
+    # 仅在本次批量请求内复用相同始发站、重量的默认体积查询结果，
+    # 避免批量订舱对南航 calculateCWeight 发起重复请求。
+    default_volume_cache = {}
     
     for booking_id_str in request.booking_ids:
         try:
@@ -859,6 +871,7 @@ async def execute_booking(
                 form_data=form_data_dict,
                 business_config=business_config,
                 token=nanhang_token,
+                default_volume_cache=default_volume_cache,
             )
             
             execute_results.append(BookingExecuteItem(

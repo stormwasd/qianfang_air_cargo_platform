@@ -91,6 +91,8 @@
 
 执行南航订舱前会再次检查 `cargo_type_code`。对于本次修复上线前，由旧版前端 Excel 解析流程创建且缺少该字段的未执行或失败记录，后端会按 `cargo_type` 自动补齐并保存，再调用南航接口；无法完成字典映射时，该条执行失败并返回明确错误。
 
+`form_data.bookings[0].booking_volume` 为可选字段，页面提交和后台 Excel 解析均允许不填。已填写时直接作为南航请求的 `volume`；未传、为 `null` 或空字符串时，执行阶段先调用南航 `calculateCWeight`，固定传入 `dimensions=null`、`volume=""`、`channel="B2B"`，并将 `origin_station` 映射为 `depCityCode`、`weight` 映射为 `weight`。接口返回的 `result.volume` 会用于后续 `calculateCharge` 和 `createOrder`，但不回写原始 `form_data`。同一次批量执行中，相同始发站与重量会复用查询结果。查询失败时该条订舱失败，`error_details.stage` 为 `calculate_cweight`，诊断数据不包含 Token、Cookie 或请求头。
+
 `form_data.bookings[0].special_cargo_code` 在平台内部保持英文逗号分隔，例如 `XPS,AKA`。调用南航 `createOrder` 时，服务端仅在请求构建阶段将英文逗号或中文逗号转换为 `/`，因此发往南航的 `orderInfo.orderShipment.spCode` 和 `productionCode` 均为 `XPS/AKA`；原始 `form_data` 不会被修改。历史上已经使用 `/` 分隔的数据仍兼容。
 
 ## 南航开单
@@ -167,5 +169,7 @@
 `POST /api/v1/waybills/{waybill_id}/execute-china-southern-air`
 
 `form_data.cargo_info.special_cargo_code` 在平台内部使用英文逗号分隔。调用南航 `createOrder` 时，服务端将英文逗号或中文逗号转换为 `/`，并同时写入 `orderInfo.orderShipment.spCode` 和 `productionCode`；原始 `form_data` 保持不变，已有 `/` 分隔数据继续兼容。
+
+`form_data.cargo_info.booking_volume` 为可选字段。已填写时直接作为南航请求的 `volume`；未传、为 `null` 或空字符串时，在预占单号之前调用南航 `calculateCWeight`，将 `flight_info.origin_station` 作为 `depCityCode`、`cargo_info.weight` 作为 `weight`，其余请求字段固定为 `dimensions=null`、`volume=""`、`channel="B2B"`。返回的 `result.volume` 用于后续 `calculateCharge`、`createOrder`，但不回写原始 `form_data`；默认体积查询失败不会占用单号，并以 `502` 返回 `error_details.stage="calculate_cweight"` 及安全的请求/响应诊断数据。
 
 南航 `createOrder` 成功后，服务端会在同一个数据库事务中将运单的 `airline_record_status` 更新为成功，并锁定本次实际使用的 `waybill_stock_items` 记录，再次确认 `usage_status="1"`、`usage_date=当天`。该确认是幂等操作，用于保证南航已成功开单时单号绝不会以未使用状态回流；后续结算、制单或打印异常不会改变该单号的已使用状态。南航直连订舱成功时采用相同的最终确认机制。

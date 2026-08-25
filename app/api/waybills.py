@@ -1496,6 +1496,24 @@ async def execute_china_southern_air_waybill(
     if token_record is None:
         raise BaseAPIException(503, "暂无可用的南航 Token，请先完成南航 Token 获取任务")
 
+    # booking_volume 是平台可选字段，但南航 calculateCharge/createOrder 的
+    # volume 必须有值。未填写时先用始发站、重量调用 calculateCWeight 补齐；
+    # 此过程发生在预占单号之前，查询失败不会消耗单号库存。
+    try:
+        direct_order_values["volume"] = (
+            await china_southern_air_direct_order_service.resolve_volume(
+                token=token_record.token,
+                values=direct_order_values,
+                business_config=business_config,
+            )
+        )
+    except ChinaSouthernAirServiceError as exc:
+        raise BaseAPIException(
+            502,
+            str(exc),
+            data={"error_details": exc.details},
+        ) from exc
+
     # calculateCharge 要求传入 queryServiceCharge 返回的完整费用列表，不能只传
     # 前端保存的「出港货邮处理费」单个分组。查询后再用本次表单选项替换该分组。
     service_charge_query_data = {
@@ -1527,6 +1545,7 @@ async def execute_china_southern_air_waybill(
             form_data_dict,
             business_config,
             service_charges=service_charges,
+            form_values=direct_order_values,
         )
     except ChinaSouthernAirServiceError as exc:
         raise BaseAPIException(
@@ -1606,6 +1625,7 @@ async def execute_china_southern_air_waybill(
                 number_prefix=stock_item.number_prefix,
                 number_suffix=stock_item.number_suffix,
                 calculation_result=calculation_result,
+                form_values=direct_order_values,
             )
             create_started = True
             await china_southern_air_direct_order_service.create_order(

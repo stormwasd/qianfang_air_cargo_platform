@@ -37,7 +37,7 @@ class BookingCreate(BaseModel):
           "quantity": "",  // 件数
           "weight": "",  // 重量
           "product_name": "",  // 产品名称
-          "booking_volume": "",  // 订舱体积（可选）
+          "booking_volume": "",  // 订舱体积（可选；未填时执行阶段由南航接口计算默认值）
           "oversized_cargo": "",  // 超规货
           "special_cargo_code": "",  // 特货码；多个使用英文逗号分隔，例如 XPS,AKA
           "no_dangerous_goods": "",  // 无危险品
@@ -55,6 +55,7 @@ class BookingCreate(BaseModel):
     - `shipper_unit` 仅作为平台业务数据保存，不替换南航 createOrder 中的任何字段；`orderShipmentContact` 按南航请求结构传 null
     - `special_cargo_code` 在平台内部使用英文逗号分隔；调用南航接口时服务端转换为 `/` 分隔，不修改原始 form_data
     - 南航接口订舱时，`bookings[0].product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
+    - `bookings[0].booking_volume` 可不填；未填、为 `null` 或空字符串时，执行阶段使用 `origin_station` 和 `weight` 调用南航 `calculateCWeight`，并将返回的 `volume` 用于后续 `calculateCharge`、`createOrder`；已填写时原值优先
     - `outbound_cargo_and_mail_handling_fee_options` 只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活易腐、鲜活容腐、普货、急件快件
     - 批量Excel使用 `POST /api/v1/bookings/china-southern-air/import-excel` 上传；后端按 `nanfang_air_cargo_type` 数据字典的 `label` 匹配货物类型，并把对应 `value` 写入 `cargo_type_code`
     - 为兼容仍由前端解析Excel后调用 `POST /api/v1/bookings` 的流程，南航新增/修改接口也会在 `cargo_type_code` 缺失时按同一数据字典自动补齐；已传入非空值时保持原值

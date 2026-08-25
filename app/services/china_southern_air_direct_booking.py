@@ -96,6 +96,7 @@ class ChinaSouthernAirDirectBookingService:
         product_name = item.get("product_name")
         if isinstance(product_name, list):
             product_name = product_name[0] if product_name else ""
+        booking_volume = item.get("booking_volume")
         contact_name = form_data.get("order_contact_name") or defaults.get("order_contact_name")
         contact_phone = form_data.get("order_contact_phone") or defaults.get("order_contact_phone")
         if not contact_phone and contact_name and "/" in str(contact_name):
@@ -121,7 +122,11 @@ class ChinaSouthernAirDirectBookingService:
             "commodity_name": cls._required_text(item.get("cargo_name"), "bookings[0].cargo_name"),
             "piece": cls._number(item.get("quantity"), "bookings[0].quantity", integer=True),
             "weight": cls._number(item.get("weight"), "bookings[0].weight"),
-            "volume": cls._number(item.get("booking_volume"), "bookings[0].booking_volume", allow_empty=True),
+            "volume": (
+                None
+                if booking_volume is None or str(booking_volume).strip() == ""
+                else cls._number(booking_volume, "bookings[0].booking_volume")
+            ),
             "product_name": str(product_name or "").strip() or None,
             "over_standard_cus": cls._number(
                 item.get("oversized_cargo", 0),
@@ -155,6 +160,22 @@ class ChinaSouthernAirDirectBookingService:
                 form_data.get("settlement_file_number") or defaults.get("settlement_file_number") or ""
             ).strip() or None,
         }
+
+    async def resolve_volume(
+        self,
+        *,
+        token: str,
+        values: Dict[str, Any],
+        business_config: Dict[str, Any],
+        cache: Optional[Dict[Any, float]] = None,
+    ) -> Any:
+        """复用开单配置与南航 calculateCWeight，为订舱补齐缺省体积。"""
+        return await china_southern_air_direct_order_service.resolve_volume(
+            token=token,
+            values=values,
+            business_config=business_config,
+            cache=cache,
+        )
 
     @staticmethod
     def _rules(value: Any, defaults: List[str]) -> List[str]:
