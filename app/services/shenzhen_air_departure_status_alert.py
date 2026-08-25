@@ -18,6 +18,10 @@ from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.departure_manual_data import ShenzhenAirDepartureManualData
 from app.models.customer import Customer
 from app.models.alert_notification_record import AlertNotificationRecord
+from app.services.wechat_alert_config import (
+    WechatAlertScene,
+    should_send_wechat_alert,
+)
 
 class ShenzhenAirDepartureStatusAlertService:
     def __init__(self):
@@ -311,6 +315,11 @@ class ShenzhenAirDepartureStatusAlertService:
         print(f"[ShenzhenAirDepartureStatusAlert] 已发送单号 {waybill_num} 状态: {status_text}")
 
     async def _send_wechat_message(self, text: str) -> None:
+        if not should_send_wechat_alert(
+            WechatAlertScene.SHENZHEN_AIR_DEPARTURE_STATUS,
+            log_prefix="[ShenzhenAirDepartureStatusAlert]",
+        ):
+            return
         url = settings.WECHAT_WEBHOOK_URL
         if not url:
             print("[ShenzhenAirDepartureStatusAlert] WECHAT_WEBHOOK_URL 未配置")

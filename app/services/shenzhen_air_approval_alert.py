@@ -17,6 +17,10 @@ from typing import Optional, List, Tuple
 from app.config import settings
 from app.database import SessionLocal
 from app.models.alert_notification_record import AlertNotificationRecord
+from app.services.wechat_alert_config import (
+    WechatAlertScene,
+    should_send_wechat_alert,
+)
 
 
 class ShenzhenAirApprovalAlertService:
@@ -288,6 +292,11 @@ class ShenzhenAirApprovalAlertService:
     @staticmethod
     async def _send_wechat_message(content: str) -> None:
         """通过企业微信Webhook发送文本消息"""
+        if not should_send_wechat_alert(
+            WechatAlertScene.SHENZHEN_AIR_APPROVAL,
+            log_prefix="[ShenzhenAirApprovalAlert]",
+        ):
+            return
         webhook_url = settings.WECHAT_WEBHOOK_URL
         if not webhook_url:
             print("[ShenzhenAirApprovalAlert] 未配置企业微信Webhook地址，跳过发送")

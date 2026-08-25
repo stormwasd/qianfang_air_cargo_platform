@@ -10,6 +10,10 @@ from app.models.shenzhen_air_loading_alert_task import ShenzhenAirLoadingAlertTa
 from app.models.departure_manual_data import ShenzhenAirDepartureManualData
 from app.models.customer import Customer
 from app.config import settings
+from app.services.wechat_alert_config import (
+    WechatAlertScene,
+    should_send_wechat_alert,
+)
 from app.utils.ctrip_client import ctrip_client
 import httpx
 
@@ -341,6 +345,11 @@ class ShenzhenAirLoadingAlertManager:
         await self._send_wechat_msg(msg)
 
     async def _send_wechat_msg(self, text: str):
+        if not should_send_wechat_alert(
+            WechatAlertScene.SHENZHEN_AIR_LOADING,
+            log_prefix="[ShenzhenAirLoadingAlert]",
+        ):
+            return
         url = settings.WECHAT_WEBHOOK_URL
         if not url:
             print("WECHAT_WEBHOOK_URL 未配置")

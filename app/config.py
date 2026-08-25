@@ -171,6 +171,38 @@ class Settings(BaseSettings):
         default="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=05b6c4d8-5058-4706-8a96-27724683e46e",
         description="企业微信群机器人Webhook地址"
     )
+    WECHAT_ALERT_ENABLED: bool = Field(
+        default=True,
+        description="企业微信预警通知总开关；关闭后所有场景均不发送，但后台扫描和数据同步继续运行"
+    )
+    WECHAT_ALERT_SHENZHEN_AIR_APPROVAL_ENABLED: bool = Field(
+        default=True,
+        description="是否发送深航订舱批复预警通知"
+    )
+    WECHAT_ALERT_SHENZHEN_AIR_DEPARTURE_ENABLED: bool = Field(
+        default=True,
+        description="是否发送深航出港跟踪（过机状态与卡号）预警通知"
+    )
+    WECHAT_ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_ENABLED: bool = Field(
+        default=True,
+        description="是否发送南航出港跟踪（过机状态与卡号）预警通知"
+    )
+    WECHAT_ALERT_SHENZHEN_AIR_LOADING_ENABLED: bool = Field(
+        default=True,
+        description="是否发送深航装机状态预警通知"
+    )
+    WECHAT_ALERT_CHINA_SOUTHERN_AIR_LOADING_ENABLED: bool = Field(
+        default=True,
+        description="是否发送南航装机状态预警通知"
+    )
+    WECHAT_ALERT_SHENZHEN_AIR_DEPARTURE_STATUS_ENABLED: bool = Field(
+        default=True,
+        description="是否发送深航出港状态通知"
+    )
+    WECHAT_ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_STATUS_ENABLED: bool = Field(
+        default=True,
+        description="是否发送南航出港状态通知"
+    )
     ALERT_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS: int = Field(
         default=0, ge=0, le=86400,
         description="深航订舱批复预警-按间隔触发（秒），默认600秒（10分钟），设0则禁用间隔触发"

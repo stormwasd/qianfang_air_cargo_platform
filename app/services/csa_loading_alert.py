@@ -15,6 +15,10 @@ from app.models.csa_departure_tracking import CsaLalamoveInformation, CsaProduct
 from app.models.csa_departure_manual_data import CsaDepartureManualData
 from app.models.customer import Customer
 from app.models.csa_loading_alert_task import CsaLoadingAlertTask
+from app.services.wechat_alert_config import (
+    WechatAlertScene,
+    should_send_wechat_alert,
+)
 from app.utils.ctrip_client import ctrip_client
 
 
@@ -434,6 +438,11 @@ class CsaLoadingAlertManager:
         await self._send_wechat_msg(msg)
 
     async def _send_wechat_msg(self, text: str):
+        if not should_send_wechat_alert(
+            WechatAlertScene.CHINA_SOUTHERN_AIR_LOADING,
+            log_prefix="[CsaLoadingAlert]",
+        ):
+            return
         url = settings.WECHAT_WEBHOOK_URL
         if not url:
             print("WECHAT_WEBHOOK_URL 未配置")

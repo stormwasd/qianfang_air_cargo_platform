@@ -20,6 +20,10 @@ from app.models.waybill import Waybill
 from app.utils.airport_code_mapper import get_city_name_by_code
 from app.models.csa_departure_alert_task import CsaDepartureAlertTask
 from app.models.alert_notification_record import AlertNotificationRecord
+from app.services.wechat_alert_config import (
+    WechatAlertScene,
+    should_send_wechat_alert,
+)
 
 
 def is_uu_booking(booking_no: str) -> bool:
@@ -366,6 +370,11 @@ class CsaDepartureStatusAlertService:
         print(f"[CsaDepartureStatusAlert] 已发送单号 {waybill_num} 状态: {status_text}")
 
     async def _send_wechat_message(self, text: str) -> None:
+        if not should_send_wechat_alert(
+            WechatAlertScene.CHINA_SOUTHERN_AIR_DEPARTURE_STATUS,
+            log_prefix="[CsaDepartureStatusAlert]",
+        ):
+            return
         url = settings.WECHAT_WEBHOOK_URL
         if not url:
             print("[CsaDepartureStatusAlert] WECHAT_WEBHOOK_URL 未配置")
