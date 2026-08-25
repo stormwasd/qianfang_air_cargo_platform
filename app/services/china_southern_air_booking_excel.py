@@ -75,7 +75,6 @@ class ChinaSouthernAirBookingExcelService:
         "cargo_name": "货物名称",
         "quantity": "件数",
         "weight": "重量(kg)",
-        "special_cargo_code": "特货码",
         "outbound_cargo_and_mail_handling_fee_options": "出港货邮处理费选项",
     }
     # 这些列不包含模板预置值，可用于判断用户是否真正填写了该行。

@@ -46,7 +46,7 @@
 
 - 数据填写区统一使用文本格式并默认水平、垂直居中，避免航班号、货物代码等标识被 Excel 自动转换。
 - 下载时动态读取启用的数据字典 `nanfang_air_cargo_type`，将全部有效 `label` 作为`货物类型`列的单选下拉选项；数据字典同步覆盖后，再次下载即可获得最新选项。选中该列单元格时不显示额外的输入提示浮窗；该动态处理不修改模板其他列、样式、默认值或既有下拉框。
-- `特货码（多个用英文逗号隔开）`：多个特货码使用英文逗号分隔，例如 `XPS,GEN`。
+- `特货码（多个用英文逗号隔开）`为可选列：用户只需填写默认码之外的附加特货码；多个使用英文逗号分隔，例如 `GEN,AKA`。执行订舱时后端会查询并自动合并南航默认特货码。
 - `超规货`、`无隐含危险品`、`出港货邮处理费选项`均为单选下拉框。
 
 ### 后台解析批量订舱 Excel
@@ -93,7 +93,7 @@
 
 `form_data.bookings[0].booking_volume` 为可选字段，页面提交和后台 Excel 解析均允许不填。已填写时直接作为南航请求的 `volume`；未传、为 `null` 或空字符串时，执行阶段先调用南航 `calculateCWeight`，固定传入 `dimensions=null`、`volume=""`、`channel="B2B"`，并将 `origin_station` 映射为 `depCityCode`、`weight` 映射为 `weight`。接口返回的 `result.volume` 会用于后续 `calculateCharge` 和 `createOrder`，但不回写原始 `form_data`。同一次批量执行中，相同始发站与重量会复用查询结果。查询失败时该条订舱失败，`error_details.stage` 为 `calculate_cweight`，诊断数据不包含 Token、Cookie 或请求头。
 
-`form_data.bookings[0].special_cargo_code` 在平台内部保持英文逗号分隔，例如 `XPS,AKA`。调用南航 `createOrder` 时，服务端仅在请求构建阶段将英文逗号或中文逗号转换为 `/`，因此发往南航的 `orderInfo.orderShipment.spCode` 和 `productionCode` 均为 `XPS/AKA`；原始 `form_data` 不会被修改。历史上已经使用 `/` 分隔的数据仍兼容。
+`form_data.bookings[0].special_cargo_code` 为可选字段，填写内容视为用户附加特货码。执行阶段在预占单号之前调用南航 `queryShipmentSubProductCode`：`dest <- destination`、`origin <- origin_station`、`shipmentType <- cargo_type`、`productName <- product_name`（为空时使用与 `parentProductionName` 一致的业务配置或默认“南航快运”），并固定传入 `channel=B`、`directTransfer=D`、`customerno=SZXFED`。返回的 `result.subCode` 作为默认码，按“默认码在前、用户码在后”进行大小写不敏感去重；例如默认 `XPS`、用户填写 `GEN`，持久化的 `form_data` 会回写为 `XPS,GEN`，发往南航 `orderInfo.orderShipment.spCode` 和 `productionCode` 的值均为 `XPS/GEN`。英文逗号、中文逗号及历史 `/` 分隔数据均兼容；同一次批量执行中，相同始发站、目的站、货物类型和产品名称复用查询结果。查询失败时该条订舱失败且不占用单号，`error_details.stage` 为 `query_shipment_sub_product_code`，诊断数据不包含 Token、Cookie 或请求头。
 
 ## 南航开单
 
@@ -168,7 +168,7 @@
 
 `POST /api/v1/waybills/{waybill_id}/execute-china-southern-air`
 
-`form_data.cargo_info.special_cargo_code` 在平台内部使用英文逗号分隔。调用南航 `createOrder` 时，服务端将英文逗号或中文逗号转换为 `/`，并同时写入 `orderInfo.orderShipment.spCode` 和 `productionCode`；原始 `form_data` 保持不变，已有 `/` 分隔数据继续兼容。
+`form_data.cargo_info.special_cargo_code` 为可选的用户附加特货码。执行阶段在预占单号之前调用南航 `queryShipmentSubProductCode`，参数映射为 `dest <- flight_info.destination`、`origin <- flight_info.origin_station`、`shipmentType <- cargo_info.cargo_type`、`productName <- cargo_info.product_name`（为空时使用与 `parentProductionName` 一致的业务配置或默认“南航快运”），并固定传入 `channel=B`、`directTransfer=D`、`customerno=SZXFED`。返回的 `result.subCode` 与用户码按“默认码在前、用户码在后”进行大小写不敏感去重；例如默认 `XPS`、用户填写 `GEN`，持久化的 `form_data.cargo_info.special_cargo_code` 回写为 `XPS,GEN`，发往南航 `orderInfo.orderShipment.spCode` 和 `productionCode` 的值均为 `XPS/GEN`。英文逗号、中文逗号及历史 `/` 分隔数据均兼容。查询失败不会占用单号，并以 `502` 返回 `error_details.stage="query_shipment_sub_product_code"` 及安全的请求/响应诊断数据。
 
 `form_data.cargo_info.booking_volume` 为可选字段。已填写时直接作为南航请求的 `volume`；未传、为 `null` 或空字符串时，在预占单号之前调用南航 `calculateCWeight`，将 `flight_info.origin_station` 作为 `depCityCode`、`cargo_info.weight` 作为 `weight`，其余请求字段固定为 `dimensions=null`、`volume=""`、`channel="B2B"`。返回的 `result.volume` 用于后续 `calculateCharge`、`createOrder`，但不回写原始 `form_data`；默认体积查询失败不会占用单号，并以 `502` 返回 `error_details.stage="calculate_cweight"` 及安全的请求/响应诊断数据。
 

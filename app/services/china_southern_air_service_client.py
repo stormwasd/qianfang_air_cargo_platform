@@ -4,6 +4,11 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from app.services.china_southern_air_field_utils import (
+    merge_special_cargo_codes,
+    normalize_special_cargo_code,
+)
+
 
 class ChinaSouthernAirServiceError(Exception):
     """南航 B2B 接口调用或响应不符合预期，并保留安全的诊断信息。"""
@@ -30,6 +35,10 @@ class ChinaSouthernAirService:
     )
     CALCULATE_CWEIGHT_URL = (
         "https://cargo.csair.com/order-center/b2e-order/b2eOrder/calculateCWeight"
+    )
+    SHIPMENT_SUB_PRODUCT_CODE_URL = (
+        "https://cargo.csair.com/order-center/b2e-support/cesStaticdata/"
+        "queryShipmentSubProductCode"
     )
     DEPARTURE_CARGO_MAIL_HANDLING_CHARGE = "出港货邮处理费"
 
@@ -407,6 +416,174 @@ class ChinaSouthernAirService:
         if cache is not None:
             cache[cache_key] = resolved
         return resolved
+
+    async def query_default_special_cargo_code(
+        self,
+        *,
+        token: str,
+        origin_station: str,
+        destination: str,
+        shipment_type: str,
+        product_name: str,
+        cookie: Optional[str] = None,
+    ) -> str:
+        """查询南航当前航线、货物类型和产品对应的默认特货码。"""
+        cleaned_token = self._clean_token(token)
+        if not cleaned_token:
+            raise ChinaSouthernAirServiceError("南航登录令牌无效，请先刷新南航 Token")
+
+        params = {
+            "dest": str(destination or "").strip().upper(),
+            "origin": str(origin_station or "").strip().upper(),
+            "shipmentType": str(shipment_type or "").strip(),
+            "channel": "B",
+            "productName": str(product_name or "").strip(),
+            "directTransfer": "D",
+            "customerno": "SZXFED",
+        }
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Origin": "https://cargo.csair.com",
+            "Referer": "https://cargo.csair.com/tangb2gweb/booking",
+            "User-Agent": "qianfang-air-cargo-platform/1.0",
+            "x-customs-user": cleaned_token,
+            "x-customs-userid": "SZXFED",
+        }
+        if cookie:
+            headers["Cookie"] = str(cookie)
+
+        def error_details(
+            *,
+            upstream_response: Any = None,
+            http_status: Optional[int] = None,
+            network_error: Optional[str] = None,
+        ) -> Dict[str, Any]:
+            details: Dict[str, Any] = {
+                "stage": "query_shipment_sub_product_code",
+                "request_data": deepcopy(params),
+            }
+            if upstream_response is not None:
+                details["upstream_response"] = deepcopy(upstream_response)
+            if http_status is not None:
+                details["http_status"] = http_status
+            if network_error:
+                details["network_error"] = network_error
+            return details
+
+        try:
+            timeout = httpx.Timeout(20.0, connect=5.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    self.SHIPMENT_SUB_PRODUCT_CODE_URL,
+                    params=params,
+                    headers=headers,
+                    content=b"",
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            try:
+                upstream_response = exc.response.json()
+            except (ValueError, TypeError):
+                upstream_response = exc.response.text
+            raise ChinaSouthernAirServiceError(
+                f"南航默认特货码查询失败（HTTP {exc.response.status_code}）",
+                details=error_details(
+                    upstream_response=upstream_response,
+                    http_status=exc.response.status_code,
+                ),
+            ) from exc
+        except httpx.RequestError as exc:
+            raise ChinaSouthernAirServiceError(
+                "南航默认特货码查询服务暂时不可用",
+                details=error_details(network_error=str(exc)),
+            ) from exc
+
+        try:
+            response_data = response.json()
+        except ValueError as exc:
+            raise ChinaSouthernAirServiceError(
+                "南航默认特货码查询服务返回了无效数据",
+                details=error_details(
+                    upstream_response=response.text,
+                    http_status=response.status_code,
+                ),
+            ) from exc
+        if not isinstance(response_data, dict):
+            raise ChinaSouthernAirServiceError(
+                "南航默认特货码查询服务返回格式异常",
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                ),
+            )
+        if str(response_data.get("code", "")) not in {"0000", "0"}:
+            raise ChinaSouthernAirServiceError(
+                self._response_message(response_data, "南航默认特货码查询失败"),
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                ),
+            )
+
+        result = response_data.get("result")
+        sub_code = result.get("subCode") if isinstance(result, dict) else None
+        normalized_sub_code = merge_special_cargo_codes(sub_code, None)
+        if not normalized_sub_code:
+            raise ChinaSouthernAirServiceError(
+                "南航默认特货码查询未返回有效 subCode",
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                ),
+            )
+        return normalized_sub_code
+
+    async def resolve_special_cargo_code(
+        self,
+        *,
+        token: str,
+        origin_station: str,
+        destination: str,
+        shipment_type: str,
+        product_name: str,
+        user_special_cargo_code: Any,
+        cookie: Optional[str] = None,
+        cache: Optional[Dict[Any, str]] = None,
+    ) -> Dict[str, str]:
+        """查询默认特货码并与用户码合并，返回平台格式和南航格式。"""
+        cache_key = (
+            str(origin_station or "").strip().upper(),
+            str(destination or "").strip().upper(),
+            str(shipment_type or "").strip(),
+            str(product_name or "").strip(),
+        )
+        if cache is not None and cache_key in cache:
+            default_code = cache[cache_key]
+        else:
+            default_code = await self.query_default_special_cargo_code(
+                token=token,
+                origin_station=origin_station,
+                destination=destination,
+                shipment_type=shipment_type,
+                product_name=product_name,
+                cookie=cookie,
+            )
+            if cache is not None:
+                cache[cache_key] = default_code
+
+        platform_code = merge_special_cargo_codes(
+            default_code,
+            user_special_cargo_code,
+        )
+        csa_code = normalize_special_cargo_code(platform_code)
+        if not platform_code or not csa_code:
+            raise ChinaSouthernAirServiceError("南航特货码合并结果为空")
+        return {
+            "default_code": default_code,
+            "platform_code": platform_code,
+            "csa_code": csa_code,
+        }
 
     async def query_departure_cargo_mail_handling_charge(
         self,

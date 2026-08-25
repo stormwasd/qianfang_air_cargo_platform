@@ -1514,6 +1514,55 @@ async def execute_china_southern_air_waybill(
             data={"error_details": exc.details},
         ) from exc
 
+    # 南航会按航线、货物类型和产品返回默认特货码。默认码在前、用户码在后
+    # 去重合并；平台 form_data 保持逗号格式，发往南航的值保持斜杠格式。
+    try:
+        special_cargo_code = (
+            await china_southern_air_direct_order_service.resolve_special_cargo_code(
+                token=token_record.token,
+                values=direct_order_values,
+                business_config=business_config,
+            )
+        )
+    except ChinaSouthernAirServiceError as exc:
+        raise BaseAPIException(
+            502,
+            str(exc),
+            data={"error_details": exc.details},
+        ) from exc
+
+    platform_special_cargo_code = special_cargo_code["platform_code"]
+    if (
+        form_data_dict["cargo_info"].get("special_cargo_code")
+        != platform_special_cargo_code
+    ):
+        try:
+            locked_waybill = (
+                db.query(Waybill)
+                .filter(Waybill.id == waybill_id_int)
+                .with_for_update()
+                .first()
+            )
+            if locked_waybill is None:
+                raise NotFoundException("运单不存在")
+            if locked_waybill.airline_record_status not in {"0", "2"}:
+                raise BadRequestException("该运单正在开单或已开单成功，不能更新特货码")
+            try:
+                latest_form_data = json.loads(locked_waybill.form_data)
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise BadRequestException("运单表单数据格式错误") from exc
+            if latest_form_data != form_data_dict:
+                raise BadRequestException("运单信息已被修改，请重新执行南航开单")
+            latest_form_data["cargo_info"]["special_cargo_code"] = (
+                platform_special_cargo_code
+            )
+            locked_waybill.form_data = json.dumps(latest_form_data, ensure_ascii=False)
+            db.commit()
+            form_data_dict = latest_form_data
+        except Exception:
+            db.rollback()
+            raise
+
     # calculateCharge 要求传入 queryServiceCharge 返回的完整费用列表，不能只传
     # 前端保存的「出港货邮处理费」单个分组。查询后再用本次表单选项替换该分组。
     service_charge_query_data = {

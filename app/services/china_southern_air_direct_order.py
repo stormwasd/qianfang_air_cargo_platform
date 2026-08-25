@@ -251,6 +251,44 @@ class ChinaSouthernAirDirectOrderService:
         )
 
     @classmethod
+    def effective_product_name(
+        cls,
+        values: Dict[str, Any],
+        business_config: Dict[str, Any],
+    ) -> str:
+        """返回与 createOrder 的 parentProductionName 完全一致的有效产品名。"""
+        config = cls._direct_order_config(business_config)
+        return str(
+            values.get("product_name")
+            or config.get("parent_production_name")
+            or "南航快运"
+        ).strip()
+
+    async def resolve_special_cargo_code(
+        self,
+        *,
+        token: str,
+        values: Dict[str, Any],
+        business_config: Dict[str, Any],
+        cache: Optional[Dict[Any, str]] = None,
+    ) -> Dict[str, str]:
+        """查询南航默认特货码，与用户码合并，并更新请求字段。"""
+        config = self._direct_order_config(business_config)
+        product_name = self.effective_product_name(values, business_config)
+        resolved = await china_southern_air_service.resolve_special_cargo_code(
+            token=token,
+            origin_station=values["origin_station"],
+            destination=values["destination"],
+            shipment_type=values["shipment_type_name"],
+            product_name=product_name,
+            user_special_cargo_code=values.get("sp_code"),
+            cookie=config.get("cookie"),
+            cache=cache,
+        )
+        values["sp_code"] = resolved["csa_code"]
+        return resolved
+
+    @classmethod
     def build_calculate_payload(
         cls,
         form_data: Dict[str, Any],

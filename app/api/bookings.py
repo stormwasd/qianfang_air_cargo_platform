@@ -367,6 +367,7 @@ async def _execute_china_southern_air_direct_booking(
     business_config: dict,
     token: str,
     default_volume_cache: dict = None,
+    default_special_cargo_code_cache: dict = None,
 ) -> None:
     """执行单条直连订舱；所有外部请求均在数据库锁释放后进行。"""
     try:
@@ -397,6 +398,45 @@ async def _execute_china_southern_air_direct_booking(
                 cache=default_volume_cache,
             )
         )
+        special_cargo_code = (
+            await china_southern_air_direct_booking_service.resolve_special_cargo_code(
+                token=token,
+                values=values,
+                business_config=business_config,
+                cache=default_special_cargo_code_cache,
+            )
+        )
+
+        # 平台持久化继续使用英文逗号分隔；南航请求使用 values["sp_code"]
+        # 中已经转换完成的斜杠格式。写回发生在预占单号之前。
+        booking_item = form_data["bookings"][0]
+        platform_special_cargo_code = special_cargo_code["platform_code"]
+        if booking_item.get("special_cargo_code") != platform_special_cargo_code:
+            locked_booking = (
+                db.query(Booking)
+                .filter(Booking.id == booking_id)
+                .with_for_update()
+                .first()
+            )
+            if locked_booking is None:
+                raise ChinaSouthernAirDirectBookingError("订舱不存在")
+            if locked_booking.booking_status != "1":
+                raise ChinaSouthernAirDirectBookingError("订舱执行状态已变化，请重新提交")
+            try:
+                latest_form_data = json.loads(locked_booking.form_data)
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise ChinaSouthernAirDirectBookingError("订舱表单数据格式错误") from exc
+            if latest_form_data != form_data:
+                raise ChinaSouthernAirDirectBookingError(
+                    "订舱信息已被修改，请重新执行南航订舱"
+                )
+            latest_form_data["bookings"][0]["special_cargo_code"] = (
+                platform_special_cargo_code
+            )
+            locked_booking.form_data = json.dumps(latest_form_data, ensure_ascii=False)
+            db.commit()
+            form_data = latest_form_data
+
         flight = await china_southern_air_direct_booking_service.query_matching_flight(
             token=token, values=values, business_config=business_config
         )
@@ -798,6 +838,8 @@ async def execute_booking(
     # 仅在本次批量请求内复用相同始发站、重量的默认体积查询结果，
     # 避免批量订舱对南航 calculateCWeight 发起重复请求。
     default_volume_cache = {}
+    # 相同始发站、目的站、货物类型和产品名称只查询一次默认特货码。
+    default_special_cargo_code_cache = {}
     
     for booking_id_str in request.booking_ids:
         try:
@@ -872,6 +914,7 @@ async def execute_booking(
                 business_config=business_config,
                 token=nanhang_token,
                 default_volume_cache=default_volume_cache,
+                default_special_cargo_code_cache=default_special_cargo_code_cache,
             )
             
             execute_results.append(BookingExecuteItem(

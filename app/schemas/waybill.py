@@ -69,7 +69,7 @@ class WaybillCreate(BaseModel):
         "booking_volume": "",  // 订舱体积（可选；未填时执行阶段由南航接口计算默认值）
         "product_name": "",  // 产品名称
         "oversized_cargo": "",  // 超规货
-        "special_cargo_code": "",  // 特货码；多个使用英文逗号分隔，例如 XPS,AKA
+        "special_cargo_code": "",  // 用户附加特货码（可选）；多个使用英文逗号分隔，例如 GEN,AKA
         "storage_and_transportation_precautions": ""  // 储运注意事项（可选）
       },
       "contact_info": {
@@ -106,7 +106,7 @@ class WaybillCreate(BaseModel):
     - 所有字段的值都是字符串类型
     - address 是对象类型，包含 region（省/市/区）和 detail（详细地址）两个字段
     - 南航 `cargo_info.cargo_type_code` 优先映射到开单和费用计算请求的 `rateCode`；历史运单未提供时回退到业务参数配置中的 `direct_order.rate_code`（默认 3006）
-    - 南航 `cargo_info.special_cargo_code` 在平台内部使用英文逗号分隔；调用南航接口时服务端转换为 `/` 分隔，不修改原始 form_data
+    - 南航 `cargo_info.special_cargo_code` 可不填；执行时按始发站、目的站、货物类型和有效产品名称查询南航默认特货码，再与用户码去重合并。平台 `form_data` 回写为英文逗号格式，发往南航的 `spCode`、`productionCode` 使用 `/` 格式
     - 南航接口开单时，`cargo_info.product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
     - 南航 `cargo_info.booking_volume` 可不填；未填、为 `null` 或空字符串时，执行阶段使用 `flight_info.origin_station` 和 `cargo_info.weight` 调用南航 `calculateCWeight`，并将返回的 `volume` 用于后续 `calculateCharge`、`createOrder`；已填写时原值优先
     - 南航开单时，发货人和收货人的国家代码默认传 `CN`；可分别通过业务参数 `direct_order.shipper_country_code`、`direct_order.consignee_country_code` 覆盖

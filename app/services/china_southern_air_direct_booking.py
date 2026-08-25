@@ -136,10 +136,7 @@ class ChinaSouthernAirDirectBookingService:
                 allow_zero=True,
             ),
             "sp_code": normalize_special_cargo_code(
-                cls._required_text(
-                    item.get("special_cargo_code"),
-                    "bookings[0].special_cargo_code",
-                )
+                item.get("special_cargo_code")
             ),
             "handling_info": str(item.get("storage_and_transportation_precautions") or "").strip() or None,
             "dangerous_check_required": str(item.get("no_dangerous_goods", "")).strip() == "0",
@@ -171,6 +168,22 @@ class ChinaSouthernAirDirectBookingService:
     ) -> Any:
         """复用开单配置与南航 calculateCWeight，为订舱补齐缺省体积。"""
         return await china_southern_air_direct_order_service.resolve_volume(
+            token=token,
+            values=values,
+            business_config=business_config,
+            cache=cache,
+        )
+
+    async def resolve_special_cargo_code(
+        self,
+        *,
+        token: str,
+        values: Dict[str, Any],
+        business_config: Dict[str, Any],
+        cache: Optional[Dict[Any, str]] = None,
+    ) -> Dict[str, str]:
+        """复用开单规则查询并合并南航订舱默认特货码。"""
+        return await china_southern_air_direct_order_service.resolve_special_cargo_code(
             token=token,
             values=values,
             business_config=business_config,

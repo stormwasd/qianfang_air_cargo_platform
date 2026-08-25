@@ -39,7 +39,7 @@ class BookingCreate(BaseModel):
           "product_name": "",  // 产品名称
           "booking_volume": "",  // 订舱体积（可选；未填时执行阶段由南航接口计算默认值）
           "oversized_cargo": "",  // 超规货
-          "special_cargo_code": "",  // 特货码；多个使用英文逗号分隔，例如 XPS,AKA
+          "special_cargo_code": "",  // 用户附加特货码（可选）；多个使用英文逗号分隔，例如 GEN,AKA
           "no_dangerous_goods": "",  // 无危险品
           "consignee": "",  // 收货人
           "consignee_phone": "",  // 收货人手机号
@@ -53,7 +53,7 @@ class BookingCreate(BaseModel):
     - `order_contact_name` 和 `order_contact_phone` 位于 form_data 顶层，不在 bookings 数组元素中
     - 执行南航订舱时，`contactName`、`contactPhone` 优先使用上述 form_data 字段；未传时分别读取业务参数配置中的 `business_default.order_contact_name`、`business_default.order_contact_phone`
     - `shipper_unit` 仅作为平台业务数据保存，不替换南航 createOrder 中的任何字段；`orderShipmentContact` 按南航请求结构传 null
-    - `special_cargo_code` 在平台内部使用英文逗号分隔；调用南航接口时服务端转换为 `/` 分隔，不修改原始 form_data
+    - `special_cargo_code` 可不填；执行时按始发站、目的站、货物类型和有效产品名称查询南航默认特货码，再与用户码去重合并。平台 `form_data` 回写为英文逗号格式，发往南航的 `spCode`、`productionCode` 使用 `/` 格式
     - 南航接口订舱时，`bookings[0].product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
     - `bookings[0].booking_volume` 可不填；未填、为 `null` 或空字符串时，执行阶段使用 `origin_station` 和 `weight` 调用南航 `calculateCWeight`，并将返回的 `volume` 用于后续 `calculateCharge`、`createOrder`；已填写时原值优先
     - `outbound_cargo_and_mail_handling_fee_options` 只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活易腐、鲜活容腐、普货、急件快件
