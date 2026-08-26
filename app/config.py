@@ -152,6 +152,26 @@ class Settings(BaseSettings):
         default=300, ge=10, le=3600,
         description="南航货物类型同步失败后的重试间隔（秒），默认300秒（5分钟）"
     )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_ENABLED: bool = Field(
+        default=False,
+        description="是否启用南航最近导入批次单号可用性扫描，默认关闭"
+    )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_ITEM_INTERVAL_SECONDS: int = Field(
+        default=30, ge=1, le=3600,
+        description="南航单号扫描时相邻两个单号请求的间隔（秒），默认30秒"
+    )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_CYCLE_INTERVAL_SECONDS: int = Field(
+        default=3600, ge=60, le=604800,
+        description="南航最近批次完成一轮扫描后的等待间隔（秒），默认3600秒"
+    )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_RETRY_SECONDS: int = Field(
+        default=300, ge=10, le=3600,
+        description="南航单号扫描无法启动一轮时的重试间隔（秒），默认300秒"
+    )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_RELEASE_GRACE_SECONDS: int = Field(
+        default=600, ge=0, le=86400,
+        description="本地单号刚被预占后禁止扫描回流的保护期（秒），默认600秒"
+    )
     RPA_GENERATED_FILES_DIR: str = Field(
         default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "generated_files"),
         description="后台扫描的RPA下载文件存放目录"

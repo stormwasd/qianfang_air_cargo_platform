@@ -44,6 +44,9 @@ class ChinaSouthernAirService:
         "https://cargo.csair.com/order-center/b2e-flight/"
         "cesB2eFlightPrice/queryB2eFlightPrice"
     )
+    ORDER_LIST_URL = (
+        "https://cargo.csair.com/order-center/b2e-order/b2eOrder/getOrderList"
+    )
     DEPARTURE_CARGO_MAIL_HANDLING_CHARGE = "出港货邮处理费"
 
     @staticmethod
@@ -180,6 +183,114 @@ class ChinaSouthernAirService:
         except ValueError as exc:
             raise ChinaSouthernAirServiceError("南航货物类型服务返回了无效数据") from exc
         return self.normalize_shipment_types(response_data)
+
+    @staticmethod
+    def normalize_waybill_order_page(response_data: Any) -> Dict[str, Any]:
+        """校验南航订单列表分页响应，保留判断状态所需的列表和总数。"""
+        if not isinstance(response_data, dict):
+            raise ChinaSouthernAirServiceError("南航运单使用状态服务返回格式异常")
+        if str(response_data.get("code", "")) not in {"0000", "0"}:
+            raise ChinaSouthernAirServiceError(
+                ChinaSouthernAirService._response_message(
+                    response_data,
+                    "南航运单使用状态查询失败",
+                ),
+                details={
+                    "stage": "query_waybill_order_list",
+                    "upstream_response": response_data,
+                },
+            )
+
+        result = response_data.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("list"), list):
+            raise ChinaSouthernAirServiceError("南航运单使用状态服务返回列表格式异常")
+        try:
+            total = max(0, int(result.get("total") or 0))
+        except (TypeError, ValueError) as exc:
+            raise ChinaSouthernAirServiceError(
+                "南航运单使用状态服务返回总数格式异常"
+            ) from exc
+        return {"list": result["list"], "total": total}
+
+    async def query_waybill_orders(
+        self,
+        *,
+        token: str,
+        awb_no: str,
+        page_size: int = 100,
+        customer_no: str = "SZXFED",
+    ) -> List[Dict[str, Any]]:
+        """分页查询一个南航运单号的全部订单记录。"""
+        cleaned_token = self._clean_token(token)
+        cleaned_awb_no = str(awb_no or "").strip()
+        if not cleaned_token:
+            raise ChinaSouthernAirServiceError("南航登录令牌无效，请先刷新南航 Token")
+        if not cleaned_awb_no:
+            raise ChinaSouthernAirServiceError("待查询的南航运单号不能为空")
+
+        limit = max(1, min(int(page_size), 100))
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://cargo.csair.com",
+            "Referer": "https://cargo.csair.com/tangb2gweb/order-management",
+            "User-Agent": "qianfang-air-cargo-platform/1.0",
+            "x-customs-user": cleaned_token,
+            "x-customs-userid": customer_no,
+        }
+        orders: List[Dict[str, Any]] = []
+        start = 0
+        timeout = httpx.Timeout(20.0, connect=5.0)
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                while True:
+                    response = await client.post(
+                        self.ORDER_LIST_URL,
+                        params={"start": start, "limit": limit, "awbNo": cleaned_awb_no},
+                        headers=headers,
+                        content=b"",
+                    )
+                    response.raise_for_status()
+                    try:
+                        page = self.normalize_waybill_order_page(response.json())
+                    except ValueError as exc:
+                        raise ChinaSouthernAirServiceError(
+                            "南航运单使用状态服务返回了无效数据"
+                        ) from exc
+
+                    page_items = page["list"]
+                    if not all(isinstance(item, dict) for item in page_items):
+                        raise ChinaSouthernAirServiceError(
+                            "南航运单使用状态服务返回了无效订单项"
+                        )
+                    orders.extend(page_items)
+                    start += len(page_items)
+                    if (
+                        not page_items
+                        or len(page_items) < limit
+                        or start >= page["total"]
+                    ):
+                        break
+        except ChinaSouthernAirServiceError:
+            raise
+        except httpx.HTTPStatusError as exc:
+            detail = ""
+            try:
+                detail = self._response_message(exc.response.json(), "")
+            except (ValueError, TypeError):
+                detail = exc.response.text.strip()
+            suffix = f"：{detail}" if detail else ""
+            raise ChinaSouthernAirServiceError(
+                f"南航运单使用状态查询失败（HTTP {exc.response.status_code}）{suffix}",
+                details={"stage": "query_waybill_order_list", "awbNo": cleaned_awb_no},
+            ) from exc
+        except httpx.RequestError as exc:
+            raise ChinaSouthernAirServiceError(
+                "南航运单使用状态服务暂时不可用",
+                details={"stage": "query_waybill_order_list", "awbNo": cleaned_awb_no},
+            ) from exc
+
+        return orders
 
     async def query_service_charges(
         self,

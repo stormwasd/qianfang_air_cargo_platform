@@ -36,6 +36,28 @@
 | `CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_INTERVAL_SECONDS` | `43200` | 成功同步后的执行间隔（秒），允许 `60-604800` |
 | `CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_RETRY_SECONDS` | `300` | 同步失败后的重试间隔（秒），允许 `10-3600` |
 
+## 南航最近导入批次单号可用性扫描
+
+该功能是后台内部校准任务，不新增前端接口，默认关闭。开启后服务启动会立即扫描一次，后续按配置周期重复执行。
+
+- 扫描范围固定为南航单号库最近导入的一个批次，不扫描全部历史单号。最近批次按 `claim_date`、`created_at`、批次 `id` 依次倒序确定；新增批次后，下一轮会自动切换到新批次。
+- 每个单号使用 `waybill_stock_items.number_suffix` 作为南航 `getOrderList` 的 `awbNo`，并自动分页读取全部结果；请求头 `x-customs-user` 使用 `nanhang_token` 表中的最新非空 Token。
+- 南航返回空列表，或全部列表项的 `statusCN` 都严格等于`已取消`时，单号校准为未使用；只要任一项不是`已取消`（包括状态缺失），就校准为已使用。
+- 状态为未使用时写入 `usage_status="0"`、清空 `usage_date`；状态为已使用时写入 `usage_status="1"`，缺少 `usage_date` 时补当天日期。扫描也会解除系统因“南航提示运单号已被使用”或结果不确定而自动设置的隔离，但不会解除人工设置的失效原因或异常状态。
+- 若单号正被本系统处于执行中的南航订舱/开单占用，或仍在最近预占保护期内，即使南航暂时返回空列表也不会回流，避免接口数据延迟造成重复分配。
+- 单条网络、响应或业务异常只记录日志并保留该单号原状态，不中断本批次其余单号；Token 缺失等整轮前置错误按重试间隔再次尝试。
+- 扫描采用单线程串行请求，不开启多进程或并发扫描；相邻请求之间强制等待配置的单号间隔，以降低南航风控风险。
+
+环境变量配置：
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_ENABLED` | `False` | 是否启用最近导入批次扫描 |
+| `CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_ITEM_INTERVAL_SECONDS` | `30` | 相邻两个单号请求间隔（秒），允许 `1-3600` |
+| `CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_CYCLE_INTERVAL_SECONDS` | `3600` | 一轮完成后的等待时间（秒），允许 `60-604800` |
+| `CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_RETRY_SECONDS` | `300` | 整轮前置失败后的重试时间（秒），允许 `10-3600` |
+| `CHINA_SOUTHERN_AIR_WAYBILL_STOCK_RELEASE_GRACE_SECONDS` | `600` | 本地刚预占单号后的禁止回流保护期（秒），允许 `0-86400` |
+
 ## 南航订舱
 
 ### 下载批量订舱模板

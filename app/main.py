@@ -78,6 +78,8 @@ async def lifespan(app: FastAPI):
     # 南航货物类型同步为后端直连接口任务，不依赖 RPA 队列是否启用。
     from app.services.csa_cargo_type_sync import csa_cargo_type_sync_scheduler
     csa_cargo_type_sync_scheduler.start()
+    from app.services.csa_waybill_stock_scanner import csa_waybill_stock_scan_scheduler
+    csa_waybill_stock_scan_scheduler.start()
     if settings.RPA_QUEUE_ENABLED:
         from app.services.rpa_worker import rpa_worker_manager
         rpa_worker_manager.start_workers()
@@ -113,6 +115,7 @@ async def lifespan(app: FastAPI):
     yield
 
     csa_cargo_type_sync_scheduler.stop()
+    csa_waybill_stock_scan_scheduler.stop()
 
     if settings.RPA_QUEUE_ENABLED:
         from app.services.rpa_worker import rpa_worker_manager
