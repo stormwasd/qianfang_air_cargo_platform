@@ -303,6 +303,11 @@ class ChinaSouthernAirSpecialCargoCodeTests(unittest.IsolatedAsyncioTestCase):
             config,
         )
         order_values["sp_code"] = "XPS/GEN"
+        order_values.update({
+            "book_grade": "B",
+            "space_class": "B",
+            "sub_space_class": "B6",
+        })
         order_payload = ChinaSouthernAirDirectOrderService.build_create_payload(
             _direct_order_form("GEN"),
             config,
@@ -317,6 +322,11 @@ class ChinaSouthernAirSpecialCargoCodeTests(unittest.IsolatedAsyncioTestCase):
             config,
         )
         booking_values["sp_code"] = "XPS/GEN"
+        booking_values.update({
+            "book_grade": "B",
+            "space_class": "B",
+            "sub_space_class": "B6",
+        })
         booking_payload = ChinaSouthernAirDirectBookingService.build_create_payload(
             booking_values,
             config,
@@ -327,11 +337,15 @@ class ChinaSouthernAirSpecialCargoCodeTests(unittest.IsolatedAsyncioTestCase):
         )
 
         for payload in (order_payload, booking_payload):
+            shipment = payload["orderInfo"]["orderShipment"]
             self.assertEqual(
-                payload["orderInfo"]["orderShipment"]["spCode"],
+                shipment["spCode"],
                 "XPS/GEN",
             )
             self.assertEqual(payload["productionCode"], "XPS/GEN")
+            self.assertEqual(shipment["bookGrade"], "B")
+            self.assertEqual(shipment["spaceClass"], "B")
+            self.assertEqual(shipment["subSpaceClass"], "B6")
 
     def test_excel_allows_blank_user_special_cargo_code(self):
         row = {

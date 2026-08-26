@@ -56,6 +56,7 @@ class BookingCreate(BaseModel):
     - `special_cargo_code` 可不填；执行时按始发站、目的站、货物类型和有效产品名称查询南航默认特货码，再与用户码去重合并。平台 `form_data` 回写为英文逗号格式，发往南航的 `spCode`、`productionCode` 使用 `/` 格式
     - 南航接口订舱时，`bookings[0].product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
     - `bookings[0].booking_volume` 可不填；未填、为 `null` 或空字符串时，执行阶段使用 `origin_station` 和 `weight` 调用南航 `calculateCWeight`，并将返回的 `volume` 用于后续 `calculateCharge`、`createOrder`；已填写时原值优先
+    - 最终体积确定后，执行阶段按航班、货物类型、重量、体积及有效产品名称查询南航运价舱位；返回的 `spaceClass` 用于 `bookGrade`、`spaceClass`，`subSpaceClass` 用于同名字段
     - `outbound_cargo_and_mail_handling_fee_options` 只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活易腐、鲜活容腐、普货、急件快件
     - 批量Excel使用 `POST /api/v1/bookings/china-southern-air/import-excel` 上传；后端按 `nanfang_air_cargo_type` 数据字典的 `label` 匹配货物类型，并把对应 `value` 写入 `cargo_type_code`
     - 为兼容仍由前端解析Excel后调用 `POST /api/v1/bookings` 的流程，南航新增/修改接口也会在 `cargo_type_code` 缺失时按同一数据字典自动补齐；已传入非空值时保持原值

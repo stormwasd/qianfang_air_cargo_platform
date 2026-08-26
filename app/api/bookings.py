@@ -367,6 +367,7 @@ async def _execute_china_southern_air_direct_booking(
     business_config: dict,
     token: str,
     default_volume_cache: dict = None,
+    default_cabin_class_cache: dict = None,
     default_special_cargo_code_cache: dict = None,
 ) -> None:
     """执行单条直连订舱；所有外部请求均在数据库锁释放后进行。"""
@@ -397,6 +398,12 @@ async def _execute_china_southern_air_direct_booking(
                 business_config=business_config,
                 cache=default_volume_cache,
             )
+        )
+        await china_southern_air_direct_booking_service.resolve_cabin_class(
+            token=token,
+            values=values,
+            business_config=business_config,
+            cache=default_cabin_class_cache,
         )
         special_cargo_code = (
             await china_southern_air_direct_booking_service.resolve_special_cargo_code(
@@ -840,6 +847,8 @@ async def execute_booking(
     default_volume_cache = {}
     # 相同始发站、目的站、货物类型和产品名称只查询一次默认特货码。
     default_special_cargo_code_cache = {}
+    # 航班、货物、重量、最终体积和产品均相同时复用运价舱位结果。
+    default_cabin_class_cache = {}
     
     for booking_id_str in request.booking_ids:
         try:
@@ -914,6 +923,7 @@ async def execute_booking(
                 business_config=business_config,
                 token=nanhang_token,
                 default_volume_cache=default_volume_cache,
+                default_cabin_class_cache=default_cabin_class_cache,
                 default_special_cargo_code_cache=default_special_cargo_code_cache,
             )
             

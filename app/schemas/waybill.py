@@ -109,6 +109,7 @@ class WaybillCreate(BaseModel):
     - 南航 `cargo_info.special_cargo_code` 可不填；执行时按始发站、目的站、货物类型和有效产品名称查询南航默认特货码，再与用户码去重合并。平台 `form_data` 回写为英文逗号格式，发往南航的 `spCode`、`productionCode` 使用 `/` 格式
     - 南航接口开单时，`cargo_info.product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
     - 南航 `cargo_info.booking_volume` 可不填；未填、为 `null` 或空字符串时，执行阶段使用 `flight_info.origin_station` 和 `cargo_info.weight` 调用南航 `calculateCWeight`，并将返回的 `volume` 用于后续 `calculateCharge`、`createOrder`；已填写时原值优先
+    - 最终体积确定后，南航执行阶段按航班、货物类型、重量、体积及有效产品名称查询运价舱位；返回的 `spaceClass` 用于 `bookGrade`、`spaceClass`，`subSpaceClass` 用于同名字段
     - 南航开单时，发货人和收货人的国家代码默认传 `CN`；可分别通过业务参数 `direct_order.shipper_country_code`、`direct_order.consignee_country_code` 覆盖
     - 南航开单的收货人地址 `consigneeAddress` 默认传 `机场自提`，可通过业务参数 `direct_order.consignee_address` 覆盖
     - 南航开单的提货方式 `selfPickUp` 默认传 `Y`，与收货人地址 `机场自提` 配套；可通过业务参数 `direct_order.self_pick_up` 覆盖

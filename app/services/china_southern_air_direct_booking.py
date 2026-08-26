@@ -190,6 +190,22 @@ class ChinaSouthernAirDirectBookingService:
             cache=cache,
         )
 
+    async def resolve_cabin_class(
+        self,
+        *,
+        token: str,
+        values: Dict[str, Any],
+        business_config: Dict[str, Any],
+        cache: Optional[Dict[Any, Dict[str, str]]] = None,
+    ) -> Dict[str, str]:
+        """复用开单规则查询南航订舱产品对应的运价舱位。"""
+        return await china_southern_air_direct_order_service.resolve_cabin_class(
+            token=token,
+            values=values,
+            business_config=business_config,
+            cache=cache,
+        )
+
     @staticmethod
     def _rules(value: Any, defaults: List[str]) -> List[str]:
         if isinstance(value, str):
@@ -364,9 +380,9 @@ class ChinaSouthernAirDirectBookingService:
                     "piece": values["piece"],
                     "weight": values["weight"],
                     "volume": values["volume"],
-                    "bookGrade": "A",
-                    "spaceClass": "A",
-                    "subSpaceClass": "A6",
+                    "bookGrade": values.get("book_grade", "A"),
+                    "spaceClass": values.get("space_class", "A"),
+                    "subSpaceClass": values.get("sub_space_class", "A6"),
                 },
             },
             "extServiceCharges": deepcopy(service_charges),
@@ -405,9 +421,9 @@ class ChinaSouthernAirDirectBookingService:
             "weight": values["weight"],
             "volume": values["volume"],
             "goodsInputMethod": config.get("goods_input_method", 0),
-            "bookGrade": config.get("book_grade", "A"),
-            "spaceClass": config.get("space_class", "A"),
-            "subSpaceClass": config.get("sub_space_class", "A6"),
+            "bookGrade": values.get("book_grade") or config.get("book_grade", "A"),
+            "spaceClass": values.get("space_class") or config.get("space_class", "A"),
+            "subSpaceClass": values.get("sub_space_class") or config.get("sub_space_class", "A6"),
             "parentProductionName": (
                 values["product_name"]
                 or config.get("parent_production_name")

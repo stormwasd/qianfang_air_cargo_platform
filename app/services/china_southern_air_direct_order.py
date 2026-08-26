@@ -264,6 +264,37 @@ class ChinaSouthernAirDirectOrderService:
             or "南航快运"
         ).strip()
 
+    async def resolve_cabin_class(
+        self,
+        *,
+        token: str,
+        values: Dict[str, Any],
+        business_config: Dict[str, Any],
+        cache: Optional[Dict[Any, Dict[str, str]]] = None,
+    ) -> Dict[str, str]:
+        """查询当前产品的南航运价舱位，并更新后续请求使用的字段。"""
+        config = self._direct_order_config(business_config)
+        resolved = await china_southern_air_service.resolve_flight_price_cabin_class(
+            token=token,
+            origin_station=values["origin_station"],
+            destination=values["destination"],
+            flight_number=values["flight_number"],
+            flight_date=values["flight_date"],
+            shipment_type_code=values["rate_code"],
+            shipment_type_name=values["shipment_type_name"],
+            weight=values["weight"],
+            volume=values["volume"],
+            product_name=self.effective_product_name(values, business_config),
+            cookie=config.get("cookie"),
+            cache=cache,
+        )
+        values.update({
+            "book_grade": resolved["book_grade"],
+            "space_class": resolved["space_class"],
+            "sub_space_class": resolved["sub_space_class"],
+        })
+        return resolved
+
     async def resolve_special_cargo_code(
         self,
         *,
@@ -393,9 +424,9 @@ class ChinaSouthernAirDirectOrderService:
                     "piece": values["piece"],
                     "weight": values["weight"],
                     "volume": values["volume"],
-                    "bookGrade": config.get("book_grade", "A"),
-                    "spaceClass": config.get("space_class", "A"),
-                    "subSpaceClass": config.get("sub_space_class", "A6"),
+                    "bookGrade": values.get("book_grade") or config.get("book_grade", "A"),
+                    "spaceClass": values.get("space_class") or config.get("space_class", "A"),
+                    "subSpaceClass": values.get("sub_space_class") or config.get("sub_space_class", "A6"),
                 },
             },
             "extServiceCharges": deepcopy(ext_service_charges),
@@ -483,9 +514,9 @@ class ChinaSouthernAirDirectOrderService:
                     "weight": values["weight"],
                     "volume": values["volume"],
                     "goodsInputMethod": config.get("goods_input_method", 0),
-                    "bookGrade": config.get("book_grade", "A"),
-                    "spaceClass": config.get("space_class", "A"),
-                    "subSpaceClass": config.get("sub_space_class", "A6"),
+                    "bookGrade": values.get("book_grade") or config.get("book_grade", "A"),
+                    "spaceClass": values.get("space_class") or config.get("space_class", "A"),
+                    "subSpaceClass": values.get("sub_space_class") or config.get("sub_space_class", "A6"),
                     "parentProductionName": (
                         values["product_name"]
                         or config.get("parent_production_name")

@@ -40,6 +40,10 @@ class ChinaSouthernAirService:
         "https://cargo.csair.com/order-center/b2e-support/cesStaticdata/"
         "queryShipmentSubProductCode"
     )
+    FLIGHT_PRICE_URL = (
+        "https://cargo.csair.com/order-center/b2e-flight/"
+        "cesB2eFlightPrice/queryB2eFlightPrice"
+    )
     DEPARTURE_CARGO_MAIL_HANDLING_CHARGE = "出港货邮处理费"
 
     @staticmethod
@@ -584,6 +588,269 @@ class ChinaSouthernAirService:
             "platform_code": platform_code,
             "csa_code": csa_code,
         }
+
+    async def query_flight_price_cabin_class(
+        self,
+        *,
+        token: str,
+        origin_station: str,
+        destination: str,
+        flight_number: str,
+        flight_date: str,
+        shipment_type_code: str,
+        shipment_type_name: str,
+        weight: Any,
+        volume: Any,
+        product_name: str,
+        cookie: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """查询产品对应的南航运价舱位，并返回 createOrder 所需舱位字段。"""
+        cleaned_token = self._clean_token(token)
+        if not cleaned_token:
+            raise ChinaSouthernAirServiceError("南航登录令牌无效，请先刷新南航 Token")
+
+        expected_product_name = str(product_name or "").strip()
+        if not expected_product_name:
+            raise ChinaSouthernAirServiceError("南航运价舱位查询缺少有效产品名称")
+
+        payload = {
+            "spaceClassParamMultDto": {
+                "channel": "B",
+                "customerCode": "SZXFED",
+                "flights": [{
+                    "flightDep": str(origin_station or "").strip().upper(),
+                    "flightDest": str(destination or "").strip().upper(),
+                    "flightNo": str(flight_number or "").strip().upper(),
+                    "flightDate": str(flight_date or "").strip(),
+                }],
+                "rateCode": str(shipment_type_code or "").strip(),
+            },
+            "orderShipmentCreateDto": {
+                "shipmentTypeName": str(shipment_type_name or "").strip(),
+                "shipmentType": str(shipment_type_code or "").strip(),
+                "weight": weight,
+                "volume": volume,
+                "dimensions": None,
+                "rateType": "SPY",
+            },
+        }
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Content-Type": "application/json;charset=UTF-8",
+            "Origin": "https://cargo.csair.com",
+            "Referer": "https://cargo.csair.com/tangb2gweb/booking",
+            "User-Agent": "qianfang-air-cargo-platform/1.0",
+            "x-customs-user": cleaned_token,
+            "x-customs-userid": "SZXFED",
+        }
+        if cookie:
+            headers["Cookie"] = str(cookie)
+
+        def error_details(
+            *,
+            upstream_response: Any = None,
+            http_status: Optional[int] = None,
+            network_error: Optional[str] = None,
+            available_products: Optional[List[str]] = None,
+        ) -> Dict[str, Any]:
+            details: Dict[str, Any] = {
+                "stage": "query_b2e_flight_price",
+                "request_data": deepcopy(payload),
+                "expected_product_name": expected_product_name,
+            }
+            if available_products is not None:
+                details["available_product_names"] = deepcopy(available_products)
+            if upstream_response is not None:
+                details["upstream_response"] = deepcopy(upstream_response)
+            if http_status is not None:
+                details["http_status"] = http_status
+            if network_error:
+                details["network_error"] = network_error
+            return details
+
+        try:
+            timeout = httpx.Timeout(20.0, connect=5.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    self.FLIGHT_PRICE_URL,
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            try:
+                upstream_response = exc.response.json()
+            except (ValueError, TypeError):
+                upstream_response = exc.response.text
+            raise ChinaSouthernAirServiceError(
+                f"南航运价舱位查询失败（HTTP {exc.response.status_code}）",
+                details=error_details(
+                    upstream_response=upstream_response,
+                    http_status=exc.response.status_code,
+                ),
+            ) from exc
+        except httpx.RequestError as exc:
+            raise ChinaSouthernAirServiceError(
+                "南航运价舱位查询服务暂时不可用",
+                details=error_details(network_error=str(exc)),
+            ) from exc
+
+        try:
+            response_data = response.json()
+        except ValueError as exc:
+            raise ChinaSouthernAirServiceError(
+                "南航运价舱位查询服务返回了无效数据",
+                details=error_details(
+                    upstream_response=response.text,
+                    http_status=response.status_code,
+                ),
+            ) from exc
+        if not isinstance(response_data, dict):
+            raise ChinaSouthernAirServiceError(
+                "南航运价舱位查询服务返回格式异常",
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                ),
+            )
+        if str(response_data.get("code", "")) not in {"0000", "0"}:
+            raise ChinaSouthernAirServiceError(
+                self._response_message(response_data, "南航运价舱位查询失败"),
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                ),
+            )
+
+        result = response_data.get("result")
+        charges = result.get("charge") if isinstance(result, dict) else None
+        if not isinstance(charges, list) or not charges:
+            raise ChinaSouthernAirServiceError(
+                "南航运价舱位查询未返回可用 charge",
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                    available_products=[],
+                ),
+            )
+
+        available_products: List[str] = []
+        matched_cabins: List[Dict[str, str]] = []
+        matched_product_found = False
+        expected_key = expected_product_name.casefold()
+        for charge in charges:
+            if not isinstance(charge, dict):
+                continue
+            flight_price = charge.get("flightPriceCalculateResult")
+            if not isinstance(flight_price, dict):
+                continue
+            parent_product_name = str(charge.get("parentProductionName") or "").strip()
+            rate_name = str(flight_price.get("rateName") or "").strip()
+            candidate_names = [
+                name for name in (parent_product_name, rate_name) if name
+            ]
+            for candidate_name in candidate_names:
+                if candidate_name not in available_products:
+                    available_products.append(candidate_name)
+            if not any(name.casefold() == expected_key for name in candidate_names):
+                continue
+            matched_product_found = True
+
+            space_class = str(flight_price.get("spaceClass") or "").strip()
+            sub_space_class = str(flight_price.get("subSpaceClass") or "").strip()
+            if not space_class or not sub_space_class:
+                continue
+            matched_cabins.append({
+                "book_grade": space_class,
+                "space_class": space_class,
+                "sub_space_class": sub_space_class,
+                "product_name": parent_product_name or rate_name,
+            })
+
+        if not matched_cabins:
+            options_text = "、".join(available_products) if available_products else "无"
+            if matched_product_found:
+                message = (
+                    f"南航运价舱位中的产品“{expected_product_name}”"
+                    "未返回有效 spaceClass 或 subSpaceClass"
+                )
+            else:
+                message = (
+                    f"南航运价舱位中没有产品“{expected_product_name}”；"
+                    f"当前可选产品：{options_text}"
+                )
+            raise ChinaSouthernAirServiceError(
+                message,
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                    available_products=available_products,
+                ),
+            )
+
+        cabin_pairs = {
+            (item["space_class"], item["sub_space_class"])
+            for item in matched_cabins
+        }
+        if len(cabin_pairs) != 1:
+            raise ChinaSouthernAirServiceError(
+                f"南航运价舱位为产品“{expected_product_name}”返回了多个不同舱位",
+                details=error_details(
+                    upstream_response=response_data,
+                    http_status=response.status_code,
+                    available_products=available_products,
+                ),
+            )
+        return matched_cabins[0]
+
+    async def resolve_flight_price_cabin_class(
+        self,
+        *,
+        token: str,
+        origin_station: str,
+        destination: str,
+        flight_number: str,
+        flight_date: str,
+        shipment_type_code: str,
+        shipment_type_name: str,
+        weight: Any,
+        volume: Any,
+        product_name: str,
+        cookie: Optional[str] = None,
+        cache: Optional[Dict[Any, Dict[str, str]]] = None,
+    ) -> Dict[str, str]:
+        """查询并按当前批量请求维度复用产品舱位结果。"""
+        cache_key = (
+            str(origin_station or "").strip().upper(),
+            str(destination or "").strip().upper(),
+            str(flight_number or "").strip().upper(),
+            str(flight_date or "").strip(),
+            str(shipment_type_code or "").strip(),
+            str(shipment_type_name or "").strip(),
+            str(weight),
+            str(volume),
+            str(product_name or "").strip(),
+        )
+        if cache is not None and cache_key in cache:
+            return deepcopy(cache[cache_key])
+
+        resolved = await self.query_flight_price_cabin_class(
+            token=token,
+            origin_station=origin_station,
+            destination=destination,
+            flight_number=flight_number,
+            flight_date=flight_date,
+            shipment_type_code=shipment_type_code,
+            shipment_type_name=shipment_type_name,
+            weight=weight,
+            volume=volume,
+            product_name=product_name,
+            cookie=cookie,
+        )
+        if cache is not None:
+            cache[cache_key] = deepcopy(resolved)
+        return resolved
 
     async def query_departure_cargo_mail_handling_charge(
         self,

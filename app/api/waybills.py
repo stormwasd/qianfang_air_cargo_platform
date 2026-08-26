@@ -1514,6 +1514,21 @@ async def execute_china_southern_air_waybill(
             data={"error_details": exc.details},
         ) from exc
 
+    # 最终 volume 确定后，按当前航班、货物和产品查询南航运价舱位。
+    # 查询发生在预占单号之前，失败不会消耗单号库存。
+    try:
+        await china_southern_air_direct_order_service.resolve_cabin_class(
+            token=token_record.token,
+            values=direct_order_values,
+            business_config=business_config,
+        )
+    except ChinaSouthernAirServiceError as exc:
+        raise BaseAPIException(
+            502,
+            str(exc),
+            data={"error_details": exc.details},
+        ) from exc
+
     # 南航会按航线、货物类型和产品返回默认特货码。默认码在前、用户码在后
     # 去重合并；平台 form_data 保持逗号格式，发往南航的值保持斜杠格式。
     try:
