@@ -161,6 +161,35 @@ class WaybillStockSynchronizationTests(unittest.TestCase):
         self.assertEqual(batch_id, 11)
         self.assertEqual(item_ids, [102, 103])
 
+    def test_latest_batch_uses_import_time_before_claim_date(self):
+        # 领单日期可以补录/回填，实际导入时间才代表扫描优先级。
+        backfilled_batch = WaybillStockBatch(
+            id=12,
+            stock_id=1,
+            claim_date=date(2026, 8, 27),
+            first_number="4",
+            last_number="4",
+            claim_quantity=1,
+            number_prefix="784-",
+            created_at=datetime(2026, 8, 20, 9, 0, 0),
+        )
+        self.db.add(backfilled_batch)
+        self.db.add(
+            WaybillStockItem(
+                id=104,
+                batch_id=12,
+                claim_date=backfilled_batch.claim_date,
+                number_prefix="784-",
+                number_suffix="00000004",
+                full_number="784-00000004",
+            )
+        )
+        self.db.commit()
+
+        batch_id, item_ids = get_latest_csa_batch_item_ids(self.db)
+        self.assertEqual(batch_id, 11)
+        self.assertEqual(item_ids, [102, 103])
+
     def test_canceled_order_releases_and_clears_automatic_isolation(self):
         with patch(
             "app.services.csa_waybill_stock_scanner.settings."

@@ -53,14 +53,18 @@ def _load_latest_nanhang_token() -> str:
 
 
 def get_latest_csa_batch_item_ids(db: Session) -> tuple[Optional[int], List[int]]:
-    """只返回南航最近导入的一个批次及其全部单号 ID。"""
+    """只返回南航最近导入的一个批次及其全部单号 ID。
+
+    ``claim_date`` 是业务上的领单日期，允许补录或回填，不能作为实际
+    导入先后的唯一依据；优先使用数据库写入时间，日期和 ID 仅作稳定回退。
+    """
     latest_batch = (
         db.query(WaybillStockBatch)
         .join(WaybillStock, WaybillStockBatch.stock_id == WaybillStock.id)
         .filter(WaybillStock.airline_name == "china_southern_air")
         .order_by(
-            WaybillStockBatch.claim_date.desc(),
             WaybillStockBatch.created_at.desc(),
+            WaybillStockBatch.claim_date.desc(),
             WaybillStockBatch.id.desc(),
         )
         .first()
@@ -187,6 +191,8 @@ async def scan_latest_csa_waybill_batch_once(
     if batch_id is None:
         return stats
 
+    # 一轮开始时固定批次快照；即使扫描过程中导入了新批次，也在下一轮
+    # 再切换，确保当前批次完整扫描且本轮统计口径稳定。
     for index, item_id in enumerate(item_ids):
         if should_stop and should_stop():
             break
