@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS `cost_registrations` (
     `receivable_total` decimal(10,2) DEFAULT NULL COMMENT '应收合计',
     -- (3) 应付款项 - [1] 国际空运信息
     `pay_intl_air_subtotal` decimal(10,2) DEFAULT NULL COMMENT '国际空运-应付小计',
-    `pay_intl_air_date` date DEFAULT NULL COMMENT '国际空运-托运日期',
     `pay_intl_air_outsource_unit` varchar(100) DEFAULT NULL COMMENT '国际空运-外发单位',
     `pay_intl_air_origin` varchar(50) DEFAULT NULL COMMENT '国际空运-始发站',
     `pay_intl_air_destination` varchar(50) DEFAULT NULL COMMENT '国际空运-到达站',
@@ -174,7 +173,6 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     `receivable_total` decimal(10,2) DEFAULT NULL COMMENT '应收合计',
     -- (3) 应付款项 - [1] 国际空运信息
     `pay_intl_air_subtotal` decimal(10,2) DEFAULT NULL COMMENT '国际空运-应付小计',
-    `pay_intl_air_date` date DEFAULT NULL COMMENT '国际空运-托运日期',
     `pay_intl_air_outsource_unit` varchar(100) DEFAULT NULL COMMENT '国际空运-外发单位',
     `pay_intl_air_origin` varchar(50) DEFAULT NULL COMMENT '国际空运-始发站',
     `pay_intl_air_destination` varchar(50) DEFAULT NULL COMMENT '国际空运-到达站',

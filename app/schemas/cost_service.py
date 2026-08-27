@@ -56,7 +56,6 @@ class ReceivablesInfo(BaseModel):
 class PayableIntlAir(BaseModel):
     """(3) 应付款项 - [1] 国际空运信息"""
     subtotal: Optional[float] = Field(None, description="应付小计")
-    date: Optional[str] = Field(None, description="托运日期 (YYYY-MM-DD)")
     outsource_unit: Optional[str] = Field(None, description="外发单位")
     origin: Optional[str] = Field(None, description="始发站")
     destination: Optional[str] = Field(None, description="到达站")

@@ -54,7 +54,6 @@ class CostRegistration(Base):
     
     # (3) 应付款项 - [1] 国际空运信息
     pay_intl_air_subtotal = Column(Numeric(10, 2), nullable=True, comment="国际空运-应付小计")
-    pay_intl_air_date = Column(Date, nullable=True, comment="国际空运-托运日期")
     pay_intl_air_outsource_unit = Column(String(100), nullable=True, comment="国际空运-外发单位")
     pay_intl_air_origin = Column(String(50), nullable=True, comment="国际空运-始发站")
     pay_intl_air_destination = Column(String(50), nullable=True, comment="国际空运-到达站")
@@ -199,7 +198,6 @@ class CostConsignment(Base):
     
     # (3) 应付款项 - [1] 国际空运信息
     pay_intl_air_subtotal = Column(Numeric(10, 2), nullable=True, comment="国际空运-应付小计")
-    pay_intl_air_date = Column(Date, nullable=True, comment="国际空运-托运日期")
     pay_intl_air_outsource_unit = Column(String(100), nullable=True, comment="国际空运-外发单位")
     pay_intl_air_origin = Column(String(50), nullable=True, comment="国际空运-始发站")
     pay_intl_air_destination = Column(String(50), nullable=True, comment="国际空运-到达站")

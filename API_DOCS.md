@@ -9615,7 +9615,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 | 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-修改 |
 | 单据信息 | DELETE | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-删除（单个） |
 | 单据信息 | POST/DELETE | `/api/v1/cost-service/consignments/batch-delete` | 单据信息-批量删除 |
-| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（三级分组表头、114 列全量字段） |
+| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（三级分组表头、112 列全量字段） |
 
 #### 23.2 数据结构规范说明
 
@@ -9633,11 +9633,18 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - 请求和响应中删除 `rebate`（回扣）字段；报关信息保留 `subtotal`、`date`、`agent`、`customs_fee`、`continuation_sheet_fee`、`inspection_delete_fee`、`other_fee`、`remark`。
    - 数据库迁移 `sql/migration_add_cost_discount_info.sql` 只新增折让字段。历史数据库中的 `pay_customs_rebate` 列不再被业务代码映射或读写，但暂不物理删除，以避免迁移时丢失既有历史数据；全新建表脚本已不再创建该列。
 
-4. **Excel 导出规范**：
-   - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 114 列。
-   - 一级分组依次为：`货主托运信息`（第 1-17 列）、`应收款项`（第 18-35 列）、`应付款项`（第 36-108 列）、`折让信息`（第 109-110 列）、`业务信息`（第 111-112 列）、`经营信息`（第 113-114 列）。
-   - `应付款项`下设置二级分组：`国际空运信息`（第 36-60 列）、`汽运信息`（第 61-71 列）、`国内空运信息`（第 72-88 列）、`报关信息`（第 89-96 列）、`地面操作信息`（第 97-107 列）；第 108 列为独立的`应付合计`。
-   - `折让信息`包含第 109 列`折让人员`和第 110 列`折让费`；`报关信息`中不再导出`回扣`列。
+4. **`payables.intl_air`（国际空运信息）字段结构**：
+   - `PUT /api/v1/cost-service/cost-registration`、`POST /api/v1/cost-service/consignments`、`PUT /api/v1/cost-service/consignments/{consignment_id}` 的请求体中，不再包含 `date`（托运日期）和 `airline`（航空公司）字段。
+   - `GET /api/v1/cost-service/cost-registration`、`GET /api/v1/cost-service/consignments`、`GET /api/v1/cost-service/consignments/{consignment_id}` 以及上述保存、新增、修改接口的成功响应中，也不再返回这两个字段。
+   - 当前保留字段：`subtotal`、`outsource_unit`、`origin`、`destination`、`flight_doc_no`、`flight_no`、`flight_date`、`pieces`、`weight`、`volume`、`chargeable_weight`、`rate`、`freight`、`lading_fee`、`split_fee`、`borrow_magnetic_fuel_pickup_fee`、`tc_network_disposal_fee`、`customs_fee`、`continuation_sheet_fee`、`consumables_fee`、`front_warehouse`、`other_fee`、`remark`。
+   - 旧客户端继续提交 `payables.intl_air.date` 或 `payables.intl_air.airline` 时，服务端将其作为未声明字段忽略，不会写入数据库，也不会在响应中返回。
+   - 存量数据库分别通过 `sql/migration_drop_cost_intl_air_date.sql` 和 `sql/migration_drop_cost_intl_air_airline.sql` 删除对应历史列；全新建表脚本不再创建这两个字段。
+
+5. **Excel 导出规范**：
+   - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 112 列。
+   - 一级分组依次为：`货主托运信息`（第 1-17 列）、`应收款项`（第 18-35 列）、`应付款项`（第 36-106 列）、`折让信息`（第 107-108 列）、`业务信息`（第 109-110 列）、`经营信息`（第 111-112 列）。
+   - `应付款项`下设置二级分组：`国际空运信息`（第 36-58 列）、`汽运信息`（第 59-69 列）、`国内空运信息`（第 70-86 列）、`报关信息`（第 87-94 列）、`地面操作信息`（第 95-105 列）；第 106 列为独立的`应付合计`。
+   - `国际空运信息`不再导出`托运日期`和`航空公司`列；`折让信息`包含第 107 列`折让人员`和第 108 列`折让费`；`报关信息`中不再导出`回扣`列。
    - 原字段标题中的`应收-`、`国空应付-`、`汽运应付-`、`国空内应付-`、`报关应付-`、`地面应付-`前缀已上移到分组表头，第三行仅展示字段名称；`委托备注`显示为`备注`。
    - “提单”列不会直接输出前端保存的编码，而是按页面展示语义转换：
      - 一主多分：`1-0 → 一主`、`1-1 → 一主（一）分`、`1-2 → 一主（二）分`、`1-3 → 一主（三）分`、`1-4 → 一主（四）分`、`1-5 → 一主（五）分`、`1-6 → 一主（六）分`、`1-7 → 一主（七）分`、`1-8 → 一主（八）分`、`1-9 → 一主（九）分`。
@@ -9647,16 +9654,16 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      - 转换只作用于 Excel 导出结果，不修改数据库或其他接口的原始字段；空值导出为空，未知编码及真实提单号原样输出。
    - 应收款项层级不包含“应收-代理”列。响应仍为 `.xlsx` 文件，媒体类型和下载响应头保持不变。
 
-5. **列表航班号筛选规范**：
+6. **列表航班号筛选规范**：
    - `GET /api/v1/cost-service/consignments` 的 `flight_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航班号字段：`consignor_info.flight_no`、`payables.intl_air.flight_no`、`payables.dom_air.flight_no`。
    - 三个字段之间采用“或（OR）”关系；任一字段包含传入的 `flight_no` 即返回该单据。参数首尾空白会被去除，未传或仅传空白时不增加航班号筛选条件。
 
-6. **列表航司单号筛选规范**：
+7. **列表航司单号筛选规范**：
    - `GET /api/v1/cost-service/consignments` 的 `flight_doc_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航司单号字段：`consignor_info.flight_doc_no`、`payables.intl_air.flight_doc_no`、`payables.dom_air.flight_doc_no`。
    - 为保持既有查询能力，`flight_doc_no`同时兼容匹配`consignor_info.bill_of_lading`（提单）。上述四个数据库字段采用“或（OR）”关系；任一字段包含传入值即返回该单据。
    - 参数首尾空白会被去除，未传或仅传空白时不增加航司单号筛选条件。该筛选只决定单据是否入选，不会改写响应中各字段的原始值。
 
-7. **列表排序规范**：
+8. **列表排序规范**：
    - `GET /api/v1/cost-service/consignments` 新增 `sort_by` 和 `sort_order` 查询参数，排序在分页前执行。
    - `sort_by` 可选值：`create_time`（按`consignor_info.create_time`制单时间排序）、`warehouse_entry_date`（按`consignor_info.warehouse_entry_date`进仓日期排序）；默认值为 `warehouse_entry_date`。
    - `sort_order` 可选值：`asc`（正序）、`desc`（倒序）；默认值为 `desc`。

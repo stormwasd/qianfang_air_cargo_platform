@@ -101,11 +101,15 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
 
 
 class CostExcelLayoutTests(unittest.TestCase):
-    def test_intl_air_airline_column_is_removed(self):
-        self.assertEqual(len(COST_EXPORT_HEADERS), 113)
+    def test_removed_intl_air_columns_are_not_exported(self):
+        self.assertEqual(len(COST_EXPORT_HEADERS), 112)
         self.assertNotIn("国空应付-航空公司", COST_EXPORT_HEADERS)
+        self.assertNotIn("国空应付-托运日期", COST_EXPORT_HEADERS)
         # 国内空运属于另一业务分组，本次需求不应误删。
         self.assertIn("国空内应付-航空公司", COST_EXPORT_HEADERS)
+        self.assertIn("汽运应付-托运日期", COST_EXPORT_HEADERS)
+        self.assertIn("国空内应付-托运日期", COST_EXPORT_HEADERS)
+        self.assertIn("地面应付-托运日期", COST_EXPORT_HEADERS)
 
     def test_grouped_headers_still_cover_all_columns(self):
         workbook = Workbook()
@@ -114,27 +118,27 @@ class CostExcelLayoutTests(unittest.TestCase):
         headers = append_cost_export_headers(worksheet)
 
         merged_ranges = {str(item) for item in worksheet.merged_cells.ranges}
-        self.assertEqual(len(headers), 113)
-        self.assertEqual(worksheet.max_column, 113)
+        self.assertEqual(len(headers), 112)
+        self.assertEqual(worksheet.max_column, 112)
         self.assertIn("A1:Q2", merged_ranges)
-        self.assertIn("AJ1:DC1", merged_ranges)
-        self.assertIn("DC2:DC3", merged_ranges)
+        self.assertIn("AJ1:DB1", merged_ranges)
+        self.assertIn("DB2:DB3", merged_ranges)
         workbook.close()
 
     def test_every_export_section_keeps_its_expected_boundaries(self):
         expected_boundaries = {
             "国空应付-小计": 35,
-            "国空应付-备注": 58,
-            "汽运应付-小计": 59,
-            "汽运应付-备注": 69,
-            "国空内应付-小计": 70,
-            "国空内应付-备注": 86,
-            "报关应付-小计": 87,
-            "报关应付-备注": 94,
-            "地面应付-小计": 95,
-            "地面应付-备注": 105,
-            "应付合计": 106,
-            "利润率(%)": 112,
+            "国空应付-备注": 57,
+            "汽运应付-小计": 58,
+            "汽运应付-备注": 68,
+            "国空内应付-小计": 69,
+            "国空内应付-备注": 85,
+            "报关应付-小计": 86,
+            "报关应付-备注": 93,
+            "地面应付-小计": 94,
+            "地面应付-备注": 104,
+            "应付合计": 105,
+            "利润率(%)": 111,
         }
 
         for header, expected_index in expected_boundaries.items():
