@@ -60,7 +60,6 @@ class PayableIntlAir(BaseModel):
     outsource_unit: Optional[str] = Field(None, description="外发单位")
     origin: Optional[str] = Field(None, description="始发站")
     destination: Optional[str] = Field(None, description="到达站")
-    airline: Optional[str] = Field(None, description="航空公司")
     flight_doc_no: Optional[str] = Field(None, description="航班单号/航空单号")
     flight_no: Optional[str] = Field(None, description="航班号")
     flight_date: Optional[str] = Field(None, description="航班日期 (YYYY-MM-DD)")

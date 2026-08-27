@@ -152,7 +152,6 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
                 "outsource_unit": record.pay_intl_air_outsource_unit or "",
                 "origin": record.pay_intl_air_origin or "",
                 "destination": record.pay_intl_air_destination or "",
-                "airline": record.pay_intl_air_airline or "",
                 "flight_doc_no": record.pay_intl_air_flight_doc_no or "",
                 "flight_no": record.pay_intl_air_flight_no or "",
                 "flight_date": _to_date_str(record.pay_intl_air_flight_date),
@@ -315,7 +314,6 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
             record.pay_intl_air_outsource_unit = ia.outsource_unit if ia.outsource_unit is not None else record.pay_intl_air_outsource_unit
             record.pay_intl_air_origin = ia.origin if ia.origin is not None else record.pay_intl_air_origin
             record.pay_intl_air_destination = ia.destination if ia.destination is not None else record.pay_intl_air_destination
-            record.pay_intl_air_airline = ia.airline if ia.airline is not None else record.pay_intl_air_airline
             record.pay_intl_air_flight_doc_no = ia.flight_doc_no if ia.flight_doc_no is not None else record.pay_intl_air_flight_doc_no
             record.pay_intl_air_flight_no = ia.flight_no if ia.flight_no is not None else record.pay_intl_air_flight_no
             record.pay_intl_air_flight_date = _parse_date(ia.flight_date) if ia.flight_date is not None else record.pay_intl_air_flight_date
@@ -826,7 +824,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件包含三级分组表头及 114 列全量字段，数据从第 4 行开始。
+    导出文件包含三级分组表头及 113 列全量字段，数据从第 4 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -938,7 +936,6 @@ async def export_cost_consignments_to_excel(
             _v_str(rec.pay_intl_air_outsource_unit),
             _v_str(rec.pay_intl_air_origin),
             _v_str(rec.pay_intl_air_destination),
-            _v_str(rec.pay_intl_air_airline),
             _v_str(rec.pay_intl_air_flight_doc_no),
             _v_str(rec.pay_intl_air_flight_no),
             _v_date(rec.pay_intl_air_flight_date),
