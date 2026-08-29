@@ -111,6 +111,35 @@ class CostExcelLayoutTests(unittest.TestCase):
         self.assertIn("国空内应付-托运日期", COST_EXPORT_HEADERS)
         self.assertIn("地面应付-托运日期", COST_EXPORT_HEADERS)
 
+    def test_export_titles_use_product_wording(self):
+        expected_headers = {
+            "应收-分单费 电报费/底账费",
+            "应收-TC费",
+            "应收-前置仓费",
+            "国空应付-实际重量",
+            "国空应付-单价",
+            "国空应付-燃油费",
+            "国空应付-TC费",
+            "国空内应付-实际重量",
+        }
+        for header in expected_headers:
+            with self.subTest(header=header):
+                self.assertIn(header, COST_EXPORT_HEADERS)
+
+        old_headers = {
+            "应收-分单费/抵账费/电报费",
+            "应收-TC操作费/快件中心过站费",
+            "应收-前置仓/国际货站地面费",
+            "国空应付-重量",
+            "国空应付-费率",
+            "国空应付-借单/磁检/燃油/提货费",
+            "国空应付-TC/入网/处置费",
+            "国空内应付-重量",
+        }
+        for header in old_headers:
+            with self.subTest(header=header):
+                self.assertNotIn(header, COST_EXPORT_HEADERS)
+
     def test_grouped_headers_still_cover_all_columns(self):
         workbook = Workbook()
         worksheet = workbook.active
