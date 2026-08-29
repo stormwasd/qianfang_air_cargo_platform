@@ -1578,8 +1578,8 @@ async def execute_china_southern_air_waybill(
             db.rollback()
             raise
 
-    # calculateCharge 要求传入 queryServiceCharge 返回的完整费用列表，不能只传
-    # 前端保存的「出港货邮处理费」单个分组。查询后再用本次表单选项替换该分组。
+    # calculateCharge 使用 queryServiceCharge 返回的完整费用列表；当表单
+    # 未填写费用选项时，保持南航返回的所有费用组及 checked 状态原样透传。
     service_charge_query_data = {
         "resAllInfoList": [{"resDto": {
             "flightDep": direct_order_values["origin_station"],

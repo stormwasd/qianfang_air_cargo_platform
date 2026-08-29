@@ -63,7 +63,9 @@ class ChinaSouthernAirBookingExcelService:
         "特货码（多个用英文逗号隔开）": "特货码",
         "特货码(多个用英文逗号隔开)": "特货码",
     }
-    REQUIRED_HEADERS = frozenset(HEADER_FIELDS)
+    # 费用选项列保留在模板和映射中，但整列允许缺失；缺失时执行阶段
+    # 直接透传南航费用查询返回的完整列表。
+    REQUIRED_HEADERS = frozenset(HEADER_FIELDS) - {"出港货邮处理费选项"}
     REQUIRED_FIELDS = {
         "origin_station": "始发站",
         "destination": "到达站",
@@ -75,7 +77,6 @@ class ChinaSouthernAirBookingExcelService:
         "cargo_name": "货物名称",
         "quantity": "件数",
         "weight": "重量(kg)",
-        "outbound_cargo_and_mail_handling_fee_options": "出港货邮处理费选项",
     }
     # 这些列不包含模板预置值，可用于判断用户是否真正填写了该行。
     USER_INPUT_FIELDS = frozenset(
@@ -294,7 +295,14 @@ class ChinaSouthernAirBookingExcelService:
     ) -> Dict[str, Any]:
         result: Dict[str, Any] = {}
         for header, field_name in cls.HEADER_FIELDS.items():
-            result[field_name] = sheet.cell(row_number, header_mapping[header]).value
+            # 出港货邮处理费选项列为可选列；列缺失与单元格留空都统一视为空值，
+            # 由执行阶段决定是否透传南航查询结果。
+            column_number = header_mapping.get(header)
+            result[field_name] = (
+                sheet.cell(row_number, column_number).value
+                if column_number is not None
+                else None
+            )
         return result
 
     @classmethod
@@ -328,9 +336,9 @@ class ChinaSouthernAirBookingExcelService:
                 f"第 {row_number} 行货物类型“{cargo_type_key}”未在数据字典 nanfang_air_cargo_type 中配置"
             )
 
-        selected_fee = values["outbound_cargo_and_mail_handling_fee_options"]
+        selected_fee = values.get("outbound_cargo_and_mail_handling_fee_options", "")
         allowed_fees = set(allowed_fee_options)
-        if selected_fee not in allowed_fees:
+        if selected_fee and selected_fee not in allowed_fees:
             raise ChinaSouthernAirBookingExcelError(
                 f"第 {row_number} 行出港货邮处理费选项“{selected_fee}”无效，"
                 "可选值为：" + "、".join(sorted(allowed_fees))

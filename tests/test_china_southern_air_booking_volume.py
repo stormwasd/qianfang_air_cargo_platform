@@ -141,6 +141,55 @@ class ChinaSouthernAirBookingVolumeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(order_values["volume"])
         self.assertIsNone(booking_values["volume"])
 
+    def test_blank_handling_fee_is_optional_and_preserves_upstream_options(self):
+        order_form = _direct_order_form(None)
+        order_form["outbound_cargo_and_mail_handling_fee_options"] = ""
+        order_values = ChinaSouthernAirDirectOrderService.get_form_values(
+            order_form,
+            _business_config(),
+        )
+        upstream = [
+            {
+                "serviceMainName": "出港货邮处理费",
+                "checked": "N",
+                "serviceCharges": [
+                    {"otherChargeName": "普货", "checked": "N"},
+                    {"otherChargeName": "危险品", "checked": "Y"},
+                ],
+            },
+            {"serviceMainName": "其他费用", "checked": "Y"},
+        ]
+        payload = ChinaSouthernAirDirectOrderService.build_calculate_payload(
+            order_form,
+            _business_config(),
+            service_charges=upstream,
+            form_values=order_values,
+        )
+        self.assertEqual(payload["extServiceCharges"], upstream)
+
+        booking_form = _direct_booking_form(None)
+        booking_form["outbound_cargo_and_mail_handling_fee_options"] = ""
+        booking_values = ChinaSouthernAirDirectBookingService.get_form_values(
+            booking_form,
+            _business_config(),
+        )
+        self.assertIsNone(booking_values["selected_fee"])
+        booking_upstream = [
+            {
+                "serviceMainName": "出港货邮处理费",
+                "checked": "N",
+                "serviceCharges": [
+                    {"otherChargeName": "普货", "checked": "N"},
+                    {"otherChargeName": "危险品", "checked": "Y"},
+                ],
+            },
+        ]
+        booking_payload = ChinaSouthernAirDirectBookingService.build_calculate_payload(
+            booking_values,
+            booking_upstream,
+        )
+        self.assertEqual(booking_payload["extServiceCharges"], booking_upstream)
+
     def test_user_volume_remains_preferred(self):
         order_values = ChinaSouthernAirDirectOrderService.get_form_values(
             _direct_order_form("0.01"),

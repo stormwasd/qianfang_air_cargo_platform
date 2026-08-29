@@ -101,12 +101,12 @@ class ChinaSouthernAirDirectBookingService:
         contact_phone = form_data.get("order_contact_phone") or defaults.get("order_contact_phone")
         if not contact_phone and contact_name and "/" in str(contact_name):
             contact_name, contact_phone = str(contact_name).split("/", 1)
-        selected_fee = cls._required_text(
+        raw_selected_fee = (
             form_data.get("outbound_cargo_and_mail_handling_fee_options")
-            or item.get("outbound_cargo_and_mail_handling_fee_options"),
-            "outbound_cargo_and_mail_handling_fee_options",
+            or item.get("outbound_cargo_and_mail_handling_fee_options")
         )
-        if selected_fee not in cls.ALLOWED_HANDLING_FEE_OPTIONS:
+        selected_fee = str(raw_selected_fee or "").strip()
+        if selected_fee and selected_fee not in cls.ALLOWED_HANDLING_FEE_OPTIONS:
             raise ChinaSouthernAirDirectBookingError(
                 "出港货邮处理费选项仅支持：贵重物品、活体动物、危险品、鲜活易腐、鲜活容腐、普货、急件快件"
             )
@@ -142,7 +142,8 @@ class ChinaSouthernAirDirectBookingService:
             "dangerous_check_required": str(item.get("no_dangerous_goods", "")).strip() == "0",
             "booking_remark_wide": str(item.get("booking_remark_wide") or defaults.get("booking_remark_wide") or "").strip(),
             "booking_remark_narrow": str(item.get("booking_remark_narrow") or defaults.get("booking_remark_narrow") or "").strip(),
-            "selected_fee": selected_fee,
+            # 为空表示不覆盖南航费用查询结果，保留上游返回的原始勾选状态。
+            "selected_fee": selected_fee or None,
             "agent_check_name": cls._required_text(defaults.get("agent_checker_name"), "系统参数.代理公司检查人名称"),
             "agent_carrier_name": cls._required_text(defaults.get("agent_consignor_name"), "系统参数.代理公司交运人名称"),
             "contact_name": cls._required_text(

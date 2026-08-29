@@ -147,13 +147,17 @@ class ChinaSouthernAirDirectOrderService:
         booking_volume = cargo_info.get("booking_volume")
 
         selected_fee = form_data.get("outbound_cargo_and_mail_handling_fee_options")
-        if not isinstance(selected_fee, dict):
+        if selected_fee is None or selected_fee == {} or (
+            isinstance(selected_fee, str) and not selected_fee.strip()
+        ):
+            selected_fee = None
+        elif not isinstance(selected_fee, dict):
             raise ChinaSouthernAirDirectOrderError(
-                "缺少出港货邮处理费选项，请先查询并选择费用选项"
+                "出港货邮处理费选项数据格式不正确"
             )
-        if selected_fee.get("serviceMainName") != cls.OUTBOUND_HANDLING_FEE_NAME:
+        if selected_fee is not None and selected_fee.get("serviceMainName") != cls.OUTBOUND_HANDLING_FEE_NAME:
             raise ChinaSouthernAirDirectOrderError("出港货邮处理费选项数据不正确")
-        if not isinstance(selected_fee.get("serviceCharges"), list):
+        if selected_fee is not None and not isinstance(selected_fee.get("serviceCharges"), list):
             raise ChinaSouthernAirDirectOrderError("出港货邮处理费选项明细格式不正确")
 
         return {
@@ -336,7 +340,7 @@ class ChinaSouthernAirDirectOrderService:
         config = cls._direct_order_config(business_config)
         if service_charges is None:
             service_charges = config.get("calculate_ext_service_charges")
-        if not isinstance(service_charges, list) or not service_charges:
+        if not isinstance(service_charges, list):
             raise ChinaSouthernAirDirectOrderError(
                 "南航费用计算缺少完整的扩展服务费列表"
             )
@@ -346,17 +350,19 @@ class ChinaSouthernAirDirectOrderService:
             )
 
         ext_service_charges = deepcopy(service_charges)
-        selected_fee = cls._normalize_selected_fee(
-            values["selected_fee"], values["shipment_type_name"]
-        )
-        for index, group in enumerate(ext_service_charges):
-            if group.get("serviceMainName") == cls.OUTBOUND_HANDLING_FEE_NAME:
-                ext_service_charges[index] = selected_fee
-                break
-        else:
-            raise ChinaSouthernAirDirectOrderError(
-                "南航完整费用列表中缺少出港货邮处理费"
+        # 未填写时严格透传 queryServiceCharge 返回的完整列表，不定位、不补勾。
+        if values.get("selected_fee") is not None:
+            selected_fee = cls._normalize_selected_fee(
+                values["selected_fee"], values["shipment_type_name"]
             )
+            for index, group in enumerate(ext_service_charges):
+                if group.get("serviceMainName") == cls.OUTBOUND_HANDLING_FEE_NAME:
+                    ext_service_charges[index] = selected_fee
+                    break
+            else:
+                raise ChinaSouthernAirDirectOrderError(
+                    "南航完整费用列表中缺少出港货邮处理费"
+                )
 
         return cls._build_calculate_payload(values, config, ext_service_charges)
 

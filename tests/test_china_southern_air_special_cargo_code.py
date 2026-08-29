@@ -375,6 +375,32 @@ class ChinaSouthernAirSpecialCargoCodeTests(unittest.IsolatedAsyncioTestCase):
             "",
         )
 
+    def test_excel_allows_missing_handling_fee_column_value(self):
+        row = {
+            "origin_station": "SZX",
+            "destination": "TAO",
+            "flight_date": "2026-08-31",
+            "shipper_unit": "客户A",
+            "cargo_type": "普通货物",
+            "cargo_code": "9000",
+            "flight_number": "CZ8735",
+            "cargo_name": "上衣",
+            "quantity": "1",
+            "weight": "200",
+        }
+
+        form_data = ChinaSouthernAirBookingExcelService._build_form_data(
+            row,
+            row_number=4,
+            cargo_type_codes={"普通货物": "3006"},
+            allowed_fee_options=["普货"],
+        )
+
+        self.assertEqual(
+            form_data["outbound_cargo_and_mail_handling_fee_options"],
+            "",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

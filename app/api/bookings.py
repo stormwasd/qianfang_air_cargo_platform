@@ -456,8 +456,13 @@ async def _execute_china_southern_air_direct_booking(
             cargo_type=values["rate_code"],
             cargo_name=values["shipment_type_name"],
         )
-        selected_charges = china_southern_air_direct_booking_service.select_handling_fee(
-            queried_charges, values["selected_fee"]
+        # 未填写费用选项时，直接透传南航查询结果，不定位或补勾任何明细。
+        selected_charges = (
+            china_southern_air_direct_booking_service.select_handling_fee(
+                queried_charges, values["selected_fee"]
+            )
+            if values.get("selected_fee")
+            else queried_charges
         )
         calculate_payload = china_southern_air_direct_booking_service.build_calculate_payload(
             values, selected_charges
@@ -1139,8 +1144,9 @@ async def import_china_southern_air_booking_excel(
     - Excel 每个有效数据行创建一条订舱记录，全部校验通过后才统一提交；任一行失败时不创建任何记录。
     - `货物类型` 按启用的数据字典 `nanfang_air_cargo_type` 的 `label` 精确匹配，
       将对应 `value` 写入 `form_data.bookings[0].cargo_type_code`。
-    - `出港货邮处理费选项` 是单选字段，写入该行记录的
-      `form_data.outbound_cargo_and_mail_handling_fee_options`。
+    - `出港货邮处理费选项` 是可选单选字段，写入该行记录的
+      `form_data.outbound_cargo_and_mail_handling_fee_options`；为空时执行阶段
+      直接透传南航费用查询返回的完整费用列表。
     - 本接口只创建订舱记录，不直接调用南航；确认后使用 `POST /api/v1/bookings/execute`
       执行返回的订舱 ID。
     """

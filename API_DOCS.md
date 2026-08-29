@@ -69,6 +69,7 @@
 - 数据填写区统一使用文本格式并默认水平、垂直居中，避免航班号、货物代码等标识被 Excel 自动转换。
 - 下载时动态读取启用的数据字典 `nanfang_air_cargo_type`，将全部有效 `label` 作为`货物类型`列的单选下拉选项；数据字典同步覆盖后，再次下载即可获得最新选项。选中该列单元格时不显示额外的输入提示浮窗；该动态处理不修改模板其他列、样式、默认值或既有下拉框。
 - `特货码（多个用英文逗号隔开）`为可选列：用户只需填写默认码之外的附加特货码；多个使用英文逗号分隔，例如 `GEN,AKA`。执行订舱时后端会查询并自动合并南航默认特货码。
+- `出港货邮处理费选项`为可选列，可留空；留空时执行订舱直接透传南航费用查询返回的完整费用列表。
 - `超规货`、`无隐含危险品`、`出港货邮处理费选项`均为单选下拉框。
 
 ### 后台解析批量订舱 Excel
@@ -86,7 +87,7 @@
 - 后端逐行解析 Excel，每个有效数据行创建一条未执行订舱记录。
 - 全部行校验成功后才统一写库；任一行失败时不创建任何记录。
 - 根据 Excel 的 `货物类型`，精确匹配启用的数据字典 `nanfang_air_cargo_type` 的 `label`，把对应 `value` 写入 `form_data.bookings[0].cargo_type_code`。
-- `出港货邮处理费选项`写入 `form_data.outbound_cargo_and_mail_handling_fee_options`。
+- `出港货邮处理费选项`写入 `form_data.outbound_cargo_and_mail_handling_fee_options`；该列允许留空。留空时执行订舱不会按名称定位或补勾，直接使用南航费用查询接口返回的完整费用列表。
 - 本接口仅创建订舱记录，不直接调用南航；随后调用 `POST /api/v1/bookings/execute` 执行订舱。
 
 成功响应中的每个 `items[].form_data.bookings[0]` 都包含后台补齐后的 `cargo_type_code`。
@@ -112,6 +113,8 @@
 `POST /api/v1/bookings/execute`
 
 执行南航订舱前会再次检查 `cargo_type_code`。对于本次修复上线前，由旧版前端 Excel 解析流程创建且缺少该字段的未执行或失败记录，后端会按 `cargo_type` 自动补齐并保存，再调用南航接口；无法完成字典映射时，该条执行失败并返回明确错误。
+
+`form_data.outbound_cargo_and_mail_handling_fee_options` 为可选字段。填写时仍按填写的费用名称定位“出港货邮处理费”明细并完成勾选；未填写、为 `null` 或空字符串时，执行阶段不再定位或修改任何费用组/明细，直接将 `queryServiceCharge` 返回的完整 `extServiceCharges` 列表原样传给后续 `calculateCharge` 和 `createOrder`。
 
 `form_data.bookings[0].booking_volume` 为可选字段，页面提交和后台 Excel 解析均允许不填。已填写时直接作为南航请求的 `volume`；未传、为 `null` 或空字符串时，执行阶段先调用南航 `calculateCWeight`，固定传入 `dimensions=null`、`volume=""`、`channel="B2B"`，并将 `origin_station` 映射为 `depCityCode`、`weight` 映射为 `weight`。接口返回的 `result.volume` 会用于后续 `calculateCharge` 和 `createOrder`，但不回写原始 `form_data`。同一次批量执行中，相同始发站与重量会复用查询结果。查询失败时该条订舱失败，`error_details.stage` 为 `calculate_cweight`，诊断数据不包含 Token、Cookie 或请求头。
 
@@ -188,6 +191,10 @@
 `upstream_response.extServiceCharges` 会保留南航实际返回的完整费用列表，便于判断是空列表、
 费用组名称发生变化，还是请求业务参数不匹配。诊断数据不会包含南航 Token、Cookie 或请求头。
 
+### 南航开单费用选项的可选规则
+
+`form_data.outbound_cargo_and_mail_handling_fee_options` 为可选字段。填写时，执行阶段会按表单保存的费用组选项定位“出港货邮处理费”并完成对应明细的 `checked=Y` 勾选；未填写、为 `null` 或空字符串时，不再定位、替换或补勾任何费用组/明细，直接将本次 `queryServiceCharge` 返回的完整 `extServiceCharges` 列表传给 `calculateCharge` 和 `createOrder`，南航返回的原始 `checked` 状态保持不变。
+
 ### 新增南航运单
 
 `POST /api/v1/waybills/{waybill_id}/execute-china-southern-air`
@@ -195,6 +202,8 @@
 `form_data.cargo_info.special_cargo_code` 为可选的用户附加特货码。执行阶段在预占单号之前调用南航 `queryShipmentSubProductCode`，参数映射为 `dest <- flight_info.destination`、`origin <- flight_info.origin_station`、`shipmentType <- cargo_info.cargo_type`、`productName <- cargo_info.product_name`（为空时使用与 `parentProductionName` 一致的业务配置或默认“南航快运”），并固定传入 `channel=B`、`directTransfer=D`、`customerno=SZXFED`。返回的 `result.subCode` 与用户码按“默认码在前、用户码在后”进行大小写不敏感去重；例如默认 `XPS`、用户填写 `GEN`，持久化的 `form_data.cargo_info.special_cargo_code` 回写为 `XPS,GEN`，发往南航 `orderInfo.orderShipment.spCode` 和 `productionCode` 的值均为 `XPS/GEN`。英文逗号、中文逗号及历史 `/` 分隔数据均兼容。查询失败不会占用单号，并以 `502` 返回 `error_details.stage="query_shipment_sub_product_code"` 及安全的请求/响应诊断数据。
 
 `form_data.cargo_info.booking_volume` 为可选字段。已填写时直接作为南航请求的 `volume`；未传、为 `null` 或空字符串时，在预占单号之前调用南航 `calculateCWeight`，将 `flight_info.origin_station` 作为 `depCityCode`、`cargo_info.weight` 作为 `weight`，其余请求字段固定为 `dimensions=null`、`volume=""`、`channel="B2B"`。返回的 `result.volume` 用于后续 `calculateCharge`、`createOrder`，但不回写原始 `form_data`；默认体积查询失败不会占用单号，并以 `502` 返回 `error_details.stage="calculate_cweight"` 及安全的请求/响应诊断数据。
+
+`form_data.outbound_cargo_and_mail_handling_fee_options` 为可选字段。填写时，执行阶段使用表单保存的费用组选项定位“出港货邮处理费”并完成对应明细的 `checked=Y` 勾选；未填写、为 `null` 或空字符串时，不再定位、替换或补勾任何费用组/明细，直接将本次 `queryServiceCharge` 返回的完整 `extServiceCharges` 列表传给 `calculateCharge` 和 `createOrder`，南航返回的原始 `checked` 状态保持不变。
 
 最终 `volume` 确定后、预占单号之前，后端调用南航 `queryB2eFlightPrice`。字段映射为：`flightDep <- flight_info.origin_station`、`flightDest <- flight_info.destination`、`flightNo <- flight_info.flight_number`、`flightDate <- flight_info.flight_date`、`rateCode/shipmentType <- cargo_info.cargo_type_code`、`shipmentTypeName <- cargo_info.cargo_type`、`weight <- cargo_info.weight`、`volume <- 最终订舱体积`；固定字段为 `channel=B`、`customerCode=SZXFED`、`dimensions=null`、`rateType=SPY`。后端按有效 `cargo_info.product_name` 精确匹配 `result.charge[].parentProductionName`，将对应 `flightPriceCalculateResult.spaceClass` 同时用于南航请求的 `orderInfo.orderShipment.bookGrade`、`spaceClass`，将 `subSpaceClass` 用于同名字段。查询失败、产品匹配不到或舱位字段为空时不开单、不占用单号，并以 `502` 返回 `error_details.stage="query_b2e_flight_price"` 及安全诊断信息。
 

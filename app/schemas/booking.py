@@ -46,7 +46,7 @@ class BookingCreate(BaseModel):
           "storage_and_transportation_precautions": ""  // 储运注意事项（可选）
         }
       ],
-      "outbound_cargo_and_mail_handling_fee_options": "普货"
+      "outbound_cargo_and_mail_handling_fee_options": "普货"  // 可选；为空时透传南航费用查询结果
     }
     
     说明：
@@ -57,7 +57,7 @@ class BookingCreate(BaseModel):
     - 南航接口订舱时，`bookings[0].product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
     - `bookings[0].booking_volume` 可不填；未填、为 `null` 或空字符串时，执行阶段使用 `origin_station` 和 `weight` 调用南航 `calculateCWeight`，并将返回的 `volume` 用于后续 `calculateCharge`、`createOrder`；已填写时原值优先
     - 最终体积确定后，执行阶段按航班、货物类型、重量、体积及有效产品名称查询南航运价舱位；返回的 `spaceClass` 用于 `bookGrade`、`spaceClass`，`subSpaceClass` 用于同名字段
-    - `outbound_cargo_and_mail_handling_fee_options` 只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活易腐、鲜活容腐、普货、急件快件
+    - `outbound_cargo_and_mail_handling_fee_options` 可选；填写时只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活易腐、鲜活容腐、普货、急件快件。为空时执行阶段直接透传南航费用查询返回的完整选项列表，不再按名称定位或补勾
     - 批量Excel使用 `POST /api/v1/bookings/china-southern-air/import-excel` 上传；后端按 `nanfang_air_cargo_type` 数据字典的 `label` 匹配货物类型，并把对应 `value` 写入 `cargo_type_code`
     - 为兼容仍由前端解析Excel后调用 `POST /api/v1/bookings` 的流程，南航新增/修改接口也会在 `cargo_type_code` 缺失时按同一数据字典自动补齐；已传入非空值时保持原值
     - 执行订舱时由服务端查询航班机型，按系统参数中的宽窄体规则选择对应备注
