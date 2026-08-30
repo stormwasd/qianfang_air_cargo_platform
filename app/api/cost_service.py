@@ -160,6 +160,7 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
                 "volume": _to_float(record.pay_intl_air_volume),
                 "chargeable_weight": _to_float(record.pay_intl_air_chargeable_weight),
                 "rate": _to_float(record.pay_intl_air_rate),
+                "freight_method": record.pay_intl_air_freight_method or "",
                 "freight": _to_float(record.pay_intl_air_freight),
                 "lading_fee": _to_float(record.pay_intl_air_lading_fee),
                 "split_fee": _to_float(record.pay_intl_air_split_fee),
@@ -200,6 +201,7 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
                 "weight": _to_float(record.pay_dom_air_weight),
                 "chargeable_weight": _to_float(record.pay_dom_air_chargeable_weight),
                 "rate": _to_float(record.pay_dom_air_rate),
+                "freight_method": record.pay_dom_air_freight_method or "",
                 "freight": _to_float(record.pay_dom_air_freight),
                 "other_fee": _to_float(record.pay_dom_air_other_fee),
                 "remark": record.pay_dom_air_remark or "",
@@ -322,6 +324,7 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
             record.pay_intl_air_volume = ia.volume if ia.volume is not None else record.pay_intl_air_volume
             record.pay_intl_air_chargeable_weight = ia.chargeable_weight if ia.chargeable_weight is not None else record.pay_intl_air_chargeable_weight
             record.pay_intl_air_rate = ia.rate if ia.rate is not None else record.pay_intl_air_rate
+            record.pay_intl_air_freight_method = ia.freight_method if ia.freight_method is not None else record.pay_intl_air_freight_method
             record.pay_intl_air_freight = ia.freight if ia.freight is not None else record.pay_intl_air_freight
             record.pay_intl_air_lading_fee = ia.lading_fee if ia.lading_fee is not None else record.pay_intl_air_lading_fee
             record.pay_intl_air_split_fee = ia.split_fee if ia.split_fee is not None else record.pay_intl_air_split_fee
@@ -366,6 +369,7 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
             record.pay_dom_air_weight = da.weight if da.weight is not None else record.pay_dom_air_weight
             record.pay_dom_air_chargeable_weight = da.chargeable_weight if da.chargeable_weight is not None else record.pay_dom_air_chargeable_weight
             record.pay_dom_air_rate = da.rate if da.rate is not None else record.pay_dom_air_rate
+            record.pay_dom_air_freight_method = da.freight_method if da.freight_method is not None else record.pay_dom_air_freight_method
             record.pay_dom_air_freight = da.freight if da.freight is not None else record.pay_dom_air_freight
             record.pay_dom_air_other_fee = da.other_fee if da.other_fee is not None else record.pay_dom_air_other_fee
             record.pay_dom_air_remark = da.remark if da.remark is not None else record.pay_dom_air_remark
@@ -824,7 +828,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件包含三级分组表头及 113 列全量字段，数据从第 4 行开始；应收款项含运费计算方式字段。
+    导出文件包含三级分组表头及 115 列全量字段，数据从第 4 行开始；应收款项、国际空运和国内空运应付款项均含运费计算方式字段。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -944,6 +948,7 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_intl_air_volume),
             _v_num(rec.pay_intl_air_chargeable_weight),
             _v_num(rec.pay_intl_air_rate),
+            _v_str(rec.pay_intl_air_freight_method),
             _v_num(rec.pay_intl_air_freight),
             _v_num(rec.pay_intl_air_lading_fee),
             _v_num(rec.pay_intl_air_split_fee),
@@ -984,6 +989,7 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_dom_air_weight),
             _v_num(rec.pay_dom_air_chargeable_weight),
             _v_num(rec.pay_dom_air_rate),
+            _v_str(rec.pay_dom_air_freight_method),
             _v_num(rec.pay_dom_air_freight),
             _v_num(rec.pay_dom_air_other_fee),
             _v_str(rec.pay_dom_air_remark),
