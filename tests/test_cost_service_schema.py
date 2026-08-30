@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 
 from app.schemas.cost_service import (
+    ReceivablesInfo,
     PayableDomAir,
     PayableGround,
     PayableIntlAir,
@@ -10,6 +11,10 @@ from app.schemas.cost_service import (
 
 
 class CostServiceSchemaTests(unittest.TestCase):
+    def test_receivables_include_freight_method(self):
+        self.assertIn("freight_method", ReceivablesInfo.model_fields)
+        payload = ReceivablesInfo.model_validate({"unit_price": 10, "freight_method": "按实际重量", "freight": 20})
+        self.assertEqual(payload.freight_method, "按实际重量")
     def test_removed_intl_air_fields_are_not_api_fields(self):
         self.assertNotIn("airline", PayableIntlAir.model_fields)
         self.assertNotIn("date", PayableIntlAir.model_fields)

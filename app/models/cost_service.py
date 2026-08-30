@@ -34,6 +34,7 @@ class CostRegistration(Base):
     
     # (2) 应收款项
     unit_price = Column(Numeric(10, 2), nullable=True, comment="单价")
+    freight_method = Column(String(50), nullable=True, comment="运费计算方式")
     receivable_freight = Column(Numeric(10, 2), nullable=True, comment="运费")
     receivable_lading_info_fee = Column(Numeric(10, 2), nullable=True, comment="提单费/信息录入费")
     receivable_split_offset_telex_fee = Column(Numeric(10, 2), nullable=True, comment="分单费/抵账费/电报费")
@@ -178,6 +179,7 @@ class CostConsignment(Base):
     
     # (2) 应收款项
     unit_price = Column(Numeric(10, 2), nullable=True, comment="单价")
+    freight_method = Column(String(50), nullable=True, comment="运费计算方式")
     receivable_freight = Column(Numeric(10, 2), nullable=True, comment="运费")
     receivable_lading_info_fee = Column(Numeric(10, 2), nullable=True, comment="提单费/信息录入费")
     receivable_split_offset_telex_fee = Column(Numeric(10, 2), nullable=True, comment="分单费/抵账费/电报费")

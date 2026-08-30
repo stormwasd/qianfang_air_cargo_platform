@@ -34,6 +34,7 @@ class ConsignorInfo(BaseModel):
 class ReceivablesInfo(BaseModel):
     """(2) 应收款项"""
     unit_price: Optional[float] = Field(None, description="单价")
+    freight_method: Optional[str] = Field(None, description="运费计算方式")
     freight: Optional[float] = Field(None, description="运费")
     lading_info_fee: Optional[float] = Field(None, description="提单费/信息录入费")
     split_offset_telex_fee: Optional[float] = Field(None, description="分单费/抵账费/电报费")

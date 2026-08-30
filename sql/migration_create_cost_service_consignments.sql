@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS `cost_registrations` (
     `remark` text DEFAULT NULL COMMENT '备注',
     -- (2) 应收款项
     `unit_price` decimal(10,2) DEFAULT NULL COMMENT '单价',
+    `freight_method` varchar(50) DEFAULT NULL COMMENT '运费计算方式',
     `receivable_freight` decimal(10,2) DEFAULT NULL COMMENT '运费',
     `receivable_lading_info_fee` decimal(10,2) DEFAULT NULL COMMENT '提单费/信息录入费',
     `receivable_split_offset_telex_fee` decimal(10,2) DEFAULT NULL COMMENT '分单费/抵账费/电报费',
@@ -154,6 +155,7 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     `remark` text DEFAULT NULL COMMENT '备注',
     -- (2) 应收款项
     `unit_price` decimal(10,2) DEFAULT NULL COMMENT '单价',
+    `freight_method` varchar(50) DEFAULT NULL COMMENT '运费计算方式',
     `receivable_freight` decimal(10,2) DEFAULT NULL COMMENT '运费',
     `receivable_lading_info_fee` decimal(10,2) DEFAULT NULL COMMENT '提单费/信息录入费',
     `receivable_split_offset_telex_fee` decimal(10,2) DEFAULT NULL COMMENT '分单费/抵账费/电报费',
