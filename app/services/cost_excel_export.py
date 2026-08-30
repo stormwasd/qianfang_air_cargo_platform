@@ -32,6 +32,19 @@ BILL_OF_LADING_STORED_PREFIXES: Dict[str, str] = {
     "直单": "2",
 }
 
+FREIGHT_METHOD_EXPORT_LABELS: Dict[str, str] = {
+    "1": "实际重量",
+    "2": "计费重量",
+}
+
+
+def format_freight_method_for_export(value: object) -> str:
+    """将运费计算方式编码转换为 Excel 展示名称，未知值保持原样。"""
+    if value is None:
+        return ""
+    raw_value = str(value).strip()
+    return FREIGHT_METHOD_EXPORT_LABELS.get(raw_value, str(value))
+
 
 def format_bill_of_lading_for_export(value: object) -> str:
     """将前端提单编码转换为页面展示名称，未知值保持原样。"""

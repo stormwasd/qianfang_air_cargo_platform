@@ -32,6 +32,7 @@ from app.schemas.cost_service import (
 from app.services.cost_excel_export import (
     append_cost_export_headers,
     format_bill_of_lading_for_export,
+    format_freight_method_for_export,
 )
 from app.utils.helpers import format_datetime_china, get_china_now
 
@@ -916,7 +917,7 @@ async def export_cost_consignments_to_excel(
 
             # (2) 应收款项
             _v_num(rec.unit_price),
-            _v_str(rec.freight_method),
+            format_freight_method_for_export(rec.freight_method),
             _v_num(rec.receivable_freight),
             _v_num(rec.receivable_lading_info_fee),
             _v_num(rec.receivable_split_offset_telex_fee),
@@ -948,7 +949,7 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_intl_air_volume),
             _v_num(rec.pay_intl_air_chargeable_weight),
             _v_num(rec.pay_intl_air_rate),
-            _v_str(rec.pay_intl_air_freight_method),
+            format_freight_method_for_export(rec.pay_intl_air_freight_method),
             _v_num(rec.pay_intl_air_freight),
             _v_num(rec.pay_intl_air_lading_fee),
             _v_num(rec.pay_intl_air_split_fee),
@@ -989,7 +990,7 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_dom_air_weight),
             _v_num(rec.pay_dom_air_chargeable_weight),
             _v_num(rec.pay_dom_air_rate),
-            _v_str(rec.pay_dom_air_freight_method),
+            format_freight_method_for_export(rec.pay_dom_air_freight_method),
             _v_num(rec.pay_dom_air_freight),
             _v_num(rec.pay_dom_air_other_fee),
             _v_str(rec.pay_dom_air_remark),

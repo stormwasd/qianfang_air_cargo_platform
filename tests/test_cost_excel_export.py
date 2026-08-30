@@ -8,7 +8,21 @@ from app.services.cost_excel_export import (
     COST_EXPORT_HEADERS,
     append_cost_export_headers,
     format_bill_of_lading_for_export,
+    format_freight_method_for_export,
 )
+
+
+class CostExcelFreightMethodTests(unittest.TestCase):
+    def test_freight_method_codes_are_converted_for_export(self):
+        self.assertEqual(format_freight_method_for_export("1"), "实际重量")
+        self.assertEqual(format_freight_method_for_export("2"), "计费重量")
+        self.assertEqual(format_freight_method_for_export(1), "实际重量")
+        self.assertEqual(format_freight_method_for_export(2), "计费重量")
+
+    def test_unknown_freight_method_values_remain_compatible(self):
+        self.assertEqual(format_freight_method_for_export(None), "")
+        self.assertEqual(format_freight_method_for_export(""), "")
+        self.assertEqual(format_freight_method_for_export("3"), "3")
 
 
 class CostExcelBillOfLadingTests(unittest.TestCase):
