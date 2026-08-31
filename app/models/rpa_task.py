@@ -19,6 +19,7 @@ class RPATaskType(str, enum.Enum):
     SHENZHEN_AIR_APPROVAL_DATA = "SHENZHEN_AIR_APPROVAL_DATA"  
     SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY = "SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY"  
     CHINA_SOUTHERN_AIR_BOOKING_EXECUTE = "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE"  
+    CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE = "CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE"
     CHINA_SOUTHERN_AIR_BOOKING_CANCEL = "CHINA_SOUTHERN_AIR_BOOKING_CANCEL"  
     CHINA_SOUTHERN_AIR_DIRECT_INVOICE = "CHINA_SOUTHERN_AIR_DIRECT_INVOICE"  
     CHINA_SOUTHERN_AIR_WAYBILL_VOID = "CHINA_SOUTHERN_AIR_WAYBILL_VOID"  
@@ -60,6 +61,7 @@ class RPATask(Base):
     task_type = Column(String(50), nullable=False, index=True, comment="任务类型（SHENZHEN_AIR_WAYBILL_EXECUTE/SHENZHEN_AIR_WAYBILL_VOID/CHINA_SOUTHERN_AIR_BOOKING_EXECUTE/CHINA_SOUTHERN_AIR_BOOKING_CANCEL/CHINA_SOUTHERN_AIR_DIRECT_INVOICE）")
     target_type = Column(String(20), nullable=False, index=True, comment="目标类型（waybill/booking）")
     target_id = Column(BigInteger, nullable=False, index=True, comment="目标ID（运单ID或订舱ID）")
+    batch_id = Column(BigInteger, nullable=True, index=True, comment="批量执行批次ID")
     params = Column(Text, nullable=False, comment="RPA调用参数（JSON格式）")
     queue_params = Column(Text, nullable=True, comment="队列参数（JSON格式，用于存储需要创建的队列信息）")
     status = Column(String(20), nullable=False, default=RPATaskStatus.PENDING.value, index=True, comment="任务状态（pending/running/success/failed/timeout）")

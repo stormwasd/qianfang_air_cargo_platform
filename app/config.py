@@ -186,6 +186,15 @@ class Settings(BaseSettings):
     RPA_QUEUE_WORKER_COUNT: int = Field(default=1, ge=1, le=10, description="Worker数量（对应RPA机器人数量），默认1")
     RPA_QUEUE_TASK_TIMEOUT: int = Field(default=30, ge=10, le=300, description="RPA接口调用超时时间（秒），默认30秒，超时则任务失败")
     RPA_QUEUE_CLEANUP_DAYS: int = Field(default=7, ge=1, le=365, description="已完成任务保留天数，默认7天")
+    CHINA_SOUTHERN_AIR_DIRECT_BOOKING_QUEUE_ENABLED: bool = Field(
+        default=True, description="是否启用南航直连订舱持久化任务队列"
+    )
+    CHINA_SOUTHERN_AIR_DIRECT_BOOKING_WORKER_COUNT: int = Field(
+        default=2, ge=1, le=20, description="南航直连订舱Worker数量"
+    )
+    CHINA_SOUTHERN_AIR_DIRECT_BOOKING_POLL_INTERVAL: int = Field(
+        default=2, ge=1, le=60, description="南航直连订舱Worker轮询间隔（秒）"
+    )
     
     WECHAT_WEBHOOK_URL: str = Field(
         default="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=05b6c4d8-5058-4706-8a96-27724683e46e",

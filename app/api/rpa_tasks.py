@@ -31,8 +31,13 @@ async def get_task_status(
     - 目标类型和ID
     - RPA workUuid
     - 创建时间、开始时间、完成时间
+    - batch_id（南航异步批量订舱任务的批次ID）
     """
-    task = rpa_task_service.get_task_by_id(db, int(task_id))
+    try:
+        parsed_task_id = int(task_id)
+    except (TypeError, ValueError):
+        raise NotFoundException("任务不存在")
+    task = rpa_task_service.get_task_by_id(db, parsed_task_id)
     if not task:
         raise NotFoundException("任务不存在或已完成")
     
@@ -48,6 +53,7 @@ async def get_task_status(
         "task_type": task.task_type,
         "target_type": task.target_type,
         "target_id": str(task.target_id),
+        "batch_id": str(task.batch_id) if task.batch_id else None,
         "status": task.status,
         "priority": task.priority,
         "work_uuid": task.work_uuid,
@@ -68,6 +74,7 @@ async def get_tasks(
     task_type: str = Query(None, description="任务类型"),
     target_type: str = Query(None, description="目标类型（waybill/booking）"),
     target_id: str = Query(None, description="目标ID"),
+    batch_id: str = Query(None, description="批量执行批次ID"),
     status: str = Query(None, description="任务状态（pending/running/success/failed/timeout）"),
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(10, ge=1, le=200, description="每页数量"),
@@ -82,14 +89,23 @@ async def get_tasks(
     - **target_type**: 目标类型（可选，waybill/booking）
     - **target_id**: 目标ID（可选）
     - **status**: 任务状态（可选，pending/running/success/failed/timeout）
+    - **batch_id**: 批量执行批次ID（可选）
     - **page**: 页码（默认1）
     - **pageSize**: 每页数量（默认10，最大200）
     """
+    try:
+        parsed_target_id = int(target_id) if target_id else None
+        parsed_batch_id = int(batch_id) if batch_id else None
+    except (TypeError, ValueError):
+        from app.core.exceptions import BadRequestException
+        raise BadRequestException("target_id和batch_id必须是数字")
+
     result = rpa_task_service.get_tasks_list(
         db=db,
         task_type=task_type,
         target_type=target_type,
-        target_id=int(target_id) if target_id else None,
+        target_id=parsed_target_id,
+        batch_id=parsed_batch_id,
         status=status,
         page=page,
         pageSize=pageSize
@@ -109,6 +125,7 @@ async def get_tasks(
             "task_type": task.task_type,
             "target_type": task.target_type,
             "target_id": str(task.target_id),
+            "batch_id": str(task.batch_id) if task.batch_id else None,
             "status": task.status,
             "priority": task.priority,
             "work_uuid": task.work_uuid,

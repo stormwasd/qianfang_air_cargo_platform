@@ -43,6 +43,7 @@ from app.services.china_southern_air_service_client import (
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.services.waybill_stock_service import confirm_stock_item_used
 from app.config import settings
+from app.utils.snowflake import generate_id
 
 router = APIRouter()
 CHINA_SOUTHERN_AIR_TEMPLATE_DIR = (
@@ -377,7 +378,9 @@ async def _execute_china_southern_air_direct_booking(
         )
         if locked_booking is None:
             raise ChinaSouthernAirDirectBookingError("订舱不存在")
-        if locked_booking.booking_status not in {"0", "2"}:
+        # 异步 Worker 入队时会先将记录标记为执行中（1）；此处允许
+        # 对应的持久化任务继续执行，HTTP 接口本身仍会拦截重复提交。
+        if locked_booking.booking_status not in {"0", "1", "2"}:
             raise ChinaSouthernAirDirectBookingError("该订舱正在执行或已订舱成功，不能重复提交")
         locked_booking.booking_status = "1"
         locked_booking.booking_feedback = None
@@ -811,55 +814,31 @@ async def execute_booking(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """
-    通过南航 B2E 接口同步执行批量订舱，不创建新的 RPA 任务。
+    """创建持久化异步订舱任务，不在HTTP请求内等待南航响应。
 
-    南航上游调用失败时，单项结果的 `error_details` 会返回调用阶段、HTTP 状态、
-    完整上游响应体以及发往南航 calculateCharge/createOrder 的完整 JSON 请求体；
-    `request_context` 还会返回实际提交的 `contactName`、`contactPhone`。费用选项
-    不匹配时会返回本次选择及当前可选项。
-    对修复前已创建且缺少cargo_type_code的南航记录，执行前会按
-    nanfang_air_cargo_type数据字典自动补齐并保存。
-    form_data中的special_cargo_code保持英文逗号分隔；发往南航的spCode和
-    productionCode会在请求构建阶段转换为斜杠分隔。
-    不会返回 Token、Cookie 或请求头。
+    任务成功写入数据库后即与浏览器生命周期解耦；页面关闭、网络断开或
+    前端超时均不会取消后台执行。任务结果通过 ``/api/v1/rpa-tasks/{id}``
+    查询，批次可通过返回的 ``batch_id`` 和 ``target_type=booking`` 查询。
     """
-    from app.services.rpa_task_service import rpa_task_service
-    from app.models.rpa_task import RPATaskType, RPATargetType
+    from app.models.rpa_task import RPATask, RPATaskStatus, RPATaskType, RPATargetType
     
     if not request.booking_ids or len(request.booking_ids) < 1:
         raise BadRequestException("booking_ids列表不能为空，至少需要包含一个订舱ID")
     
-    business_config = _get_business_config(db)
-    if not business_config:
-        raise BadRequestException("业务参数配置不存在，无法调用南航订舱接口")
+    if not settings.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_QUEUE_ENABLED:
+        raise BaseAPIException(503, "南航直连订舱任务队列未启用")
 
-    token_record = (
-        db.query(NanHangToken)
-        .filter(NanHangToken.token.isnot(None), NanHangToken.token != "")
-        .order_by(NanHangToken.updated_at.desc(), NanHangToken.id.desc())
-        .first()
-    )
-    if token_record is None:
-        raise BaseAPIException(503, "暂无可用的南航 Token，请先完成南航 Token 获取任务")
-    nanhang_token = token_record.token
-    
+    batch_id = generate_id()
     execute_results = []
     success_count = 0
     failed_count = 0
-    # 仅在本次批量请求内复用相同始发站、重量的默认体积查询结果，
-    # 避免批量订舱对南航 calculateCWeight 发起重复请求。
-    default_volume_cache = {}
-    # 相同始发站、目的站、货物类型和产品名称只查询一次默认特货码。
-    default_special_cargo_code_cache = {}
-    # 航班、货物、重量、最终体积和产品均相同时复用运价舱位结果。
-    default_cabin_class_cache = {}
-    
     for booking_id_str in request.booking_ids:
         try:
             booking_id = int(booking_id_str)
-            
-            booking = db.query(Booking).filter(Booking.id == booking_id).first()
+            booking = (
+                db.query(Booking).filter(Booking.id == booking_id)
+                .with_for_update().first()
+            )
             if not booking:
                 execute_results.append(BookingExecuteItem(
                     booking_id=booking_id_str,
@@ -871,10 +850,8 @@ async def execute_booking(
             
             try:
                 form_data_dict = json.loads(booking.form_data)
-            except (TypeError, json.JSONDecodeError) as exc:
-                message = "订舱表单数据格式不正确"
-                _fail_china_southern_air_direct_booking(db, booking_id, message)
-                raise ChinaSouthernAirDirectBookingError(message) from exc
+            except (TypeError, json.JSONDecodeError):
+                raise ChinaSouthernAirDirectBookingError("订舱表单数据格式不正确")
             if not isinstance(form_data_dict, dict):
                 message = "订舱表单数据必须是JSON对象"
                 _fail_china_southern_air_direct_booking(db, booking_id, message)
@@ -891,27 +868,17 @@ async def execute_booking(
                 failed_count += 1
                 continue
 
-            try:
-                cargo_type_code_filled = (
-                    _fill_missing_china_southern_air_cargo_type_codes(
-                        form_data_dict,
-                        db,
-                    )
-                )
-            except BadRequestException as exc:
-                message = exc.detail
-                _fail_china_southern_air_direct_booking(db, booking_id, message)
-                raise ChinaSouthernAirDirectBookingError(message) from exc
-            if cargo_type_code_filled:
-                # 兼容修复上线前由前端 Excel 解析创建的历史未执行/失败记录。
-                booking.form_data = json.dumps(form_data_dict, ensure_ascii=False)
-
-            existing_task = rpa_task_service.get_pending_task_for_target(
-                db,
-                target_type=RPATargetType.BOOKING.value,
-                target_id=booking_id,
-                task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value
-            )
+            if booking.booking_status not in {"0", "2"}:
+                raise ChinaSouthernAirDirectBookingError("该订舱正在执行或已订舱成功，不能重复提交")
+            existing_task = db.query(RPATask).filter(
+                RPATask.target_type == RPATargetType.BOOKING.value,
+                RPATask.target_id == booking_id,
+                RPATask.task_type.in_([
+                    RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE.value,
+                    RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
+                ]),
+                RPATask.status.in_([RPATaskStatus.PENDING.value, RPATaskStatus.RUNNING.value]),
+            ).first()
             if existing_task:
                 execute_results.append(BookingExecuteItem(
                     booking_id=booking_id_str,
@@ -921,20 +888,26 @@ async def execute_booking(
                 failed_count += 1
                 continue
 
-            await _execute_china_southern_air_direct_booking(
-                db,
-                booking_id=booking_id,
-                form_data=form_data_dict,
-                business_config=business_config,
-                token=nanhang_token,
-                default_volume_cache=default_volume_cache,
-                default_cabin_class_cache=default_cabin_class_cache,
-                default_special_cargo_code_cache=default_special_cargo_code_cache,
+            task = RPATask(
+                id=generate_id(),
+                task_type=RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE.value,
+                target_type=RPATargetType.BOOKING.value,
+                target_id=booking_id,
+                batch_id=batch_id,
+                params=json.dumps({"booking_id": booking_id}, ensure_ascii=False),
+                status=RPATaskStatus.PENDING.value,
+                priority=1,
+                created_by=current_user.id,
+                location="china_southern_air",
             )
-            
+            # 入队即标记执行中，防止列表/通知把该记录当作可重复提交。
+            booking.booking_status = "1"
+            booking.booking_feedback = None
+            db.add(task)
+            db.commit()
             execute_results.append(BookingExecuteItem(
                 booking_id=booking_id_str,
-                task_id=None,
+                task_id=str(task.id),
                 success=True,
                 error_message=None
             ))
@@ -970,12 +943,13 @@ async def execute_booking(
         items=execute_results,
         total=len(execute_results),
         success_count=success_count,
-        failed_count=failed_count
+        failed_count=failed_count,
+        batch_id=str(batch_id),
     )
     
     return success_response(
         data=response_data.dict(),
-        msg=f"批量执行完成，成功: {success_count}，失败: {failed_count}"
+        msg=f"批量订舱任务已提交，成功入队: {success_count}，失败: {failed_count}"
     )
 
 
