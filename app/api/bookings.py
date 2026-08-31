@@ -817,10 +817,14 @@ async def execute_booking(
     """创建持久化异步订舱任务，不在HTTP请求内等待南航响应。
 
     任务成功写入数据库后即与浏览器生命周期解耦；页面关闭、网络断开或
-    前端超时均不会取消后台执行。任务结果通过 ``/api/v1/rpa-tasks/{id}``
-    查询，批次可通过返回的 ``batch_id`` 和 ``target_type=booking`` 查询。
+    前端超时均不会取消后台执行。任务结果通过
+    ``/api/v1/china-southern-air-booking-tasks/{id}`` 查询，批次可通过返回的
+    ``batch_id`` 查询。
     """
-    from app.models.rpa_task import RPATask, RPATaskStatus, RPATaskType, RPATargetType
+    from app.models.china_southern_air_booking_task import (
+        ChinaSouthernAirBookingTask,
+        ChinaSouthernAirBookingTaskStatus,
+    )
     
     if not request.booking_ids or len(request.booking_ids) < 1:
         raise BadRequestException("booking_ids列表不能为空，至少需要包含一个订舱ID")
@@ -870,14 +874,12 @@ async def execute_booking(
 
             if booking.booking_status not in {"0", "2"}:
                 raise ChinaSouthernAirDirectBookingError("该订舱正在执行或已订舱成功，不能重复提交")
-            existing_task = db.query(RPATask).filter(
-                RPATask.target_type == RPATargetType.BOOKING.value,
-                RPATask.target_id == booking_id,
-                RPATask.task_type.in_([
-                    RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE.value,
-                    RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
+            existing_task = db.query(ChinaSouthernAirBookingTask).filter(
+                ChinaSouthernAirBookingTask.booking_id == booking_id,
+                ChinaSouthernAirBookingTask.status.in_([
+                    ChinaSouthernAirBookingTaskStatus.PENDING,
+                    ChinaSouthernAirBookingTaskStatus.RUNNING,
                 ]),
-                RPATask.status.in_([RPATaskStatus.PENDING.value, RPATaskStatus.RUNNING.value]),
             ).first()
             if existing_task:
                 execute_results.append(BookingExecuteItem(
@@ -888,17 +890,14 @@ async def execute_booking(
                 failed_count += 1
                 continue
 
-            task = RPATask(
+            task = ChinaSouthernAirBookingTask(
                 id=generate_id(),
-                task_type=RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE.value,
-                target_type=RPATargetType.BOOKING.value,
-                target_id=booking_id,
                 batch_id=batch_id,
+                booking_id=booking_id,
                 params=json.dumps({"booking_id": booking_id}, ensure_ascii=False),
-                status=RPATaskStatus.PENDING.value,
+                status=ChinaSouthernAirBookingTaskStatus.PENDING,
                 priority=1,
                 created_by=current_user.id,
-                location="china_southern_air",
             )
             # 入队即标记执行中，防止列表/通知把该记录当作可重复提交。
             booking.booking_status = "1"

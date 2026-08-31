@@ -3,7 +3,7 @@ API路由统一注册
 """
 from fastapi import APIRouter
 from app.config import settings
-from app.api import auth, users, departments, customers, config, user_center, waybills, bookings, settlements, rpa_tasks, notifications, waybill_stocks, robots, companies, agents, pickup_units, delivery_units, weather, consignment_notes, departure_tracking, shenzhen_air_approval, china_southern_air_approval, financial_audit, common, reconciliation_airline, reconciliation_pickup, reconciliation_delivery
+from app.api import auth, users, departments, customers, config, user_center, waybills, bookings, settlements, rpa_tasks, china_southern_air_booking_tasks, notifications, waybill_stocks, robots, companies, agents, pickup_units, delivery_units, weather, consignment_notes, departure_tracking, shenzhen_air_approval, china_southern_air_approval, financial_audit, common, reconciliation_airline, reconciliation_pickup, reconciliation_delivery
 
 api_router = APIRouter(prefix=settings.API_V1_PREFIX)
 
@@ -22,6 +22,7 @@ api_router.include_router(waybills.router, prefix="/waybills", tags=["运单管�
 api_router.include_router(bookings.router, prefix="/bookings", tags=["订舱管理"])
 api_router.include_router(settlements.router, prefix="/settlements", tags=["结算单管理"])
 api_router.include_router(rpa_tasks.router, prefix="/rpa-tasks", tags=["RPA任务队列"])
+api_router.include_router(china_southern_air_booking_tasks.router, prefix="/china-southern-air-booking-tasks", tags=["南航直连订舱任务"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["通知管理"])
 api_router.include_router(waybill_stocks.router, prefix="/waybill-stocks", tags=["单号库管理"])
 api_router.include_router(robots.router, prefix="/robots", tags=["机器人管理"])

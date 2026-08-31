@@ -10,7 +10,10 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models.booking import Booking
 from app.models.nanhang_token import NanHangToken
-from app.models.rpa_task import RPATask, RPATaskStatus, RPATaskType
+from app.models.china_southern_air_booking_task import (
+    ChinaSouthernAirBookingTask,
+    ChinaSouthernAirBookingTaskStatus,
+)
 from app.utils.helpers import get_china_now
 
 
@@ -53,18 +56,17 @@ class DirectBookingWorker:
         db = SessionLocal()
         try:
             task = (
-                db.query(RPATask)
+                db.query(ChinaSouthernAirBookingTask)
                 .filter(
-                    RPATask.task_type == RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE.value,
-                    RPATask.status == RPATaskStatus.PENDING.value,
+                    ChinaSouthernAirBookingTask.status == ChinaSouthernAirBookingTaskStatus.PENDING,
                 )
-                .order_by(RPATask.priority.desc(), RPATask.created_at.asc())
+                .order_by(ChinaSouthernAirBookingTask.priority.desc(), ChinaSouthernAirBookingTask.created_at.asc())
                 .with_for_update(skip_locked=True)
                 .first()
             )
             if task is None:
                 return None
-            task.status = RPATaskStatus.RUNNING.value
+            task.status = ChinaSouthernAirBookingTaskStatus.RUNNING
             task.started_at = get_china_now()
             db.commit()
             return task.id
@@ -78,7 +80,7 @@ class DirectBookingWorker:
         db = SessionLocal()
         task = None
         try:
-            task = db.query(RPATask).filter(RPATask.id == task_id).first()
+            task = db.query(ChinaSouthernAirBookingTask).filter(ChinaSouthernAirBookingTask.id == task_id).first()
             if task is None:
                 return True
             params = json.loads(task.params or "{}")
@@ -105,7 +107,7 @@ class DirectBookingWorker:
             config = _get_business_config(db)
             if not config:
                 task.error_message = "业务参数配置不存在，等待配置后重试"
-                task.status = RPATaskStatus.PENDING.value
+                task.status = ChinaSouthernAirBookingTaskStatus.PENDING
                 task.started_at = None
                 db.commit()
                 return True
@@ -117,7 +119,7 @@ class DirectBookingWorker:
             )
             if token is None:
                 task.error_message = "暂无可用的南航 Token，等待Token刷新后重试"
-                task.status = RPATaskStatus.PENDING.value
+                task.status = ChinaSouthernAirBookingTaskStatus.PENDING
                 task.started_at = None
                 db.commit()
                 return True
@@ -127,7 +129,7 @@ class DirectBookingWorker:
                 business_config=config, token=token.token,
             )
             task.result = json.dumps({"booking_id": str(booking_id)}, ensure_ascii=False)
-            task.status = RPATaskStatus.SUCCESS.value
+            task.status = ChinaSouthernAirBookingTaskStatus.SUCCESS
             task.finished_at = get_china_now()
             task.error_message = None
             db.commit()
@@ -144,13 +146,13 @@ class DirectBookingWorker:
                 if booking and booking.booking_status != "3":
                     booking.booking_status = "2"
                     booking.booking_feedback = message[:255]
-            task = db.query(RPATask).filter(RPATask.id == task_id).first()
+            task = db.query(ChinaSouthernAirBookingTask).filter(ChinaSouthernAirBookingTask.id == task_id).first()
             if task:
-                task.status = RPATaskStatus.FAILED.value
+                task.status = ChinaSouthernAirBookingTaskStatus.FAILED
                 task.error_message = message[:4000]
                 details = getattr(exc, "details", None)
                 if details is not None:
-                    task.result = json.dumps({"error_details": details}, ensure_ascii=False, default=str)
+                    task.error_details = json.dumps(details, ensure_ascii=False, default=str)
                 task.finished_at = get_china_now()
                 db.commit()
             print(f"[CSA Direct Worker {self.worker_index}] task {task_id} failed: {message}")
@@ -190,13 +192,12 @@ class DirectBookingWorkerManager:
         db = SessionLocal()
         try:
             threshold = get_china_now() - timedelta(minutes=30)
-            stale = db.query(RPATask).filter(
-                RPATask.task_type == RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE.value,
-                RPATask.status == RPATaskStatus.RUNNING.value,
-                RPATask.started_at < threshold,
+            stale = db.query(ChinaSouthernAirBookingTask).filter(
+                ChinaSouthernAirBookingTask.status == ChinaSouthernAirBookingTaskStatus.RUNNING,
+                ChinaSouthernAirBookingTask.started_at < threshold,
             ).all()
             for task in stale:
-                task.status = RPATaskStatus.FAILED.value
+                task.status = ChinaSouthernAirBookingTaskStatus.FAILED
                 task.error_message = "服务重启后任务执行结果不确定，请核查南航订单后再重试"
                 task.finished_at = get_china_now()
                 try:

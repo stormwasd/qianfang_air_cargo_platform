@@ -8,6 +8,7 @@ from app.models.waybill import Waybill
 from app.models.booking import Booking
 from app.models.settlement import Settlement
 from app.models.rpa_task import RPATask
+from app.models.china_southern_air_booking_task import ChinaSouthernAirBookingTask
 from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
 from app.models.robot import Robot
 from app.models.company import CompanyAccount
@@ -47,5 +48,5 @@ from app.models.peer_road_manual_data import PeerRoadDepartureManualData
 from app.models.air_financial_audit_data import AirFinancialAuditData
 from app.models.nanhang_token import NanHangToken
 
-__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport", "ShenzhenAirBillingTimeContainer", "ShenzhenAirApprovalData", "ChinaSouthernAirApprovalData", "CsaProductInformation", "CsaLalamoveInformation", "CsaDepartureManualData", "ShenzhenAirDepartureAlertTask", "CsaDepartureAlertTask", "ShenzhenAirLoadingAlertTask", "CsaLoadingAlertTask", "AlertNotificationRecord", "PeerAirDepartureManualData", "PeerRoadDepartureManualData", "AirFinancialAuditData", "NanHangToken"]
+__all__ = ["User", "Department", "Customer", "BusinessConfig", "DictType", "DictOption", "Waybill", "Booking", "Settlement", "RPATask", "ChinaSouthernAirBookingTask", "WaybillStock", "WaybillStockBatch", "WaybillStockItem", "Robot", "CompanyAccount", "Agent", "PickupUnit", "DeliveryUnit", "ConsignmentNote", "ShenzhenAirBookingExport", "ShenzhenAirBillingTimeContainer", "ShenzhenAirApprovalData", "ChinaSouthernAirApprovalData", "CsaProductInformation", "CsaLalamoveInformation", "CsaDepartureManualData", "ShenzhenAirDepartureAlertTask", "CsaDepartureAlertTask", "ShenzhenAirLoadingAlertTask", "CsaLoadingAlertTask", "AlertNotificationRecord", "PeerAirDepartureManualData", "PeerRoadDepartureManualData", "AirFinancialAuditData", "NanHangToken"]
 

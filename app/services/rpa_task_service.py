@@ -191,12 +191,7 @@ class RPATaskService:
         if not allowed_task_types:
             return None
         
-        # 南航直连订舱由独立的数据库任务Worker消费，不属于机器人RPA流程。
-        # 即使历史机器人权限中误配置了该类型，也不能被通用RPA Worker抢走。
-        dedicated_task_types = {
-            RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE.value,
-        }
-        effective_types = [t for t in allowed_task_types if t not in dedicated_task_types]
+        effective_types = list(allowed_task_types)
         singleton_types_in_allowed = [t for t in effective_types if t in SINGLETON_TASK_TYPES]
         if singleton_types_in_allowed:
             already_running = db.query(RPATask.task_type).filter(
@@ -455,7 +450,6 @@ class RPATaskService:
         task_type: Optional[str] = None,
         target_type: Optional[str] = None,
         target_id: Optional[int] = None,
-        batch_id: Optional[int] = None,
         status: Optional[str] = None,
         page: int = 1,
         pageSize: int = 10
@@ -483,8 +477,6 @@ class RPATaskService:
             query = query.filter(RPATask.target_type == target_type)
         if target_id:
             query = query.filter(RPATask.target_id == target_id)
-        if batch_id:
-            query = query.filter(RPATask.batch_id == batch_id)
         if status:
             query = query.filter(RPATask.status == status)
         

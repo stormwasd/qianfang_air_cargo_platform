@@ -20,6 +20,7 @@ def _init_nanhang_token_process():
         from app.database import engine, Base, SessionLocal
         from app.models.robot import TaskProcess
         from app.models.nanhang_token import NanHangToken
+        from app.models.china_southern_air_booking_task import ChinaSouthernAirBookingTask
         import random
         from app.utils.helpers import get_china_now
 

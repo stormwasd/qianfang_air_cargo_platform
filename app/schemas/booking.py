@@ -131,7 +131,7 @@ class BookingExecuteItem(BaseModel):
     """单个订舱执行结果schema"""
     booking_id: str
     task_id: Optional[str] = Field(
-        None, description="南航直连订舱持久化任务ID，可通过RPA任务接口查询状态"
+        None, description="南航直连订舱持久化任务ID，可通过南航直连订舱任务接口查询状态"
     )
     success: bool
     error_message: Optional[str] = None

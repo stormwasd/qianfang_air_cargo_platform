@@ -201,7 +201,6 @@ async def get_task_types(
     excluded_task_types = {
         "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE",
         "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE",
-        "CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE",
     }
     task_types = []
     for task_type in RPATaskType:

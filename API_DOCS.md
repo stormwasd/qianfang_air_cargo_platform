@@ -70,7 +70,7 @@
 {"booking_ids": ["订舱ID1", "订舱ID2"]}
 ```
 
-成功响应中的 `data.batch_id` 是本批次ID；每个 `data.items[].task_id` 是对应订舱任务ID。任务进入数据库后与浏览器页面生命周期解耦，关闭页面、刷新页面或网络断开不会取消后台订舱。多个用户、多个批次可以同时提交，数据库行锁保证同一订舱不会被重复消费。
+成功响应中的 `data.batch_id` 是本批次ID；每个 `data.items[].task_id` 是对应订舱任务ID。任务进入专用的 `china_southern_air_booking_tasks` 数据库表后与浏览器页面生命周期解耦，关闭页面、刷新页面或网络断开不会取消后台订舱。该表与通用 `rpa_tasks` 完全隔离。多个用户、多个批次可以同时提交，数据库行锁保证同一订舱不会被重复消费。
 
 响应示例：
 
@@ -92,9 +92,9 @@
 
 `success=true` 表示任务已成功入队，不代表南航已经订舱成功。入队后订舱记录状态会显示为“执行中”，最终结果通过以下接口查询：
 
-`GET /api/v1/rpa-tasks/{task_id}`
+`GET /api/v1/china-southern-air-booking-tasks/{task_id}`
 
-重点字段：`status`（`pending` 待执行、`running` 执行中、`success` 成功、`failed` 失败）、`result`、`error_message`、`batch_id`。也可以使用 `GET /api/v1/rpa-tasks?batch_id={batch_id}&target_type=booking` 查询整批任务进度。
+重点字段：`status`（`pending` 待执行、`running` 执行中、`success` 成功、`failed` 失败）、`result`、`error_message`、`batch_id`。也可以使用 `GET /api/v1/china-southern-air-booking-tasks?batch_id={batch_id}` 查询整批任务进度。
 
 后台 Worker 从数据库以行锁方式竞争消费任务；服务启动时会处理异常中断的历史运行任务。若南航 `createOrder` 已发出但本地进程在返回前中断，任务不会盲目自动重试，而会标记为“结果不确定”，需要先核查南航订单后再人工重试，避免重复订舱。
 
@@ -160,7 +160,7 @@
 
 `POST /api/v1/bookings/execute`
 
-该接口采用持久化异步任务模式：请求只校验并创建任务，任务入库后立即返回，不在接口请求内等待南航接口。页面关闭、刷新、网络断开均不会取消已经入队的任务。返回的 `batch_id` 和 `task_id` 用于查询任务；`success=true` 仅表示成功入队，不表示南航已经订舱成功。最终状态请使用 `GET /api/v1/rpa-tasks/{task_id}` 或按批次查询任务列表。
+该接口采用持久化异步任务模式：请求只校验并创建任务，任务入库后立即返回，不在接口请求内等待南航接口。页面关闭、刷新、网络断开均不会取消已经入队的任务。返回的 `batch_id` 和 `task_id` 用于查询任务；`success=true` 仅表示成功入队，不表示南航已经订舱成功。最终状态请使用 `GET /api/v1/china-southern-air-booking-tasks/{task_id}` 或按批次查询任务列表。
 
 后台 Worker 执行任务时会再次检查 `cargo_type_code`。对于本次修复上线前，由旧版前端 Excel 解析流程创建且缺少该字段的未执行或失败记录，后端会按 `cargo_type` 自动补齐并保存，再调用南航接口；无法完成字典映射时，该条任务失败并返回明确错误。
 
