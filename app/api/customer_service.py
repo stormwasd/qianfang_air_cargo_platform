@@ -432,16 +432,18 @@ async def update_consignment(
         record.flight_no = payload.flight_no
     if payload.flight_doc_no is not None:
         record.flight_doc_no = payload.flight_doc_no
-    if payload.pieces is not None:
-        record.pieces = payload.pieces
-    if payload.actual_weight is not None:
-        record.actual_weight = payload.actual_weight
-    if payload.chargeable_weight is not None:
-        record.chargeable_weight = payload.chargeable_weight
-    if payload.volume is not None:
-        record.volume = payload.volume
-    if payload.first_leg_weight is not None:
-        record.first_leg_weight = payload.first_leg_weight
+    # 对数值字段，需区分“请求中未传该字段”和“显式传 null”。
+    # Pydantic v2 的 model_fields_set 仅包含请求实际提供的字段：未传时保持
+    # 现有值，显式传 null 时将可空数据库列清空。0 仍作为合法业务值保存。
+    for field_name in (
+        "pieces",
+        "actual_weight",
+        "chargeable_weight",
+        "volume",
+        "first_leg_weight",
+    ):
+        if field_name in payload.model_fields_set:
+            setattr(record, field_name, getattr(payload, field_name))
     if payload.agent is not None:
         record.agent = payload.agent
     if payload.remark is not None:

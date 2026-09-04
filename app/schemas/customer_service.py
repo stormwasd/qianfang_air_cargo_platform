@@ -46,7 +46,10 @@ class ConsignmentInfoCreate(ConsignmentBase):
 
 
 class ConsignmentInfoUpdate(ConsignmentBase):
-    """委托信息-修改 Schema"""
+    """委托信息-修改 Schema。
+
+    数值字段未传时保持原值；显式传 ``null`` 时清空对应数值。
+    """
     pass
 
 

@@ -9691,6 +9691,11 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - **删除 (DELETE / Batch DELETE)**：
      - 在任意一方执行单条删除或批量删除时，系统自动同步物理删除另一方中相同 `id` 的记录，确保两边列表数据时刻保持高度一致。
 
+3. **客服接单台数值字段清空语义**：
+   - `PUT /api/v1/customer-service/consignments/{consignment_id}` 的数值字段 `pieces`、`actual_weight`、`chargeable_weight`、`volume`、`first_leg_weight` 支持显式传 `null`，将对应字段清空为数据库 `NULL`，并同步到费用登记台同 ID 的单据。
+   - 请求体中未提供上述字段时，保持该字段已有值不变；传 `0` 时保存数值 `0`，不会被视为清空。
+   - 数值字段不接受空字符串。前端清空“实际重量”的示例：`{"actual_weight": null}`。
+
 #### 23.4 客服接单台委托列表排序规范
 
 - `GET /api/v1/customer-service/consignments` 返回的委托信息包含 `create_time`（制单时间）和 `warehouse_entry_date`（进仓日期），现支持通过 `sort_by` 和 `sort_order` 查询参数在分页前排序。
