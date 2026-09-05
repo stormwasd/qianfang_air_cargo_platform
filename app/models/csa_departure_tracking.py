@@ -47,5 +47,7 @@ class CsaLalamoveInformation(Base):
     weight = Column(String(50), nullable=True, comment="重量")
     pre_assigned_flight = Column(String(255), nullable=True, comment="预配航班")
     manifest_number = Column(String(255), nullable=True, comment="所在舱单号")
+    actual_time = Column(String(50), nullable=True, comment="实飞时间（携程）")
+    actual_time_attempts = Column(String(20), nullable=False, default="0", comment="实飞时间查询次数")
 
     created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")

@@ -39,6 +39,7 @@ class ShenzhenAirBookingExport(Base):
     quantity_difference = Column(String(50), comment="运输件数差额")
     weight_difference = Column(String(50), comment="运输重量差额")
     container = Column(String(255), comment="集装器")
+    departure_tracking_completed = Column(String(1), nullable=False, default="0", comment="出港明细是否已完成抓取")
     
     created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")

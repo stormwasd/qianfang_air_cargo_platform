@@ -111,6 +111,8 @@ async def lifespan(app: FastAPI):
         csa_departure_status_alert.start()
         from app.services.csa_get_token_scheduler import csa_get_token_scheduler
         csa_get_token_scheduler.start()
+        from app.services.departure_actual_time_sync import departure_actual_time_sync
+        departure_actual_time_sync.start()
     else:
         print("RPA任务队列已禁用")
 
@@ -150,6 +152,8 @@ async def lifespan(app: FastAPI):
         csa_departure_status_alert.stop()
         from app.services.csa_get_token_scheduler import csa_get_token_scheduler
         csa_get_token_scheduler.stop()
+        from app.services.departure_actual_time_sync import departure_actual_time_sync
+        departure_actual_time_sync.stop()
 
 
 def create_application() -> FastAPI:

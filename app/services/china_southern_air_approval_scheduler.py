@@ -17,6 +17,7 @@ from app.config import settings
 from app.models.rpa_task import RPATaskType
 from app.models.robot import TaskProcess
 from app.services.rpa_task_service import rpa_task_service
+from app.utils.helpers import get_china_now
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 import pandas as pd
 import math
@@ -52,6 +53,27 @@ class ChinaSouthernAirApprovalScheduler:
             loop.run_until_complete(self._async_main())
         finally:
             loop.close()
+
+    @staticmethod
+    def _planned_datetime(value: str, flight_date: str):
+        """兼容 Excel 中的日期时间、HHMM、HH:MM 等计划起飞格式。"""
+        text = str(value or "").strip()
+        if not text or text.lower() in {"none", "nan"}:
+            return None
+        candidates = [text, f"{flight_date} {text}"]
+        for candidate in candidates:
+            try:
+                return datetime.fromisoformat(candidate.replace("/", "-").replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        digits = re.sub(r"[^0-9]", "", text)
+        if len(digits) in (3, 4):
+            digits = digits.zfill(4)
+            try:
+                return datetime.strptime(f"{flight_date} {digits[:2]}:{digits[2:]}", "%Y-%m-%d %H:%M")
+            except ValueError:
+                return None
+        return None
 
     async def _async_main(self) -> None:
         """主循环"""
@@ -292,26 +314,31 @@ class ChinaSouthernAirApprovalScheduler:
                         if match:
                             booking_number = match.group(1)
                             
+                            if str(getattr(export_record, "departure_tracking_completed", "0")) == "1":
+                                continue
                             existing_task = rpa_task_service.get_pending_task_for_target(
-                                db,
-                                target_type="csa_dep_tracking",
-                                target_id=export_record.id,
+                                db, target_type="csa_dep_tracking", target_id=export_record.id,
                                 task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value
                             )
                             if not existing_task:
-                                params = {
-                                    "booking_number": booking_number
-                                }
+                                params = {"booking_number": booking_number}
+                                scheduled_at = get_china_now()
+                                try:
+                                    # 南航文件本身有计划起飞时间，优先使用该值计算105分钟前的执行时刻。
+                                    planned = str(export_record.planned_takeoff or "").strip()
+                                    planned_dt = self._planned_datetime(planned, flight_date)
+                                    if planned_dt:
+                                        scheduled_at = planned_dt - timedelta(minutes=105)
+                                        if scheduled_at.tzinfo:
+                                            scheduled_at = scheduled_at.replace(tzinfo=None)
+                                except Exception as exc:
+                                    print(f"[ChinaSouthernAirApprovalScheduler] 解析计划起飞时间失败，任务立即入队: {exc}")
                                 rpa_task_service.create_task(
-                                    db=db,
-                                    task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value,
-                                    target_type="csa_dep_tracking",
-                                    target_id=export_record.id,
-                                    params=params,
-                                    job_uuid=None,
-                                    priority=2,
-                                    created_by=None,
-                                    robot_id=None
+                                    db=db, task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value,
+                                    target_type="csa_dep_tracking", target_id=export_record.id,
+                                    params=params, job_uuid=None, priority=2, created_by=None, robot_id=None,
+                                    scheduled_at=scheduled_at,
+                                    max_attempts=settings.RPA_DEPARTURE_TASK_MAX_ATTEMPTS
                                 )
             
             if unique_dates and existing_ids:

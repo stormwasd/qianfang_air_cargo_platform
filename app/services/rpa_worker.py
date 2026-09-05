@@ -18,6 +18,8 @@ from app.models.booking import Booking
 from app.models.settlement import Settlement
 from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
+from app.models.transit_loading import ShenzhenAirBookingExport
+from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.nanhang_token import NanHangToken
 from app.services.rpa_service import rpa_service
 from app.services.rpa_task_service import rpa_task_service, PRINT_TASK_TYPES, PRINT_TYPE_REVERSE_MAPPING, PRINT_TYPE_MAPPING
@@ -3038,6 +3040,8 @@ class RPAWorker:
                             ).delete()
                         
                         records_to_insert = []
+                        has_invalid_flight = False
+                        from app.utils.ctrip_client import ctrip_client
                         for row in billing_data:
                             if not row or not isinstance(row, list) or len(row) < 9:
                                 continue
@@ -3046,18 +3050,34 @@ class RPAWorker:
                             if seq == "序号" or seq == "" or "合计" in str(row[1]):
                                 continue
                                 
+                            flight_number = str(row[1]).strip() if row[1] else ""
+                            if not flight_number:
+                                has_invalid_flight = True
+                            planned_time = None
+                            try:
+                                if flight_number:
+                                    ctrip_times = await ctrip_client.get_flight_times(
+                                        flight_number, str(row[2]).strip(),
+                                        f"{str(row[4]).strip()}-{str(row[5]).strip()}"
+                                    )
+                                    planned_time = (ctrip_times or {}).get("planned_time")
+                            except Exception as exc:
+                                print(f"{self._log_prefix} 获取深航预飞时间失败: {exc}")
                             record = ShenzhenAirBillingTimeContainer(
                                 booking_export_id=booking_export_id,
                                 waybill_number_8=waybill_number_8,
                                 sequence=seq,
-                                flight_number=str(row[1]).strip(),
+                                flight_number=flight_number or None,
                                 flight_date=str(row[2]).strip(),
                                 billing_time=str(row[3]).strip(),
                                 origin=str(row[4]).strip(),
                                 destination=str(row[5]).strip(),
                                 quantity=str(row[6]).strip(),
                                 weight=str(row[7]).strip(),
-                                container=str(row[8]).strip()
+                                container=str(row[8]).strip(),
+                                planned_time=planned_time,
+                                actual_time=(None if not planned_time else None),
+                                actual_time_attempts="0"
                             )
                             records_to_insert.append(record)
                             
@@ -3067,6 +3087,28 @@ class RPAWorker:
                             print(f"{self._log_prefix} 成功将 {len(records_to_insert)} 条计飞时间数据入库！")
                         else:
                             print(f"{self._log_prefix} 未解析到有效的计飞时间数据行")
+
+                        if has_invalid_flight or not records_to_insert:
+                            rpa_task_service.requeue_task(
+                                db, task.id,
+                                settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                                "深航货运走货数据存在空航班号或无数据"
+                            )
+                            return
+                    elif not billing_data:
+                        rpa_task_service.requeue_task(
+                            db, task.id,
+                            settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                            "深航货运走货数据为空"
+                        )
+                        return
+
+                        # 所有返回行均有航班号，标记该 Excel 明细已完成，后续文件重复导入时不再派发任务。
+                        export_record = db.query(ShenzhenAirBookingExport).filter(
+                            ShenzhenAirBookingExport.id == booking_export_id
+                        ).first()
+                        if export_record:
+                            export_record.departure_tracking_completed = "1"
 
                 except Exception as e:
                     db.rollback()
@@ -3282,9 +3324,13 @@ class RPAWorker:
                     CsaLalamoveInformation.approval_data_id == approval_data_id
                 ).delete()
                 
+                has_invalid_flight = False
                 for row in lalamove_data:
                     if not isinstance(row, list) or len(row) < 8:
                         continue
+                    pre_assigned_flight = str(row[6]).strip() if row[6] else ""
+                    if not pre_assigned_flight:
+                        has_invalid_flight = True
                     record = CsaLalamoveInformation(
                         approval_data_id=approval_data_id,
                         capacity_lalamove=str(row[0]) if row[0] else None,
@@ -3293,14 +3339,36 @@ class RPAWorker:
                         container_position=str(row[3]) if row[3] else None,
                         pieces=str(row[4]) if row[4] else None,
                         weight=str(row[5]) if row[5] else None,
-                        pre_assigned_flight=str(row[6]) if row[6] else None,
+                        pre_assigned_flight=pre_assigned_flight or None,
                         manifest_number=str(row[7]) if row[7] else None,
+                        actual_time=None,
+                        actual_time_attempts="0",
                     )
                     db.add(record)
                 
                 print(f"{self._log_prefix} 货拉数据已入库，共 {len(lalamove_data)} 条记录 (approval_data_id={approval_data_id})")
+
+                if has_invalid_flight:
+                    rpa_task_service.requeue_task(
+                        db, task.id,
+                        settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                        "南航货拉数据存在空预配航班号"
+                    )
+                    return
+            elif not lalamove_data:
+                rpa_task_service.requeue_task(
+                    db, task.id,
+                    settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                    "南航货拉数据为空"
+                )
+                return
             
             db.flush()
+            approval_record = db.query(ChinaSouthernAirApprovalData).filter(
+                ChinaSouthernAirApprovalData.id == approval_data_id
+            ).first()
+            if approval_record:
+                approval_record.departure_tracking_completed = "1"
             rpa_task_service.complete_task(db, task.id, True)
         finally:
             await self._cleanup_queues(queues_info)

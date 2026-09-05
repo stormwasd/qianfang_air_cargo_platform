@@ -58,6 +58,7 @@ class ChinaSouthernAirApprovalData(Base):
     customs_clearance_status = Column(String(100), comment="海关放行状态")
     single_window_check = Column(String(100), comment="单一窗口查验")
     chargeable_weight = Column(String(100), comment="计费重量")
+    departure_tracking_completed = Column(String(1), nullable=False, default="0", comment="出港明细是否已完成抓取")
     
     created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")

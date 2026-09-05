@@ -10,6 +10,8 @@ class ShenzhenAirBillingTimeContainerDTO(BaseModel):
     flight_number: Optional[str] = Field(None, description="航班号")
     flight_date: Optional[str] = Field(None, description="航班日期")
     billing_time: Optional[str] = Field(None, description="计飞时间")
+    planned_time: Optional[str] = Field(None, description="预飞时间（携程）")
+    actual_time: Optional[str] = Field(None, description="实飞时间（携程）")
     origin: Optional[str] = Field(None, description="起飞站")
     destination: Optional[str] = Field(None, description="目的站")
     quantity: Optional[str] = Field(None, description="件数")
@@ -158,6 +160,7 @@ class CsaLalamoveInformationDTO(BaseModel):
     weight: Optional[str] = Field(None, description="重量")
     pre_assigned_flight: Optional[str] = Field(None, description="预配航班")
     manifest_number: Optional[str] = Field(None, description="所在舱单号")
+    actual_time: Optional[str] = Field(None, description="实飞时间（携程）")
     created_at: Optional[datetime] = None
 
     class Config:

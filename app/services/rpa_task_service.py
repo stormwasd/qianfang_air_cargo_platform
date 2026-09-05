@@ -78,7 +78,9 @@ class RPATaskService:
         priority: Optional[int] = None,
         created_by: Optional[int] = None,
         robot_id: Optional[int] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
+        scheduled_at: Optional[datetime] = None,
+        max_attempts: Optional[int] = None
     ) -> RPATask:
         """
         创建RPA任务
@@ -120,7 +122,10 @@ class RPATaskService:
             location=location,
             status=RPATaskStatus.PENDING.value,
             priority=priority,
-            created_by=created_by
+            created_by=created_by,
+            scheduled_at=scheduled_at or get_china_now(),
+            max_attempts=max_attempts or 1,
+            attempt_count=0
         )
         
         db.add(task)
@@ -154,7 +159,8 @@ class RPATaskService:
             待执行的任务对象，没有则返回None
         """
         task = db.query(RPATask).filter(
-            RPATask.status == RPATaskStatus.PENDING.value
+            RPATask.status == RPATaskStatus.PENDING.value,
+            RPATask.scheduled_at <= get_china_now()
         ).order_by(
             RPATask.priority.desc(),
             RPATask.created_at.asc()
@@ -206,6 +212,7 @@ class RPATaskService:
         
         filters = [
             RPATask.status == RPATaskStatus.PENDING.value,
+            RPATask.scheduled_at <= get_china_now(),
             RPATask.task_type.in_(effective_types),
             or_(
                 RPATask.robot_id == None,
@@ -272,6 +279,27 @@ class RPATaskService:
             db.commit()
             return True
         return False
+
+    def requeue_task(self, db: Session, task_id: int, delay_seconds: int, error_message: Optional[str] = None) -> bool:
+        """将一次未更新的明细任务重新放回队列；达到最大次数后删除。"""
+        task = db.query(RPATask).filter(RPATask.id == task_id).first()
+        if not task:
+            return False
+        task.attempt_count = (task.attempt_count or 0) + 1
+        if task.attempt_count >= (task.max_attempts or 1):
+            task.status = RPATaskStatus.FAILED.value
+            task.error_message = error_message or "达到最大消费次数，数据仍未更新"
+            task.finished_at = get_china_now()
+            db.delete(task)
+        else:
+            task.status = RPATaskStatus.PENDING.value
+            task.scheduled_at = get_china_now() + timedelta(seconds=max(1, delay_seconds))
+            task.started_at = None
+            task.finished_at = None
+            task.work_uuid = None
+            task.error_message = error_message
+        db.commit()
+        return True
     
     def complete_task(
         self,

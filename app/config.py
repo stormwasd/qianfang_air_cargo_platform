@@ -186,6 +186,32 @@ class Settings(BaseSettings):
     RPA_QUEUE_WORKER_COUNT: int = Field(default=1, ge=1, le=10, description="Worker数量（对应RPA机器人数量），默认1")
     RPA_QUEUE_TASK_TIMEOUT: int = Field(default=30, ge=10, le=300, description="RPA接口调用超时时间（秒），默认30秒，超时则任务失败")
     RPA_QUEUE_CLEANUP_DAYS: int = Field(default=7, ge=1, le=365, description="已完成任务保留天数，默认7天")
+
+    # 出港明细子任务调度与重试策略。所有时间均为秒，次数为单条明细任务的最大消费次数。
+    RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS: int = Field(
+        default=900, ge=10, le=86400,
+        description="深航/南航出港明细未更新时重新入队的间隔（秒），默认15分钟"
+    )
+    RPA_DEPARTURE_TASK_MAX_ATTEMPTS: int = Field(
+        default=5, ge=1, le=100,
+        description="深航/南航出港明细任务最大消费次数（含首次消费）"
+    )
+    RPA_SHENZHEN_AIR_ACTUAL_TIME_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=60, le=86400,
+        description="深航预飞时间后查询实飞时间的间隔（秒），默认30分钟"
+    )
+    RPA_SHENZHEN_AIR_ACTUAL_TIME_MAX_ATTEMPTS: int = Field(
+        default=8, ge=1, le=100,
+        description="深航实飞时间最大查询次数"
+    )
+    RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_INTERVAL_SECONDS: int = Field(
+        default=900, ge=60, le=86400,
+        description="南航预飞时间后查询实飞时间的间隔（秒），默认15分钟"
+    )
+    RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_MAX_ATTEMPTS: int = Field(
+        default=12, ge=1, le=100,
+        description="南航实飞时间最大查询次数"
+    )
     CHINA_SOUTHERN_AIR_DIRECT_BOOKING_QUEUE_ENABLED: bool = Field(
         default=True, description="是否启用南航直连订舱持久化任务队列"
     )

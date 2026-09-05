@@ -72,6 +72,9 @@ class RPATask(Base):
     error_message = Column(Text, nullable=True, comment="错误信息")
     created_by = Column(BigInteger, nullable=True, index=True, comment="创建用户ID")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, index=True, comment="创建时间（中国时间UTC+8）")
+    scheduled_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, index=True, comment="计划可执行时间（中国时间UTC+8）")
+    attempt_count = Column(Integer, nullable=False, default=0, comment="已消费次数")
+    max_attempts = Column(Integer, nullable=False, default=1, comment="最大消费次数")
     started_at = Column(DateTime(timezone=True), nullable=True, comment="开始执行时间")
     finished_at = Column(DateTime(timezone=True), nullable=True, comment="完成时间")
     

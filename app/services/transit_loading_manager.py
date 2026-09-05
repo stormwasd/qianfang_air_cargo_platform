@@ -6,6 +6,7 @@ import threading
 import traceback
 import pandas as pd
 from typing import Any, Dict, Optional
+from datetime import datetime, timedelta
 
 from app.config import settings
 from app.database import SessionLocal
@@ -13,6 +14,7 @@ from app.models.config import BusinessConfig
 from app.models.rpa_task import RPATaskType
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.services.rpa_task_service import rpa_task_service
+from app.utils.helpers import get_china_now
 
 
 TRANSIT_LOADING_TARGET_TYPE = "transit_loading"
@@ -136,13 +138,13 @@ class TransitLoadingManager:
         """主循环：轮询监控文件夹"""
         while not self._stop_event.is_set():
             try:
-                self._check_for_new_files()
+                await self._check_for_new_files()
             except Exception as e:
                 print(f"[TransitLoadingManager] 文件监控异常: {repr(e)}\n{traceback.format_exc()}")
             
             await asyncio.sleep(5)  
 
-    def _check_for_new_files(self) -> None:
+    async def _check_for_new_files(self) -> None:
         if not os.path.exists(self.watch_dir):
             return
             
@@ -156,9 +158,9 @@ class TransitLoadingManager:
                     continue  
                 
                 print(f"[TransitLoadingManager] 发现新的数据文件: {filename}，开始解析入库...")
-                self._process_file(filepath)
+                await self._process_file(filepath)
 
-    def _process_file(self, filepath: str) -> None:
+    async def _process_file(self, filepath: str) -> None:
         db = SessionLocal()
         try:
             df = pd.read_excel(filepath)
@@ -239,12 +241,30 @@ class TransitLoadingManager:
                     existing_map[key] = export_record 
                 
                 db.flush()  
+
+                if str(getattr(export_record, "departure_tracking_completed", "0")) == "1":
+                    continue
                 
                 params = {
                     "system_url": "https://www.kinggo.com/main",
                     "system_account": system_account,
                     "waybill_number_8": waybill_number
                 }
+
+                # 任务必须在计飞时间前105分钟执行；计飞时间由携程按航班/日期/航程查询。
+                scheduled_at = get_china_now()
+                try:
+                    from app.utils.ctrip_client import ctrip_client
+                    flight_no = str(field_values.get("billing_flight") or "").strip()
+                    routing = str(field_values.get("routing") or "").strip()
+                    ctrip_times = await ctrip_client.get_flight_times(flight_no, flight_date, routing)
+                    ready_time = (ctrip_times or {}).get("ready_time")
+                    if ready_time:
+                        scheduled_at = datetime.fromisoformat(str(ready_time).replace("Z", "+00:00")) - timedelta(minutes=105)
+                        if scheduled_at.tzinfo:
+                            scheduled_at = scheduled_at.replace(tzinfo=None)
+                except Exception as exc:
+                    print(f"[TransitLoadingManager] 获取计飞时间失败，任务立即入队等待后续重试: {exc}")
                 
                 rpa_task_service.create_task(
                     db=db,
@@ -255,7 +275,9 @@ class TransitLoadingManager:
                     job_uuid=None,
                     priority=2,
                     created_by=None,
-                    robot_id=None
+                    robot_id=None,
+                    scheduled_at=scheduled_at,
+                    max_attempts=settings.RPA_DEPARTURE_TASK_MAX_ATTEMPTS
                 )
                 
             for key, existing_record in existing_map.items():
