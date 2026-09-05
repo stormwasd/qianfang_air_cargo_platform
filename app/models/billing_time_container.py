@@ -17,6 +17,7 @@ class ShenzhenAirBillingTimeContainer(Base):
     planned_time = Column(String(50), comment="预飞时间（携程）")
     actual_time = Column(String(50), comment="实飞时间（携程）")
     actual_time_attempts = Column(String(20), default="0", comment="实飞时间查询次数")
+    next_actual_time_query_at = Column(DateTime, nullable=True, comment="下一次查询实飞时间时间")
     origin = Column(String(100), comment="起飞站")
     destination = Column(String(100), comment="目的站")
     quantity = Column(String(50), comment="件数")

@@ -9,6 +9,7 @@ CREATE TABLE `shenzhen_air_billing_time_containers` (
   `planned_time` varchar(50) DEFAULT NULL COMMENT '预飞时间（携程）',
   `actual_time` varchar(50) DEFAULT NULL COMMENT '实飞时间（携程）',
   `actual_time_attempts` varchar(20) NOT NULL DEFAULT '0' COMMENT '实飞时间查询次数',
+  `next_actual_time_query_at` datetime DEFAULT NULL COMMENT '下一次查询实飞时间时间',
   `origin` varchar(100) DEFAULT NULL COMMENT '起飞站',
   `destination` varchar(100) DEFAULT NULL COMMENT '目的站',
   `quantity` varchar(50) DEFAULT NULL COMMENT '件数',

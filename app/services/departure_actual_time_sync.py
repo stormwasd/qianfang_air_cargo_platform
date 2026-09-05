@@ -73,7 +73,8 @@ class DepartureActualTimeSync:
     async def _sync_shenzhen(self):
         db = SessionLocal()
         try:
-            now = get_china_now()
+            # 数据库 DateTime 字段按中国本地时间保存为无时区值，统一使用无时区当前时间比较。
+            now = get_china_now().replace(tzinfo=None)
             rows = db.query(ShenzhenAirBillingTimeContainer).filter(
                 ShenzhenAirBillingTimeContainer.flight_number.isnot(None),
                 ShenzhenAirBillingTimeContainer.flight_number != "",
@@ -84,12 +85,29 @@ class DepartureActualTimeSync:
                 if (int(row.actual_time_attempts or 0) >= settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_MAX_ATTEMPTS):
                     continue
                 planned = _parse_planned(row.planned_time, row.flight_date)
-                if not planned or now < planned + timedelta(seconds=settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_INTERVAL_SECONDS):
+                if not planned:
                     continue
-                result = await ctrip_client.get_flight_times(row.flight_number, row.flight_date, f"{row.origin}-{row.destination}")
+                next_query_at = row.next_actual_time_query_at or (
+                    planned + timedelta(seconds=settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_FIRST_QUERY_DELAY_SECONDS)
+                )
+                if now < next_query_at:
+                    continue
+                # 先写入下一次时间并提交，避免多实例或同轮扫描重复占用同一条记录。
+                row.next_actual_time_query_at = now + timedelta(
+                    seconds=settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS
+                )
+                db.commit()
+                result = await ctrip_client.get_flight_times(
+                    row.flight_number, row.flight_date, f"{row.origin}-{row.destination}", force_refresh=True
+                )
                 row.actual_time_attempts = str(int(row.actual_time_attempts or 0) + 1)
                 if result and result.get("actual_time"):
                     row.actual_time = str(result["actual_time"])
+                    row.next_actual_time_query_at = None
+                else:
+                    row.next_actual_time_query_at = now + timedelta(
+                        seconds=settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS
+                    )
             db.commit()
         finally:
             db.close()
@@ -97,7 +115,7 @@ class DepartureActualTimeSync:
     async def _sync_csa(self):
         db = SessionLocal()
         try:
-            now = get_china_now()
+            now = get_china_now().replace(tzinfo=None)
             rows = db.query(CsaLalamoveInformation, ChinaSouthernAirApprovalData).join(
                 ChinaSouthernAirApprovalData,
                 CsaLalamoveInformation.approval_data_id == ChinaSouthernAirApprovalData.id,
@@ -115,12 +133,28 @@ class DepartureActualTimeSync:
                     continue
                 flight_no, flight_date, routing = parts[0], parts[1], parts[2].replace(" ", "")
                 planned = _parse_planned(approval.planned_takeoff, flight_date) or _parse_planned(approval.expected_takeoff, flight_date)
-                if not planned or now < planned + timedelta(seconds=settings.RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_INTERVAL_SECONDS):
+                if not planned:
                     continue
-                result = await ctrip_client.get_flight_times(str(row.pre_assigned_flight).split("/")[0].strip(), flight_date, routing)
+                next_query_at = row.next_actual_time_query_at or (
+                    planned + timedelta(seconds=settings.RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_FIRST_QUERY_DELAY_SECONDS)
+                )
+                if now < next_query_at:
+                    continue
+                row.next_actual_time_query_at = now + timedelta(
+                    seconds=settings.RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS
+                )
+                db.commit()
+                result = await ctrip_client.get_flight_times(
+                    str(row.pre_assigned_flight).split("/")[0].strip(), flight_date, routing, force_refresh=True
+                )
                 row.actual_time_attempts = str(int(row.actual_time_attempts or 0) + 1)
                 if result and result.get("actual_time"):
                     row.actual_time = str(result["actual_time"])
+                    row.next_actual_time_query_at = None
+                else:
+                    row.next_actual_time_query_at = now + timedelta(
+                        seconds=settings.RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS
+                    )
             db.commit()
         finally:
             db.close()

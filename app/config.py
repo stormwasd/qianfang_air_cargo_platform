@@ -196,17 +196,25 @@ class Settings(BaseSettings):
         default=5, ge=1, le=100,
         description="深航/南航出港明细任务最大消费次数（含首次消费）"
     )
-    RPA_SHENZHEN_AIR_ACTUAL_TIME_INTERVAL_SECONDS: int = Field(
+    RPA_SHENZHEN_AIR_ACTUAL_TIME_FIRST_QUERY_DELAY_SECONDS: int = Field(
         default=1800, ge=60, le=86400,
-        description="深航预飞时间后查询实飞时间的间隔（秒），默认30分钟"
+        description="深航预飞时间后首次查询实飞时间的延迟（秒），默认30分钟"
+    )
+    RPA_SHENZHEN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=60, le=86400,
+        description="深航首次查询未拿到实飞时间后的重试间隔（秒），默认30分钟"
     )
     RPA_SHENZHEN_AIR_ACTUAL_TIME_MAX_ATTEMPTS: int = Field(
         default=8, ge=1, le=100,
         description="深航实飞时间最大查询次数"
     )
-    RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_INTERVAL_SECONDS: int = Field(
+    RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_FIRST_QUERY_DELAY_SECONDS: int = Field(
         default=900, ge=60, le=86400,
-        description="南航预飞时间后查询实飞时间的间隔（秒），默认15分钟"
+        description="南航预飞时间后首次查询实飞时间的延迟（秒），默认15分钟"
+    )
+    RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS: int = Field(
+        default=900, ge=60, le=86400,
+        description="南航首次查询未拿到实飞时间后的重试间隔（秒），默认15分钟"
     )
     RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_MAX_ATTEMPTS: int = Field(
         default=12, ge=1, le=100,

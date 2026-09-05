@@ -113,7 +113,8 @@ class CtripClient:
         self._guid_ts = 0.0
 
     async def get_flight_times(
-        self, flight_no: str, flight_date: str, routing: str
+        self, flight_no: str, flight_date: str, routing: str,
+        force_refresh: bool = False
     ) -> Optional[Dict[str, str]]:
         """
         获取航班的各维度的起飞时间（具备 5 分钟内存 TTL 缓存及并发保护）
@@ -121,6 +122,7 @@ class CtripClient:
         :param flight_no: 航班号 (例如: ZH9947)
         :param flight_date: 航班日期 (例如: 2026-06-12)
         :param routing: 航程 (例如: SZX-HFE)
+        :param force_refresh: 是否跳过本地缓存并强制请求携程（实飞轮询使用）
         :return: 包含 planned_time(预飞时间)、ready_time(计飞时间)、
                  actual_time(实飞时间) 的字典，获取失败返回 None
         """
@@ -140,7 +142,7 @@ class CtripClient:
         now_ts = time.time()
 
         # 1. 优先查 5 分钟 TTL 内存缓存
-        if cache_key in self._cache:
+        if not force_refresh and cache_key in self._cache:
             ts, cached_data = self._cache[cache_key]
             if (now_ts - ts) < self.CACHE_TTL:
                 return cached_data
@@ -148,7 +150,7 @@ class CtripClient:
         # 2. 并发限流控制
         async with self.semaphore:
             # 二次检查缓存
-            if cache_key in self._cache:
+            if not force_refresh and cache_key in self._cache:
                 ts, cached_data = self._cache[cache_key]
                 if (now_ts - ts) < self.CACHE_TTL:
                     return cached_data
@@ -291,7 +293,7 @@ class CtripClient:
                         flight_no_clean, flight_date_clean, e,
                     )
                     # 如果发生异常但存在过期缓存，作为降级策略返回
-                    if cache_key in self._cache:
+                    if not force_refresh and cache_key in self._cache:
                         return self._cache[cache_key][1]
                     return None
 
