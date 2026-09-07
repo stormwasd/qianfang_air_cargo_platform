@@ -210,6 +210,7 @@ def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
         "remark",
     ):
         setattr(cost_record, field_name, getattr(record, field_name))
+    cost_record.status = ConsignmentSubmissionStatus.SUBMITTED.value
 
 
 # ============================================================================

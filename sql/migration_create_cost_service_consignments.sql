@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS `cost_registrations` (
     `first_leg_weight` decimal(10,2) DEFAULT NULL COMMENT '一程重量',
     `agent` varchar(100) DEFAULT NULL COMMENT '代理',
     `remark` text DEFAULT NULL COMMENT '备注',
+    `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '提交状态：0=未提交，1=已提交',
     -- (2) 应收款项
     `unit_price` decimal(10,2) DEFAULT NULL COMMENT '单价',
     `freight_method` varchar(50) DEFAULT NULL COMMENT '运费计算方式',
@@ -271,6 +272,7 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     KEY `idx_warehouse_entry_date` (`warehouse_entry_date`),
     KEY `idx_customer_name` (`customer_name`),
     KEY `idx_agent` (`agent`),
+    KEY `idx_status` (`status`),
     KEY `idx_flight_doc_no` (`flight_doc_no`),
     KEY `idx_flight_no` (`flight_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='费用单据明细表';

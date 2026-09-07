@@ -9610,9 +9610,12 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 | 费用信息登记 | GET | `/api/v1/cost-service/cost-registration` | 获取费用信息登记数据（系统唯一数据） |
 | 费用信息登记 | PUT | `/api/v1/cost-service/cost-registration` | 编辑并保存费用信息登记数据 |
 | 单据信息 | POST | `/api/v1/cost-service/consignments` | 单据信息-新增 |
+| 单据信息 | POST | `/api/v1/cost-service/consignments/draft` | 单据信息-暂存新增 |
 | 单据信息 | GET | `/api/v1/cost-service/consignments` | 单据信息-列表查询、筛选与排序 |
 | 单据信息 | GET | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-详情 |
 | 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-修改 |
+| 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 单据信息-暂存修改 |
+| 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 单据信息-暂存修改 |
 | 单据信息 | DELETE | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-删除（单个） |
 | 单据信息 | POST/DELETE | `/api/v1/cost-service/consignments/batch-delete` | 单据信息-批量删除 |
 | 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（三级分组表头、115 列全量字段） |
@@ -9706,10 +9709,22 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 - 不传排序参数时，继续保持原有的“制单时间倒序、ID倒序”顺序，不影响现有调用方。
 - 按进仓日期排序时，若进仓日期相同，则依次按制单时间和 ID 使用相同方向排序；按制单时间排序时，ID 作为并列值排序依据，确保分页结果稳定。
 - 非法的排序字段或排序方向不进入数据库查询，由接口参数枚举校验直接拒绝。
+
+#### 23.5 费用登记台暂存与状态筛选规范
+
+- 费用登记台单据状态使用数值字段 `status`：`0`=未提交，`1`=已提交；前端负责将数值转换为“未提交/已提交”展示。
+- 原保存接口保持不变：新增使用 `POST /api/v1/cost-service/consignments`，修改使用 `PUT /api/v1/cost-service/consignments/{consignment_id}`；保存成功后响应字段 `status=1`，并按原有逻辑同步客服接单台对应记录。
+- 新增暂存接口：`POST /api/v1/cost-service/consignments/draft`，请求体与原新增接口一致，只创建费用登记台记录，响应字段 `status=0`，不创建客服接单台记录。
+- 修改暂存接口：`PUT /api/v1/cost-service/consignments/{consignment_id}/draft`，请求体与原修改接口一致，只更新费用登记台记录，客服接单台相同 ID 的已有数据保持不变，响应字段 `status=0`。
+- 费用登记台列表、详情、新增、修改和暂存响应均返回 `status` 字段。
+- `GET /api/v1/cost-service/consignments` 新增可选查询参数 `status`：传 `status=0` 只查询未提交，传 `status=1` 只查询已提交；不传 `status` 时查询全部状态。例如：`GET /api/v1/cost-service/consignments?status=0&page=1&pageSize=10`。
+- 本次涉及接口变更：新增 `POST /api/v1/cost-service/consignments/draft`、`PUT /api/v1/cost-service/consignments/{consignment_id}/draft`；修改 `GET /api/v1/cost-service/consignments` 增加 `status` 查询参数；原有 `POST /api/v1/cost-service/consignments`、`PUT /api/v1/cost-service/consignments/{consignment_id}` 和 `GET /api/v1/cost-service/consignments/{consignment_id}` 响应新增 `status` 字段。
+- 对已提交费用单据执行保存时，客服接单台对应记录会同步更新为最新数据并标记 `status=1`；对未提交费用单据执行暂存或删除时，不会覆盖或删除客服接单台中已有的已提交记录。
+- 历史费用单据统一按 `status=1`（已提交）处理；存量数据库需执行 `sql/migration_add_cost_consignment_status.sql`。
 - 示例：按制单时间正序查询：`GET /api/v1/customer-service/consignments?sort_by=create_time&sort_order=asc&page=1&pageSize=10`；按进仓日期倒序查询：`GET /api/v1/customer-service/consignments?sort_by=warehouse_entry_date&sort_order=desc&page=1&pageSize=10`。
 - 为保证进仓日期排序性能，`consignment_infos.warehouse_entry_date` 已增加数据库索引；已有数据库需执行 `sql/migration_add_customer_consignment_warehouse_entry_date_index.sql`。
 
-#### 23.5 客服接单台暂存与状态筛选规范
+#### 23.6 客服接单台暂存与状态筛选规范
 
 - 原保存接口保持不变：新增使用 `POST /api/v1/customer-service/consignments`，修改使用 `PUT /api/v1/customer-service/consignments/{consignment_id}`；保存成功后响应字段 `status=1`（已提交），并同步费用登记台。
 - 新增暂存接口：`POST /api/v1/customer-service/consignments/draft`，请求体与原新增接口一致，只创建客服接单台记录，响应字段 `status=0`（未提交）。

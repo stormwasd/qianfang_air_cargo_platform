@@ -198,6 +198,12 @@ class CostConsignmentUpdate(CostRegistrationSave):
     pass
 
 
+class CostConsignmentSubmissionStatus(int, Enum):
+    """费用登记台单据提交状态。"""
+    UNSUBMITTED = 0
+    SUBMITTED = 1
+
+
 class CostConsignmentSortField(str, Enum):
     """费用单据列表支持的排序字段。"""
     CREATE_TIME = "create_time"
@@ -215,6 +221,7 @@ class CostConsignmentQuery(BaseModel):
     start_warehouse_date: Optional[str] = Field(None, description="进仓开始日期 (YYYY-MM-DD)")
     end_warehouse_date: Optional[str] = Field(None, description="进仓结束日期 (YYYY-MM-DD)")
     customer_name: Optional[str] = Field(None, description="客户名称 (模糊匹配)")
+    status: Optional[CostConsignmentSubmissionStatus] = Field(None, description="提交状态：0=未提交，1=已提交")
     agent: Optional[str] = Field(None, description="代理单位 (模糊匹配)")
     flight_doc_no: Optional[str] = Field(
         None,

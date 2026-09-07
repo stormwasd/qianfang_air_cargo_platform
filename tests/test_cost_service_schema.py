@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 
 from app.schemas.cost_service import (
+    CostConsignmentSubmissionStatus,
     PayableDomAir,
     PayableGround,
     PayableIntlAir,
@@ -11,6 +12,9 @@ from app.schemas.cost_service import (
 
 
 class CostServiceSchemaTests(unittest.TestCase):
+    def test_consignment_submission_status_uses_numeric_values(self):
+        self.assertEqual(CostConsignmentSubmissionStatus.UNSUBMITTED.value, 0)
+        self.assertEqual(CostConsignmentSubmissionStatus.SUBMITTED.value, 1)
     def test_receivables_include_freight_method(self):
         self.assertIn("freight_method", ReceivablesInfo.model_fields)
         payload = ReceivablesInfo.model_validate({"unit_price": 10, "freight_method": "按实际重量", "freight": 20})
