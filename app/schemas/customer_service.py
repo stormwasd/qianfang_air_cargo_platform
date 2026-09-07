@@ -53,6 +53,12 @@ class ConsignmentInfoUpdate(ConsignmentBase):
     pass
 
 
+class ConsignmentSubmissionStatus(int, Enum):
+    """客服接单台委托信息提交状态。"""
+    UNSUBMITTED = 0
+    SUBMITTED = 1
+
+
 class ConsignmentInfoSortField(str, Enum):
     """委托信息列表支持的排序字段。"""
     CREATE_TIME = "create_time"
@@ -70,6 +76,7 @@ class ConsignmentInfoQuery(BaseModel):
     start_date: Optional[str] = Field(None, description="制单日期区间-开始日期 (YYYY-MM-DD)")
     end_date: Optional[str] = Field(None, description="制单日期区间-结束日期 (YYYY-MM-DD)")
     customer_name: Optional[str] = Field(None, description="客户名称 (模糊查询)")
+    status: Optional[ConsignmentSubmissionStatus] = Field(None, description="提交状态：0=未提交，1=已提交")
     sort_by: ConsignmentInfoSortField = Field(
         ConsignmentInfoSortField.CREATE_TIME,
         description="排序字段：create_time（制单时间）或 warehouse_entry_date（进仓日期）",
@@ -95,6 +102,7 @@ class ExportExcelRequest(BaseModel):
 class ConsignmentInfoResponse(ConsignmentBase):
     """委托信息-明细响应 Schema"""
     id: str = Field(..., description="委托信息ID")
+    status: ConsignmentSubmissionStatus = Field(..., description="提交状态：0=未提交，1=已提交")
     creator_id: Optional[str] = Field(None, description="创建人ID")
     created_at: Optional[str] = Field(None, description="创建时间")
     updated_at: Optional[str] = Field(None, description="更新时间")

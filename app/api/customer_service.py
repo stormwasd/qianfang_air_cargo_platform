@@ -20,11 +20,13 @@ from app.models.user import User
 from app.models.customer_service import ConsignmentRegistration, ConsignmentInfo
 from app.models.cost_service import CostConsignment
 from app.schemas.customer_service import (
+    ConsignmentBase,
     ConsignmentRegistrationSave,
     ConsignmentRegistrationResponse,
     ConsignmentInfoCreate,
     ConsignmentInfoUpdate,
     ConsignmentInfoQuery,
+    ConsignmentSubmissionStatus,
     ConsignmentInfoSortField,
     ConsignmentInfoSortOrder,
     BatchDeleteRequest,
@@ -111,12 +113,103 @@ def _format_record_dict(record: Any) -> Dict[str, Any]:
         "first_leg_weight": float(record.first_leg_weight) if record.first_leg_weight is not None else None,
         "agent": record.agent or "",
         "remark": record.remark or "",
+        "status": int(getattr(record, "status", ConsignmentSubmissionStatus.SUBMITTED.value)),
         "created_at": format_datetime_china(record.created_at),
         "updated_at": format_datetime_china(record.updated_at),
     }
     if hasattr(record, "creator_id") and record.creator_id:
         data["creator_id"] = str(record.creator_id)
     return data
+
+
+def _apply_consignment_payload(record: ConsignmentInfo, payload: ConsignmentBase, *, partial: bool) -> None:
+    """将客服接单台请求字段写入记录，并保留修改接口的字段缺省语义。"""
+    fields_set = payload.model_fields_set
+
+    if not partial:
+        record.create_time = _parse_datetime(payload.create_time) or get_china_now()
+        record.warehouse_entry_date = _parse_date(payload.warehouse_entry_date)
+        record.flight_date = _parse_date(payload.flight_date)
+        for field_name in (
+            "internal_doc_id",
+            "customer_name",
+            "origin_destination",
+            "customs_declaration",
+            "bill_of_lading",
+            "flight_no",
+            "flight_doc_no",
+            "pieces",
+            "actual_weight",
+            "chargeable_weight",
+            "volume",
+            "first_leg_weight",
+            "agent",
+            "remark",
+        ):
+            setattr(record, field_name, getattr(payload, field_name))
+        return
+
+    if payload.create_time is not None:
+        record.create_time = _parse_datetime(payload.create_time)
+    if payload.warehouse_entry_date is not None:
+        record.warehouse_entry_date = _parse_date(payload.warehouse_entry_date)
+    if payload.flight_date is not None:
+        record.flight_date = _parse_date(payload.flight_date)
+
+    for field_name in (
+        "internal_doc_id",
+        "customer_name",
+        "origin_destination",
+        "customs_declaration",
+        "bill_of_lading",
+        "flight_no",
+        "flight_doc_no",
+        "agent",
+        "remark",
+    ):
+        value = getattr(payload, field_name)
+        if value is not None:
+            setattr(record, field_name, value)
+
+    # 仅数值字段沿用既有的显式 null 清空语义；未传字段保持原值。
+    for field_name in (
+        "pieces",
+        "actual_weight",
+        "chargeable_weight",
+        "volume",
+        "first_leg_weight",
+    ):
+        if field_name in fields_set:
+            setattr(record, field_name, getattr(payload, field_name))
+
+
+def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
+    """把已提交的客服单据同步到费用登记台；不存在时补建同 ID 记录。"""
+    cost_record = db.query(CostConsignment).filter(CostConsignment.id == record.id).first()
+    if not cost_record:
+        cost_record = CostConsignment(id=record.id, creator_id=record.creator_id)
+        db.add(cost_record)
+
+    for field_name in (
+        "create_time",
+        "internal_doc_id",
+        "warehouse_entry_date",
+        "customer_name",
+        "origin_destination",
+        "customs_declaration",
+        "bill_of_lading",
+        "flight_date",
+        "flight_no",
+        "flight_doc_no",
+        "pieces",
+        "actual_weight",
+        "chargeable_weight",
+        "volume",
+        "first_leg_weight",
+        "agent",
+        "remark",
+    ):
+        setattr(cost_record, field_name, getattr(record, field_name))
 
 
 # ============================================================================
@@ -218,61 +311,39 @@ async def create_consignment(
     """
     新增一条委托信息记录。
     """
-    create_time_val = _parse_datetime(payload.create_time) or get_china_now()
-    warehouse_entry_date_val = _parse_date(payload.warehouse_entry_date)
-    flight_date_val = _parse_date(payload.flight_date)
-    
     new_record = ConsignmentInfo(
-        create_time=create_time_val,
-        internal_doc_id=payload.internal_doc_id,
-        warehouse_entry_date=warehouse_entry_date_val,
-        customer_name=payload.customer_name,
-        origin_destination=payload.origin_destination,
-        customs_declaration=payload.customs_declaration,
-        bill_of_lading=payload.bill_of_lading,
-        flight_date=flight_date_val,
-        flight_no=payload.flight_no,
-        flight_doc_no=payload.flight_doc_no,
-        pieces=payload.pieces,
-        actual_weight=payload.actual_weight,
-        chargeable_weight=payload.chargeable_weight,
-        volume=payload.volume,
-        first_leg_weight=payload.first_leg_weight,
-        agent=payload.agent,
-        remark=payload.remark,
-        creator_id=current_user.id
+        creator_id=current_user.id,
+        status=ConsignmentSubmissionStatus.SUBMITTED.value,
     )
+    _apply_consignment_payload(new_record, payload, partial=False)
     
     db.add(new_record)
     db.flush()
     
-    # 同步在费用登记台 (CostConsignment) 中创建记录
-    cost_record = CostConsignment(
-        id=new_record.id,
-        create_time=new_record.create_time,
-        internal_doc_id=new_record.internal_doc_id,
-        warehouse_entry_date=new_record.warehouse_entry_date,
-        customer_name=new_record.customer_name,
-        origin_destination=new_record.origin_destination,
-        customs_declaration=new_record.customs_declaration,
-        bill_of_lading=new_record.bill_of_lading,
-        flight_date=new_record.flight_date,
-        flight_no=new_record.flight_no,
-        flight_doc_no=new_record.flight_doc_no,
-        pieces=new_record.pieces,
-        actual_weight=new_record.actual_weight,
-        chargeable_weight=new_record.chargeable_weight,
-        volume=new_record.volume,
-        first_leg_weight=new_record.first_leg_weight,
-        agent=new_record.agent,
-        remark=new_record.remark,
-        creator_id=current_user.id
-    )
-    db.add(cost_record)
+    _sync_consignment_to_cost(db, new_record)
     db.commit()
     db.refresh(new_record)
     
     return success_response(data=_format_record_dict(new_record), msg="委托信息创建成功")
+
+
+@router.post("/consignments/draft", summary="委托信息-暂存新增")
+async def create_consignment_draft(
+    payload: ConsignmentInfoCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """新增未提交委托，仅保存到客服接单台，不同步费用登记台。"""
+    new_record = ConsignmentInfo(
+        creator_id=current_user.id,
+        status=ConsignmentSubmissionStatus.UNSUBMITTED.value,
+    )
+    _apply_consignment_payload(new_record, payload, partial=False)
+    db.add(new_record)
+    db.commit()
+    db.refresh(new_record)
+
+    return success_response(data=_format_record_dict(new_record), msg="委托信息暂存成功")
 
 
 # ============================================================================
@@ -284,6 +355,7 @@ async def get_consignments(
     start_date: Optional[str] = Query(None, description="制单开始日期 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="制单结束日期 (YYYY-MM-DD)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
+    status: Optional[ConsignmentSubmissionStatus] = Query(None, description="提交状态：0=未提交，1=已提交"),
     sort_by: ConsignmentInfoSortField = Query(
         ConsignmentInfoSortField.CREATE_TIME,
         description="排序字段：create_time（制单时间）或 warehouse_entry_date（进仓日期）",
@@ -304,6 +376,7 @@ async def get_consignments(
     - **start_date**: 制单日期区间开始，例如 '2026-07-25'
     - **end_date**: 制单日期区间结束，例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
+    - **status**: 提交状态，可选 `0`（未提交）或 `1`（已提交）
     - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `create_time`
     - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
     - **page**: 页码（不传或默认为 1）
@@ -329,6 +402,9 @@ async def get_consignments(
         c_name = customer_name.strip()
         if c_name:
             query_obj = query_obj.filter(ConsignmentInfo.customer_name.like(f"%{c_name}%"))
+
+    if status is not None:
+        query_obj = query_obj.filter(ConsignmentInfo.status == status.value)
             
     total = query_obj.count()
     
@@ -412,91 +488,39 @@ async def update_consignment(
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
         
-    if payload.create_time is not None:
-        record.create_time = _parse_datetime(payload.create_time)
-    if payload.internal_doc_id is not None:
-        record.internal_doc_id = payload.internal_doc_id
-    if payload.warehouse_entry_date is not None:
-        record.warehouse_entry_date = _parse_date(payload.warehouse_entry_date)
-    if payload.customer_name is not None:
-        record.customer_name = payload.customer_name
-    if payload.origin_destination is not None:
-        record.origin_destination = payload.origin_destination
-    if payload.customs_declaration is not None:
-        record.customs_declaration = payload.customs_declaration
-    if payload.bill_of_lading is not None:
-        record.bill_of_lading = payload.bill_of_lading
-    if payload.flight_date is not None:
-        record.flight_date = _parse_date(payload.flight_date)
-    if payload.flight_no is not None:
-        record.flight_no = payload.flight_no
-    if payload.flight_doc_no is not None:
-        record.flight_doc_no = payload.flight_doc_no
-    # 对数值字段，需区分“请求中未传该字段”和“显式传 null”。
-    # Pydantic v2 的 model_fields_set 仅包含请求实际提供的字段：未传时保持
-    # 现有值，显式传 null 时将可空数据库列清空。0 仍作为合法业务值保存。
-    for field_name in (
-        "pieces",
-        "actual_weight",
-        "chargeable_weight",
-        "volume",
-        "first_leg_weight",
-    ):
-        if field_name in payload.model_fields_set:
-            setattr(record, field_name, getattr(payload, field_name))
-    if payload.agent is not None:
-        record.agent = payload.agent
-    if payload.remark is not None:
-        record.remark = payload.remark
-        
-    # 同步更新费用登记台 (CostConsignment) 中的记录
-    cost_record = db.query(CostConsignment).filter(CostConsignment.id == c_id).first()
-    if cost_record:
-        cost_record.create_time = record.create_time
-        cost_record.internal_doc_id = record.internal_doc_id
-        cost_record.warehouse_entry_date = record.warehouse_entry_date
-        cost_record.customer_name = record.customer_name
-        cost_record.origin_destination = record.origin_destination
-        cost_record.customs_declaration = record.customs_declaration
-        cost_record.bill_of_lading = record.bill_of_lading
-        cost_record.flight_date = record.flight_date
-        cost_record.flight_no = record.flight_no
-        cost_record.flight_doc_no = record.flight_doc_no
-        cost_record.pieces = record.pieces
-        cost_record.actual_weight = record.actual_weight
-        cost_record.chargeable_weight = record.chargeable_weight
-        cost_record.volume = record.volume
-        cost_record.first_leg_weight = record.first_leg_weight
-        cost_record.agent = record.agent
-        cost_record.remark = record.remark
-    else:
-        cost_record = CostConsignment(
-            id=record.id,
-            create_time=record.create_time,
-            internal_doc_id=record.internal_doc_id,
-            warehouse_entry_date=record.warehouse_entry_date,
-            customer_name=record.customer_name,
-            origin_destination=record.origin_destination,
-            customs_declaration=record.customs_declaration,
-            bill_of_lading=record.bill_of_lading,
-            flight_date=record.flight_date,
-            flight_no=record.flight_no,
-            flight_doc_no=record.flight_doc_no,
-            pieces=record.pieces,
-            actual_weight=record.actual_weight,
-            chargeable_weight=record.chargeable_weight,
-            volume=record.volume,
-            first_leg_weight=record.first_leg_weight,
-            agent=record.agent,
-            remark=record.remark,
-            creator_id=record.creator_id
-        )
-        db.add(cost_record)
+    _apply_consignment_payload(record, payload, partial=True)
+    record.status = ConsignmentSubmissionStatus.SUBMITTED.value
+    _sync_consignment_to_cost(db, record)
 
     db.commit()
     db.refresh(record)
     
     return success_response(data=_format_record_dict(record), msg="委托信息更新成功")
+
+
+@router.put("/consignments/{consignment_id}/draft", summary="委托信息-暂存修改")
+async def update_consignment_draft(
+    payload: ConsignmentInfoUpdate,
+    consignment_id: str = Path(..., description="委托信息ID"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """修改并暂存委托；费用登记台已有数据保持不变。"""
+    try:
+        c_id = int(consignment_id)
+    except ValueError:
+        raise BadRequestException("consignment_id 必须为合法数字格式")
+
+    record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
+    if not record:
+        raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
+
+    _apply_consignment_payload(record, payload, partial=True)
+    record.status = ConsignmentSubmissionStatus.UNSUBMITTED.value
+    db.commit()
+    db.refresh(record)
+
+    return success_response(data=_format_record_dict(record), msg="委托信息暂存成功")
 
 
 # ============================================================================
@@ -519,8 +543,9 @@ async def delete_consignment(
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
         
-    # 同步删除费用登记台中对应的记录
-    db.query(CostConsignment).filter(CostConsignment.id == c_id).delete(synchronize_session=False)
+    # 未提交记录只属于客服接单台；删除时不得影响费用登记台中的既有版本。
+    if int(getattr(record, "status", ConsignmentSubmissionStatus.SUBMITTED.value)) == ConsignmentSubmissionStatus.SUBMITTED.value:
+        db.query(CostConsignment).filter(CostConsignment.id == c_id).delete(synchronize_session=False)
     db.delete(record)
     db.commit()
     
@@ -548,8 +573,15 @@ async def batch_delete_consignments(
         except ValueError:
             raise BadRequestException(f"ID '{raw_id}' 格式无效")
             
-    # 同步删除费用登记台中对应的记录
-    db.query(CostConsignment).filter(CostConsignment.id.in_(int_ids)).delete(synchronize_session=False)
+    submitted_ids = [
+        record_id
+        for record_id, in db.query(ConsignmentInfo.id).filter(
+            ConsignmentInfo.id.in_(int_ids),
+            ConsignmentInfo.status == ConsignmentSubmissionStatus.SUBMITTED.value,
+        ).all()
+    ]
+    if submitted_ids:
+        db.query(CostConsignment).filter(CostConsignment.id.in_(submitted_ids)).delete(synchronize_session=False)
     deleted_count = db.query(ConsignmentInfo).filter(ConsignmentInfo.id.in_(int_ids)).delete(synchronize_session=False)
     db.commit()
     

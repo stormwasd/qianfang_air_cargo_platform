@@ -3,7 +3,7 @@ import asyncio
 from types import SimpleNamespace
 import unittest
 
-from app.api.customer_service import update_consignment
+from app.api.customer_service import update_consignment, update_consignment_draft
 from app.schemas.customer_service import ConsignmentInfoUpdate
 
 
@@ -29,6 +29,22 @@ class _Session:
 
     def add(self, _record):
         raise AssertionError("费用登记台记录已存在，不应新增")
+
+    def commit(self):
+        self.committed = True
+
+    def refresh(self, record):
+        self.refreshed_record = record
+
+
+class _DraftSession:
+    def __init__(self, consignment):
+        self.consignment = consignment
+        self.committed = False
+        self.refreshed_record = None
+
+    def query(self, *_args):
+        return _Query(self.consignment)
 
     def commit(self):
         self.committed = True
@@ -119,6 +135,47 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
         self.assertEqual(consignment.chargeable_weight, 0.0)
         self.assertEqual(cost_consignment.actual_weight, 0.0)
         self.assertEqual(cost_consignment.chargeable_weight, 0.0)
+
+    def test_draft_update_keeps_cost_data_untouched_and_marks_unsubmitted(self):
+        consignment = SimpleNamespace(
+            id=1,
+            status=1,
+            create_time=None,
+            internal_doc_id="DOC-001",
+            warehouse_entry_date=None,
+            customer_name="客户A",
+            origin_destination="SZX-TPE",
+            customs_declaration=None,
+            bill_of_lading=None,
+            flight_date=None,
+            flight_no=None,
+            flight_doc_no=None,
+            pieces=39,
+            actual_weight=500.0,
+            chargeable_weight=601.0,
+            volume=3.61,
+            first_leg_weight=450.0,
+            agent="代理A",
+            remark=None,
+            creator_id=99,
+            created_at=None,
+            updated_at=None,
+        )
+        session = _DraftSession(consignment)
+
+        asyncio.run(
+            update_consignment_draft(
+                payload=ConsignmentInfoUpdate(customer_name="草稿客户"),
+                consignment_id="1",
+                current_user=None,
+                db=session,
+            )
+        )
+
+        self.assertEqual(consignment.customer_name, "草稿客户")
+        self.assertEqual(consignment.status, 0)
+        self.assertTrue(session.committed)
+        self.assertIs(session.refreshed_record, consignment)
 
 
 if __name__ == "__main__":

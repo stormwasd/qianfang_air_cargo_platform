@@ -520,7 +520,8 @@ async def create_cost_consignment(
         first_leg_weight=new_record.first_leg_weight,
         agent=new_record.agent,
         remark=new_record.remark,
-        creator_id=current_user.id
+        creator_id=current_user.id,
+        status=1,
     )
     db.add(cs_record)
     db.commit()
@@ -708,7 +709,7 @@ async def update_cost_consignment(
     
     # 同步更新客服接单台 (ConsignmentInfo) 中的对应记录
     cs_record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
-    if cs_record:
+    if cs_record and int(getattr(cs_record, "status", 1)) == 1:
         cs_record.create_time = record.create_time
         cs_record.internal_doc_id = record.internal_doc_id
         cs_record.warehouse_entry_date = record.warehouse_entry_date
@@ -726,7 +727,7 @@ async def update_cost_consignment(
         cs_record.first_leg_weight = record.first_leg_weight
         cs_record.agent = record.agent
         cs_record.remark = record.remark
-    else:
+    elif not cs_record:
         cs_record = ConsignmentInfo(
             id=record.id,
             create_time=record.create_time,
@@ -746,7 +747,8 @@ async def update_cost_consignment(
             first_leg_weight=record.first_leg_weight,
             agent=record.agent,
             remark=record.remark,
-            creator_id=record.creator_id
+            creator_id=record.creator_id,
+            status=1,
         )
         db.add(cs_record)
 
@@ -783,7 +785,10 @@ async def batch_delete_cost_consignments(
             raise BadRequestException(f"ID '{raw_id}' 格式无效")
             
     # 同步删除客服接单台中对应的记录
-    db.query(ConsignmentInfo).filter(ConsignmentInfo.id.in_(int_ids)).delete(synchronize_session=False)
+    db.query(ConsignmentInfo).filter(
+        ConsignmentInfo.id.in_(int_ids),
+        ConsignmentInfo.status == 1,
+    ).delete(synchronize_session=False)
     deleted_count = db.query(CostConsignment).filter(CostConsignment.id.in_(int_ids)).delete(synchronize_session=False)
     db.commit()
     
@@ -810,7 +815,10 @@ async def delete_cost_consignment(
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
         
     # 同步删除客服接单台中对应的记录
-    db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).delete(synchronize_session=False)
+    db.query(ConsignmentInfo).filter(
+        ConsignmentInfo.id == c_id,
+        ConsignmentInfo.status == 1,
+    ).delete(synchronize_session=False)
     db.delete(record)
     db.commit()
     

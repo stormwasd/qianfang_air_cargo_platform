@@ -43,11 +43,13 @@ CREATE TABLE IF NOT EXISTS `consignment_infos` (
     `first_leg_weight` decimal(10,2) DEFAULT NULL COMMENT '一程重量',
     `agent` varchar(100) DEFAULT NULL COMMENT '代理',
     `remark` text DEFAULT NULL COMMENT '备注',
+    `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '提交状态：0=未提交，1=已提交',
     `creator_id` bigint(20) DEFAULT NULL COMMENT '创建者ID',
     `created_at` datetime NOT NULL COMMENT '创建时间',
     `updated_at` datetime NOT NULL COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_create_time` (`create_time`),
     KEY `idx_warehouse_entry_date` (`warehouse_entry_date`),
-    KEY `idx_customer_name` (`customer_name`)
+    KEY `idx_customer_name` (`customer_name`),
+    KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='委托信息表';

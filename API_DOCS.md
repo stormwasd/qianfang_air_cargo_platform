@@ -9684,12 +9684,14 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 
 2. **双向实时同步机制**：
    - **新增 (POST)**：
-     - 在客服接单台新增委托记录时，系统会在同一个事务中自动在费用登记台表 (`cost_consignments`) 中创建相同 `id` 的单据记录，并同步写入货主委托信息字段；
+     - 在客服接单台点击“保存”新增委托记录时，系统会在同一个事务中自动在费用登记台表 (`cost_consignments`) 中创建相同 `id` 的单据记录，并同步写入货主委托信息字段；
+     - 在客服接单台点击“暂存”时，仅写入客服接单台，状态为`0`（未提交），不创建或更新费用登记台记录；
      - 在费用登记台新增费用单据时，系统亦会自动在客服接单台表 (`consignment_infos`) 中创建相同 `id` 的委托记录，实现无缝互通。
    - **修改 (PUT)**：
-     - 在任意一方修改单据的货主委托信息时，系统自动联动更新另一方中对应 `id` 记录的各委托字段（若对方记录不存在则自动补全创建）。
+     - 客服接单台点击“保存”时状态变为`1`（已提交），并自动联动更新费用登记台相同 `id` 的各委托字段（若不存在则补全创建）；
+     - 客服接单台点击“暂存”修改时状态变为`0`（未提交），费用登记台已有数据保持不变；费用登记台修改、删除未提交客服草稿时，也不会覆盖或删除该草稿。
    - **删除 (DELETE / Batch DELETE)**：
-     - 在任意一方执行单条删除或批量删除时，系统自动同步物理删除另一方中相同 `id` 的记录，确保两边列表数据时刻保持高度一致。
+     - 对已提交单据，在任意一方执行单条删除或批量删除时，系统自动同步物理删除另一方中相同 `id` 的记录；未提交客服草稿仅删除客服接单台记录，不影响费用登记台既有版本。
 
 3. **客服接单台数值字段清空语义**：
    - `PUT /api/v1/customer-service/consignments/{consignment_id}` 的数值字段 `pieces`、`actual_weight`、`chargeable_weight`、`volume`、`first_leg_weight` 支持显式传 `null`，将对应字段清空为数据库 `NULL`，并同步到费用登记台同 ID 的单据。
@@ -9706,6 +9708,16 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 - 非法的排序字段或排序方向不进入数据库查询，由接口参数枚举校验直接拒绝。
 - 示例：按制单时间正序查询：`GET /api/v1/customer-service/consignments?sort_by=create_time&sort_order=asc&page=1&pageSize=10`；按进仓日期倒序查询：`GET /api/v1/customer-service/consignments?sort_by=warehouse_entry_date&sort_order=desc&page=1&pageSize=10`。
 - 为保证进仓日期排序性能，`consignment_infos.warehouse_entry_date` 已增加数据库索引；已有数据库需执行 `sql/migration_add_customer_consignment_warehouse_entry_date_index.sql`。
+
+#### 23.5 客服接单台暂存与状态筛选规范
+
+- 原保存接口保持不变：新增使用 `POST /api/v1/customer-service/consignments`，修改使用 `PUT /api/v1/customer-service/consignments/{consignment_id}`；保存成功后响应字段 `status=1`（已提交），并同步费用登记台。
+- 新增暂存接口：`POST /api/v1/customer-service/consignments/draft`，请求体与原新增接口一致，只创建客服接单台记录，响应字段 `status=0`（未提交）。
+- 修改暂存接口：`PUT /api/v1/customer-service/consignments/{consignment_id}/draft`，请求体与原修改接口一致，只更新客服接单台记录，费用登记台相同 ID 的数据保持不变，响应字段 `status=0`（未提交）。
+- 客服接单台列表、详情、新增、修改和暂存响应均返回数值字段 `status`：`0`=未提交，`1`=已提交；前端可将其转换为中文展示。
+- `GET /api/v1/customer-service/consignments` 新增可选查询参数 `status`，仅接受数值 `0`（未提交）或 `1`（已提交），筛选在统计总数和分页之前执行。例如：`GET /api/v1/customer-service/consignments?status=0&page=1&pageSize=10`。
+- 本次涉及接口变更：新增 `POST /api/v1/customer-service/consignments/draft`、`PUT /api/v1/customer-service/consignments/{consignment_id}/draft`；修改 `GET /api/v1/customer-service/consignments` 增加 `status` 查询参数；原有 `POST /api/v1/customer-service/consignments`、`PUT /api/v1/customer-service/consignments/{consignment_id}` 的响应新增 `status` 字段并继续执行原同步逻辑；详情接口 `GET /api/v1/customer-service/consignments/{consignment_id}` 响应同步新增 `status` 字段。
+- 历史客服单据统一按 `status=1`（已提交）处理；存量数据库需执行 `sql/migration_add_customer_consignment_status.sql`。
 
 
 
