@@ -1,10 +1,15 @@
-"""客服接单台委托信息修改行为测试。"""
+"""客服接单台委托信息保存与暂存行为测试。"""
 import asyncio
+from datetime import date
 from types import SimpleNamespace
 import unittest
 
-from app.api.customer_service import update_consignment, update_consignment_draft
-from app.schemas.customer_service import ConsignmentInfoUpdate
+from app.api.customer_service import (
+    create_consignment,
+    update_consignment,
+    update_consignment_draft,
+)
+from app.schemas.customer_service import ConsignmentInfoCreate, ConsignmentInfoUpdate
 
 
 class _Query:
@@ -53,6 +58,29 @@ class _DraftSession:
         self.refreshed_record = record
 
 
+class _CreateSession:
+    def __init__(self):
+        self.added_records = []
+        self.committed = False
+        self.refreshed_record = None
+
+    def add(self, record):
+        self.added_records.append(record)
+
+    def flush(self):
+        # 模拟数据库在 flush 时生成客服单据 ID，费用单据应复用该 ID。
+        self.added_records[0].id = 1
+
+    def query(self, *_args):
+        return _Query(None)
+
+    def commit(self):
+        self.committed = True
+
+    def refresh(self, record):
+        self.refreshed_record = record
+
+
 class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
     def _update(self, payload):
         consignment = SimpleNamespace(
@@ -78,7 +106,10 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
             created_at=None,
             updated_at=None,
         )
-        cost_consignment = SimpleNamespace()
+        cost_consignment = SimpleNamespace(
+            pay_intl_air_rate=6.8,
+            pay_intl_air_outsource_unit="原外发单位",
+        )
         session = _Session(consignment, cost_consignment)
 
         asyncio.run(
@@ -111,6 +142,13 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
         ):
             self.assertIsNone(getattr(consignment, field_name))
             self.assertIsNone(getattr(cost_consignment, field_name))
+        for field_name in (
+            "pay_intl_air_pieces",
+            "pay_intl_air_weight",
+            "pay_intl_air_chargeable_weight",
+            "pay_intl_air_volume",
+        ):
+            self.assertIsNone(getattr(cost_consignment, field_name))
         self.assertTrue(session.committed)
         self.assertIs(session.refreshed_record, consignment)
         self.assertEqual(consignment.status, 1)
@@ -139,6 +177,63 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
         self.assertEqual(cost_consignment.actual_weight, 0.0)
         self.assertEqual(cost_consignment.chargeable_weight, 0.0)
         self.assertEqual(cost_consignment.status, 0)
+
+    def test_save_prefills_cost_international_air_fields(self):
+        _consignment, cost_consignment, _session = self._update(
+            ConsignmentInfoUpdate(
+                pieces=12,
+                actual_weight=123.45,
+                flight_date="2026-09-08",
+                chargeable_weight=130.5,
+                flight_no="ZH9001",
+                volume=1.234,
+                flight_doc_no="479-12345678",
+            )
+        )
+
+        self.assertEqual(cost_consignment.pay_intl_air_pieces, 12)
+        self.assertEqual(cost_consignment.pay_intl_air_weight, 123.45)
+        self.assertEqual(cost_consignment.pay_intl_air_flight_date, date(2026, 9, 8))
+        self.assertEqual(cost_consignment.pay_intl_air_chargeable_weight, 130.5)
+        self.assertEqual(cost_consignment.pay_intl_air_flight_no, "ZH9001")
+        self.assertEqual(cost_consignment.pay_intl_air_volume, 1.234)
+        self.assertEqual(cost_consignment.pay_intl_air_flight_doc_no, "479-12345678")
+        self.assertEqual(cost_consignment.pay_intl_air_rate, 6.8)
+        self.assertEqual(cost_consignment.pay_intl_air_outsource_unit, "原外发单位")
+        self.assertEqual(cost_consignment.status, 0)
+
+    def test_create_save_prefills_cost_international_air_fields(self):
+        session = _CreateSession()
+
+        asyncio.run(
+            create_consignment(
+                payload=ConsignmentInfoCreate(
+                    pieces=8,
+                    actual_weight=88.5,
+                    flight_date="2026-09-09",
+                    chargeable_weight=90.0,
+                    flight_no="ZH9002",
+                    volume=0.888,
+                    flight_doc_no="479-87654321",
+                ),
+                current_user=SimpleNamespace(id=99),
+                db=session,
+            )
+        )
+
+        customer_consignment, cost_consignment = session.added_records
+        self.assertEqual(customer_consignment.status, 1)
+        self.assertEqual(cost_consignment.id, customer_consignment.id)
+        self.assertEqual(cost_consignment.pay_intl_air_pieces, 8)
+        self.assertEqual(cost_consignment.pay_intl_air_weight, 88.5)
+        self.assertEqual(cost_consignment.pay_intl_air_flight_date, date(2026, 9, 9))
+        self.assertEqual(cost_consignment.pay_intl_air_chargeable_weight, 90.0)
+        self.assertEqual(cost_consignment.pay_intl_air_flight_no, "ZH9002")
+        self.assertEqual(cost_consignment.pay_intl_air_volume, 0.888)
+        self.assertEqual(cost_consignment.pay_intl_air_flight_doc_no, "479-87654321")
+        self.assertEqual(cost_consignment.status, 0)
+        self.assertTrue(session.committed)
+        self.assertIs(session.refreshed_record, customer_consignment)
 
     def test_draft_update_keeps_cost_data_untouched_and_marks_unsubmitted(self):
         consignment = SimpleNamespace(

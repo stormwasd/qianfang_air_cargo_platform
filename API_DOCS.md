@@ -9702,6 +9702,23 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - 请求体中未提供上述字段时，保持该字段已有值不变；传 `0` 时保存数值 `0`，不会被视为清空。
    - 数值字段不接受空字符串。前端清空“实际重量”的示例：`{"actual_weight": null}`。
 
+4. **客服保存时预填费用登记台国际空运信息**：
+   - 该规则仅作用于客服接单台的保存接口：新增 `POST /api/v1/customer-service/consignments` 和修改 `PUT /api/v1/customer-service/consignments/{consignment_id}`；客服暂存接口不触发该同步。
+   - 客服保存时，费用登记台对应记录仍保持 `status=0`（未提交），并在同步货主委托信息的同时覆盖预填 `payables.intl_air` 中以下字段：
+
+   | 客服/费用货主委托字段 | 费用登记台响应字段 | 数据库字段 |
+   |---|---|---|
+   | `pieces`（件数） | `payables.intl_air.pieces` | `pay_intl_air_pieces` |
+   | `actual_weight`（实际重量） | `payables.intl_air.weight` | `pay_intl_air_weight` |
+   | `flight_date`（航班日期） | `payables.intl_air.flight_date` | `pay_intl_air_flight_date` |
+   | `chargeable_weight`（计费重量） | `payables.intl_air.chargeable_weight` | `pay_intl_air_chargeable_weight` |
+   | `flight_no`（航班号） | `payables.intl_air.flight_no` | `pay_intl_air_flight_no` |
+   | `volume`（体积） | `payables.intl_air.volume` | `pay_intl_air_volume` |
+   | `flight_doc_no`（航班单号） | `payables.intl_air.flight_doc_no` | `pay_intl_air_flight_doc_no` |
+
+   - 上述字段采用覆盖语义；客服再次保存时，会使用保存后货主委托信息中的当前值重新覆盖费用登记台对应国际空运字段。同步时当前值为 `null` 或空值的，目标字段也写入对应空值。
+   - 该调整未新增或删除接口字段，只修改上述两个客服保存接口对费用登记台的同步赋值规则；费用登记台保存/暂存以及客服暂存逻辑保持不变。
+
 #### 23.4 客服接单台委托列表排序规范
 
 - `GET /api/v1/customer-service/consignments` 返回的委托信息包含 `create_time`（制单时间）和 `warehouse_entry_date`（进仓日期），现支持通过 `sort_by` 和 `sort_order` 查询参数在分页前排序。

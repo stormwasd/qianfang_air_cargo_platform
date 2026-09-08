@@ -39,6 +39,19 @@ from app.utils.helpers import format_datetime_china, get_china_now
 router = APIRouter()
 
 
+# 客服保存时，除同步费用登记台的货主委托信息外，还需为费用人员预填
+# “应付款项-国际空运信息”。映射集中维护，避免新增和修改保存逻辑分叉。
+_COST_INTL_AIR_SYNC_FIELD_MAP = (
+    ("pieces", "pay_intl_air_pieces"),
+    ("actual_weight", "pay_intl_air_weight"),
+    ("flight_date", "pay_intl_air_flight_date"),
+    ("chargeable_weight", "pay_intl_air_chargeable_weight"),
+    ("flight_no", "pay_intl_air_flight_no"),
+    ("volume", "pay_intl_air_volume"),
+    ("flight_doc_no", "pay_intl_air_flight_doc_no"),
+)
+
+
 def _parse_datetime(val: Any) -> Optional[datetime]:
     """解析日期时间"""
     if not val:
@@ -210,6 +223,10 @@ def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
         "remark",
     ):
         setattr(cost_record, field_name, getattr(record, field_name))
+
+    for source_field, target_field in _COST_INTL_AIR_SYNC_FIELD_MAP:
+        setattr(cost_record, target_field, getattr(record, source_field))
+
     # 客服提交只完成客服环节；费用登记台仍需费用人员核对并保存。
     cost_record.status = ConsignmentSubmissionStatus.UNSUBMITTED.value
 
