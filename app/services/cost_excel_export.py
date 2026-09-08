@@ -15,8 +15,7 @@ BILL_OF_LADING_EXPORT_LABELS: Dict[str, str] = {
     "1-7": "一主（七）分",
     "1-8": "一主（八）分",
     "1-9": "一主（九）分",
-    "2-0": "直单（虚拟分单）",
-    "2-1": "直单（虚拟分单*1）",
+    "2-0": "直单",
     "2-2": "直单（虚拟分单*2）",
     "2-3": "直单（虚拟分单*3）",
     "2-4": "直单（虚拟分单*4）",
@@ -58,7 +57,7 @@ def format_bill_of_lading_for_export(value: object) -> str:
         return label
 
     # 新增、修改接口会原样保存 bill_of_lading。当前前端也可能提交
-    # “一主多分-6”或“直单-3”，需与“1-6”或“2-3”采用同一展示规则。
+    # “一主多分-6”或“直单-0”，需与“1-6”或“2-0”采用同一展示规则。
     # 仅转换已知前缀，避免误改真实运单号或其他未知业务值。
     prefix, separator, sequence = lookup_key.rpartition("-")
     code_prefix = BILL_OF_LADING_STORED_PREFIXES.get(prefix.strip())

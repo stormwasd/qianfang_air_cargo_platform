@@ -10,7 +10,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 from app.database import get_db
 from app.core.exceptions import NotFoundException, BadRequestException
@@ -926,7 +926,21 @@ async def export_cost_consignments_to_excel(
         except ValueError:
             raise BadRequestException(f"ID '{raw_id}' 格式无效")
             
-    records = db.query(CostConsignment).filter(CostConsignment.id.in_(int_ids)).order_by(CostConsignment.warehouse_entry_date.desc()).all()
+    # Excel 导出按航班日期从早到晚排列；未填写航班日期的记录放在最后，
+    # 同一航班日期下按 ID 升序，确保导出顺序稳定。该排序仅作用于费用登记台导出。
+    records = (
+        db.query(CostConsignment)
+        .filter(CostConsignment.id.in_(int_ids))
+        .order_by(
+            case(
+                (CostConsignment.flight_date.is_(None), 1),
+                else_=0,
+            ).asc(),
+            CostConsignment.flight_date.asc(),
+            CostConsignment.id.asc(),
+        )
+        .all()
+    )
     
     wb = openpyxl.Workbook()
     ws = wb.active

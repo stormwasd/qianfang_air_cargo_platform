@@ -44,16 +44,17 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
                 self.assertEqual(format_bill_of_lading_for_export(code), label)
 
     def test_direct_waybill_codes_are_converted(self):
-        expected = {"2-0": "直单（虚拟分单）"}
-        expected.update(
-            {
-                f"2-{index}": f"直单（虚拟分单*{index}）"
-                for index in range(1, 10)
-            }
-        )
-        for code, label in expected.items():
+        self.assertEqual(format_bill_of_lading_for_export("2-0"), "直单")
+        for index in range(2, 10):
+            code = f"2-{index}"
             with self.subTest(code=code):
-                self.assertEqual(format_bill_of_lading_for_export(code), label)
+                self.assertEqual(
+                    format_bill_of_lading_for_export(code),
+                    f"直单（虚拟分单*{index}）",
+                )
+
+    def test_removed_direct_split_code_remains_unchanged(self):
+        self.assertEqual(format_bill_of_lading_for_export("2-1"), "2-1")
 
     def test_current_stored_values_are_converted(self):
         expected = {
@@ -61,10 +62,10 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
             "一主多分-1": "一主（一）分",
             "一主多分-6": "一主（六）分",
             "一主多分-9": "一主（九）分",
-            "直单-0": "直单（虚拟分单）",
-            "直单-1": "直单（虚拟分单*1）",
-            "直单-3": "直单（虚拟分单*3）",
+            "直单-0": "直单",
+            "直单-2": "直单（虚拟分单*2）",
             "直单-9": "直单（虚拟分单*9）",
+            "直单": "直单",
         }
         for stored_value, label in expected.items():
             with self.subTest(stored_value=stored_value):
@@ -89,12 +90,12 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
             "一主多分-6"
         )
         worksheet.cell(row=4, column=7).value = format_bill_of_lading_for_export(
-            "直单-3"
+            "直单-2"
         )
 
         self.assertEqual(worksheet.cell(row=2, column=7).value, "一主（六）分")
         self.assertEqual(worksheet.cell(row=2, column=7).data_type, "s")
-        self.assertEqual(worksheet.cell(row=4, column=7).value, "直单（虚拟分单*3）")
+        self.assertEqual(worksheet.cell(row=4, column=7).value, "直单（虚拟分单*2）")
         self.assertEqual(worksheet.cell(row=4, column=7).data_type, "s")
 
         with TemporaryDirectory() as temp_dir:
@@ -108,7 +109,7 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
             self.assertEqual(exported_worksheet.cell(row=2, column=7).data_type, "s")
             self.assertEqual(
                 exported_worksheet.cell(row=4, column=7).value,
-                "直单（虚拟分单*3）",
+                "直单（虚拟分单*2）",
             )
             self.assertEqual(exported_worksheet.cell(row=4, column=7).data_type, "s")
             exported_workbook.close()
