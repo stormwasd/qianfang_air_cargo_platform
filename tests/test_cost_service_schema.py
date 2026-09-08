@@ -17,8 +17,17 @@ class CostServiceSchemaTests(unittest.TestCase):
         self.assertEqual(CostConsignmentSubmissionStatus.SUBMITTED.value, 1)
     def test_receivables_include_freight_method(self):
         self.assertIn("freight_method", ReceivablesInfo.model_fields)
-        payload = ReceivablesInfo.model_validate({"unit_price": 10, "freight_method": "按实际重量", "freight": 20})
+        self.assertIn("receivable_fuel_fee", ReceivablesInfo.model_fields)
+        payload = ReceivablesInfo.model_validate(
+            {
+                "unit_price": 10,
+                "freight_method": "按实际重量",
+                "freight": 20,
+                "receivable_fuel_fee": 30,
+            }
+        )
         self.assertEqual(payload.freight_method, "按实际重量")
+        self.assertEqual(payload.receivable_fuel_fee, 30)
 
     def test_air_payables_include_freight_method(self):
         for schema in (PayableIntlAir, PayableDomAir):

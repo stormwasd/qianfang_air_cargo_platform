@@ -116,7 +116,7 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
 
 class CostExcelLayoutTests(unittest.TestCase):
     def test_removed_intl_air_columns_are_not_exported(self):
-        self.assertEqual(len(COST_EXPORT_HEADERS), 115)
+        self.assertEqual(len(COST_EXPORT_HEADERS), 116)
         self.assertNotIn("国空应付-航空公司", COST_EXPORT_HEADERS)
         self.assertNotIn("国空应付-托运日期", COST_EXPORT_HEADERS)
         # 国内空运属于另一业务分组，本次需求不应误删。
@@ -163,11 +163,11 @@ class CostExcelLayoutTests(unittest.TestCase):
         headers = append_cost_export_headers(worksheet)
 
         merged_ranges = {str(item) for item in worksheet.merged_cells.ranges}
-        self.assertEqual(len(headers), 115)
-        self.assertEqual(worksheet.max_column, 115)
+        self.assertEqual(len(headers), 116)
+        self.assertEqual(worksheet.max_column, 116)
         self.assertIn("A1:Q2", merged_ranges)
-        self.assertIn("AK1:DE1", merged_ranges)
-        self.assertIn("DD2:DD3", merged_ranges)
+        self.assertIn("AL1:DF1", merged_ranges)
+        self.assertIn("DF2:DF3", merged_ranges)
         workbook.close()
 
     def test_every_export_section_keeps_its_expected_boundaries(self):
@@ -175,24 +175,25 @@ class CostExcelLayoutTests(unittest.TestCase):
             "应收-单价": 17,
             "应收-运费计算方式": 18,
             "应收-运费": 19,
-            "国空应付-小计": 36,
-            "国空应付-单价": 47,
-            "国空应付-运费计算方式": 48,
-            "国空应付-运费": 49,
-            "国空应付-备注": 59,
-            "汽运应付-小计": 60,
-            "汽运应付-备注": 70,
-            "国空内应付-小计": 71,
-            "国空内应付-费率": 84,
-            "国空内应付-运费计算方式": 85,
-            "国空内应付-运费": 86,
-            "国空内应付-备注": 88,
-            "报关应付-小计": 89,
-            "报关应付-备注": 96,
-            "地面应付-小计": 97,
-            "地面应付-备注": 107,
-            "应付合计": 108,
-            "利润率(%)": 114,
+            "应收-燃油费": 20,
+            "国空应付-小计": 37,
+            "国空应付-单价": 48,
+            "国空应付-运费计算方式": 49,
+            "国空应付-运费": 50,
+            "国空应付-备注": 60,
+            "汽运应付-小计": 61,
+            "汽运应付-备注": 71,
+            "国空内应付-小计": 72,
+            "国空内应付-费率": 85,
+            "国空内应付-运费计算方式": 86,
+            "国空内应付-运费": 87,
+            "国空内应付-备注": 89,
+            "报关应付-小计": 90,
+            "报关应付-备注": 97,
+            "地面应付-小计": 98,
+            "地面应付-备注": 108,
+            "应付合计": 109,
+            "利润率(%)": 115,
         }
 
         for header, expected_index in expected_boundaries.items():

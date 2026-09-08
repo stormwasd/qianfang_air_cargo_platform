@@ -130,6 +130,7 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
             "unit_price": _to_float(record.unit_price),
             "freight_method": record.freight_method or "",
             "freight": _to_float(record.receivable_freight),
+            "receivable_fuel_fee": _to_float(record.receivable_fuel_fee),
             "lading_info_fee": _to_float(record.receivable_lading_info_fee),
             "split_offset_telex_fee": _to_float(record.receivable_split_offset_telex_fee),
             "customs_fee": _to_float(record.receivable_customs_fee),
@@ -290,6 +291,11 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
         record.unit_price = rec.unit_price if rec.unit_price is not None else record.unit_price
         record.freight_method = rec.freight_method if rec.freight_method is not None else record.freight_method
         record.receivable_freight = rec.freight if rec.freight is not None else record.receivable_freight
+        record.receivable_fuel_fee = (
+            rec.receivable_fuel_fee
+            if rec.receivable_fuel_fee is not None
+            else record.receivable_fuel_fee
+        )
         record.receivable_lading_info_fee = rec.lading_info_fee if rec.lading_info_fee is not None else record.receivable_lading_info_fee
         record.receivable_split_offset_telex_fee = rec.split_offset_telex_fee if rec.split_offset_telex_fee is not None else record.receivable_split_offset_telex_fee
         record.receivable_customs_fee = rec.customs_fee if rec.customs_fee is not None else record.receivable_customs_fee
@@ -906,7 +912,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件包含三级分组表头及 115 列全量字段，数据从第 4 行开始；应收款项、国际空运和国内空运应付款项均含运费计算方式字段。
+    导出文件包含三级分组表头及 116 列全量字段，数据从第 4 行开始；应收款项包含燃油费和运费计算方式，国际空运和国内空运应付款项均含运费计算方式字段。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -996,6 +1002,7 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.unit_price),
             format_freight_method_for_export(rec.freight_method),
             _v_num(rec.receivable_freight),
+            _v_num(rec.receivable_fuel_fee),
             _v_num(rec.receivable_lading_info_fee),
             _v_num(rec.receivable_split_offset_telex_fee),
             _v_num(rec.receivable_customs_fee),
