@@ -9688,11 +9688,11 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 
 2. **双向实时同步机制**：
    - **新增 (POST)**：
-     - 在客服接单台点击“保存”新增委托记录时，系统会在同一个事务中自动在费用登记台表 (`cost_consignments`) 中创建相同 `id` 的单据记录，并同步写入货主委托信息字段；
+     - 在客服接单台点击“保存”新增委托记录时，客服单据状态设为 `status=1`（已提交）；系统会在同一个事务中自动在费用登记台表 (`cost_consignments`) 中创建相同 `id` 的单据记录并同步写入货主委托信息字段，但费用单据状态设为 `status=0`（未提交），等待费用人员核对并保存；
      - 在客服接单台点击“暂存”时，仅写入客服接单台，状态为`0`（未提交），不创建或更新费用登记台记录；
      - 在费用登记台新增费用单据时，系统亦会自动在客服接单台表 (`consignment_infos`) 中创建相同 `id` 的委托记录，实现无缝互通。
    - **修改 (PUT)**：
-     - 客服接单台点击“保存”时状态变为`1`（已提交），并自动联动更新费用登记台相同 `id` 的各委托字段（若不存在则补全创建）；
+     - 客服接单台点击“保存”时，客服单据状态变为 `status=1`（已提交），并自动联动更新费用登记台相同 `id` 的各委托字段（若不存在则补全创建）；同步后的费用单据状态统一变为 `status=0`（未提交），不会直接标记为费用已提交；
      - 客服接单台点击“暂存”修改时状态变为`0`（未提交），费用登记台已有数据保持不变；费用登记台修改、删除未提交客服草稿时，也不会覆盖或删除该草稿。
    - **删除 (DELETE / Batch DELETE)**：
      - 对已提交单据，在任意一方执行单条删除或批量删除时，系统自动同步物理删除另一方中相同 `id` 的记录；未提交客服草稿仅删除客服接单台记录，不影响费用登记台既有版本。
@@ -9727,7 +9727,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 
 #### 23.6 客服接单台暂存与状态筛选规范
 
-- 原保存接口保持不变：新增使用 `POST /api/v1/customer-service/consignments`，修改使用 `PUT /api/v1/customer-service/consignments/{consignment_id}`；保存成功后响应字段 `status=1`（已提交），并同步费用登记台。
+- 原保存接口保持不变：新增使用 `POST /api/v1/customer-service/consignments`，修改使用 `PUT /api/v1/customer-service/consignments/{consignment_id}`；保存成功后客服接口响应字段为 `status=1`（已提交），同步到费用登记台的对应记录为 `status=0`（未提交），等待费用人员后续保存。
 - 新增暂存接口：`POST /api/v1/customer-service/consignments/draft`，请求体与原新增接口一致，只创建客服接单台记录，响应字段 `status=0`（未提交）。
 - 修改暂存接口：`PUT /api/v1/customer-service/consignments/{consignment_id}/draft`，请求体与原修改接口一致，只更新客服接单台记录，费用登记台相同 ID 的数据保持不变，响应字段 `status=0`（未提交）。
 - 客服接单台列表、详情、新增、修改和暂存响应均返回数值字段 `status`：`0`=未提交，`1`=已提交；前端可将其转换为中文展示。

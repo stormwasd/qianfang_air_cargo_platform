@@ -113,6 +113,8 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
             self.assertIsNone(getattr(cost_consignment, field_name))
         self.assertTrue(session.committed)
         self.assertIs(session.refreshed_record, consignment)
+        self.assertEqual(consignment.status, 1)
+        self.assertEqual(cost_consignment.status, 0)
 
     def test_omitted_numeric_fields_keep_existing_values(self):
         consignment, cost_consignment, _session = self._update(
@@ -125,6 +127,7 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
         self.assertEqual(consignment.volume, 3.61)
         self.assertEqual(consignment.first_leg_weight, 450.0)
         self.assertEqual(cost_consignment.actual_weight, 500.0)
+        self.assertEqual(cost_consignment.status, 0)
 
     def test_zero_remains_a_valid_numeric_value(self):
         consignment, cost_consignment, _session = self._update(
@@ -135,6 +138,7 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
         self.assertEqual(consignment.chargeable_weight, 0.0)
         self.assertEqual(cost_consignment.actual_weight, 0.0)
         self.assertEqual(cost_consignment.chargeable_weight, 0.0)
+        self.assertEqual(cost_consignment.status, 0)
 
     def test_draft_update_keeps_cost_data_untouched_and_marks_unsubmitted(self):
         consignment = SimpleNamespace(

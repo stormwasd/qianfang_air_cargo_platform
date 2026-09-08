@@ -184,7 +184,7 @@ def _apply_consignment_payload(record: ConsignmentInfo, payload: ConsignmentBase
 
 
 def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
-    """把已提交的客服单据同步到费用登记台；不存在时补建同 ID 记录。"""
+    """把已提交的客服单据同步到费用登记台，并等待费用人员提交。"""
     cost_record = db.query(CostConsignment).filter(CostConsignment.id == record.id).first()
     if not cost_record:
         cost_record = CostConsignment(id=record.id, creator_id=record.creator_id)
@@ -210,7 +210,8 @@ def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
         "remark",
     ):
         setattr(cost_record, field_name, getattr(record, field_name))
-    cost_record.status = ConsignmentSubmissionStatus.SUBMITTED.value
+    # 客服提交只完成客服环节；费用登记台仍需费用人员核对并保存。
+    cost_record.status = ConsignmentSubmissionStatus.UNSUBMITTED.value
 
 
 # ============================================================================
