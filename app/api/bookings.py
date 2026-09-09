@@ -1,6 +1,7 @@
 """
 订舱管理接口
 """
+import asyncio
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -370,6 +371,7 @@ async def _execute_china_southern_air_direct_booking(
     default_volume_cache: dict = None,
     default_cabin_class_cache: dict = None,
     default_special_cargo_code_cache: dict = None,
+    allow_in_progress: bool = False,
 ) -> None:
     """执行单条直连订舱；所有外部请求均在数据库锁释放后进行。"""
     try:
@@ -378,9 +380,8 @@ async def _execute_china_southern_air_direct_booking(
         )
         if locked_booking is None:
             raise ChinaSouthernAirDirectBookingError("订舱不存在")
-        # 异步 Worker 入队时会先将记录标记为执行中（1）；此处允许
-        # 对应的持久化任务继续执行，HTTP 接口本身仍会拦截重复提交。
-        if locked_booking.booking_status not in {"0", "1", "2"}:
+        allowed_statuses = {"0", "1", "2"} if allow_in_progress else {"0", "2"}
+        if locked_booking.booking_status not in allowed_statuses:
             raise ChinaSouthernAirDirectBookingError("该订舱正在执行或已订舱成功，不能重复提交")
         locked_booking.booking_status = "1"
         locked_booking.booking_feedback = None
@@ -814,35 +815,140 @@ async def execute_booking(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """创建持久化异步订舱任务，不在HTTP请求内等待南航响应。
+    """提交南航直连订舱任务并等待多 Worker 执行完成。
 
-    任务成功写入数据库后即与浏览器生命周期解耦；页面关闭、网络断开或
-    前端超时均不会取消后台执行。任务结果通过
-    ``/api/v1/china-southern-air-booking-tasks/{id}`` 查询，批次可通过返回的
-    ``batch_id`` 查询。
+    本接口不是“创建任务即成功”：任务由专用直连订舱 Worker 消费，接口
+    会等待每条任务进入成功或失败终态后再返回。这样既保留多 Worker 并行
+    能力，也保证 ``success`` 和统计数量反映南航实际订舱结果。
     """
+    from app.services.rpa_task_service import rpa_task_service
+    from app.models.rpa_task import RPATaskType, RPATargetType
     from app.models.china_southern_air_booking_task import (
         ChinaSouthernAirBookingTask,
         ChinaSouthernAirBookingTaskStatus,
     )
-    
+
     if not request.booking_ids or len(request.booking_ids) < 1:
         raise BadRequestException("booking_ids列表不能为空，至少需要包含一个订舱ID")
-    
+
+    if settings.CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE == "rpa":
+        if not settings.RPA_QUEUE_ENABLED:
+            raise BaseAPIException(503, "RPA任务队列未启用")
+        business_config = _get_business_config(db)
+        if not business_config:
+            raise BadRequestException("业务参数配置不存在，无法创建南航RPA订舱任务")
+        execute_results = []
+        success_count = 0
+        failed_count = 0
+        for booking_id_str in request.booking_ids:
+            try:
+                booking_id = int(booking_id_str)
+                booking = db.query(Booking).filter(Booking.id == booking_id).first()
+                if not booking:
+                    raise ChinaSouthernAirDirectBookingError("订舱不存在")
+                form_data_dict = json.loads(booking.form_data)
+                if not isinstance(form_data_dict, dict):
+                    raise ChinaSouthernAirDirectBookingError("订舱表单数据必须是JSON对象")
+                airline = form_data_dict.get("airline", "")
+                if airline not in {"2", "南方航空"}:
+                    raise ChinaSouthernAirDirectBookingError("当前仅支持南方航空的订舱执行")
+                if booking.booking_status not in {"0", "2"}:
+                    raise ChinaSouthernAirDirectBookingError("该订舱正在执行或已订舱成功，不能重复提交")
+                existing_task = rpa_task_service.get_pending_task_for_target(
+                    db,
+                    target_type=RPATargetType.BOOKING.value,
+                    target_id=booking_id,
+                    task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
+                )
+                if existing_task:
+                    raise ChinaSouthernAirDirectBookingError(
+                        f"该订舱已有待执行或执行中的订舱任务，任务ID: {existing_task.id}"
+                    )
+                # 模式切换期间也要阻止同一订舱同时存在历史直连任务，
+                # 避免 RPA 与直连链路并发分配单号或重复下单。
+                direct_task = db.query(ChinaSouthernAirBookingTask).filter(
+                    ChinaSouthernAirBookingTask.booking_id == booking_id,
+                    ChinaSouthernAirBookingTask.status.in_([
+                        ChinaSouthernAirBookingTaskStatus.PENDING,
+                        ChinaSouthernAirBookingTaskStatus.RUNNING,
+                    ]),
+                ).first()
+                if direct_task:
+                    raise ChinaSouthernAirDirectBookingError(
+                        f"该订舱已有待执行或执行中的历史直连任务，任务ID: {direct_task.id}"
+                    )
+                rpa_params = _extract_china_southern_air_params(form_data_dict, business_config)
+                required_params = [
+                    "address_of_the_application_executable_file_tangyi",
+                    "system_account", "login_password", "system_url",
+                    "origin_station", "destination", "flight_date", "flight_number",
+                    "cargo_type", "cargo_code", "cargo_name", "quantity", "weight",
+                    "special_cargo_code",
+                ]
+                missing_params = [key for key in required_params if not rpa_params.get(key)]
+                if missing_params:
+                    raise ChinaSouthernAirDirectBookingError(
+                        f"缺少必填参数: {', '.join(missing_params)}"
+                    )
+                task = rpa_task_service.create_task(
+                    db=db,
+                    task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
+                    target_type=RPATargetType.BOOKING.value,
+                    target_id=booking_id,
+                    params=rpa_params,
+                    priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
+                    created_by=current_user.id if current_user else None,
+                )
+                execute_results.append(BookingExecuteItem(
+                    booking_id=booking_id_str,
+                    task_id=str(task.id),
+                    success=True,
+                    error_message=None,
+                ))
+                success_count += 1
+            except ValueError:
+                db.rollback()
+                execute_results.append(BookingExecuteItem(
+                    booking_id=booking_id_str, success=False,
+                    error_message="订舱ID格式错误，必须是数字",
+                ))
+                failed_count += 1
+            except (ChinaSouthernAirDirectBookingError, BadRequestException) as exc:
+                db.rollback()
+                execute_results.append(BookingExecuteItem(
+                    booking_id=booking_id_str, success=False,
+                    error_message=str(getattr(exc, "detail", None) or exc),
+                ))
+                failed_count += 1
+            except Exception as exc:
+                db.rollback()
+                execute_results.append(BookingExecuteItem(
+                    booking_id=booking_id_str, success=False,
+                    error_message=f"处理订舱时发生错误: {exc}",
+                ))
+                failed_count += 1
+        response_data = BookingExecuteResponse(
+            items=execute_results, total=len(execute_results),
+            success_count=success_count, failed_count=failed_count,
+        )
+        return success_response(
+            data=response_data.dict(),
+            msg=f"批量订舱任务已提交，成功入队: {success_count}，失败: {failed_count}",
+        )
+
     if not settings.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_QUEUE_ENABLED:
         raise BaseAPIException(503, "南航直连订舱任务队列未启用")
 
-    batch_id = generate_id()
     execute_results = []
     success_count = 0
     failed_count = 0
+    batch_id = generate_id()
+    pending_tasks = []
+
     for booking_id_str in request.booking_ids:
         try:
             booking_id = int(booking_id_str)
-            booking = (
-                db.query(Booking).filter(Booking.id == booking_id)
-                .with_for_update().first()
-            )
+            booking = db.query(Booking).filter(Booking.id == booking_id).with_for_update().first()
             if not booking:
                 execute_results.append(BookingExecuteItem(
                     booking_id=booking_id_str,
@@ -854,8 +960,10 @@ async def execute_booking(
             
             try:
                 form_data_dict = json.loads(booking.form_data)
-            except (TypeError, json.JSONDecodeError):
-                raise ChinaSouthernAirDirectBookingError("订舱表单数据格式不正确")
+            except (TypeError, json.JSONDecodeError) as exc:
+                message = "订舱表单数据格式不正确"
+                _fail_china_southern_air_direct_booking(db, booking_id, message)
+                raise ChinaSouthernAirDirectBookingError(message) from exc
             if not isinstance(form_data_dict, dict):
                 message = "订舱表单数据必须是JSON对象"
                 _fail_china_southern_air_direct_booking(db, booking_id, message)
@@ -874,13 +982,12 @@ async def execute_booking(
 
             if booking.booking_status not in {"0", "2"}:
                 raise ChinaSouthernAirDirectBookingError("该订舱正在执行或已订舱成功，不能重复提交")
-            existing_task = db.query(ChinaSouthernAirBookingTask).filter(
-                ChinaSouthernAirBookingTask.booking_id == booking_id,
-                ChinaSouthernAirBookingTask.status.in_([
-                    ChinaSouthernAirBookingTaskStatus.PENDING,
-                    ChinaSouthernAirBookingTaskStatus.RUNNING,
-                ]),
-            ).first()
+            existing_task = rpa_task_service.get_pending_task_for_target(
+                db,
+                target_type=RPATargetType.BOOKING.value,
+                target_id=booking_id,
+                task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
+            )
             if existing_task:
                 execute_results.append(BookingExecuteItem(
                     booking_id=booking_id_str,
@@ -889,6 +996,31 @@ async def execute_booking(
                 ))
                 failed_count += 1
                 continue
+            legacy_direct_task = db.query(ChinaSouthernAirBookingTask).filter(
+                ChinaSouthernAirBookingTask.booking_id == booking_id,
+                ChinaSouthernAirBookingTask.status.in_([
+                    ChinaSouthernAirBookingTaskStatus.PENDING,
+                    ChinaSouthernAirBookingTaskStatus.RUNNING,
+                ]),
+            ).first()
+            if legacy_direct_task:
+                execute_results.append(BookingExecuteItem(
+                    booking_id=booking_id_str,
+                    success=False,
+                    error_message=f"该订舱已有待执行或执行中的历史直连任务，任务ID: {legacy_direct_task.id}",
+                ))
+                failed_count += 1
+                continue
+            try:
+                cargo_type_code_filled = _fill_missing_china_southern_air_cargo_type_codes(
+                    form_data_dict, db
+                )
+            except BadRequestException as exc:
+                message = exc.detail
+                _fail_china_southern_air_direct_booking(db, booking_id, message)
+                raise ChinaSouthernAirDirectBookingError(message) from exc
+            if cargo_type_code_filled:
+                booking.form_data = json.dumps(form_data_dict, ensure_ascii=False)
 
             task = ChinaSouthernAirBookingTask(
                 id=generate_id(),
@@ -899,18 +1031,17 @@ async def execute_booking(
                 priority=1,
                 created_by=current_user.id,
             )
-            # 入队即标记执行中，防止列表/通知把该记录当作可重复提交。
             booking.booking_status = "1"
             booking.booking_feedback = None
             db.add(task)
             db.commit()
+            pending_tasks.append((booking_id_str, task.id))
             execute_results.append(BookingExecuteItem(
                 booking_id=booking_id_str,
                 task_id=str(task.id),
-                success=True,
-                error_message=None
+                success=False,
+                error_message="任务处理中",
             ))
-            success_count += 1
             
         except ValueError:
             db.rollback()
@@ -938,17 +1069,78 @@ async def execute_booking(
             ))
             failed_count += 1
     
+    # 等待直连 Worker 将本次提交的任务推进到终态。轮询间隔沿用直连
+    # Worker 配置，Worker 数量由 CHINA_SOUTHERN_AIR_DIRECT_BOOKING_WORKER_COUNT
+    # 控制；因此该配置会直接影响本接口的并发订舱吞吐。
+    task_ids = {task_id for _, task_id in pending_tasks}
+    terminal_statuses = {
+        ChinaSouthernAirBookingTaskStatus.SUCCESS,
+        ChinaSouthernAirBookingTaskStatus.FAILED,
+    }
+    wait_started = asyncio.get_running_loop().time()
+    wait_timeout = settings.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE_TIMEOUT_SECONDS
+    wait_timed_out = False
+    while task_ids:
+        # 结束当前事务，避免 MySQL REPEATABLE READ 快照阻止看到 Worker 的提交。
+        # 该会话在此循环中只读任务状态，不会丢失待提交的业务变更。
+        db.rollback()
+        task_rows = db.query(ChinaSouthernAirBookingTask).filter(
+            ChinaSouthernAirBookingTask.id.in_(task_ids)
+        ).all()
+        if all(row.status in terminal_statuses for row in task_rows) and len(task_rows) == len(task_ids):
+            break
+        if asyncio.get_running_loop().time() - wait_started >= wait_timeout:
+            wait_timed_out = True
+            break
+        await asyncio.sleep(settings.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_POLL_INTERVAL)
+
+    db.rollback()
+    result_by_task_id = {
+        row.id: row
+        for row in db.query(ChinaSouthernAirBookingTask).filter(
+            ChinaSouthernAirBookingTask.id.in_(task_ids)
+        ).all()
+    }
+    final_items = []
+    for item in execute_results:
+        if not item.task_id:
+            final_items.append(item)
+            continue
+        row = result_by_task_id.get(int(item.task_id))
+        details = None
+        if row and row.error_details:
+            try:
+                details = json.loads(row.error_details)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                details = row.error_details
+        succeeded = bool(row and row.status == ChinaSouthernAirBookingTaskStatus.SUCCESS)
+        if wait_timed_out and row and row.status not in terminal_statuses:
+            error_message = "直连订舱任务等待超时，最终结果请通过任务接口查询"
+        elif succeeded:
+            error_message = None
+        else:
+            error_message = row.error_message if row else "直连订舱任务未找到"
+        final_items.append(BookingExecuteItem(
+            booking_id=item.booking_id,
+            task_id=item.task_id,
+            success=succeeded,
+            error_message=error_message,
+            error_details=details,
+        ))
+
+    success_count = sum(1 for item in final_items if item.success)
+    failed_count = len(final_items) - success_count
     response_data = BookingExecuteResponse(
-        items=execute_results,
-        total=len(execute_results),
+        items=final_items,
+        total=len(final_items),
         success_count=success_count,
         failed_count=failed_count,
-        batch_id=str(batch_id),
+        batch_id=str(batch_id) if pending_tasks else None,
     )
     
     return success_response(
         data=response_data.dict(),
-        msg=f"批量订舱任务已提交，成功入队: {success_count}，失败: {failed_count}"
+        msg=f"批量执行完成，成功: {success_count}，失败: {failed_count}"
     )
 
 

@@ -60,9 +60,20 @@
 
 ## 南航订舱
 
-### 南航订舱异步执行与任务查询
+### 南航订舱执行模式
 
-`POST /api/v1/bookings/execute` 现采用持久化异步任务模式。接口只负责校验订舱记录并将任务写入数据库，成功写入后立即返回，不再在 HTTP 请求内等待南航接口完成。
+通过 `CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE` 选择 `/api/v1/bookings/execute` 的执行方式：
+
+| 配置值 | 行为 |
+| --- | --- |
+| `direct`（默认） | 写入南航专用直连任务表，由 `CHINA_SOUTHERN_AIR_DIRECT_BOOKING_WORKER_COUNT` 个 Worker 并行消费；接口等待任务完成后返回南航实际成功/失败结果。 |
+| `rpa` | 写入通用 `rpa_tasks`，由 RPA Worker 消费；接口返回成功仅表示成功入队。要求 `RPA_QUEUE_ENABLED=True`。 |
+
+修改配置后需重启后端服务生效。
+
+### 南航订舱接口直连执行
+
+`POST /api/v1/bookings/execute` 在 `CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE=direct` 时为南航接口直连执行接口。请求会为每条订舱创建专用直连任务，由 `CHINA_SOUTHERN_AIR_DIRECT_BOOKING_WORKER_COUNT` 个 Worker 并行消费；接口等待这些任务进入成功或失败终态后再返回，不把“写入任务队列”当作订舱成功。Worker 会依次调用南航航班、运价舱位（`queryB2eFlightPrice`）、费用、计费和 `createOrder` 接口。
 
 请求体保持不变：
 
@@ -70,15 +81,14 @@
 {"booking_ids": ["订舱ID1", "订舱ID2"]}
 ```
 
-成功响应中的 `data.batch_id` 是本批次ID；每个 `data.items[].task_id` 是对应订舱任务ID。任务进入专用的 `china_southern_air_booking_tasks` 数据库表后与浏览器页面生命周期解耦，关闭页面、刷新页面或网络断开不会取消后台订舱。该表与通用 `rpa_tasks` 完全隔离。多个用户、多个批次可以同时提交，数据库行锁保证同一订舱不会被重复消费。
+成功响应中的 `data.items[].success` 表示对应直连任务已完成且南航订舱成功；`success_count` 和 `failed_count` 分别表示实际订舱成功数和失败数。`task_id`、`batch_id` 可用于定位本次直连任务和批次。
 
 响应示例：
 
 ```json
 {
-  "code": 200,
+  "code": 0,
   "data": {
-    "batch_id": "批次ID",
     "items": [
       {"booking_id": "1001", "task_id": "任务ID", "success": true, "error_message": null}
     ],
@@ -86,25 +96,27 @@
     "success_count": 1,
     "failed_count": 0
   },
-  "msg": "批量执行任务已提交"
+  "msg": "批量执行完成，成功: 1，失败: 0"
 }
 ```
 
-`success=true` 表示任务已成功入队，不代表南航已经订舱成功。入队后订舱记录状态会显示为“执行中”，最终结果通过以下接口查询：
+`success=true` 表示南航接口直连订舱已经成功；当 `queryB2eFlightPrice` 返回无效响应、`result.charge` 为空、费用/计费失败或 `createOrder` 失败时，Worker 会将任务标记为失败，接口等待到该终态后返回 `success=false`、`failed_count` 加一，并在 `error_message`/`error_details` 中返回原因。失败发生在单号预占前时不会消耗单号；下单结果不确定时会按单号保护逻辑处理。
 
-`GET /api/v1/china-southern-air-booking-tasks/{task_id}`
+当 `CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE=rpa` 时，同一个 `/api/v1/bookings/execute` 会创建通用 `rpa_tasks` 任务并立即返回；此时 `success=true`、`success_count` 仅表示成功入队，不代表南航订舱已经成功，最终结果通过 `/api/v1/rpa-tasks/{task_id}` 查询。直连订舱使用独立的 `china_southern_air_booking_tasks` 表和 Worker，不与通用 RPA 队列混用。
 
-重点字段：`status`（`pending` 待执行、`running` 执行中、`success` 成功、`failed` 失败）、`result`、`error_message`、`batch_id`。也可以使用 `GET /api/v1/china-southern-air-booking-tasks?batch_id={batch_id}` 查询整批任务进度。
+历史异步直连任务仍可通过以下接口查询，但这些接口不参与当前 `/bookings/execute` 的同步响应：
 
-后台 Worker 从数据库以行锁方式竞争消费任务；服务启动时会处理异常中断的历史运行任务。若南航 `createOrder` 已发出但本地进程在返回前中断，任务不会盲目自动重试，而会标记为“结果不确定”，需要先核查南航订单后再人工重试，避免重复订舱。
+- `GET /api/v1/china-southern-air-booking-tasks/{task_id}`：查询单条历史任务。
+- `GET /api/v1/china-southern-air-booking-tasks?batch_id={batch_id}`：按历史批次查询任务。
 
-新增环境变量：
+南航直连订舱 Worker 配置：
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `CHINA_SOUTHERN_AIR_DIRECT_BOOKING_QUEUE_ENABLED` | `True` | 是否启用南航直连订舱持久化任务队列 |
-| `CHINA_SOUTHERN_AIR_DIRECT_BOOKING_WORKER_COUNT` | `2` | 每个应用实例启动的直连订舱 Worker 数量；多实例部署时由数据库锁保证不重复消费 |
+| `CHINA_SOUTHERN_AIR_DIRECT_BOOKING_QUEUE_ENABLED` | `True` | 是否启用南航直连订舱 Worker；关闭后 `direct` 模式不可执行。切换到 `rpa` 后仍会消费切换前遗留的直连任务 |
+| `CHINA_SOUTHERN_AIR_DIRECT_BOOKING_WORKER_COUNT` | `2` | 并行消费南航直连订舱任务的 Worker 数量 |
 | `CHINA_SOUTHERN_AIR_DIRECT_BOOKING_POLL_INTERVAL` | `2` | Worker 无任务时的轮询间隔（秒） |
+| `CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE_TIMEOUT_SECONDS` | `1800` | 直连接口等待本批任务终态的最长时间（秒）；超时只结束 HTTP 等待，后台任务继续执行，需通过任务接口查询最终结果 |
 
 已有部署需执行 `sql/migration_direct_booking_tasks.sql` 增加任务批次字段；新建数据库会随模型初始化自动创建。
 
@@ -156,13 +168,11 @@
 
 南航数据的 `cargo_type_code` 缺失时，采用与新增接口一致的字典映射规则自动补齐；已传入非空值时保持原值。
 
-### 批量执行订舱
+### 批量执行订舱（接口直连）
 
 `POST /api/v1/bookings/execute`
 
-该接口采用持久化异步任务模式：请求只校验并创建任务，任务入库后立即返回，不在接口请求内等待南航接口。页面关闭、刷新、网络断开均不会取消已经入队的任务。返回的 `batch_id` 和 `task_id` 用于查询任务；`success=true` 仅表示成功入队，不表示南航已经订舱成功。最终状态请使用 `GET /api/v1/china-southern-air-booking-tasks/{task_id}` 或按批次查询任务列表。
-
-后台 Worker 执行任务时会再次检查 `cargo_type_code`。对于本次修复上线前，由旧版前端 Excel 解析流程创建且缺少该字段的未执行或失败记录，后端会按 `cargo_type` 自动补齐并保存，再调用南航接口；无法完成字典映射时，该条任务失败并返回明确错误。
+该接口在 `direct` 模式下将南航直连订舱任务提交到专用任务表，并等待多 Worker 完成实际南航调用后返回；在 `rpa` 模式下将任务提交到通用 `rpa_tasks` 后立即返回入队结果。南航返回无效运价响应（例如 `queryB2eFlightPrice` 的 `result.charge` 缺失或为空）时，`direct` 模式会在接口响应中返回失败；`rpa` 模式需待 RPA Worker 执行后查询最终状态。
 
 `form_data.outbound_cargo_and_mail_handling_fee_options` 为可选字段。填写时仍按填写的费用名称定位“出港货邮处理费”明细并完成勾选；未填写、为 `null` 或空字符串时，执行阶段不再定位或修改任何费用组/明细，直接将 `queryServiceCharge` 返回的完整 `extServiceCharges` 列表原样传给后续 `calculateCharge` 和 `createOrder`。
 

@@ -2,7 +2,7 @@
 项目配置文件
 使用Pydantic Settings进行配置管理，提供类型验证和更好的配置管理
 """
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal
 from pydantic_settings import BaseSettings
 from pydantic import Field
 import os
@@ -228,6 +228,17 @@ class Settings(BaseSettings):
     )
     CHINA_SOUTHERN_AIR_DIRECT_BOOKING_POLL_INTERVAL: int = Field(
         default=2, ge=1, le=60, description="南航直连订舱Worker轮询间隔（秒）"
+    )
+    CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE_TIMEOUT_SECONDS: int = Field(
+        default=1800, ge=30, le=7200,
+        description="南航直连订舱接口等待任务终态的最长时间（秒），超时后返回结果未知，后台任务继续执行"
+    )
+    CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description=(
+            "南航POST /bookings/execute执行模式：direct=接口直连任务并等待实际结果，"
+            "rpa=写入通用rpa_tasks后立即返回入队结果"
+        ),
     )
     
     WECHAT_WEBHOOK_URL: str = Field(

@@ -127,6 +127,7 @@ class DirectBookingWorker:
             await _execute_china_southern_air_direct_booking(
                 db, booking_id=booking_id, form_data=form_data,
                 business_config=config, token=token.token,
+                allow_in_progress=True,
             )
             task.result = json.dumps({"booking_id": str(booking_id)}, ensure_ascii=False)
             task.status = ChinaSouthernAirBookingTaskStatus.SUCCESS
@@ -166,6 +167,8 @@ class DirectBookingWorkerManager:
         self.workers = []
 
     def start_workers(self) -> None:
+        # 即使当前新任务切换为 RPA，也继续消费数据库中切换前遗留的直连任务，
+        # 避免这些任务永久停留在 pending；新提交任务仍由 execute 模式分支决定。
         if not settings.CHINA_SOUTHERN_AIR_DIRECT_BOOKING_QUEUE_ENABLED or self.workers:
             return
         self.recover_stale_tasks()
