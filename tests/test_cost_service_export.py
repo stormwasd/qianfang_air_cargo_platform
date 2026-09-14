@@ -1,0 +1,119 @@
+import io
+import unittest
+from datetime import date
+from decimal import Decimal
+
+from openpyxl import load_workbook
+
+from app.api.cost_service import export_cost_consignments_to_excel
+from app.models.cost_service import CostConsignment
+from app.schemas.cost_service import CostExportExcelRequest
+
+
+class ExportQuery:
+    def __init__(self, records):
+        self.records = records
+
+    def filter(self, *conditions):
+        return self
+
+    def order_by(self, *columns):
+        return self
+
+    def all(self):
+        return self.records
+
+
+class ExportSession:
+    def __init__(self, records):
+        self.records = records
+
+    def query(self, model):
+        return ExportQuery(self.records)
+
+
+class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_subtotal_values_follow_their_group_headers_in_saved_export(self):
+        record = CostConsignment(
+            id=1,
+            pay_intl_air_outsource_unit="international",
+            pay_intl_air_flight_doc_no="731-90064074",
+            pay_intl_air_flight_no="MF809",
+            pay_intl_air_flight_date=date(2026, 9, 16),
+            pay_intl_air_pieces=36,
+            pay_intl_air_remark="international remark",
+            pay_intl_air_subtotal=Decimal("101.25"),
+            pay_trucking_date=date(2026, 9, 17),
+            pay_trucking_remark="trucking remark",
+            pay_trucking_subtotal=Decimal("202.50"),
+            pay_dom_air_date=date(2026, 9, 18),
+            pay_dom_air_remark="domestic remark",
+            pay_dom_air_subtotal=Decimal("303.75"),
+            pay_customs_date=date(2026, 9, 19),
+            pay_customs_remark="customs remark",
+            pay_customs_subtotal=Decimal("404.00"),
+            pay_ground_date=date(2026, 9, 20),
+            pay_ground_remark="ground remark",
+            pay_ground_subtotal=Decimal("505.25"),
+            pay_total=Decimal("1516.75"),
+            discount_person="discount person",
+        )
+        zero_record = CostConsignment(
+            id=2,
+            pay_intl_air_subtotal=0,
+            pay_trucking_subtotal=0,
+            pay_dom_air_subtotal=0,
+            pay_customs_subtotal=0,
+            pay_ground_subtotal=0,
+        )
+        blank_record = CostConsignment(id=3)
+        response = await export_cost_consignments_to_excel(
+            CostExportExcelRequest(ids=["1", "2", "3"]),
+            current_user=None,
+            db=ExportSession([record, zero_record, blank_record]),
+        )
+        workbook = load_workbook(io.BytesIO(response.body), data_only=True)
+        worksheet = workbook.active
+        self.addCleanup(workbook.close)
+
+        self.assertEqual(worksheet.max_column, 116)
+        self.assertEqual(worksheet.max_row, 6)
+        for subtotal_cell, expected in {
+            "BI": 101.25,
+            "BT": 202.50,
+            "CL": 303.75,
+            "CT": 404.00,
+            "DE": 505.25,
+        }.items():
+            with self.subTest(subtotal_cell=subtotal_cell):
+                self.assertEqual(worksheet[f"{subtotal_cell}3"].value, "小计")
+                self.assertEqual(worksheet[f"{subtotal_cell}4"].value, expected)
+                self.assertEqual(worksheet[f"{subtotal_cell}4"].data_type, "n")
+                self.assertEqual(worksheet[f"{subtotal_cell}5"].value, 0)
+                self.assertIsNone(worksheet[f"{subtotal_cell}6"].value)
+
+        expected_adjacent_values = {
+            "AL4": "international",
+            "AO4": "731-90064074",
+            "AP4": "MF809",
+            "AQ4": "2026-09-16",
+            "AR4": 36,
+            "BH4": "international remark",
+            "BJ4": "2026-09-17",
+            "BS4": "trucking remark",
+            "BU4": "2026-09-18",
+            "CK4": "domestic remark",
+            "CM4": "2026-09-19",
+            "CS4": "customs remark",
+            "CU4": "2026-09-20",
+            "DD4": "ground remark",
+            "DF4": 1516.75,
+            "DG4": "discount person",
+        }
+        for cell, expected in expected_adjacent_values.items():
+            with self.subTest(cell=cell):
+                self.assertEqual(worksheet[cell].value, expected)
+
+
+if __name__ == "__main__":
+    unittest.main()

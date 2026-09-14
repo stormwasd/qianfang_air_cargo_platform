@@ -177,22 +177,27 @@ class CostExcelLayoutTests(unittest.TestCase):
             "应收-运费计算方式": 18,
             "应收-运费": 19,
             "应收-燃油费": 20,
-            "国空应付-小计": 37,
-            "国空应付-单价": 48,
-            "国空应付-运费计算方式": 49,
-            "国空应付-运费": 50,
-            "国空应付-备注": 60,
-            "汽运应付-小计": 61,
-            "汽运应付-备注": 71,
-            "国空内应付-小计": 72,
-            "国空内应付-费率": 85,
-            "国空内应付-运费计算方式": 86,
-            "国空内应付-运费": 87,
-            "国空内应付-备注": 89,
-            "报关应付-小计": 90,
-            "报关应付-备注": 97,
-            "地面应付-小计": 98,
-            "地面应付-备注": 108,
+            "国空应付-外发单位": 37,
+            "国空应付-单价": 47,
+            "国空应付-运费计算方式": 48,
+            "国空应付-运费": 49,
+            "国空应付-备注": 59,
+            "国空应付-小计": 60,
+            "汽运应付-托运日期": 61,
+            "汽运应付-备注": 70,
+            "汽运应付-小计": 71,
+            "国空内应付-托运日期": 72,
+            "国空内应付-费率": 84,
+            "国空内应付-运费计算方式": 85,
+            "国空内应付-运费": 86,
+            "国空内应付-备注": 88,
+            "国空内应付-小计": 89,
+            "报关应付-报关日期": 90,
+            "报关应付-备注": 96,
+            "报关应付-小计": 97,
+            "地面应付-托运日期": 98,
+            "地面应付-备注": 107,
+            "地面应付-小计": 108,
             "应付合计": 109,
             "利润率(%)": 115,
         }
@@ -200,6 +205,23 @@ class CostExcelLayoutTests(unittest.TestCase):
         for header, expected_index in expected_boundaries.items():
             with self.subTest(header=header):
                 self.assertEqual(COST_EXPORT_HEADERS.index(header), expected_index)
+
+    def test_each_payable_subtotal_is_the_last_column_in_its_group(self):
+        expected_group_ends = {
+            "国空应付-小计": "汽运应付-托运日期",
+            "汽运应付-小计": "国空内应付-托运日期",
+            "国空内应付-小计": "报关应付-报关日期",
+            "报关应付-小计": "地面应付-托运日期",
+            "地面应付-小计": "应付合计",
+        }
+
+        for subtotal_header, next_header in expected_group_ends.items():
+            with self.subTest(subtotal_header=subtotal_header):
+                subtotal_index = COST_EXPORT_HEADERS.index(subtotal_header)
+                self.assertEqual(
+                    COST_EXPORT_HEADERS[subtotal_index + 1],
+                    next_header,
+                )
 
 
 if __name__ == "__main__":

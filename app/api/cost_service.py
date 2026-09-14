@@ -1035,7 +1035,6 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.receivable_total),
 
             # (3) 应付款项 - 国际空运
-            _v_num(rec.pay_intl_air_subtotal),
             _v_str(rec.pay_intl_air_outsource_unit),
             _v_str(rec.pay_intl_air_origin),
             _v_str(rec.pay_intl_air_destination),
@@ -1059,9 +1058,9 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_intl_air_front_warehouse),
             _v_num(rec.pay_intl_air_other_fee),
             _v_str(rec.pay_intl_air_remark),
+            _v_num(rec.pay_intl_air_subtotal),
 
             # (3) 应付款项 - 汽运
-            _v_num(rec.pay_trucking_subtotal),
             _v_date(rec.pay_trucking_date),
             _v_str(rec.pay_trucking_outsource_unit),
             rec.pay_trucking_pieces if rec.pay_trucking_pieces is not None else "",
@@ -1072,9 +1071,9 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_trucking_doc_fee),
             _v_num(rec.pay_trucking_other_fee),
             _v_str(rec.pay_trucking_remark),
+            _v_num(rec.pay_trucking_subtotal),
 
             # (3) 应付款项 - 国内空运
-            _v_num(rec.pay_dom_air_subtotal),
             _v_date(rec.pay_dom_air_date),
             _v_str(rec.pay_dom_air_outsource_unit),
             _v_str(rec.pay_dom_air_origin),
@@ -1092,9 +1091,9 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_dom_air_freight),
             _v_num(rec.pay_dom_air_other_fee),
             _v_str(rec.pay_dom_air_remark),
+            _v_num(rec.pay_dom_air_subtotal),
 
             # (3) 应付款项 - 报关
-            _v_num(rec.pay_customs_subtotal),
             _v_date(rec.pay_customs_date),
             _v_str(rec.pay_customs_agent),
             _v_num(rec.pay_customs_fee),
@@ -1102,9 +1101,9 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_customs_inspection_delete_fee),
             _v_num(rec.pay_customs_other_fee),
             _v_str(rec.pay_customs_remark),
+            _v_num(rec.pay_customs_subtotal),
 
             # (3) 应付款项 - 地面操作
-            _v_num(rec.pay_ground_subtotal),
             _v_date(rec.pay_ground_date),
             _v_str(rec.pay_ground_outsource_unit),
             _v_num(rec.pay_ground_chargeable_weight),
@@ -1115,6 +1114,7 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_ground_pallet_exit_fee),
             _v_num(rec.pay_ground_other_fee),
             _v_str(rec.pay_ground_remark),
+            _v_num(rec.pay_ground_subtotal),
 
             # (3) 应付款项 - 总计
             _v_num(rec.pay_total),
