@@ -78,12 +78,49 @@ class DepartureActualTimeSync:
             rows = db.query(ShenzhenAirBillingTimeContainer).filter(
                 ShenzhenAirBillingTimeContainer.flight_number.isnot(None),
                 ShenzhenAirBillingTimeContainer.flight_number != "",
-                ShenzhenAirBillingTimeContainer.planned_time.isnot(None),
                 ShenzhenAirBillingTimeContainer.actual_time.is_(None),
             ).limit(200).all()
             for row in rows:
                 if (int(row.actual_time_attempts or 0) >= settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_MAX_ATTEMPTS):
                     continue
+
+                # 首次入库时携程可能暂时失败，不能因为 planned_time 为空就永久跳过。
+                # 这里复用同一个携程客户端重试预飞时间；成功后再按配置计算实飞
+                # 首次查询时间，失败则延后到下一轮，避免每 60 秒无间隔刷接口。
+                if not row.planned_time:
+                    if row.next_actual_time_query_at and now < row.next_actual_time_query_at:
+                        continue
+                    result = await ctrip_client.get_flight_times(
+                        row.flight_number,
+                        row.flight_date,
+                        f"{row.origin}-{row.destination}",
+                        force_refresh=True,
+                    )
+                    print(
+                        f"[DepartureActualTimeSync] 深航预飞时间补偿查询: "
+                        f"flight={row.flight_number}, date={row.flight_date}, "
+                        f"routing={row.origin}-{row.destination}, result={result}"
+                    )
+                    planned_time = (result or {}).get("planned_time") if result else None
+                    if not planned_time:
+                        row.next_actual_time_query_at = now + timedelta(
+                            seconds=settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS
+                        )
+                        db.commit()
+                        continue
+                    row.planned_time = str(planned_time)
+                    planned = _parse_planned(row.planned_time, row.flight_date)
+                    if not planned:
+                        row.next_actual_time_query_at = now + timedelta(
+                            seconds=settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS
+                        )
+                        db.commit()
+                        continue
+                    row.next_actual_time_query_at = planned + timedelta(
+                        seconds=settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_FIRST_QUERY_DELAY_SECONDS
+                    )
+                    db.commit()
+
                 planned = _parse_planned(row.planned_time, row.flight_date)
                 if not planned:
                     continue
@@ -99,6 +136,11 @@ class DepartureActualTimeSync:
                 db.commit()
                 result = await ctrip_client.get_flight_times(
                     row.flight_number, row.flight_date, f"{row.origin}-{row.destination}", force_refresh=True
+                )
+                print(
+                    f"[DepartureActualTimeSync] 深航实飞时间查询: "
+                    f"flight={row.flight_number}, date={row.flight_date}, "
+                    f"routing={row.origin}-{row.destination}, result={result}"
                 )
                 row.actual_time_attempts = str(int(row.actual_time_attempts or 0) + 1)
                 if result and result.get("actual_time"):
@@ -134,6 +176,34 @@ class DepartureActualTimeSync:
                 flight_no, flight_date, routing = parts[0], parts[1], parts[2].replace(" ", "")
                 planned = _parse_planned(approval.planned_takeoff, flight_date) or _parse_planned(approval.expected_takeoff, flight_date)
                 if not planned:
+                    if row.next_actual_time_query_at and now < row.next_actual_time_query_at:
+                        continue
+                    result = await ctrip_client.get_flight_times(
+                        str(row.pre_assigned_flight).split("/")[0].strip(),
+                        flight_date,
+                        routing,
+                        force_refresh=True,
+                    )
+                    print(
+                        f"[DepartureActualTimeSync] 南航预飞时间补偿查询: "
+                        f"flight={row.pre_assigned_flight}, date={flight_date}, "
+                        f"routing={routing}, result={result}"
+                    )
+                    planned = _parse_planned((result or {}).get("planned_time"), flight_date)
+                    if planned:
+                        # 南航批复表已有计划/预计起飞字段时不覆盖原始业务数据；
+                        # 仅用携程结果为实飞查询计算调度点。
+                        row.next_actual_time_query_at = planned + timedelta(
+                            seconds=settings.RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_FIRST_QUERY_DELAY_SECONDS
+                        )
+                        db.commit()
+                    else:
+                        row.next_actual_time_query_at = now + timedelta(
+                            seconds=settings.RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS
+                        )
+                        db.commit()
+                        continue
+                if not planned:
                     continue
                 next_query_at = row.next_actual_time_query_at or (
                     planned + timedelta(seconds=settings.RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_FIRST_QUERY_DELAY_SECONDS)
@@ -146,6 +216,11 @@ class DepartureActualTimeSync:
                 db.commit()
                 result = await ctrip_client.get_flight_times(
                     str(row.pre_assigned_flight).split("/")[0].strip(), flight_date, routing, force_refresh=True
+                )
+                print(
+                    f"[DepartureActualTimeSync] 南航实飞时间查询: "
+                    f"flight={row.pre_assigned_flight}, date={flight_date}, "
+                    f"routing={routing}, result={result}"
                 )
                 row.actual_time_attempts = str(int(row.actual_time_attempts or 0) + 1)
                 if result and result.get("actual_time"):

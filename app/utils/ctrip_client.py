@@ -3,6 +3,8 @@ import random
 import string
 import asyncio
 import httpx
+import re
+from datetime import date, datetime
 from typing import Optional, Dict, Tuple
 import logging
 
@@ -126,12 +128,34 @@ class CtripClient:
         :return: 包含 planned_time(预飞时间)、ready_time(计飞时间)、
                  actual_time(实飞时间) 的字典，获取失败返回 None
         """
-        if not flight_no or not routing:
+        if not flight_no or not routing or not flight_date:
             return None
 
-        flight_no_clean = flight_no.strip().upper()
-        routing_clean = routing.strip().upper()
-        flight_date_clean = flight_date.strip()
+        flight_no_clean = str(flight_no).strip().upper()
+        # Excel/Pandas 可能把日期传成 Timestamp 或“YYYY-MM-DD 00:00:00”。
+        # 携程接口只接受 YYYY-MM-DD，统一在客户端入口规范化。
+        if isinstance(flight_date, (datetime, date)):
+            flight_date_clean = flight_date.strftime("%Y-%m-%d")
+        else:
+            flight_date_text = str(flight_date).strip().replace("/", "-")
+            date_match = re.match(r"^(\d{4}-\d{1,2}-\d{1,2})", flight_date_text)
+            if not date_match:
+                logger.warning("Invalid flight date for Ctrip query: %r", flight_date)
+                return None
+            try:
+                flight_date_clean = datetime.strptime(
+                    date_match.group(1), "%Y-%m-%d"
+                ).strftime("%Y-%m-%d")
+            except ValueError:
+                logger.warning("Invalid flight date for Ctrip query: %r", flight_date)
+                return None
+
+        # 航程常见格式为“SZX - SHA”；去除两端空格后再组装请求参数。
+        routing_parts = [part.strip().upper() for part in str(routing).split("-")]
+        if len(routing_parts) != 2 or not all(routing_parts):
+            logger.warning("Invalid routing for Ctrip query: %r", routing)
+            return None
+        routing_clean = "-".join(routing_parts)
 
         ports = routing_clean.split("-") if routing_clean else []
         if len(ports) != 2:

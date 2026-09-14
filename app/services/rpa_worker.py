@@ -3056,11 +3056,21 @@ class RPAWorker:
                             planned_time = None
                             try:
                                 if flight_number:
+                                    print(
+                                        f"{self._log_prefix} 查询深航航班携程时间: "
+                                        f"flight={flight_number}, date={str(row[2]).strip()}, "
+                                        f"routing={str(row[4]).strip()}-{str(row[5]).strip()}"
+                                    )
                                     ctrip_times = await ctrip_client.get_flight_times(
                                         flight_number, str(row[2]).strip(),
                                         f"{str(row[4]).strip()}-{str(row[5]).strip()}"
                                     )
                                     planned_time = (ctrip_times or {}).get("planned_time")
+                                    print(
+                                        f"{self._log_prefix} 深航航班携程时间返回: "
+                                        f"flight={flight_number}, planned_time={planned_time}, "
+                                        f"ready_time={(ctrip_times or {}).get('ready_time') if ctrip_times else None}"
+                                    )
                             except Exception as exc:
                                 print(f"{self._log_prefix} 获取深航预飞时间失败: {exc}")
                             record = ShenzhenAirBillingTimeContainer(
@@ -3103,12 +3113,15 @@ class RPAWorker:
                         )
                         return
 
-                        # 所有返回行均有航班号，标记该 Excel 明细已完成，后续文件重复导入时不再派发任务。
-                        export_record = db.query(ShenzhenAirBookingExport).filter(
-                            ShenzhenAirBookingExport.id == booking_export_id
-                        ).first()
-                        if export_record:
-                            export_record.departure_tracking_completed = "1"
+                    # 所有有效返回行均有航班号，标记该 Excel 明细已完成，后续
+                    # 文件重复导入时不再重复派发任务。该标记不依赖携程是否
+                    # 暂时返回预飞时间，避免因外部接口短暂异常重复抓取。
+                    export_record = db.query(ShenzhenAirBookingExport).filter(
+                        ShenzhenAirBookingExport.id == booking_export_id
+                    ).first()
+                    if export_record:
+                        export_record.departure_tracking_completed = "1"
+                        db.commit()
 
                 except Exception as e:
                     db.rollback()
