@@ -33,7 +33,10 @@ from app.schemas.customer_service import (
     ExportExcelRequest,
     ConsignmentInfoResponse,
 )
-from app.services.cost_excel_export import format_bill_of_lading_for_export
+from app.services.cost_excel_export import (
+    format_bill_of_lading_for_export,
+    format_submission_status_for_export,
+)
 from app.utils.helpers import format_datetime_china, get_china_now
 
 router = APIRouter()
@@ -622,6 +625,7 @@ async def export_consignments_to_excel(
 ):
     """
     选中委托信息列表中的某些项导出为 Excel (.xlsx) 表格文件。
+    首列为状态（未提交/已提交），共 18 列，数据从第 2 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -642,7 +646,7 @@ async def export_consignments_to_excel(
     ws.title = "委托信息列表"
     
     headers = [
-        "制单时间", "内部单据ID", "进仓日期", "客户名称",
+        "状态", "制单时间", "内部单据ID", "进仓日期", "客户名称",
         "始发站-目的站", "报关", "提单", "航班日期",
         "航班号", "航班单号", "件数", "实际重量(kg)",
         "计费重量(kg)", "体积(m³)", "一程重量(kg)", "代理", "备注"
@@ -676,6 +680,9 @@ async def export_consignments_to_excel(
         fl_date_str = rec.flight_date.strftime("%Y-%m-%d") if rec.flight_date else ""
         
         row_data = [
+            format_submission_status_for_export(
+                getattr(rec, "status", ConsignmentSubmissionStatus.SUBMITTED.value)
+            ),
             create_time_str,
             rec.internal_doc_id or "",
             wh_date_str,
@@ -703,7 +710,7 @@ async def export_consignments_to_excel(
             cell.font = data_font
             cell.border = thin_border
             # 数字和日期居中，文本左对齐
-            if c_idx in (1, 3, 8, 11, 12, 13, 14, 15):
+            if c_idx in (1, 2, 4, 9, 12, 13, 14, 15, 16):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 cell.alignment = Alignment(horizontal="left", vertical="center")

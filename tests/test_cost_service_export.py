@@ -36,6 +36,7 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
     async def test_subtotal_values_follow_their_group_headers_in_saved_export(self):
         record = CostConsignment(
             id=1,
+            status=0,
             pay_intl_air_outsource_unit="international",
             pay_intl_air_flight_doc_no="731-90064074",
             pay_intl_air_flight_no="MF809",
@@ -60,6 +61,7 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         )
         zero_record = CostConsignment(
             id=2,
+            status=1,
             pay_intl_air_subtotal=0,
             pay_trucking_subtotal=0,
             pay_dom_air_subtotal=0,
@@ -76,14 +78,17 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         worksheet = workbook.active
         self.addCleanup(workbook.close)
 
-        self.assertEqual(worksheet.max_column, 116)
+        self.assertEqual(worksheet.max_column, 117)
         self.assertEqual(worksheet.max_row, 6)
+        self.assertEqual(worksheet["A1"].value, "状态")
+        self.assertEqual(worksheet["A4"].value, "未提交")
+        self.assertEqual(worksheet["A5"].value, "已提交")
         for subtotal_cell, expected in {
-            "BI": 101.25,
-            "BT": 202.50,
-            "CL": 303.75,
-            "CT": 404.00,
-            "DE": 505.25,
+            "BJ": 101.25,
+            "BU": 202.50,
+            "CM": 303.75,
+            "CU": 404.00,
+            "DF": 505.25,
         }.items():
             with self.subTest(subtotal_cell=subtotal_cell):
                 self.assertEqual(worksheet[f"{subtotal_cell}3"].value, "小计")
@@ -93,22 +98,22 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(worksheet[f"{subtotal_cell}6"].value)
 
         expected_adjacent_values = {
-            "AL4": "international",
-            "AO4": "731-90064074",
-            "AP4": "MF809",
-            "AQ4": "2026-09-16",
-            "AR4": 36,
-            "BH4": "international remark",
-            "BJ4": "2026-09-17",
-            "BS4": "trucking remark",
-            "BU4": "2026-09-18",
-            "CK4": "domestic remark",
-            "CM4": "2026-09-19",
-            "CS4": "customs remark",
-            "CU4": "2026-09-20",
-            "DD4": "ground remark",
-            "DF4": 1516.75,
-            "DG4": "discount person",
+            "AM4": "international",
+            "AP4": "731-90064074",
+            "AQ4": "MF809",
+            "AR4": "2026-09-16",
+            "AS4": 36,
+            "BI4": "international remark",
+            "BK4": "2026-09-17",
+            "BT4": "trucking remark",
+            "BV4": "2026-09-18",
+            "CL4": "domestic remark",
+            "CN4": "2026-09-19",
+            "CT4": "customs remark",
+            "CV4": "2026-09-20",
+            "DE4": "ground remark",
+            "DG4": 1516.75,
+            "DH4": "discount person",
         }
         for cell, expected in expected_adjacent_values.items():
             with self.subTest(cell=cell):

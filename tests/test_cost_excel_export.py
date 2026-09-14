@@ -9,7 +9,15 @@ from app.services.cost_excel_export import (
     append_cost_export_headers,
     format_bill_of_lading_for_export,
     format_freight_method_for_export,
+    format_submission_status_for_export,
 )
+
+
+class SubmissionStatusExportTests(unittest.TestCase):
+    def test_status_labels_preserve_unsubmitted_zero(self):
+        for value, expected in ((0, "未提交"), (1, "已提交"), ("0", "未提交"), ("1", "已提交"), (None, ""), (2, "2")):
+            with self.subTest(value=value):
+                self.assertEqual(format_submission_status_for_export(value), expected)
 
 
 class CostExcelFreightMethodTests(unittest.TestCase):
@@ -86,17 +94,17 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
     def test_both_export_layouts_write_converted_values_as_text(self):
         workbook = Workbook()
         worksheet = workbook.active
-        worksheet.cell(row=2, column=7).value = format_bill_of_lading_for_export(
+        worksheet.cell(row=2, column=8).value = format_bill_of_lading_for_export(
             "一主多分-6"
         )
-        worksheet.cell(row=4, column=7).value = format_bill_of_lading_for_export(
+        worksheet.cell(row=4, column=8).value = format_bill_of_lading_for_export(
             "直单-2"
         )
 
-        self.assertEqual(worksheet.cell(row=2, column=7).value, "一主（六）分")
-        self.assertEqual(worksheet.cell(row=2, column=7).data_type, "s")
-        self.assertEqual(worksheet.cell(row=4, column=7).value, "直单（虚拟分单*2）")
-        self.assertEqual(worksheet.cell(row=4, column=7).data_type, "s")
+        self.assertEqual(worksheet.cell(row=2, column=8).value, "一主（六）分")
+        self.assertEqual(worksheet.cell(row=2, column=8).data_type, "s")
+        self.assertEqual(worksheet.cell(row=4, column=8).value, "直单（虚拟分单*2）")
+        self.assertEqual(worksheet.cell(row=4, column=8).data_type, "s")
 
         with TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "cost-export.xlsx"
@@ -105,19 +113,20 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
 
             exported_workbook = load_workbook(output_path, read_only=True, data_only=True)
             exported_worksheet = exported_workbook.active
-            self.assertEqual(exported_worksheet.cell(row=2, column=7).value, "一主（六）分")
-            self.assertEqual(exported_worksheet.cell(row=2, column=7).data_type, "s")
+            self.assertEqual(exported_worksheet.cell(row=2, column=8).value, "一主（六）分")
+            self.assertEqual(exported_worksheet.cell(row=2, column=8).data_type, "s")
             self.assertEqual(
-                exported_worksheet.cell(row=4, column=7).value,
+                exported_worksheet.cell(row=4, column=8).value,
                 "直单（虚拟分单*2）",
             )
-            self.assertEqual(exported_worksheet.cell(row=4, column=7).data_type, "s")
+            self.assertEqual(exported_worksheet.cell(row=4, column=8).data_type, "s")
             exported_workbook.close()
 
 
 class CostExcelLayoutTests(unittest.TestCase):
     def test_removed_intl_air_columns_are_not_exported(self):
-        self.assertEqual(len(COST_EXPORT_HEADERS), 116)
+        self.assertEqual(len(COST_EXPORT_HEADERS), 117)
+        self.assertEqual(COST_EXPORT_HEADERS[0], "状态")
         self.assertNotIn("国空应付-航空公司", COST_EXPORT_HEADERS)
         self.assertNotIn("国空应付-托运日期", COST_EXPORT_HEADERS)
         # 国内空运属于另一业务分组，本次需求不应误删。
@@ -164,11 +173,15 @@ class CostExcelLayoutTests(unittest.TestCase):
         headers = append_cost_export_headers(worksheet)
 
         merged_ranges = {str(item) for item in worksheet.merged_cells.ranges}
-        self.assertEqual(len(headers), 116)
-        self.assertEqual(worksheet.max_column, 116)
-        self.assertIn("A1:Q2", merged_ranges)
-        self.assertIn("AL1:DF1", merged_ranges)
-        self.assertIn("DF2:DF3", merged_ranges)
+        self.assertEqual(len(headers), 117)
+        self.assertEqual(worksheet.max_column, 117)
+        self.assertEqual(worksheet["A1"].value, "状态")
+        self.assertEqual(headers[0], "状态")
+        self.assertEqual(merged_ranges, {
+            "A1:A3", "B1:R2", "S1:AL2", "AM1:DG1",
+            "AM2:BJ2", "BK2:BU2", "BV2:CM2", "CN2:CU2",
+            "CV2:DF2", "DG2:DG3", "DH1:DI2", "DJ1:DK2", "DL1:DM2",
+        })
         workbook.close()
 
     def test_every_export_section_keeps_its_expected_boundaries(self):
@@ -204,7 +217,8 @@ class CostExcelLayoutTests(unittest.TestCase):
 
         for header, expected_index in expected_boundaries.items():
             with self.subTest(header=header):
-                self.assertEqual(COST_EXPORT_HEADERS.index(header), expected_index)
+                # 状态为独立首列，其余原有字段整体右移一列。
+                self.assertEqual(COST_EXPORT_HEADERS.index(header), expected_index + 1)
 
     def test_each_payable_subtotal_is_the_last_column_in_its_group(self):
         expected_group_ends = {

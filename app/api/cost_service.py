@@ -34,6 +34,7 @@ from app.services.cost_excel_export import (
     append_cost_export_headers,
     format_bill_of_lading_for_export,
     format_freight_method_for_export,
+    format_submission_status_for_export,
 )
 from app.utils.helpers import format_datetime_china, get_china_now
 
@@ -912,7 +913,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件包含三级分组表头及 116 列全量字段，数据从第 4 行开始；应收款项包含燃油费和运费计算方式，国际空运和国内空运应付款项均含运费计算方式字段。
+    导出文件首列为状态（未提交/已提交），包含三级分组表头及 117 列全量字段，数据从第 4 行开始；应收款项包含燃油费和运费计算方式，国际空运和国内空运应付款项均含运费计算方式字段。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -993,6 +994,9 @@ async def export_cost_consignments_to_excel(
 
     for r_idx, rec in enumerate(records, 4):
         row_data = [
+            format_submission_status_for_export(
+                getattr(rec, "status", CostConsignmentSubmissionStatus.SUBMITTED.value)
+            ),
             # (1) 货主委托信息
             _v_dt(rec.create_time),
             _v_str(rec.internal_doc_id),
