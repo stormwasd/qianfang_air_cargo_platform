@@ -16,7 +16,7 @@ from app.models.robot import Robot, RobotJob
 from app.models.waybill import Waybill
 from app.models.booking import Booking
 from app.models.settlement import Settlement
-from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
+from app.models.waybill_stock import WaybillStockItem
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
@@ -24,6 +24,7 @@ from app.models.nanhang_token import NanHangToken
 from app.services.rpa_service import rpa_service
 from app.services.rpa_task_service import rpa_task_service, PRINT_TASK_TYPES, PRINT_TYPE_REVERSE_MAPPING, PRINT_TYPE_MAPPING
 from app.services.document_print_service import is_post_waybill_automation_enabled
+from app.services.waybill_stock_service import reserve_available_stock_item
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.helpers import get_china_now
 
@@ -253,26 +254,11 @@ class RPAWorker:
         Raises:
             Exception: 没有可用单号时抛出异常
         """
-        stock_item = (
-            db.query(WaybillStockItem)
-            .join(WaybillStockBatch, WaybillStockItem.batch_id == WaybillStockBatch.id)
-            .join(WaybillStock, WaybillStockBatch.stock_id == WaybillStock.id)
-            .filter(
-                WaybillStock.airline_name == airline_name,
-                WaybillStockItem.usage_status == "0",
-                WaybillStockItem.is_abnormal == "1",
-                WaybillStockItem.is_invalid == "0"
-            )
-            .order_by(WaybillStockBatch.id.desc(), WaybillStockItem.id.asc())
-            .with_for_update(skip_locked=True)
-            .first()
-        )
+        stock_item = reserve_available_stock_item(db, airline_name)
         
         if not stock_item:
             raise Exception(f"航司 {airline_name} 的单号库中没有可用单号，请及时补充单号库")
-        
-        stock_item.usage_status = "1"
-        stock_item.usage_date = get_china_now().date()
+
         db.commit()
         db.refresh(stock_item)
         print(f"[单号库] 已分配单号 {stock_item.full_number}, usage_status={stock_item.usage_status}, usage_date={stock_item.usage_date}")

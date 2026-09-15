@@ -20,7 +20,7 @@ from app.models.dict_option import DictOption
 from app.models.dict_type import DictType
 from app.models.nanhang_token import NanHangToken
 from app.models.settlement import Settlement
-from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
+from app.models.waybill_stock import WaybillStockItem
 from app.schemas.booking import (
     BookingCreate, BookingQuery, BookingUpdate, BookingExecuteRequest, BookingExecuteItem, BookingExecuteResponse
 )
@@ -42,7 +42,10 @@ from app.services.china_southern_air_service_client import (
     china_southern_air_service,
 )
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
-from app.services.waybill_stock_service import confirm_stock_item_used
+from app.services.waybill_stock_service import (
+    confirm_stock_item_used,
+    reserve_available_stock_item,
+)
 from app.config import settings
 from app.utils.snowflake import generate_id
 
@@ -280,25 +283,10 @@ def _fill_missing_china_southern_air_cargo_type_codes(
 
 
 def _reserve_china_southern_air_booking_stock_item(db: Session) -> WaybillStockItem:
-    """在短事务内预占一张南航单号，跳过其他并发请求已锁定的行。"""
-    stock_item = (
-        db.query(WaybillStockItem)
-        .join(WaybillStockBatch, WaybillStockItem.batch_id == WaybillStockBatch.id)
-        .join(WaybillStock, WaybillStockBatch.stock_id == WaybillStock.id)
-        .filter(
-            WaybillStock.airline_name == "china_southern_air",
-            WaybillStockItem.usage_status == "0",
-            WaybillStockItem.is_abnormal == "1",
-            WaybillStockItem.is_invalid == "0",
-        )
-        .order_by(WaybillStockBatch.id.desc(), WaybillStockItem.id.asc())
-        .with_for_update(skip_locked=True)
-        .first()
-    )
+    """在短事务内预占一张南航单号。"""
+    stock_item = reserve_available_stock_item(db, "china_southern_air")
     if stock_item is None:
         raise ChinaSouthernAirDirectBookingError("南航单号库中没有可用单号，请先补充单号库")
-    stock_item.usage_status = "1"
-    stock_item.usage_date = get_china_now().date()
     return stock_item
 
 

@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models.waybill import Waybill
 from app.models.nanhang_token import NanHangToken
 from app.models.settlement import Settlement
-from app.models.waybill_stock import WaybillStock, WaybillStockBatch, WaybillStockItem
+from app.models.waybill_stock import WaybillStockItem
 from app.models.config import BusinessConfig
 from app.schemas.waybill import (
     ChinaSouthernAirServiceChargeOptionsQuery, WaybillCreate, WaybillUpdate, WaybillQuery
@@ -30,7 +30,10 @@ from app.services.china_southern_air_direct_order import (
     china_southern_air_direct_order_service,
 )
 from app.services.document_print_service import is_post_waybill_automation_enabled
-from app.services.waybill_stock_service import confirm_stock_item_used
+from app.services.waybill_stock_service import (
+    confirm_stock_item_used,
+    reserve_available_stock_item,
+)
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.airport_code_mapper import search_airport_codes_by_keyword
 
@@ -759,25 +762,10 @@ def _get_business_config(db: Session) -> dict:
 
 def _reserve_china_southern_air_stock_item(db: Session) -> WaybillStockItem:
     """以行锁预占一个南航可用单号，避免并发开单重复分配。"""
-    stock_item = (
-        db.query(WaybillStockItem)
-        .join(WaybillStockBatch, WaybillStockItem.batch_id == WaybillStockBatch.id)
-        .join(WaybillStock, WaybillStockBatch.stock_id == WaybillStock.id)
-        .filter(
-            WaybillStock.airline_name == "china_southern_air",
-            WaybillStockItem.usage_status == "0",
-            WaybillStockItem.is_abnormal == "1",
-            WaybillStockItem.is_invalid == "0",
-        )
-        .order_by(WaybillStockBatch.id.desc(), WaybillStockItem.id.asc())
-        .with_for_update(skip_locked=True)
-        .first()
-    )
+    stock_item = reserve_available_stock_item(db, "china_southern_air")
     if stock_item is None:
         raise BadRequestException("南航单号库中没有可用单号，请先补充单号库")
 
-    stock_item.usage_status = "1"
-    stock_item.usage_date = get_china_now().date()
     return stock_item
 
 
