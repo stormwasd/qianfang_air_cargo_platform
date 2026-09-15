@@ -39,8 +39,10 @@ FREIGHT_METHOD_EXPORT_LABELS: Dict[str, str] = {
 SUBMISSION_STATUS_EXPORT_LABELS: Dict[object, str] = {
     0: "未提交",
     1: "已提交",
+    2: "作废",
     "0": "未提交",
     "1": "已提交",
+    "2": "作废",
 }
 
 
@@ -53,7 +55,7 @@ def format_freight_method_for_export(value: object) -> str:
 
 
 def format_submission_status_for_export(value: object) -> str:
-    """显示单据自身的提交状态，空值留空，未知值保留以免误标为已提交。"""
+    """显示单据自身状态，空值留空，未知值原样保留。"""
     if value is None:
         return ""
     return SUBMISSION_STATUS_EXPORT_LABELS.get(value, str(value))

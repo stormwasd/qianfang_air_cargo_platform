@@ -6,6 +6,7 @@ from app.models.dict_type import DictType
 from app.models.dict_option import DictOption
 from app.models.customer_service import ConsignmentRegistration, ConsignmentInfo
 from app.models.cost_service import CostRegistration, CostConsignment
+from app.models.consignment_operation_log import ConsignmentOperationLog
 
 __all__ = [
     "User",
@@ -18,6 +19,7 @@ __all__ = [
     "ConsignmentInfo",
     "CostRegistration",
     "CostConsignment",
+    "ConsignmentOperationLog",
 ]
 
 

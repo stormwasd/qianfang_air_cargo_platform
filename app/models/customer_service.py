@@ -55,7 +55,7 @@ class ConsignmentInfo(Base):
     first_leg_weight = Column(Numeric(10, 2), nullable=True, comment="一程重量")
     agent = Column(String(100), nullable=True, comment="代理")
     remark = Column(Text, nullable=True, comment="备注")
-    status = Column(Integer, nullable=False, default=1, index=True, comment="提交状态：0=未提交，1=已提交")
+    status = Column(Integer, nullable=False, default=1, index=True, comment="单据状态：0=未提交，1=已提交，2=作废")
     creator_id = Column(BigInteger, nullable=True, comment="创建者ID")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")

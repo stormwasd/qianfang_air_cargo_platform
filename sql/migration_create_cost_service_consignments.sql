@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS `cost_registrations` (
     `first_leg_weight` decimal(10,2) DEFAULT NULL COMMENT '一程重量',
     `agent` varchar(100) DEFAULT NULL COMMENT '代理',
     `remark` text DEFAULT NULL COMMENT '备注',
-    `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '提交状态：0=未提交，1=已提交',
     -- (2) 应收款项
     `unit_price` decimal(10,2) DEFAULT NULL COMMENT '单价',
     `freight_method` varchar(50) DEFAULT NULL COMMENT '运费计算方式',
@@ -157,6 +156,7 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     `first_leg_weight` decimal(10,2) DEFAULT NULL COMMENT '一程重量',
     `agent` varchar(100) DEFAULT NULL COMMENT '代理',
     `remark` text DEFAULT NULL COMMENT '备注',
+    `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '单据状态：0=未提交，1=已提交，2=作废',
     -- (2) 应收款项
     `unit_price` decimal(10,2) DEFAULT NULL COMMENT '单价',
     `freight_method` varchar(50) DEFAULT NULL COMMENT '运费计算方式',

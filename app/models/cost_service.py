@@ -179,7 +179,7 @@ class CostConsignment(Base):
     first_leg_weight = Column(Numeric(10, 2), nullable=True, comment="一程重量")
     agent = Column(String(100), nullable=True, index=True, comment="代理")
     remark = Column(Text, nullable=True, comment="备注")
-    status = Column(Integer, nullable=False, default=1, index=True, comment="提交状态：0=未提交，1=已提交")
+    status = Column(Integer, nullable=False, default=1, index=True, comment="单据状态：0=未提交，1=已提交，2=作废")
     
     # (2) 应收款项
     unit_price = Column(Numeric(10, 2), nullable=True, comment="单价")

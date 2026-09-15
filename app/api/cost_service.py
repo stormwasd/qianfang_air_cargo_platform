@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import case, func
 
 from app.database import get_db
-from app.core.exceptions import NotFoundException, BadRequestException
-from app.core.response import success_response
+from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
+from app.core.response import ResponseModel, success_response
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.models.cost_service import CostRegistration, CostConsignment
@@ -37,8 +37,16 @@ from app.services.cost_excel_export import (
     format_submission_status_for_export,
 )
 from app.utils.helpers import format_datetime_china, get_china_now
+from app.schemas.consignment_operation_log import ConsignmentOperationLogPage
+from app.services.consignment_operation_log import append_consignment_operation, get_consignment_operations
 
 router = APIRouter()
+
+
+def _ensure_cost_consignment_not_voided(record: CostConsignment) -> None:
+    """作废是终态，只能继续查询或物理删除。"""
+    if int(record.status) == CostConsignmentSubmissionStatus.VOIDED.value:
+        raise ConflictException("已作废的费用信息不能暂存或保存")
 
 
 def _parse_datetime(val: Any) -> Optional[datetime]:
@@ -533,9 +541,10 @@ async def create_cost_consignment(
         agent=new_record.agent,
         remark=new_record.remark,
         creator_id=current_user.id,
-        status=1,
+        status=CostConsignmentSubmissionStatus.SUBMITTED.value,
     )
     db.add(cs_record)
+    append_consignment_operation(db, new_record.id, current_user, source="cost_service", action="save")
     db.commit()
     db.refresh(new_record)
     
@@ -558,6 +567,8 @@ async def create_cost_consignment_draft(
         new_record.create_time = get_china_now()
 
     db.add(new_record)
+    db.flush()
+    append_consignment_operation(db, new_record.id, current_user, source="cost_service", action="draft")
     db.commit()
     db.refresh(new_record)
 
@@ -573,7 +584,7 @@ async def get_cost_consignments(
     start_warehouse_date: Optional[str] = Query(None, description="进仓开始日期 (YYYY-MM-DD)"),
     end_warehouse_date: Optional[str] = Query(None, description="进仓结束日期 (YYYY-MM-DD)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
-    status: Optional[CostConsignmentSubmissionStatus] = Query(None, description="提交状态：0=未提交，1=已提交"),
+    status: Optional[CostConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
     agent: Optional[str] = Query(None, description="代理单位 (模糊查询)"),
     flight_doc_no: Optional[str] = Query(
         None,
@@ -608,7 +619,7 @@ async def get_cost_consignments(
     - **start_warehouse_date**: 进仓日期区间开始，例如 '2026-07-25'
     - **end_warehouse_date**: 进仓日期区间结束，例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
-    - **status**: 提交状态，可选 `0`（未提交）或 `1`（已提交）；不传则查询全部
+    - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）；不传则查询全部
     - **agent**: 代理单位 (支持模糊匹配)
     - **flight_doc_no**: 航司单号/航班单号 (支持模糊匹配；任一货主托运、国际空运应付、国内空运应付航司单号或提单匹配即返回)
     - **flight_no**: 航班号 (支持模糊匹配；任一货主托运、国际空运应付或国内空运应付航班号匹配即返回)
@@ -725,6 +736,23 @@ async def get_cost_consignment_detail(
 # 5. 单据信息-修改
 # ============================================================================
 
+@router.get(
+    "/consignments/{consignment_id}/operation-logs",
+    summary="单据信息-完整操作记录",
+    response_model=ResponseModel[ConsignmentOperationLogPage],
+)
+async def get_cost_consignment_operation_logs(
+    consignment_id: str = Path(..., description="两台共用单据ID"),
+    page: int = Query(1, ge=1, description="页码"),
+    pageSize: int = Query(20, ge=1, le=100, description="每页数量，最大100"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """与客服入口返回同一单据的跨台操作时间线，包含未同步的暂存操作。"""
+    result = get_consignment_operations(db, consignment_id, page=page, page_size=pageSize)
+    return success_response(data=result.model_dump(), msg="查询成功")
+
+
 @router.put("/consignments/{consignment_id}/draft", summary="单据信息-暂存修改")
 async def update_cost_consignment_draft(
     payload: CostConsignmentUpdate,
@@ -742,8 +770,10 @@ async def update_cost_consignment_draft(
     if not record:
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
 
+    _ensure_cost_consignment_not_voided(record)
     _apply_cost_payload(record, payload)
     record.status = CostConsignmentSubmissionStatus.UNSUBMITTED.value
+    append_consignment_operation(db, record.id, current_user, source="cost_service", action="draft")
     db.commit()
     db.refresh(record)
 
@@ -768,7 +798,8 @@ async def update_cost_consignment(
     record = db.query(CostConsignment).filter(CostConsignment.id == c_id).first()
     if not record:
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
-        
+
+    _ensure_cost_consignment_not_voided(record)
     _apply_cost_payload(record, payload)
     record.status = CostConsignmentSubmissionStatus.SUBMITTED.value
     
@@ -792,7 +823,7 @@ async def update_cost_consignment(
         cs_record.first_leg_weight = record.first_leg_weight
         cs_record.agent = record.agent
         cs_record.remark = record.remark
-        cs_record.status = 1
+        cs_record.status = CostConsignmentSubmissionStatus.SUBMITTED.value
     elif not cs_record:
         cs_record = ConsignmentInfo(
             id=record.id,
@@ -814,14 +845,44 @@ async def update_cost_consignment(
             agent=record.agent,
             remark=record.remark,
             creator_id=record.creator_id,
-            status=1,
+            status=CostConsignmentSubmissionStatus.SUBMITTED.value,
         )
         db.add(cs_record)
 
+    append_consignment_operation(db, record.id, current_user, source="cost_service", action="save")
     db.commit()
     db.refresh(record)
     
     return success_response(data=_format_cost_record(record), msg="单据信息更新成功")
+
+
+@router.put("/consignments/{consignment_id}/void", summary="单据信息-作废")
+async def void_cost_consignment(
+    consignment_id: str = Path(..., description="单据明细ID"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """作废费用单据；同 ID 客服委托存在时同步作废，但不补建缺失记录。"""
+    try:
+        c_id = int(consignment_id)
+    except ValueError:
+        raise BadRequestException("consignment_id 必须为合法数字格式")
+
+    record = db.query(CostConsignment).filter(CostConsignment.id == c_id).first()
+    if not record:
+        raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
+    if int(record.status) == CostConsignmentSubmissionStatus.VOIDED.value:
+        raise ConflictException("费用信息已作废，请勿重复操作")
+
+    record.status = CostConsignmentSubmissionStatus.VOIDED.value
+    customer_record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
+    if customer_record:
+        customer_record.status = CostConsignmentSubmissionStatus.VOIDED.value
+    append_consignment_operation(db, record.id, current_user, source="cost_service", action="void")
+    db.commit()
+    db.refresh(record)
+
+    return success_response(data=_format_cost_record(record), msg="费用信息作废成功")
 
 
 # ============================================================================
@@ -852,19 +913,31 @@ async def batch_delete_cost_consignments(
             
     # 仅删除已提交费用单据对应的客服接单台记录；费用草稿可能对应客服接单台中
     # 已提交的历史版本，删除草稿不能误删该版本。
+    source_records = db.query(CostConsignment.id, CostConsignment.status).filter(
+        CostConsignment.id.in_(int_ids),
+    ).all()
+    operation_ids = [record_id for record_id, _ in source_records]
     submitted_ids = [
-        record_id
-        for record_id, in db.query(CostConsignment.id).filter(
-            CostConsignment.id.in_(int_ids),
-            CostConsignment.status == 1,
-        ).all()
+        record_id for record_id, status in source_records
+        if status == CostConsignmentSubmissionStatus.SUBMITTED.value
+    ]
+    voided_ids = [
+        record_id for record_id, status in source_records
+        if status == CostConsignmentSubmissionStatus.VOIDED.value
     ]
     if submitted_ids:
         db.query(ConsignmentInfo).filter(
             ConsignmentInfo.id.in_(submitted_ids),
-            ConsignmentInfo.status == 1,
+            ConsignmentInfo.status == CostConsignmentSubmissionStatus.SUBMITTED.value,
+        ).delete(synchronize_session=False)
+    if voided_ids:
+        db.query(ConsignmentInfo).filter(
+            ConsignmentInfo.id.in_(voided_ids),
+            ConsignmentInfo.status == CostConsignmentSubmissionStatus.VOIDED.value,
         ).delete(synchronize_session=False)
     deleted_count = db.query(CostConsignment).filter(CostConsignment.id.in_(int_ids)).delete(synchronize_session=False)
+    for record_id in operation_ids:
+        append_consignment_operation(db, record_id, current_user, source="cost_service", action="delete")
     db.commit()
     
     return success_response(
@@ -889,13 +962,21 @@ async def delete_cost_consignment(
     if not record:
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
         
-    # 未提交费用草稿不影响客服接单台中已有的已提交版本。
-    if int(getattr(record, "status", 1)) == 1:
+    # 未提交费用草稿不影响客服接单台中已有的已提交版本；作废记录
+    # 仅删除同样已作废的对端，避免清理异常状态下仍有效的客服版本。
+    record_status = int(getattr(record, "status", CostConsignmentSubmissionStatus.SUBMITTED.value))
+    if record_status == CostConsignmentSubmissionStatus.SUBMITTED.value:
         db.query(ConsignmentInfo).filter(
             ConsignmentInfo.id == c_id,
-            ConsignmentInfo.status == 1,
+            ConsignmentInfo.status == CostConsignmentSubmissionStatus.SUBMITTED.value,
+        ).delete(synchronize_session=False)
+    elif record_status == CostConsignmentSubmissionStatus.VOIDED.value:
+        db.query(ConsignmentInfo).filter(
+            ConsignmentInfo.id == c_id,
+            ConsignmentInfo.status == CostConsignmentSubmissionStatus.VOIDED.value,
         ).delete(synchronize_session=False)
     db.delete(record)
+    append_consignment_operation(db, record.id, current_user, source="cost_service", action="delete")
     db.commit()
     
     return success_response(data={"id": consignment_id}, msg="单据信息删除成功")
@@ -913,7 +994,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件首列为状态（未提交/已提交），包含三级分组表头及 117 列全量字段，数据从第 4 行开始；应收款项包含燃油费和运费计算方式，国际空运和国内空运应付款项均含运费计算方式字段。
+    导出文件首列为状态（未提交/已提交/作废），包含三级分组表头及 117 列全量字段，数据从第 4 行开始；应收款项包含燃油费和运费计算方式，国际空运和国内空运应付款项均含运费计算方式字段。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """

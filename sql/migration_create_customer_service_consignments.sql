@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS `consignment_infos` (
     `first_leg_weight` decimal(10,2) DEFAULT NULL COMMENT '一程重量',
     `agent` varchar(100) DEFAULT NULL COMMENT '代理',
     `remark` text DEFAULT NULL COMMENT '备注',
-    `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '提交状态：0=未提交，1=已提交',
+    `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '单据状态：0=未提交，1=已提交，2=作废',
     `creator_id` bigint(20) DEFAULT NULL COMMENT '创建者ID',
     `created_at` datetime NOT NULL COMMENT '创建时间',
     `updated_at` datetime NOT NULL COMMENT '更新时间',

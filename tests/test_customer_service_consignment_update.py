@@ -10,6 +10,7 @@ from app.api.customer_service import (
     update_consignment_draft,
 )
 from app.schemas.customer_service import ConsignmentInfoCreate, ConsignmentInfoUpdate
+from app.models.consignment_operation_log import ConsignmentOperationLog
 
 
 class _Query:
@@ -33,6 +34,9 @@ class _Session:
         return _Query(self._records.pop(0))
 
     def add(self, _record):
+        if isinstance(_record, ConsignmentOperationLog):
+            self.operation_log = _record
+            return
         raise AssertionError("费用登记台记录已存在，不应新增")
 
     def commit(self):
@@ -50,6 +54,11 @@ class _DraftSession:
 
     def query(self, *_args):
         return _Query(self.consignment)
+
+    def add(self, record):
+        if not isinstance(record, ConsignmentOperationLog):
+            raise AssertionError("暂存不应创建另一台的单据")
+        self.operation_log = record
 
     def commit(self):
         self.committed = True
@@ -102,6 +111,7 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
             first_leg_weight=450.0,
             agent="代理A",
             remark=None,
+            status=1,
             creator_id=99,
             created_at=None,
             updated_at=None,
@@ -116,7 +126,7 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
             update_consignment(
                 payload=payload,
                 consignment_id="1",
-                current_user=None,
+                current_user=SimpleNamespace(id=100, name="修改人员"),
                 db=session,
             )
         )
@@ -216,12 +226,15 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
                     volume=0.888,
                     flight_doc_no="479-87654321",
                 ),
-                current_user=SimpleNamespace(id=99),
+                current_user=SimpleNamespace(id=99, name="创建人员"),
                 db=session,
             )
         )
 
-        customer_consignment, cost_consignment = session.added_records
+        customer_consignment, cost_consignment, operation_log = session.added_records
+        self.assertEqual(operation_log.operation_name, "货主委托信息保存")
+        self.assertEqual(operation_log.consignment_id, customer_consignment.id)
+        self.assertEqual(operation_log.operator_id, 99)
         self.assertEqual(customer_consignment.status, 1)
         self.assertEqual(cost_consignment.id, customer_consignment.id)
         self.assertEqual(cost_consignment.pay_intl_air_pieces, 8)
@@ -266,7 +279,7 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
             update_consignment_draft(
                 payload=ConsignmentInfoUpdate(customer_name="草稿客户"),
                 consignment_id="1",
-                current_user=None,
+                current_user=SimpleNamespace(id=100, name="暂存人员"),
                 db=session,
             )
         )

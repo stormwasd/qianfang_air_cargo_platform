@@ -12,6 +12,7 @@ from app.models.cost_service import CostConsignment
 from app.models.customer_service import ConsignmentInfo
 from app.schemas.cost_service import CostExportExcelRequest
 from app.schemas.customer_service import ExportExcelRequest
+from app.services.cost_excel_export import format_submission_status_for_export
 
 
 class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
@@ -96,6 +97,16 @@ class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(sheet["A1"].value, "状态")
                 self.assertEqual(sheet.max_column, column_count)
                 self.assertEqual(sheet.max_row, header_rows)
+
+    async def test_both_exports_display_voided_status(self):
+        for endpoint, request_type, model, data_row in (
+            (export_consignments_to_excel, ExportExcelRequest, ConsignmentInfo, 2),
+            (export_cost_consignments_to_excel, CostExportExcelRequest, CostConsignment, 4),
+        ):
+            with self.subTest(endpoint=endpoint.__name__):
+                sheet = await self.export(endpoint, request_type, [model(id=1, status=2)])
+                self.assertEqual(sheet.cell(data_row, 1).value, "作废")
+        self.assertEqual(format_submission_status_for_export("2"), "作废")
 
 
 if __name__ == "__main__":

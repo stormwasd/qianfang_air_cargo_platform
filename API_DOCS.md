@@ -9615,10 +9615,11 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 | 单据信息 | GET | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-详情 |
 | 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-修改 |
 | 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 单据信息-暂存修改 |
-| 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 单据信息-暂存修改 |
+| 单据信息 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 单据信息-作废（保留数据，详见 23.8） |
+| 操作记录 | GET | `/api/v1/cost-service/consignments/{consignment_id}/operation-logs` | 单据跨台完整操作记录（详见 23.7） |
 | 单据信息 | DELETE | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-删除（单个） |
 | 单据信息 | POST/DELETE | `/api/v1/cost-service/consignments/batch-delete` | 单据信息-批量删除 |
-| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（三级分组表头、116 列全量字段） |
+| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（状态首列、三级分组表头、117 列全量字段） |
 
 #### 23.2 数据结构规范说明
 
@@ -9648,10 +9649,11 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - 存量数据库分别通过 `sql/migration_drop_cost_intl_air_date.sql` 和 `sql/migration_drop_cost_intl_air_airline.sql` 删除对应历史列；全新建表脚本不再创建这两个字段。
 
 6. **Excel 导出规范**：
-   - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 116 列；应收款项包含`运费计算方式`和`燃油费`列，其中`运费计算方式`位于`单价`和`运费`之间，`燃油费`位于`运费`之后；国际空运和国内空运应付款项也各新增一列`运费计算方式`，均位于`单价`和`运费`之间。
-   - 一级分组依次为：`货主托运信息`（第 1-17 列）、`应收款项`（第 18-37 列）、`应付款项`（第 38-110 列）、`折让信息`（第 111-112 列）、`业务信息`（第 113-114 列）、`经营信息`（第 115-116 列）。
-   - `应付款项`下设置二级分组：`国际空运信息`（第 38-61 列）、`汽运信息`（第 62-72 列）、`国内空运信息`（第 73-89 列）、`报关信息`（第 91-98 列）、`地面操作信息`（第 99-109 列）；第 110 列为独立的`应付合计`。
-   - `国际空运信息`不再导出`托运日期`和`航空公司`列；`折让信息`包含第 110 列`折让人员`和第 111 列`折让费`；`报关信息`中不再导出`回扣`列。
+   - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 117 列；第 1 列为独立的`状态`，表头合并 `A1:A3`，读取费用单据自身的 `status`，`0` 显示`未提交`、`1` 显示`已提交`、`2` 显示`作废`。应收款项包含`运费计算方式`和`燃油费`列，其中`运费计算方式`位于`单价`和`运费`之间，`燃油费`位于`运费`之后；国际空运和国内空运应付款项的`运费计算方式`均位于单价/费率和运费之间。
+   - 一级分组依次为：`货主托运信息`（第 2-18 列）、`应收款项`（第 19-38 列）、`应付款项`（第 39-111 列）、`折让信息`（第 112-113 列）、`业务信息`（第 114-115 列）、`经营信息`（第 116-117 列）。
+   - `应付款项`下设置二级分组：`国际空运信息`（第 39-62 列）、`汽运信息`（第 63-73 列）、`国内空运信息`（第 74-91 列）、`报关信息`（第 92-99 列）、`地面操作信息`（第 100-110 列）；第 111 列为独立的`应付合计`。各二级分组的`小计`均位于本分组最后一列、备注之后，对应 `BJ`、`BU`、`CM`、`CU`、`DF` 列，标题与小计数据同步移动。
+   - `国际空运信息`不再导出`托运日期`和`航空公司`列；`折让信息`包含第 112 列`折让人员`和第 113 列`折让费`；`报关信息`中不再导出`回扣`列。
+   - 客服接单台导出 `POST /api/v1/customer-service/consignments/export-excel` 使用单行表头，共 18 列，数据从第 2 行开始。第 1 列为`状态`，读取客服单据自身的 `status`，`0` 显示`未提交`、`1` 显示`已提交`、`2` 显示`作废`，原有 17 列整体右移。两台状态取各自数据库字段；正常作废流程会在同一事务同步两台状态。
    - 原字段标题中的`应收-`、`国空应付-`、`汽运应付-`、`国空内应付-`、`报关应付-`、`地面应付-`前缀已上移到分组表头，第三行仅展示字段名称；`委托备注`显示为`备注`。
    - Excel 第三行表头按产品最新命名展示：应收款项中的`燃油费`、`分单费 电报费/底账费`、`TC费`、`前置仓费`；国际空运应付款项中的`实际重量`、`单价`、`燃油费`、`TC费`；国内空运应付款项中的`实际重量`。应收款项的`receivable_fuel_fee`和`运费计算方式`字段同时出现在新增、修改、详情、列表及导出数据中。
    - `freight_method` 在 Excel 导出时按编码转换展示：`1` 显示为`实际重量`，`2` 显示为`计费重量`；接口请求、响应及数据库仍保留原始编码值。
@@ -9693,9 +9695,13 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      - 在费用登记台新增费用单据时，系统亦会自动在客服接单台表 (`consignment_infos`) 中创建相同 `id` 的委托记录，实现无缝互通。
    - **修改 (PUT)**：
      - 客服接单台点击“保存”时，客服单据状态变为 `status=1`（已提交），并自动联动更新费用登记台相同 `id` 的各委托字段（若不存在则补全创建）；同步后的费用单据状态统一变为 `status=0`（未提交），不会直接标记为费用已提交；
-     - 客服接单台点击“暂存”修改时状态变为`0`（未提交），费用登记台已有数据保持不变；费用登记台修改、删除未提交客服草稿时，也不会覆盖或删除该草稿。
+     - 客服接单台点击“暂存”修改时状态变为`0`（未提交），费用登记台已有数据保持不变；费用登记台暂存也不更新客服记录。费用登记台点击“保存”时，按既有代码同步覆盖同 ID 客服记录（包括未提交客服草稿），并将客服状态设为 `1`；客服记录不存在时会同步创建。本次操作记录功能不改变此既有同步行为。
+   - **作废 (PUT /void)**：
+     - 从任意一台作废时，将来源台记录设置为 `status=2`；同 ID 对端记录存在时在同一事务中同步设置为 `status=2`，不存在时不补建。作废只改变状态，不清空业务字段、不删除记录；详情、列表和导出仍可查询。
+     - 作废是终态。已作废单据不能再通过保存或暂存接口改回 `0/1`；重复作废及作废后保存/暂存均返回 HTTP 409。系统目前不提供恢复作废接口。
    - **删除 (DELETE / Batch DELETE)**：
-     - 对已提交单据，在任意一方执行单条删除或批量删除时，系统自动同步物理删除另一方中相同 `id` 的记录；未提交客服草稿仅删除客服接单台记录，不影响费用登记台既有版本。
+     - 删除已提交客服单据时会删除同 ID 的费用记录；删除未提交客服草稿时仅删除客服记录。删除已提交费用单据时，只同步删除同 ID 且已提交的客服记录；删除未提交费用草稿时仅删除费用记录。
+     - 原物理删除接口继续保留。删除作废单据时，仅联动删除同 ID 且同为 `status=2` 的对端记录；操作记录独立保留，不随上述删除清除。
 
 3. **客服接单台数值字段清空语义**：
    - `PUT /api/v1/customer-service/consignments/{consignment_id}` 的数值字段 `pieces`、`actual_weight`、`chargeable_weight`、`volume`、`first_leg_weight` 支持显式传 `null`，将对应字段清空为数据库 `NULL`，并同步到费用登记台同 ID 的单据。
@@ -9730,13 +9736,13 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 
 #### 23.5 费用登记台暂存与状态筛选规范
 
-- 费用登记台单据状态使用数值字段 `status`：`0`=未提交，`1`=已提交；前端负责将数值转换为“未提交/已提交”展示。
+- 费用登记台单据状态使用数值字段 `status`：`0`=未提交，`1`=已提交，`2`=作废；前端负责转换为对应中文展示。
 - 原保存接口保持不变：新增使用 `POST /api/v1/cost-service/consignments`，修改使用 `PUT /api/v1/cost-service/consignments/{consignment_id}`；保存成功后响应字段 `status=1`，并按原有逻辑同步客服接单台对应记录。
 - 新增暂存接口：`POST /api/v1/cost-service/consignments/draft`，请求体与原新增接口一致，只创建费用登记台记录，响应字段 `status=0`，不创建客服接单台记录。
 - 修改暂存接口：`PUT /api/v1/cost-service/consignments/{consignment_id}/draft`，请求体与原修改接口一致，只更新费用登记台记录，客服接单台相同 ID 的已有数据保持不变，响应字段 `status=0`。
-- 费用登记台列表、详情、新增、修改和暂存响应均返回 `status` 字段。
-- `GET /api/v1/cost-service/consignments` 新增可选查询参数 `status`：传 `status=0` 只查询未提交，传 `status=1` 只查询已提交；不传 `status` 时查询全部状态。例如：`GET /api/v1/cost-service/consignments?status=0&page=1&pageSize=10`。
-- 本次涉及接口变更：新增 `POST /api/v1/cost-service/consignments/draft`、`PUT /api/v1/cost-service/consignments/{consignment_id}/draft`；修改 `GET /api/v1/cost-service/consignments` 增加 `status` 查询参数；原有 `POST /api/v1/cost-service/consignments`、`PUT /api/v1/cost-service/consignments/{consignment_id}` 和 `GET /api/v1/cost-service/consignments/{consignment_id}` 响应新增 `status` 字段。
+- 费用登记台列表、详情、新增、修改、暂存和作废响应均返回 `status` 字段。
+- `GET /api/v1/cost-service/consignments` 的可选查询参数 `status` 接受 `0`（未提交）、`1`（已提交）和 `2`（作废）；不传时查询全部状态。示例：`GET /api/v1/cost-service/consignments?status=2&page=1&pageSize=10`。其他值由枚举校验拒绝并返回 HTTP 422。
+- 状态接口范围：暂存使用 `POST /api/v1/cost-service/consignments/draft`、`PUT /api/v1/cost-service/consignments/{consignment_id}/draft`；作废使用 `PUT /api/v1/cost-service/consignments/{consignment_id}/void`；列表 `GET /api/v1/cost-service/consignments` 支持 `status` 筛选。作废接口详见 23.8。
 - 对已提交费用单据执行保存时，客服接单台对应记录会同步更新为最新数据并标记 `status=1`；对未提交费用单据执行暂存或删除时，不会覆盖或删除客服接单台中已有的已提交记录。
 - 历史费用单据统一按 `status=1`（已提交）处理；存量数据库需执行 `sql/migration_add_cost_consignment_status.sql`。
 - 示例：按制单时间正序查询：`GET /api/v1/customer-service/consignments?sort_by=create_time&sort_order=asc&page=1&pageSize=10`；按进仓日期倒序查询：`GET /api/v1/customer-service/consignments?sort_by=warehouse_entry_date&sort_order=desc&page=1&pageSize=10`。
@@ -9747,10 +9753,182 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 - 原保存接口保持不变：新增使用 `POST /api/v1/customer-service/consignments`，修改使用 `PUT /api/v1/customer-service/consignments/{consignment_id}`；保存成功后客服接口响应字段为 `status=1`（已提交），同步到费用登记台的对应记录为 `status=0`（未提交），等待费用人员后续保存。
 - 新增暂存接口：`POST /api/v1/customer-service/consignments/draft`，请求体与原新增接口一致，只创建客服接单台记录，响应字段 `status=0`（未提交）。
 - 修改暂存接口：`PUT /api/v1/customer-service/consignments/{consignment_id}/draft`，请求体与原修改接口一致，只更新客服接单台记录，费用登记台相同 ID 的数据保持不变，响应字段 `status=0`（未提交）。
-- 客服接单台列表、详情、新增、修改和暂存响应均返回数值字段 `status`：`0`=未提交，`1`=已提交；前端可将其转换为中文展示。
-- `GET /api/v1/customer-service/consignments` 新增可选查询参数 `status`，仅接受数值 `0`（未提交）或 `1`（已提交），筛选在统计总数和分页之前执行。例如：`GET /api/v1/customer-service/consignments?status=0&page=1&pageSize=10`。
-- 本次涉及接口变更：新增 `POST /api/v1/customer-service/consignments/draft`、`PUT /api/v1/customer-service/consignments/{consignment_id}/draft`；修改 `GET /api/v1/customer-service/consignments` 增加 `status` 查询参数；原有 `POST /api/v1/customer-service/consignments`、`PUT /api/v1/customer-service/consignments/{consignment_id}` 的响应新增 `status` 字段并继续执行原同步逻辑；详情接口 `GET /api/v1/customer-service/consignments/{consignment_id}` 响应同步新增 `status` 字段。
+- 客服接单台列表、详情、新增、修改、暂存和作废响应均返回数值字段 `status`：`0`=未提交，`1`=已提交，`2`=作废；前端可将其转换为中文展示。
+- `GET /api/v1/customer-service/consignments` 的可选查询参数 `status` 接受数值 `0`（未提交）、`1`（已提交）和 `2`（作废），筛选在统计总数和分页之前执行。例如：`GET /api/v1/customer-service/consignments?status=2&page=1&pageSize=10`。其他值返回 HTTP 422。
+- 状态接口范围：暂存使用 `POST /api/v1/customer-service/consignments/draft`、`PUT /api/v1/customer-service/consignments/{consignment_id}/draft`；作废使用 `PUT /api/v1/customer-service/consignments/{consignment_id}/void`；列表 `GET /api/v1/customer-service/consignments` 支持 `status` 筛选。作废接口详见 23.8。
 - 历史客服单据统一按 `status=1`（已提交）处理；存量数据库需执行 `sql/migration_add_customer_consignment_status.sql`。
+
+#### 23.7 客服接单台与费用登记台单据完整操作记录
+
+**功能范围**：按两台共用的单据 `id` 查询完整用户操作时间线，解决多人查看和修改同一单据时无法追溯操作人的问题。记录真实操作，不将自动同步伪装成另一位用户的点击。
+
+**新增查询接口**（两入口返回相同单据的同一时间线）：
+
+| HTTP 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/api/v1/customer-service/consignments/{consignment_id}/operation-logs` | 客服接单台列表查看操作记录 |
+| GET | `/api/v1/cost-service/consignments/{consignment_id}/operation-logs` | 费用登记台列表查看操作记录 |
+
+**认证与可见性**：必须携带有效 Bearer Token，账号必须处于启用状态。沿用两台现有的全用户数据可见规则，不按创建者或操作人过滤；不需要管理员权限。不能通过此接口新增、编辑或删除操作记录。
+
+**参数**：
+
+| 参数 | 位置 | 类型 | 必填 | 默认值/约束 |
+|---|---|---|---|---|
+| `consignment_id` | Path | string | 是 | 两台列表数据返回的 `id`，不是 `internal_doc_id`；必须为正整数且小于 `9223372036854775808` |
+| `page` | Query | integer | 否 | 默认 `1`，最小 `1` |
+| `pageSize` | Query | integer | 否 | 默认 `20`，范围 `1-100` |
+
+示例：`GET /api/v1/customer-service/consignments/358000000000000001/operation-logs?page=1&pageSize=20`。
+
+**响应示例**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "consignment_id": "358000000000000001",
+    "total": 2,
+    "items": [
+      {
+        "id": "358000000000000103",
+        "consignment_id": "358000000000000001",
+        "source": "cost_service",
+        "action": "save",
+        "operation_name": "费用信息保存",
+        "operator_id": "358000000000000011",
+        "operator_name": "李四",
+        "operated_at": "2026-09-14T15:02:00+08:00"
+      },
+      {
+        "id": "358000000000000102",
+        "consignment_id": "358000000000000001",
+        "source": "customer_service",
+        "action": "save",
+        "operation_name": "货主委托信息保存",
+        "operator_id": "358000000000000010",
+        "operator_name": "张三",
+        "operated_at": "2026-09-14T15:00:00+08:00"
+      }
+    ],
+    "page": 1,
+    "pageSize": 20
+  },
+  "msg": "查询成功"
+}
+```
+
+**响应字段**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `data.consignment_id` | string | 两台共用的单据 ID |
+| `data.total` | integer | 此单据已留存的操作记录总数，不是本页条数 |
+| `data.items` | array | 当前页操作记录，操作时间倒序，同一时间按记录 ID 倒序 |
+| `data.page` / `data.pageSize` | integer | 当前页码和每页条数 |
+| `items[].id` | string | 操作记录 ID，用于前端稳定标识 |
+| `items[].consignment_id` | string | 所属单据 ID |
+| `items[].source` | string | `customer_service`=客服接单台，`cost_service`=费用登记台，表示用户实际操作来源 |
+| `items[].action` | string | `draft`=暂存，`save`=保存，`void`=作废，`delete`=删除 |
+| `items[].operation_name` | string | 当次操作名称，见下表；可直接展示 |
+| `items[].operator_id` | string | 当前登录操作用户 ID，不是单据最初创建者 |
+| `items[].operator_name` | string | 操作当时的用户姓名快照，用户改名或删除账号不改变已有记录 |
+| `items[].operated_at` | string | 服务端生成的中国时间 ISO 8601，包含 `+08:00`，不是业务制单时间 |
+
+**记录触发接口**（原接口请求体与成功响应结构不变）：
+
+| 用户操作 | 接口 | `source` | `action` | 操作名称 |
+|---|---|---|---|---|
+| 客服暂存新增 | `POST /api/v1/customer-service/consignments/draft` | `customer_service` | `draft` | 货主委托信息暂存 |
+| 客服暂存修改 | `PUT /api/v1/customer-service/consignments/{consignment_id}/draft` | `customer_service` | `draft` | 货主委托信息暂存 |
+| 客服保存新增 | `POST /api/v1/customer-service/consignments` | `customer_service` | `save` | 货主委托信息保存 |
+| 客服保存修改 | `PUT /api/v1/customer-service/consignments/{consignment_id}` | `customer_service` | `save` | 货主委托信息保存 |
+| 客服作废 | `PUT /api/v1/customer-service/consignments/{consignment_id}/void` | `customer_service` | `void` | 货主委托信息作废 |
+| 费用暂存新增 | `POST /api/v1/cost-service/consignments/draft` | `cost_service` | `draft` | 费用信息暂存 |
+| 费用暂存修改 | `PUT /api/v1/cost-service/consignments/{consignment_id}/draft` | `cost_service` | `draft` | 费用信息暂存 |
+| 费用保存新增 | `POST /api/v1/cost-service/consignments` | `cost_service` | `save` | 费用信息保存 |
+| 费用保存修改 | `PUT /api/v1/cost-service/consignments/{consignment_id}` | `cost_service` | `save` | 费用信息保存 |
+| 费用作废 | `PUT /api/v1/cost-service/consignments/{consignment_id}/void` | `cost_service` | `void` | 费用信息作废 |
+| 客服单个删除 | `DELETE /api/v1/customer-service/consignments/{consignment_id}` | `customer_service` | `delete` | 货主委托信息删除 |
+| 客服批量删除 | `POST /api/v1/customer-service/consignments/batch-delete` | `customer_service` | `delete` | 货主委托信息删除 |
+| 费用单个删除 | `DELETE /api/v1/cost-service/consignments/{consignment_id}` | `cost_service` | `delete` | 费用信息删除 |
+| 费用批量删除 | `POST` 或 `DELETE /api/v1/cost-service/consignments/batch-delete` | `cost_service` | `delete` | 费用信息删除 |
+
+**同步及事务规则**：
+
+- 客服保存成功时只新增一条“货主委托信息保存”；同事务同步费用数据并将费用状态设为未提交，不额外新增“费用信息保存”。
+- 费用保存成功时只新增一条“费用信息保存”；同事务同步客服数据并将客服状态设为已提交，不额外新增“货主委托信息保存”。
+- 暂存只修改来源台的数据，但仍记录在共用单据时间线中。另一台查询可见该暂存事件，不代表其数据已经被同步修改；前端应展示 `source` 或操作名称以区分。
+- 作废成功只记录发起台的一条真实用户操作；系统自动将已存在的对端记录同步为作废，不追加第二条虚构作废操作。重复作废返回 409，不写入重复记录。
+- 新建先生成单据 ID，再在同一事务加入记录；保存、暂存、同步数据和操作记录一起提交或回滚。记录写入失败将使当次业务操作失败，不允许“业务成功但追溯丢失”。
+- 单个删除保留一条删除记录；批量删除对实际存在于来源台的每个单据记录一条，重复 ID 不重复记录，不存在的 ID 不产生虚构删除记录。同步删除不追加第二条用户操作。
+- 对同一内容重复点击暂存或保存，每次成功请求都会留下一条记录；本功能不改变接口既有的重复提交行为。
+- 仅覆盖列表单据操作；系统唯一的登记编辑区（`consignment-registration`、`cost-registration`）、列表查询、详情查询、Excel 导出不写入本时间线。当前不包含字段修改前后的差异内容。
+
+**空结果与错误**：
+
+- 已存在的历史单据尚无记录：HTTP 200，`total=0`、`items=[]`，不伪造历史。
+- 页码超过记录页数：HTTP 200，`items=[]`，`total` 仍为实际总数。
+- 单据已删除但留有记录：仍可按原 ID 查询历史；只有一台记录或只有历史记录时，两入口都可查询。
+- 单据在两台均不存在且无历史记录：HTTP 404，`code=404`、`data=null`。
+- 非数字、非正整数或超出有符号 bigint 范围的 ID：HTTP 400，`code=400`、`data=null`。
+- `page`、`pageSize` 类型或范围非法：HTTP 422，由参数校验拒绝；按应用统一格式返回错误。
+- 未携带 Bearer 凭据沿用现有认证行为（HTTP 403）；无效/过期 Token、账号不存在或停用等返回 HTTP 401。
+
+**部署与历史边界**：上线前执行 `sql/migration_create_consignment_operation_logs.sql` 创建 `consignment_operation_logs`，并对已存在两台 `status` 字段的数据库执行 `sql/migration_add_consignment_void_status.sql` 更新状态语义注释；两脚本均不回填或修改历史业务状态。新库初始化通过已注册 ORM 模型创建操作记录表。仅从本功能上线后的成功操作开始记录，旧系统没有记录的操作人和操作时间无法可靠还原，不能从创建者或更新时间推测补录。表不对单据或账号设置级联外键；查询使用 `(consignment_id, operated_at, id)` 复合索引和最多 100 条的单页限制，无逐条查询操作人信息。
+
+**前端接入**：两台列表为每条单据增加“操作记录”入口，传本行 `id` 调用对应 GET 接口。弹窗按返回顺序展示 `operation_name`、`operator_name`、`operated_at`；超过一页时继续翻页，读取至完整记录，不只展示第一屏。历史为空时提示“暂无操作记录（仅记录功能上线后的操作）”，不要提示“从未修改”。
+
+#### 23.8 客服接单台与费用登记台作废接口
+
+**用途**：作废用于停止单据后续编辑并保留完整业务数据，与原 DELETE 物理删除是两种独立操作。作废后记录继续出现在列表和详情中，可通过 `status=2` 筛选，也可继续导出或查看操作记录。
+
+| 来源台 | HTTP 方法 | 路径 | 请求体 |
+|---|---|---|---|
+| 客服接单台 | PUT | `/api/v1/customer-service/consignments/{consignment_id}/void` | 无 |
+| 费用登记台 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 无 |
+
+**认证与路径参数**：接口沿用两台现有认证规则，必须携带有效 Bearer Token且账号处于启用状态。`consignment_id` 取列表返回的单据 `id`；非数字格式返回 HTTP 400，来源台中不存在该 ID 时返回 HTTP 404。
+
+请求示例：
+
+```http
+PUT /api/v1/customer-service/consignments/358000000000000001/void
+Authorization: Bearer <access_token>
+```
+
+接口不接收 JSON 请求体。成功时 HTTP 200，并返回来源台修改后的完整单据结构；客服响应结构与客服详情一致，费用响应结构与费用详情一致，其中 `status` 固定为 `2`。以下仅节选状态相关字段：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "358000000000000001",
+    "status": 2,
+    "updated_at": "2026-09-15T10:30:00+08:00"
+  },
+  "msg": "委托信息作废成功"
+}
+```
+
+费用入口成功响应的 `msg` 为`费用信息作废成功`。
+
+**状态与同步规则**：
+
+- 来源台记录无论原状态是 `0`（未提交）还是 `1`（已提交），作废成功后均变为 `2`（作废）。业务字段保持原值。
+- 同 ID 对端记录已经存在时，同一事务将其同步设置为 `2`；对端记录不存在时不创建新记录。因此，单边暂存草稿可以直接作废，另一台不会凭空出现数据。
+- 作废、对端状态同步和操作记录写入使用同一数据库事务，任一步失败时全部回滚，不会出现“状态已作废但无操作记录”或只有一台提交成功的情况。
+- 客服入口写入一条 `action=void`、操作名称为`货主委托信息作废`的记录；费用入口写入一条 `action=void`、操作名称为`费用信息作废`的记录。自动同步的对端不额外写第二条记录。
+- 同一来源记录已经是 `status=2` 时，再次调用作废接口返回 HTTP 409，响应 `msg` 为`委托信息已作废，请勿重复操作`或`费用信息已作废，请勿重复操作`，不新增操作记录。
+- 作废为不可逆终态，当前无恢复接口。对已作废记录调用该台保存或暂存修改接口均返回 HTTP 409；响应 `msg` 为`已作废的委托信息不能暂存或保存`或`已作废的费用信息不能暂存或保存`，请求字段不会写入数据库，也不新增保存/暂存记录。
+
+**列表、导出与删除兼容**：
+
+- 两台列表查询的 `status` 参数新增枚举值 `2`；不传 `status` 仍查询全部状态，不会默认隐藏作废记录。详情接口原样返回 `status=2`。
+- 两台 Excel 导出的首列继续为`状态`，作废记录显示为`作废`；其他列、表头位置、排序及文件格式不变。
+- 原单个及批量 DELETE 接口继续可用。物理删除 `status=2` 的来源记录时，仅联动删除同 ID 且同为 `status=2` 的对端记录；若异常历史数据中对端不是作废状态，则保留对端，避免误删仍有效版本。删除操作记录继续独立保留。
+
+**部署**：存量数据库先确保已执行两台原 `status` 字段迁移，再执行 `sql/migration_add_consignment_void_status.sql`。该迁移不新增字段、不改默认值、不改变已有 `0/1` 数据，只将数据库字段注释统一为 `0=未提交，1=已提交，2=作废`。操作记录功能同时需要 `sql/migration_create_consignment_operation_logs.sql`。
 
 
 

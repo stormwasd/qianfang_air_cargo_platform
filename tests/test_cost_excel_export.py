@@ -15,7 +15,11 @@ from app.services.cost_excel_export import (
 
 class SubmissionStatusExportTests(unittest.TestCase):
     def test_status_labels_preserve_unsubmitted_zero(self):
-        for value, expected in ((0, "未提交"), (1, "已提交"), ("0", "未提交"), ("1", "已提交"), (None, ""), (2, "2")):
+        for value, expected in (
+            (0, "未提交"), (1, "已提交"), (2, "作废"),
+            ("0", "未提交"), ("1", "已提交"), ("2", "作废"),
+            (None, ""), (3, "3"),
+        ):
             with self.subTest(value=value):
                 self.assertEqual(format_submission_status_for_export(value), expected)
 

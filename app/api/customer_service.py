@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.core.exceptions import NotFoundException, BadRequestException
-from app.core.response import success_response
+from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
+from app.core.response import ResponseModel, success_response
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.models.customer_service import ConsignmentRegistration, ConsignmentInfo
@@ -38,6 +38,8 @@ from app.services.cost_excel_export import (
     format_submission_status_for_export,
 )
 from app.utils.helpers import format_datetime_china, get_china_now
+from app.schemas.consignment_operation_log import ConsignmentOperationLogPage
+from app.services.consignment_operation_log import append_consignment_operation, get_consignment_operations
 
 router = APIRouter()
 
@@ -234,6 +236,12 @@ def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
     cost_record.status = ConsignmentSubmissionStatus.UNSUBMITTED.value
 
 
+def _ensure_customer_consignment_not_voided(record: ConsignmentInfo) -> None:
+    """作废是终态，只能继续查询或物理删除。"""
+    if int(record.status) == ConsignmentSubmissionStatus.VOIDED.value:
+        raise ConflictException("已作废的委托信息不能暂存或保存")
+
+
 # ============================================================================
 # 1. 委托信息登记接口（系统唯一一条数据，支持编辑和保存）
 # ============================================================================
@@ -343,6 +351,7 @@ async def create_consignment(
     db.flush()
     
     _sync_consignment_to_cost(db, new_record)
+    append_consignment_operation(db, new_record.id, current_user, source="customer_service", action="save")
     db.commit()
     db.refresh(new_record)
     
@@ -362,6 +371,8 @@ async def create_consignment_draft(
     )
     _apply_consignment_payload(new_record, payload, partial=False)
     db.add(new_record)
+    db.flush()
+    append_consignment_operation(db, new_record.id, current_user, source="customer_service", action="draft")
     db.commit()
     db.refresh(new_record)
 
@@ -377,7 +388,7 @@ async def get_consignments(
     start_date: Optional[str] = Query(None, description="制单开始日期 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="制单结束日期 (YYYY-MM-DD)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
-    status: Optional[ConsignmentSubmissionStatus] = Query(None, description="提交状态：0=未提交，1=已提交"),
+    status: Optional[ConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
     sort_by: ConsignmentInfoSortField = Query(
         ConsignmentInfoSortField.CREATE_TIME,
         description="排序字段：create_time（制单时间）或 warehouse_entry_date（进仓日期）",
@@ -398,7 +409,7 @@ async def get_consignments(
     - **start_date**: 制单日期区间开始，例如 '2026-07-25'
     - **end_date**: 制单日期区间结束，例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
-    - **status**: 提交状态，可选 `0`（未提交）或 `1`（已提交）
+    - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）
     - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `create_time`
     - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
     - **page**: 页码（不传或默认为 1）
@@ -491,6 +502,23 @@ async def get_consignment_detail(
 # 5. 委托信息-修改
 # ============================================================================
 
+@router.get(
+    "/consignments/{consignment_id}/operation-logs",
+    summary="委托信息-完整操作记录",
+    response_model=ResponseModel[ConsignmentOperationLogPage],
+)
+async def get_consignment_operation_logs(
+    consignment_id: str = Path(..., description="两台共用单据ID"),
+    page: int = Query(1, ge=1, description="页码"),
+    pageSize: int = Query(20, ge=1, le=100, description="每页数量，最大100"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """查询同一单据在两台上的真实操作，按操作时间和 ID 倒序返回。"""
+    result = get_consignment_operations(db, consignment_id, page=page, page_size=pageSize)
+    return success_response(data=result.model_dump(), msg="查询成功")
+
+
 @router.put("/consignments/{consignment_id}", summary="委托信息-修改")
 async def update_consignment(
     payload: ConsignmentInfoUpdate,
@@ -509,11 +537,13 @@ async def update_consignment(
     record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
-        
+
+    _ensure_customer_consignment_not_voided(record)
     _apply_consignment_payload(record, payload, partial=True)
     record.status = ConsignmentSubmissionStatus.SUBMITTED.value
     _sync_consignment_to_cost(db, record)
 
+    append_consignment_operation(db, record.id, current_user, source="customer_service", action="save")
     db.commit()
     db.refresh(record)
     
@@ -537,12 +567,43 @@ async def update_consignment_draft(
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
 
+    _ensure_customer_consignment_not_voided(record)
     _apply_consignment_payload(record, payload, partial=True)
     record.status = ConsignmentSubmissionStatus.UNSUBMITTED.value
+    append_consignment_operation(db, record.id, current_user, source="customer_service", action="draft")
     db.commit()
     db.refresh(record)
 
     return success_response(data=_format_record_dict(record), msg="委托信息暂存成功")
+
+
+@router.put("/consignments/{consignment_id}/void", summary="委托信息-作废")
+async def void_consignment(
+    consignment_id: str = Path(..., description="委托信息ID"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """作废客服委托；同 ID 费用单据存在时同步作废，但不补建缺失记录。"""
+    try:
+        c_id = int(consignment_id)
+    except ValueError:
+        raise BadRequestException("consignment_id 必须为合法数字格式")
+
+    record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
+    if not record:
+        raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
+    if int(record.status) == ConsignmentSubmissionStatus.VOIDED.value:
+        raise ConflictException("委托信息已作废，请勿重复操作")
+
+    record.status = ConsignmentSubmissionStatus.VOIDED.value
+    cost_record = db.query(CostConsignment).filter(CostConsignment.id == c_id).first()
+    if cost_record:
+        cost_record.status = ConsignmentSubmissionStatus.VOIDED.value
+    append_consignment_operation(db, record.id, current_user, source="customer_service", action="void")
+    db.commit()
+    db.refresh(record)
+
+    return success_response(data=_format_record_dict(record), msg="委托信息作废成功")
 
 
 # ============================================================================
@@ -565,10 +626,18 @@ async def delete_consignment(
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
         
-    # 未提交记录只属于客服接单台；删除时不得影响费用登记台中的既有版本。
-    if int(getattr(record, "status", ConsignmentSubmissionStatus.SUBMITTED.value)) == ConsignmentSubmissionStatus.SUBMITTED.value:
+    # 未提交记录只属于客服接单台；已提交沿用原联动删除规则；作废记录
+    # 仅删除同样已作废的对端，避免清理异常状态下仍有效的费用版本。
+    record_status = int(getattr(record, "status", ConsignmentSubmissionStatus.SUBMITTED.value))
+    if record_status == ConsignmentSubmissionStatus.SUBMITTED.value:
         db.query(CostConsignment).filter(CostConsignment.id == c_id).delete(synchronize_session=False)
+    elif record_status == ConsignmentSubmissionStatus.VOIDED.value:
+        db.query(CostConsignment).filter(
+            CostConsignment.id == c_id,
+            CostConsignment.status == ConsignmentSubmissionStatus.VOIDED.value,
+        ).delete(synchronize_session=False)
     db.delete(record)
+    append_consignment_operation(db, record.id, current_user, source="customer_service", action="delete")
     db.commit()
     
     return success_response(data={"id": consignment_id}, msg="委托信息删除成功")
@@ -595,16 +664,28 @@ async def batch_delete_consignments(
         except ValueError:
             raise BadRequestException(f"ID '{raw_id}' 格式无效")
             
+    source_records = db.query(ConsignmentInfo.id, ConsignmentInfo.status).filter(
+        ConsignmentInfo.id.in_(int_ids),
+    ).all()
+    operation_ids = [record_id for record_id, _ in source_records]
     submitted_ids = [
-        record_id
-        for record_id, in db.query(ConsignmentInfo.id).filter(
-            ConsignmentInfo.id.in_(int_ids),
-            ConsignmentInfo.status == ConsignmentSubmissionStatus.SUBMITTED.value,
-        ).all()
+        record_id for record_id, status in source_records
+        if status == ConsignmentSubmissionStatus.SUBMITTED.value
+    ]
+    voided_ids = [
+        record_id for record_id, status in source_records
+        if status == ConsignmentSubmissionStatus.VOIDED.value
     ]
     if submitted_ids:
         db.query(CostConsignment).filter(CostConsignment.id.in_(submitted_ids)).delete(synchronize_session=False)
+    if voided_ids:
+        db.query(CostConsignment).filter(
+            CostConsignment.id.in_(voided_ids),
+            CostConsignment.status == ConsignmentSubmissionStatus.VOIDED.value,
+        ).delete(synchronize_session=False)
     deleted_count = db.query(ConsignmentInfo).filter(ConsignmentInfo.id.in_(int_ids)).delete(synchronize_session=False)
+    for record_id in operation_ids:
+        append_consignment_operation(db, record_id, current_user, source="customer_service", action="delete")
     db.commit()
     
     return success_response(
@@ -625,7 +706,7 @@ async def export_consignments_to_excel(
 ):
     """
     选中委托信息列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    首列为状态（未提交/已提交），共 18 列，数据从第 2 行开始。
+    首列为状态（未提交/已提交/作废），共 18 列，数据从第 2 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """

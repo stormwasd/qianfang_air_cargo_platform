@@ -15,6 +15,7 @@ class CostServiceSchemaTests(unittest.TestCase):
     def test_consignment_submission_status_uses_numeric_values(self):
         self.assertEqual(CostConsignmentSubmissionStatus.UNSUBMITTED.value, 0)
         self.assertEqual(CostConsignmentSubmissionStatus.SUBMITTED.value, 1)
+        self.assertEqual(CostConsignmentSubmissionStatus.VOIDED.value, 2)
     def test_receivables_include_freight_method(self):
         self.assertIn("freight_method", ReceivablesInfo.model_fields)
         self.assertIn("receivable_fuel_fee", ReceivablesInfo.model_fields)
@@ -65,6 +66,19 @@ class CostServiceSchemaTests(unittest.TestCase):
 
         self.assertNotIn("pay_intl_air_airline", model_source)
         self.assertNotIn("pay_intl_air_date", model_source)
+
+    def test_fresh_database_script_places_status_on_list_table(self):
+        migration_source = (
+            Path(__file__).parents[1] / "sql" / "migration_create_cost_service_consignments.sql"
+        ).read_text(encoding="utf-8")
+        registration_sql, consignment_sql = migration_source.split(
+            "CREATE TABLE IF NOT EXISTS `cost_consignments`", maxsplit=1,
+        )
+        self.assertNotIn("`status` tinyint", registration_sql)
+        self.assertIn(
+            "`status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '单据状态：0=未提交，1=已提交，2=作废'",
+            consignment_sql,
+        )
 
 
 if __name__ == "__main__":
