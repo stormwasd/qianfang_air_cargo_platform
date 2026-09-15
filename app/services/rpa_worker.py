@@ -3072,7 +3072,7 @@ class RPAWorker:
                                 weight=str(row[7]).strip(),
                                 container=str(row[8]).strip(),
                                 planned_time=planned_time,
-                                actual_time=(None if not planned_time else None),
+                                actual_time=None,
                                 actual_time_attempts="0"
                             )
                             records_to_insert.append(record)
@@ -3098,6 +3098,13 @@ class RPAWorker:
                             "深航货运走货数据为空"
                         )
                         return
+                    else:
+                        rpa_task_service.requeue_task(
+                            db, task.id,
+                            settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                            "深航货运走货数据格式无效"
+                        )
+                        return
 
                     # 所有有效返回行均有航班号，标记该 Excel 明细已完成，后续
                     # 文件重复导入时不再重复派发任务。该标记不依赖携程是否
@@ -3112,6 +3119,20 @@ class RPAWorker:
                 except Exception as e:
                     db.rollback()
                     print(f"{self._log_prefix} 消费计飞时间集装器队列失败: {_get_error_detail(e)}")
+                    rpa_task_service.requeue_task(
+                        db, task.id,
+                        settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                        f"深航货运走货数据消费失败: {_get_error_detail(e)}"
+                    )
+                    return
+
+            if not billing_data:
+                rpa_task_service.requeue_task(
+                    db, task.id,
+                    settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                    "深航计飞时间队列不存在或未返回数据"
+                )
+                return
 
             if "change_order_information" in queues_info:
                 queue_uuid = queues_info["change_order_information"]["queueUUID"]
@@ -3318,6 +3339,7 @@ class RPAWorker:
                 
                 print(f"{self._log_prefix} 本站货物数据已入库，共 {len(product_data)} 条记录 (approval_data_id={approval_data_id})")
             
+            valid_lalamove_count = 0
             if lalamove_data and isinstance(lalamove_data, list) and len(lalamove_data) > 0 and isinstance(lalamove_data[0], list):
                 db.query(CsaLalamoveInformation).filter(
                     CsaLalamoveInformation.approval_data_id == approval_data_id
@@ -3344,14 +3366,15 @@ class RPAWorker:
                         actual_time_attempts="0",
                     )
                     db.add(record)
+                    valid_lalamove_count += 1
                 
                 print(f"{self._log_prefix} 货拉数据已入库，共 {len(lalamove_data)} 条记录 (approval_data_id={approval_data_id})")
 
-                if has_invalid_flight:
+                if has_invalid_flight or valid_lalamove_count == 0:
                     rpa_task_service.requeue_task(
                         db, task.id,
                         settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
-                        "南航货拉数据存在空预配航班号"
+                        "南航货拉数据存在空预配航班号或无有效数据"
                     )
                     return
             elif not lalamove_data:
@@ -3361,6 +3384,13 @@ class RPAWorker:
                     "南航货拉数据为空"
                 )
                 return
+            else:
+                rpa_task_service.requeue_task(
+                    db, task.id,
+                    settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                    "南航货拉数据格式无效"
+                )
+                return
             
             db.flush()
             approval_record = db.query(ChinaSouthernAirApprovalData).filter(
@@ -3368,7 +3398,22 @@ class RPAWorker:
             ).first()
             if approval_record:
                 approval_record.departure_tracking_completed = "1"
+            # 先独立提交业务数据和父记录标记，避免后续任务成功打卡异常时
+            # 回滚已经抓取成功的出港明细。
+            db.commit()
             rpa_task_service.complete_task(db, task.id, True)
+        except Exception as exc:
+            db.rollback()
+            print(
+                f"{self._log_prefix} 南航出港跟踪数据消费失败: "
+                f"{_get_error_detail(exc)}"
+            )
+            rpa_task_service.requeue_task(
+                db,
+                task.id,
+                settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                f"南航出港跟踪数据消费失败: {_get_error_detail(exc)}",
+            )
         finally:
             await self._cleanup_queues(queues_info)
 

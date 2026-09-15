@@ -7,11 +7,12 @@ import traceback
 import pandas as pd
 from typing import Any, Dict, Optional
 from datetime import datetime, timedelta
+from sqlalchemy import and_, exists, or_
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models.config import BusinessConfig
-from app.models.rpa_task import RPATaskType
+from app.models.rpa_task import RPATask, RPATaskType
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.services.rpa_task_service import rpa_task_service
 from app.utils.helpers import get_china_now
@@ -82,12 +83,27 @@ class TransitLoadingManager:
     async def _async_scheduler_main(self) -> None:
         """主循环：定期下发下载表格任务"""
         while not self._stop_event.is_set():
-            try:
-                interval = getattr(settings, "RPA_SHENZHEN_AIR_TRANSIT_LOADING_INTERVAL_SECONDS", 3600)
-                if interval and interval > 0:
+            interval = getattr(
+                settings,
+                "RPA_SHENZHEN_AIR_TRANSIT_LOADING_INTERVAL_SECONDS",
+                3600,
+            )
+            if interval and interval > 0:
+                try:
                     await self._scan_and_enqueue_transit_loading()
-            except Exception as e:
-                print(f"[TransitLoadingManager] 调度异常: {repr(e)}\n{traceback.format_exc()}")
+                except Exception as exc:
+                    print(
+                        "[TransitLoadingManager] 下载任务调度异常: "
+                        f"{repr(exc)}\n{traceback.format_exc()}"
+                    )
+            try:
+                if interval and interval > 0:
+                    await self._enqueue_missing_billing_tasks()
+            except Exception as exc:
+                print(
+                    "[TransitLoadingManager] 子任务补偿调度异常: "
+                    f"{repr(exc)}\n{traceback.format_exc()}"
+                )
 
             remaining = interval if interval and interval > 0 else 60
             while remaining > 0 and not self._stop_event.is_set():
@@ -134,6 +150,153 @@ class TransitLoadingManager:
         finally:
             db.close()
 
+    async def _enqueue_missing_billing_tasks(self) -> None:
+        """为旧版本遗留或此前携程查询失败的主表记录补建子任务。"""
+        db = SessionLocal()
+        try:
+            business_config = _get_business_config_dict(db)
+            node = business_config.get("shenzhen_air", {}).get("booking", {}).get(
+                "shenzhen_air_login", {}
+            )
+            system_account = node.get("system_account") or "szxfdh002"
+            today = get_china_now().strftime("%Y-%m-%d")
+            missing_task = ~exists().where(and_(
+                RPATask.target_type == BILLING_TIME_TARGET_TYPE,
+                RPATask.target_id == ShenzhenAirBookingExport.id,
+                RPATask.task_type
+                == RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value,
+            ))
+            last_id = None
+            while True:
+                query = db.query(ShenzhenAirBookingExport).filter(
+                    or_(
+                        ShenzhenAirBookingExport.departure_tracking_completed.is_(None),
+                        ShenzhenAirBookingExport.departure_tracking_completed != "1",
+                    ),
+                    ShenzhenAirBookingExport.billing_flight.isnot(None),
+                    ShenzhenAirBookingExport.routing.isnot(None),
+                    ShenzhenAirBookingExport.flight_date.isnot(None),
+                    ShenzhenAirBookingExport.flight_date >= today,
+                    missing_task,
+                )
+                if last_id is not None:
+                    query = query.filter(ShenzhenAirBookingExport.id < last_id)
+                records = query.order_by(
+                    ShenzhenAirBookingExport.id.desc()
+                ).limit(200).all()
+                if not records:
+                    break
+                for record in records:
+                    record_id = record.id
+                    try:
+                        await self._enqueue_billing_time_task(
+                            db, record, system_account
+                        )
+                    except Exception as exc:
+                        db.rollback()
+                        print(
+                            "[TransitLoadingManager] 补建深航子任务失败: "
+                            f"export_id={record_id}, error={exc}"
+                        )
+                last_id = records[-1].id
+        finally:
+            db.close()
+
+    async def _enqueue_billing_time_task(
+        self,
+        db,
+        export_record: ShenzhenAirBookingExport,
+        system_account: str,
+    ) -> bool:
+        """按携程计飞时间为一条深航主表记录创建唯一子任务。"""
+        if str(export_record.departure_tracking_completed or "0") == "1":
+            return False
+        existing_task = rpa_task_service.get_existing_task_for_target(
+            db,
+            target_type=BILLING_TIME_TARGET_TYPE,
+            target_id=export_record.id,
+            task_type=RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value,
+        )
+        if existing_task:
+            return False
+
+        from app.utils.ctrip_client import ctrip_client
+
+        flight_no = str(export_record.billing_flight or "").strip()
+        flight_date = str(export_record.flight_date or "").strip()
+        routing = str(export_record.routing or "").strip()
+        if any(
+            not value or value.lower() in {"none", "nan"}
+            for value in (flight_no, flight_date, routing)
+        ):
+            return False
+        try:
+            flight_day = datetime.strptime(
+                flight_date.replace("/", "-")[:10], "%Y-%m-%d"
+            ).date()
+        except ValueError:
+            return False
+        if flight_day < get_china_now().date():
+            return False
+        try:
+            ctrip_times = await ctrip_client.get_flight_times(
+                flight_no, flight_date, routing
+            )
+        except Exception as exc:
+            print(
+                "[TransitLoadingManager] 携程计飞时间查询异常，"
+                "本轮暂不创建子任务: "
+                f"waybill={export_record.waybill_number}, error={exc}"
+            )
+            return False
+        ready_time = (ctrip_times or {}).get("ready_time")
+        if not ready_time:
+            print(
+                "[TransitLoadingManager] 携程未返回有效计飞时间，本轮暂不创建子任务: "
+                f"waybill={export_record.waybill_number}, flight={flight_no}, "
+                f"date={flight_date}, routing={routing}"
+            )
+            return False
+
+        try:
+            scheduled_at = datetime.fromisoformat(
+                str(ready_time).replace("Z", "+00:00")
+            ) - timedelta(minutes=105)
+        except (TypeError, ValueError) as exc:
+            print(
+                "[TransitLoadingManager] 携程计飞时间格式无效，本轮暂不创建子任务: "
+                f"waybill={export_record.waybill_number}, ready_time={ready_time}, "
+                f"error={exc}"
+            )
+            return False
+        if scheduled_at.tzinfo:
+            scheduled_at = scheduled_at.replace(tzinfo=None)
+
+        params = {
+            "system_url": "https://www.kinggo.com/main",
+            "system_account": system_account,
+            "waybill_number_8": export_record.waybill_number,
+        }
+        task = rpa_task_service.create_task(
+            db=db,
+            task_type=RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value,
+            target_type=BILLING_TIME_TARGET_TYPE,
+            target_id=export_record.id,
+            params=params,
+            job_uuid=None,
+            priority=2,
+            created_by=None,
+            robot_id=None,
+            scheduled_at=scheduled_at,
+            max_attempts=settings.RPA_DEPARTURE_TASK_MAX_ATTEMPTS,
+        )
+        print(
+            "[TransitLoadingManager] 已创建深航出港明细子任务: "
+            f"task_id={task.id}, export_id={export_record.id}, "
+            f"scheduled_at={scheduled_at}"
+        )
+        return True
+
     async def _async_watcher_main(self) -> None:
         """主循环：轮询监控文件夹"""
         while not self._stop_event.is_set():
@@ -179,7 +342,7 @@ class TransitLoadingManager:
 
             business_config = _get_business_config_dict(db)
             node = business_config.get("shenzhen_air", {}).get("booking", {}).get("shenzhen_air_login", {})
-            system_account = node.get("system_account", "szxfdh002")
+            system_account = node.get("system_account") or "szxfdh002"
 
             for index, row in df.iterrows():
                 row_dict = row.where(pd.notnull(row), None).to_dict()
@@ -244,40 +407,9 @@ class TransitLoadingManager:
 
                 if str(getattr(export_record, "departure_tracking_completed", "0")) == "1":
                     continue
-                
-                params = {
-                    "system_url": "https://www.kinggo.com/main",
-                    "system_account": system_account,
-                    "waybill_number_8": waybill_number
-                }
 
-                # 任务必须在计飞时间前105分钟执行；计飞时间由携程按航班/日期/航程查询。
-                scheduled_at = get_china_now()
-                try:
-                    from app.utils.ctrip_client import ctrip_client
-                    flight_no = str(field_values.get("billing_flight") or "").strip()
-                    routing = str(field_values.get("routing") or "").strip()
-                    ctrip_times = await ctrip_client.get_flight_times(flight_no, flight_date, routing)
-                    ready_time = (ctrip_times or {}).get("ready_time")
-                    if ready_time:
-                        scheduled_at = datetime.fromisoformat(str(ready_time).replace("Z", "+00:00")) - timedelta(minutes=105)
-                        if scheduled_at.tzinfo:
-                            scheduled_at = scheduled_at.replace(tzinfo=None)
-                except Exception as exc:
-                    print(f"[TransitLoadingManager] 获取计飞时间失败，任务立即入队等待后续重试: {exc}")
-                
-                rpa_task_service.create_task(
-                    db=db,
-                    task_type=RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value,
-                    target_type=BILLING_TIME_TARGET_TYPE,
-                    target_id=export_record.id,
-                    params=params,
-                    job_uuid=None,
-                    priority=2,
-                    created_by=None,
-                    robot_id=None,
-                    scheduled_at=scheduled_at,
-                    max_attempts=settings.RPA_DEPARTURE_TASK_MAX_ATTEMPTS
+                await self._enqueue_billing_time_task(
+                    db, export_record, system_account
                 )
                 
             for key, existing_record in existing_map.items():

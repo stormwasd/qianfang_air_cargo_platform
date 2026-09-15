@@ -281,7 +281,7 @@ class RPATaskService:
         return False
 
     def requeue_task(self, db: Session, task_id: int, delay_seconds: int, error_message: Optional[str] = None) -> bool:
-        """将一次未更新的明细任务重新放回队列；达到最大次数后删除。"""
+        """将未更新的明细任务重新入队；达到上限后保留失败终态。"""
         task = db.query(RPATask).filter(RPATask.id == task_id).first()
         if not task:
             return False
@@ -290,7 +290,6 @@ class RPATaskService:
             task.status = RPATaskStatus.FAILED.value
             task.error_message = error_message or "达到最大消费次数，数据仍未更新"
             task.finished_at = get_china_now()
-            db.delete(task)
         else:
             task.status = RPATaskStatus.PENDING.value
             task.scheduled_at = get_china_now() + timedelta(seconds=max(1, delay_seconds))
@@ -471,6 +470,20 @@ class RPATaskService:
                 RPATask.status == RPATaskStatus.RUNNING.value
             )
         ).first()
+
+    def get_existing_task_for_target(
+        self,
+        db: Session,
+        target_type: str,
+        target_id: int,
+        task_type: str,
+    ) -> Optional[RPATask]:
+        """查询目标现存任务，包括达到重试上限后保留的失败终态。"""
+        return db.query(RPATask).filter(
+            RPATask.target_type == target_type,
+            RPATask.target_id == target_id,
+            RPATask.task_type == task_type,
+        ).order_by(RPATask.created_at.desc()).first()
     
     def get_tasks_list(
         self,

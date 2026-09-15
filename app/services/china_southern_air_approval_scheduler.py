@@ -1,8 +1,4 @@
-"""
-南航订舱批复数据获取调度器
-1. 后台服务重启时立即运行一次
-2. 每天定时运行 (默认18:00)
-"""
+"""南航订舱批复下载、文件解析及出港跟踪子任务调度器。"""
 
 import json
 import asyncio
@@ -22,9 +18,11 @@ from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 import pandas as pd
 import math
 import re
+from sqlalchemy import and_, exists, func, or_
 
 
 TARGET_TYPE = "approval_data"
+DEPARTURE_TRACKING_TARGET_TYPE = "csa_dep_tracking"
 
 
 class ChinaSouthernAirApprovalScheduler:
@@ -75,6 +73,152 @@ class ChinaSouthernAirApprovalScheduler:
                 return None
         return None
 
+    async def _enqueue_departure_tracking_task(
+        self,
+        db,
+        approval_record: ChinaSouthernAirApprovalData,
+    ) -> bool:
+        """按计划/计飞时间为一条南航批复记录创建唯一出港跟踪任务。"""
+        if str(approval_record.departure_tracking_completed or "0") == "1":
+            return False
+
+        booking_text = str(approval_record.booking_no or "").strip()
+        booking_match = re.match(r"^(\d+)", booking_text)
+        flight_parts = [
+            part.strip()
+            for part in str(approval_record.flight_info or "").split("/")
+        ]
+        if not booking_match or len(flight_parts) < 3:
+            return False
+
+        flight_no = flight_parts[0]
+        flight_date_match = re.search(
+            r"(\d{4}-\d{2}-\d{2})", str(approval_record.flight_info or "")
+        )
+        if not flight_no or not flight_date_match:
+            return False
+        flight_date = flight_date_match.group(1)
+        if flight_date < get_china_now().strftime("%Y-%m-%d"):
+            return False
+
+        existing_task = rpa_task_service.get_existing_task_for_target(
+            db,
+            target_type=DEPARTURE_TRACKING_TARGET_TYPE,
+            target_id=approval_record.id,
+            task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value,
+        )
+        if existing_task:
+            return False
+
+        planned_dt = self._planned_datetime(
+            approval_record.planned_takeoff, flight_date
+        )
+        if not planned_dt:
+            from app.utils.ctrip_client import ctrip_client
+
+            routing = flight_parts[-1]
+            try:
+                ctrip_times = await ctrip_client.get_flight_times(
+                    flight_no, flight_date, routing
+                )
+            except Exception as exc:
+                print(
+                    "[ChinaSouthernAirApprovalScheduler] 携程计飞时间查询异常，"
+                    "本轮暂不创建子任务: "
+                    f"approval_id={approval_record.id}, error={exc}"
+                )
+                return False
+            planned_dt = self._planned_datetime(
+                (ctrip_times or {}).get("ready_time"), flight_date
+            )
+        if not planned_dt:
+            print(
+                "[ChinaSouthernAirApprovalScheduler] 未取得有效计飞时间，"
+                "本轮暂不创建子任务: "
+                f"booking={booking_match.group(1)}, "
+                f"flight_info={approval_record.flight_info}"
+            )
+            return False
+
+        scheduled_at = planned_dt - timedelta(minutes=105)
+        if scheduled_at.tzinfo:
+            scheduled_at = scheduled_at.replace(tzinfo=None)
+        task = rpa_task_service.create_task(
+            db=db,
+            task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value,
+            target_type=DEPARTURE_TRACKING_TARGET_TYPE,
+            target_id=approval_record.id,
+            params={"booking_number": booking_match.group(1)},
+            job_uuid=None,
+            priority=2,
+            created_by=None,
+            robot_id=None,
+            scheduled_at=scheduled_at,
+            max_attempts=settings.RPA_DEPARTURE_TASK_MAX_ATTEMPTS,
+        )
+        print(
+            "[ChinaSouthernAirApprovalScheduler] 已创建南航出港跟踪子任务: "
+            f"task_id={task.id}, approval_id={approval_record.id}, "
+            f"scheduled_at={scheduled_at}"
+        )
+        return True
+
+    async def _enqueue_missing_departure_tracking_tasks(self) -> None:
+        """补建旧版本漏派发、或此前未取得计飞时间的南航子任务。"""
+        from app.models.rpa_task import RPATask
+
+        db = SessionLocal()
+        try:
+            today = get_china_now().strftime("%Y-%m-%d")
+            # 订舱航班格式固定为“航班 / 日期 / 航程”。生产库为 MySQL，
+            # 在 SQL 层剔除已过期航班，避免历史 0 标记记录反复占用回扫资源。
+            flight_date_expr = func.trim(func.substring_index(
+                func.substring_index(
+                    ChinaSouthernAirApprovalData.flight_info, "/", 2
+                ),
+                "/",
+                -1,
+            ))
+            missing_task = ~exists().where(and_(
+                RPATask.target_type == DEPARTURE_TRACKING_TARGET_TYPE,
+                RPATask.target_id == ChinaSouthernAirApprovalData.id,
+                RPATask.task_type
+                == RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value,
+            ))
+            last_id = None
+            while True:
+                query = db.query(ChinaSouthernAirApprovalData).filter(
+                    or_(
+                        ChinaSouthernAirApprovalData.departure_tracking_completed.is_(None),
+                        ChinaSouthernAirApprovalData.departure_tracking_completed != "1",
+                    ),
+                    ChinaSouthernAirApprovalData.booking_no.isnot(None),
+                    ChinaSouthernAirApprovalData.flight_info.isnot(None),
+                    flight_date_expr >= today,
+                    missing_task,
+                )
+                if last_id is not None:
+                    query = query.filter(ChinaSouthernAirApprovalData.id < last_id)
+                records = query.order_by(
+                    ChinaSouthernAirApprovalData.id.desc()
+                ).limit(200).all()
+                if not records:
+                    break
+                for record in records:
+                    record_id = record.id
+                    try:
+                        await self._enqueue_departure_tracking_task(db, record)
+                    except Exception as exc:
+                        db.rollback()
+                        print(
+                            "[ChinaSouthernAirApprovalScheduler] "
+                            "补建南航出港跟踪任务失败: "
+                            f"approval_id={record_id}, error={exc}"
+                        )
+                last_id = records[-1].id
+        finally:
+            db.close()
+
     async def _async_main(self) -> None:
         """主循环"""
         if not self._stop_event.is_set():
@@ -82,27 +226,57 @@ class ChinaSouthernAirApprovalScheduler:
                 await self._enqueue_task()
             except Exception as e:
                 print(f"[ChinaSouthernAirApprovalScheduler] 启动时入队失败: {repr(e)}")
+            try:
+                await self._enqueue_missing_departure_tracking_tasks()
+            except Exception as e:
+                print(f"[ChinaSouthernAirApprovalScheduler] 启动时补建子任务失败: {repr(e)}")
+
+        loop = asyncio.get_running_loop()
+        approval_interval = max(
+            1,
+            settings.RPA_CHINA_SOUTHERN_AIR_APPROVAL_INTERVAL_SECONDS,
+        )
+        departure_interval = max(
+            1,
+            settings.RPA_CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING_INTERVAL_SECONDS,
+        )
+        next_approval_at = loop.time() + approval_interval
+        next_departure_at = loop.time() + departure_interval
 
         while not self._stop_event.is_set():
             try:
-                interval = getattr(settings, "RPA_CHINA_SOUTHERN_AIR_APPROVAL_INTERVAL_SECONDS", 900)
-                remaining = interval if interval and interval > 0 else 900
-                
-                while remaining > 0 and not self._stop_event.is_set():
-                    step = min(5.0, remaining)
-                    try:
-                        self._check_for_new_files()
-                    except Exception as e:
-                        print(f"[ChinaSouthernAirApprovalScheduler] 检查新文件异常: {repr(e)}\n{traceback.format_exc()}")
-                    await asyncio.sleep(step)
-                    remaining -= step
-                
-                if not self._stop_event.is_set():
-                    await self._enqueue_task()
+                await self._check_for_new_files()
+            except Exception as exc:
+                print(
+                    "[ChinaSouthernAirApprovalScheduler] 检查新文件异常: "
+                    f"{repr(exc)}\n{traceback.format_exc()}"
+                )
 
-            except Exception as e:
-                print(f"[ChinaSouthernAirApprovalScheduler] 调度循环异常: {repr(e)}\n{traceback.format_exc()}")
-                await asyncio.sleep(60)  
+            current = loop.time()
+            if current >= next_approval_at:
+                try:
+                    await self._enqueue_task()
+                except Exception as exc:
+                    print(
+                        "[ChinaSouthernAirApprovalScheduler] 批复任务入队异常: "
+                        f"{repr(exc)}"
+                    )
+                finally:
+                    next_approval_at = loop.time() + approval_interval
+
+            if current >= next_departure_at:
+                try:
+                    await self._enqueue_missing_departure_tracking_tasks()
+                except Exception as exc:
+                    print(
+                        "[ChinaSouthernAirApprovalScheduler] 子任务补偿异常: "
+                        f"{repr(exc)}"
+                    )
+                finally:
+                    next_departure_at = loop.time() + departure_interval
+
+            remaining = min(next_approval_at, next_departure_at) - loop.time()
+            await asyncio.sleep(max(0.1, min(5.0, remaining)))
 
     async def _enqueue_task(self) -> None:
         """创建任务"""
@@ -130,7 +304,7 @@ class ChinaSouthernAirApprovalScheduler:
                 except Exception:
                     pass
             
-            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            tomorrow = (get_china_now() + timedelta(days=1)).strftime("%Y-%m-%d")
             params["flight_date"] = tomorrow
             
             rpa_task_service.create_task(
@@ -148,7 +322,7 @@ class ChinaSouthernAirApprovalScheduler:
         finally:
             db.close()
 
-    def _check_for_new_files(self) -> None:
+    async def _check_for_new_files(self) -> None:
         if not os.path.exists(self.watch_dir):
             return
             
@@ -162,9 +336,9 @@ class ChinaSouthernAirApprovalScheduler:
                     continue  
                 
                 print(f"[ChinaSouthernAirApprovalScheduler] 发现新的批复数据文件: {filename}，开始解析入库...")
-                self._process_file(filepath)
+                await self._process_file(filepath)
 
-    def _process_file(self, filepath: str) -> None:
+    async def _process_file(self, filepath: str) -> None:
         db = SessionLocal()
         try:
             df = pd.read_excel(filepath)
@@ -177,9 +351,7 @@ class ChinaSouthernAirApprovalScheduler:
                     return str(val)
                 except Exception:
                     return None
-            
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            
+
             unique_dates = set()
             for idx, r in df.iterrows():
                 if idx < 3:
@@ -198,7 +370,6 @@ class ChinaSouthernAirApprovalScheduler:
             
             existing_ids = set()
             if unique_dates:
-                from sqlalchemy import or_, and_
                 conditions = [ChinaSouthernAirApprovalData.flight_info.like(f"%{date_str}%") for date_str in unique_dates]
                 
                 existing_records = db.query(ChinaSouthernAirApprovalData.id).filter(or_(*conditions)).all()
@@ -306,45 +477,11 @@ class ChinaSouthernAirApprovalScheduler:
                 processed_ids.add(export_record.id)
                 
                 if booking_no_raw and flight_info:
-                    flight_date_match = re.search(r'(\d{4}-\d{2}-\d{2})', str(flight_info))
-                    flight_date = flight_date_match.group(1) if flight_date_match else None
-                    
-                    if flight_date == today_str:
-                        match = re.match(r'^(\d+)', str(booking_no_raw).strip())
-                        if match:
-                            booking_number = match.group(1)
-                            
-                            if str(getattr(export_record, "departure_tracking_completed", "0")) == "1":
-                                continue
-                            existing_task = rpa_task_service.get_pending_task_for_target(
-                                db, target_type="csa_dep_tracking", target_id=export_record.id,
-                                task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value
-                            )
-                            if not existing_task:
-                                params = {"booking_number": booking_number}
-                                scheduled_at = get_china_now()
-                                try:
-                                    # 南航文件本身有计划起飞时间，优先使用该值计算105分钟前的执行时刻。
-                                    planned = str(export_record.planned_takeoff or "").strip()
-                                    planned_dt = self._planned_datetime(planned, flight_date)
-                                    if planned_dt:
-                                        scheduled_at = planned_dt - timedelta(minutes=105)
-                                        if scheduled_at.tzinfo:
-                                            scheduled_at = scheduled_at.replace(tzinfo=None)
-                                except Exception as exc:
-                                    print(f"[ChinaSouthernAirApprovalScheduler] 解析计划起飞时间失败，任务立即入队: {exc}")
-                                rpa_task_service.create_task(
-                                    db=db, task_type=RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value,
-                                    target_type="csa_dep_tracking", target_id=export_record.id,
-                                    params=params, job_uuid=None, priority=2, created_by=None, robot_id=None,
-                                    scheduled_at=scheduled_at,
-                                    max_attempts=settings.RPA_DEPARTURE_TASK_MAX_ATTEMPTS
-                                )
+                    await self._enqueue_departure_tracking_task(db, export_record)
             
             if unique_dates and existing_ids:
                 zombie_ids = existing_ids - processed_ids
                 if zombie_ids:
-                    from sqlalchemy import or_
                     db.query(ChinaSouthernAirApprovalData).filter(
                         ChinaSouthernAirApprovalData.id.in_(zombie_ids),
                         or_(

@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     
     RPA_SHENZHEN_AIR_TRANSIT_LOADING_INTERVAL_SECONDS: Optional[int] = Field(
         default=900, ge=1, le=86400,
-        description="深航订舱-过机-装机数据获取任务执行间隔（秒），默认3600秒"
+        description="深航订舱-过机-装机数据获取任务执行间隔（秒），默认900秒（15分钟）"
     )
     RPA_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS: int = Field(
         default=900, ge=1, le=86400,
