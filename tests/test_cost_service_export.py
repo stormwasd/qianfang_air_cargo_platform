@@ -48,6 +48,9 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             pay_trucking_remark="trucking remark",
             pay_trucking_subtotal=Decimal("202.50"),
             pay_dom_air_date=date(2026, 9, 18),
+            pay_dom_air_airline="domestic airline",
+            pay_dom_air_airline_unit="must not export",
+            pay_dom_air_flight_doc_no="domestic document",
             pay_dom_air_remark="domestic remark",
             pay_dom_air_subtotal=Decimal("303.75"),
             pay_customs_date=date(2026, 9, 19),
@@ -78,17 +81,17 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         worksheet = workbook.active
         self.addCleanup(workbook.close)
 
-        self.assertEqual(worksheet.max_column, 117)
+        self.assertEqual(worksheet.max_column, 116)
         self.assertEqual(worksheet.max_row, 6)
         self.assertEqual(worksheet["A1"].value, "状态")
         self.assertEqual(worksheet["A4"].value, "未提交")
         self.assertEqual(worksheet["A5"].value, "已提交")
         for subtotal_cell, expected in {
             "BJ": 101.25,
-            "BU": 202.50,
-            "CM": 303.75,
-            "CU": 404.00,
-            "DF": 505.25,
+            "BR": 404.00,
+            "CC": 505.25,
+            "CN": 202.50,
+            "DE": 303.75,
         }.items():
             with self.subTest(subtotal_cell=subtotal_cell):
                 self.assertEqual(worksheet[f"{subtotal_cell}3"].value, "小计")
@@ -104,20 +107,25 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             "AR4": "2026-09-16",
             "AS4": 36,
             "BI4": "international remark",
-            "BK4": "2026-09-17",
-            "BT4": "trucking remark",
-            "BV4": "2026-09-18",
-            "CL4": "domestic remark",
-            "CN4": "2026-09-19",
-            "CT4": "customs remark",
-            "CV4": "2026-09-20",
-            "DE4": "ground remark",
-            "DG4": 1516.75,
-            "DH4": "discount person",
+            "BK4": "2026-09-19",
+            "BQ4": "customs remark",
+            "BS4": "2026-09-20",
+            "CB4": "ground remark",
+            "CD4": "2026-09-17",
+            "CM4": "trucking remark",
+            "CO4": "2026-09-18",
+            "CS4": "domestic airline",
+            "CT4": "domestic document",
+            "DD4": "domestic remark",
+            "DF4": 1516.75,
+            "DG4": "discount person",
         }
         for cell, expected in expected_adjacent_values.items():
             with self.subTest(cell=cell):
                 self.assertEqual(worksheet[cell].value, expected)
+
+        self.assertNotIn("航空单位", [cell.value for cell in worksheet[3]])
+        self.assertNotIn("must not export", [cell.value for cell in worksheet[4]])
 
 
 if __name__ == "__main__":

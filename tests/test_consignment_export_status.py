@@ -60,7 +60,7 @@ class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
         ]
         cases = (
             (export_consignments_to_excel, ExportExcelRequest, ConsignmentInfo, 2, 18, 1),
-            (export_cost_consignments_to_excel, CostExportExcelRequest, CostConsignment, 4, 117, 0),
+            (export_cost_consignments_to_excel, CostExportExcelRequest, CostConsignment, 4, 116, 0),
         )
         for endpoint, request_type, model, data_row, column_count, status in cases:
             with self.subTest(endpoint=endpoint.__name__):
@@ -90,7 +90,7 @@ class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
     async def test_empty_result_still_exports_status_headers(self):
         for endpoint, request_type, column_count, header_rows in (
             (export_consignments_to_excel, ExportExcelRequest, 18, 1),
-            (export_cost_consignments_to_excel, CostExportExcelRequest, 117, 3),
+            (export_cost_consignments_to_excel, CostExportExcelRequest, 116, 3),
         ):
             with self.subTest(endpoint=endpoint.__name__):
                 sheet = await self.export(endpoint, request_type, [])

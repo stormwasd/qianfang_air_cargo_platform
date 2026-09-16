@@ -994,7 +994,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件首列为状态（未提交/已提交/作废），包含三级分组表头及 117 列全量字段，数据从第 4 行开始；应收款项包含燃油费和运费计算方式，国际空运和国内空运应付款项均含运费计算方式字段。
+    导出文件首列为状态（未提交/已提交/作废），包含三级分组表头及 116 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致，国内空运不导出航空单位字段。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -1145,39 +1145,6 @@ async def export_cost_consignments_to_excel(
             _v_str(rec.pay_intl_air_remark),
             _v_num(rec.pay_intl_air_subtotal),
 
-            # (3) 应付款项 - 汽运
-            _v_date(rec.pay_trucking_date),
-            _v_str(rec.pay_trucking_outsource_unit),
-            rec.pay_trucking_pieces if rec.pay_trucking_pieces is not None else "",
-            _v_num(rec.pay_trucking_weight),
-            _v_num(rec.pay_trucking_volume),
-            _v_num(rec.pay_trucking_unit_price),
-            _v_num(rec.pay_trucking_freight),
-            _v_num(rec.pay_trucking_doc_fee),
-            _v_num(rec.pay_trucking_other_fee),
-            _v_str(rec.pay_trucking_remark),
-            _v_num(rec.pay_trucking_subtotal),
-
-            # (3) 应付款项 - 国内空运
-            _v_date(rec.pay_dom_air_date),
-            _v_str(rec.pay_dom_air_outsource_unit),
-            _v_str(rec.pay_dom_air_origin),
-            _v_str(rec.pay_dom_air_destination),
-            _v_str(rec.pay_dom_air_airline),
-            _v_str(rec.pay_dom_air_airline_unit),
-            _v_str(rec.pay_dom_air_flight_doc_no),
-            _v_str(rec.pay_dom_air_flight_no),
-            _v_date(rec.pay_dom_air_flight_date),
-            rec.pay_dom_air_pieces if rec.pay_dom_air_pieces is not None else "",
-            _v_num(rec.pay_dom_air_weight),
-            _v_num(rec.pay_dom_air_chargeable_weight),
-            _v_num(rec.pay_dom_air_rate),
-            format_freight_method_for_export(rec.pay_dom_air_freight_method),
-            _v_num(rec.pay_dom_air_freight),
-            _v_num(rec.pay_dom_air_other_fee),
-            _v_str(rec.pay_dom_air_remark),
-            _v_num(rec.pay_dom_air_subtotal),
-
             # (3) 应付款项 - 报关
             _v_date(rec.pay_customs_date),
             _v_str(rec.pay_customs_agent),
@@ -1200,6 +1167,38 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_ground_other_fee),
             _v_str(rec.pay_ground_remark),
             _v_num(rec.pay_ground_subtotal),
+
+            # (3) 应付款项 - 汽运
+            _v_date(rec.pay_trucking_date),
+            _v_str(rec.pay_trucking_outsource_unit),
+            rec.pay_trucking_pieces if rec.pay_trucking_pieces is not None else "",
+            _v_num(rec.pay_trucking_weight),
+            _v_num(rec.pay_trucking_volume),
+            _v_num(rec.pay_trucking_unit_price),
+            _v_num(rec.pay_trucking_freight),
+            _v_num(rec.pay_trucking_doc_fee),
+            _v_num(rec.pay_trucking_other_fee),
+            _v_str(rec.pay_trucking_remark),
+            _v_num(rec.pay_trucking_subtotal),
+
+            # (3) 应付款项 - 国内空运
+            _v_date(rec.pay_dom_air_date),
+            _v_str(rec.pay_dom_air_outsource_unit),
+            _v_str(rec.pay_dom_air_origin),
+            _v_str(rec.pay_dom_air_destination),
+            _v_str(rec.pay_dom_air_airline),
+            _v_str(rec.pay_dom_air_flight_doc_no),
+            _v_str(rec.pay_dom_air_flight_no),
+            _v_date(rec.pay_dom_air_flight_date),
+            rec.pay_dom_air_pieces if rec.pay_dom_air_pieces is not None else "",
+            _v_num(rec.pay_dom_air_weight),
+            _v_num(rec.pay_dom_air_chargeable_weight),
+            _v_num(rec.pay_dom_air_rate),
+            format_freight_method_for_export(rec.pay_dom_air_freight_method),
+            _v_num(rec.pay_dom_air_freight),
+            _v_num(rec.pay_dom_air_other_fee),
+            _v_str(rec.pay_dom_air_remark),
+            _v_num(rec.pay_dom_air_subtotal),
 
             # (3) 应付款项 - 总计
             _v_num(rec.pay_total),
