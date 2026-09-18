@@ -140,6 +140,26 @@ class Settings(BaseSettings):
         default=1800, ge=1, le=86400,
         description="南航获取Token任务定时调度间隔（秒），默认1800秒（30分钟）"
     )
+
+    # 携程航班接口代理。默认关闭以保持非 Docker/既有部署的原行为；
+    # docker-compose 会显式开启并指向同编排内的 proxy_pool 服务。
+    CTRIP_PROXY_ENABLED: bool = Field(
+        default=False,
+        description="是否通过 proxy_pool 访问携程航班接口"
+    )
+    CTRIP_PROXY_POOL_URL: str = Field(
+        default="http://127.0.0.1:5010",
+        description="jhao104/proxy_pool 的内部 API 地址"
+    )
+    CTRIP_PROXY_MAX_ATTEMPTS: int = Field(
+        default=5, ge=1, le=20,
+        description="单次携程查询最多尝试的不同代理数量"
+    )
+    CTRIP_PROXY_POOL_TIMEOUT_SECONDS: float = Field(
+        default=3.0, ge=0.5, le=30.0,
+        description="访问 proxy_pool API 的超时时间（秒）"
+    )
+
     CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_ENABLED: bool = Field(
         default=True,
         description="是否启用南航货物类型数据字典自动同步"

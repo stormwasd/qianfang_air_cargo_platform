@@ -43,6 +43,72 @@ services:
     networks:
       - qianfang-network
 
+  # ========== 携程专用免费代理池 ==========
+  # 镜像固定到 2026-06-15 的上游版本，避免 latest 漂移导致线上行为突变。
+  # 代理池会持续采集并验证代理；后端还会用携程接口做第二层实测和淘汰。
+  ctrip-proxy-redis:
+    image: redis:7-alpine
+    container_name: qianfang-ctrip-proxy-redis
+    restart: always
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - qianfang-network
+
+  ctrip-proxy-pool:
+    image: jhao104/proxy_pool@sha256:2a1511ef3f34388478acdd79eedd7f64d664e0efd9ce1af3c501a1a534d72aa3
+    container_name: qianfang-ctrip-proxy-pool
+    restart: always
+    # 上游镜像入口依赖镜像内不存在的 bash；直接覆盖为 API 进程。
+    entrypoint: ["tini", "--"]
+    command: ["python", "proxyPool.py", "server"]
+    environment:
+      DB_CONN: redis://@ctrip-proxy-redis:6379/0
+      # 上游先筛选能访问携程 GUID 接口的 HTTPS 代理。
+      HTTPS_URL: "https://m.ctrip.com/restapi/soa2/10290/createclientid?systemcode=09&createtype=3&contentType=json"
+      VERIFY_TIMEOUT: "10"
+      MAX_FAIL_COUNT: "0"
+      POOL_SIZE_MIN: "20"
+      TIMEZONE: Asia/Shanghai
+    expose:
+      - "5010"
+    ports:
+      - "127.0.0.1:5010:5010"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5010/count/', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      ctrip-proxy-redis:
+        condition: service_healthy
+    networks:
+      - qianfang-network
+
+  ctrip-proxy-scheduler:
+    image: jhao104/proxy_pool@sha256:2a1511ef3f34388478acdd79eedd7f64d664e0efd9ce1af3c501a1a534d72aa3
+    container_name: qianfang-ctrip-proxy-scheduler
+    restart: always
+    # 采集/校验进程和 API 进程分开运行，任一异常时可独立重启。
+    entrypoint: ["tini", "--"]
+    command: ["python", "proxyPool.py", "schedule"]
+    environment:
+      DB_CONN: redis://@ctrip-proxy-redis:6379/0
+      HTTPS_URL: "https://m.ctrip.com/restapi/soa2/10290/createclientid?systemcode=09&createtype=3&contentType=json"
+      VERIFY_TIMEOUT: "10"
+      MAX_FAIL_COUNT: "0"
+      POOL_SIZE_MIN: "20"
+      TIMEZONE: Asia/Shanghai
+    depends_on:
+      ctrip-proxy-redis:
+        condition: service_healthy
+    networks:
+      - qianfang-network
+
   # ========== 千方航空物流平台 API 服务 ==========
   app:
     build:
@@ -52,6 +118,11 @@ services:
     restart: always
     env_file:
       - .env
+    environment:
+      CTRIP_PROXY_ENABLED: ${CTRIP_PROXY_ENABLED:-True}
+      CTRIP_PROXY_POOL_URL: ${CTRIP_PROXY_POOL_URL:-http://ctrip-proxy-pool:5010}
+      CTRIP_PROXY_MAX_ATTEMPTS: ${CTRIP_PROXY_MAX_ATTEMPTS:-5}
+      CTRIP_PROXY_POOL_TIMEOUT_SECONDS: ${CTRIP_PROXY_POOL_TIMEOUT_SECONDS:-3}
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:
