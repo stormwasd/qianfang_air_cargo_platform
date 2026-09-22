@@ -1,6 +1,5 @@
+import io
 import unittest
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from openpyxl import Workbook, load_workbook
 
@@ -110,21 +109,22 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
         self.assertEqual(worksheet.cell(row=4, column=8).value, "直单（虚拟分单*2）")
         self.assertEqual(worksheet.cell(row=4, column=8).data_type, "s")
 
-        with TemporaryDirectory() as temp_dir:
-            output_path = Path(temp_dir) / "cost-export.xlsx"
-            workbook.save(output_path)
-            workbook.close()
+        output = io.BytesIO()
+        workbook.save(output)
+        workbook.close()
+        output.seek(0)
 
-            exported_workbook = load_workbook(output_path, read_only=True, data_only=True)
-            exported_worksheet = exported_workbook.active
-            self.assertEqual(exported_worksheet.cell(row=2, column=8).value, "一主（六）分")
-            self.assertEqual(exported_worksheet.cell(row=2, column=8).data_type, "s")
-            self.assertEqual(
-                exported_worksheet.cell(row=4, column=8).value,
-                "直单（虚拟分单*2）",
-            )
-            self.assertEqual(exported_worksheet.cell(row=4, column=8).data_type, "s")
-            exported_workbook.close()
+        exported_workbook = load_workbook(output, read_only=True, data_only=True)
+        exported_worksheet = exported_workbook.active
+        self.assertEqual(exported_worksheet.cell(row=2, column=8).value, "一主（六）分")
+        self.assertEqual(exported_worksheet.cell(row=2, column=8).data_type, "s")
+        self.assertEqual(
+            exported_worksheet.cell(row=4, column=8).value,
+            "直单（虚拟分单*2）",
+        )
+        self.assertEqual(exported_worksheet.cell(row=4, column=8).data_type, "s")
+        exported_workbook.close()
+        output.close()
 
 
 class CostExcelLayoutTests(unittest.TestCase):
@@ -139,8 +139,8 @@ class CostExcelLayoutTests(unittest.TestCase):
             "国空内应付-托运日期", "国空内应付-始发站", "国空内应付-到达站",
             "国空内应付-航空公司", "国空内应付-航空单号", "国空内应付-航班号",
             "国空内应付-航班日期", "国空内应付-件数", "国空内应付-运费计算方式",
-            "国空内应付-备注", "报关应付-报关日期", "报关应付-其他费用",
-            "地面应付-托运日期", "地面应付-其他费用",
+            "国空内应付-备注", "报关应付-报关日期", "报关应付-备注",
+            "地面应付-托运日期", "地面应付-备注",
         }
         self.assertEqual(len(removed_headers), 26)
         for header in removed_headers:
@@ -157,6 +157,8 @@ class CostExcelLayoutTests(unittest.TestCase):
             "国空应付-燃油费",
             "国空应付-TC费",
             "国空内应付-实际重量",
+            "报关应付-其他费用",
+            "地面应付-其他费用",
         }
         for header in expected_headers:
             with self.subTest(header=header):
@@ -205,10 +207,10 @@ class CostExcelLayoutTests(unittest.TestCase):
             "国空应付-运费": 43,
             "国空应付-小计": 53,
             "报关应付-报关代理": 54,
-            "报关应付-备注": 58,
+            "报关应付-其他费用": 58,
             "报关应付-小计": 59,
             "地面应付-外发单位": 60,
-            "地面应付-备注": 67,
+            "地面应付-其他费用": 67,
             "地面应付-小计": 68,
             "汽运应付-外发单位": 69,
             "汽运应付-小计": 75,

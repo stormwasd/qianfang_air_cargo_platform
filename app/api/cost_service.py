@@ -1157,7 +1157,7 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_customs_fee),
             _v_num(rec.pay_customs_continuation_sheet_fee),
             _v_num(rec.pay_customs_inspection_delete_fee),
-            _v_str(rec.pay_customs_remark),
+            _v_num(rec.pay_customs_other_fee),
             _v_num(rec.pay_customs_subtotal),
 
             # (3) 应付款项 - 地面操作
@@ -1168,7 +1168,7 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_ground_lading_express_fee),
             _v_num(rec.pay_ground_security_customs_fee),
             _v_num(rec.pay_ground_pallet_exit_fee),
-            _v_str(rec.pay_ground_remark),
+            _v_num(rec.pay_ground_other_fee),
             _v_num(rec.pay_ground_subtotal),
 
             # (3) 应付款项 - 汽运

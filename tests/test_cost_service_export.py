@@ -121,10 +121,10 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             "AM4": "international",
             "BB4": 101.25,
             "BC4": "customs agent",
-            "BG4": "customs remark",
+            "BG4": 904.25,
             "BH4": 404.00,
             "BI4": "ground unit",
-            "BP4": "ground remark",
+            "BP4": 905.25,
             "BQ4": 505.25,
             "BR4": "trucking unit",
             "BX4": 202.50,
@@ -137,6 +137,10 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(cell=cell):
                 self.assertEqual(worksheet[cell].value, expected)
 
+        for cell in ("BG4", "BP4"):
+            with self.subTest(other_fee_cell=cell):
+                self.assertEqual(worksheet[cell].data_type, "n")
+
         removed_values = {
             "removed intl origin", "removed intl destination", "removed intl document",
             "removed intl flight", "2026-09-16", 901, "removed intl freight method",
@@ -145,7 +149,7 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             "removed domestic destination", "removed domestic airline", "must not export",
             "removed domestic document", "removed domestic flight", "2026-09-21", 903,
             "removed domestic freight method", "removed domestic remark", "2026-09-19",
-            904.25, "2026-09-20", 905.25,
+            "customs remark", "2026-09-20", "ground remark",
         }
         exported_values = {cell.value for cell in worksheet[4]}
         self.assertTrue(removed_values.isdisjoint(exported_values))
