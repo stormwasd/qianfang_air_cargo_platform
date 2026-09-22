@@ -169,7 +169,7 @@ class CostConsignment(Base):
     origin_destination = Column(String(100), nullable=True, comment="始发站-目的站")
     customs_declaration = Column(String(50), nullable=True, comment="报关")
     bill_of_lading = Column(String(100), nullable=True, comment="提单")
-    flight_date = Column(Date, nullable=True, comment="航班日期")
+    flight_date = Column(Date, nullable=True, index=True, comment="航班日期")
     flight_no = Column(String(50), nullable=True, index=True, comment="航班号")
     flight_doc_no = Column(String(100), nullable=True, index=True, comment="航班单号")
     pieces = Column(Integer, nullable=True, comment="件数")

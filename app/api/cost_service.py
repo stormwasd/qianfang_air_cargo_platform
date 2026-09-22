@@ -583,6 +583,8 @@ async def create_cost_consignment_draft(
 async def get_cost_consignments(
     start_warehouse_date: Optional[str] = Query(None, description="进仓开始日期 (YYYY-MM-DD)"),
     end_warehouse_date: Optional[str] = Query(None, description="进仓结束日期 (YYYY-MM-DD)"),
+    start_flight_date: Optional[str] = Query(None, description="航班开始日期 (YYYY-MM-DD)"),
+    end_flight_date: Optional[str] = Query(None, description="航班结束日期 (YYYY-MM-DD)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
     status: Optional[CostConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
     agent: Optional[str] = Query(None, description="代理单位 (模糊查询)"),
@@ -618,6 +620,8 @@ async def get_cost_consignments(
     支持参数：
     - **start_warehouse_date**: 进仓日期区间开始，例如 '2026-07-25'
     - **end_warehouse_date**: 进仓日期区间结束，例如 '2026-07-30'
+    - **start_flight_date**: 货主托运信息航班日期区间开始，例如 '2026-07-25'
+    - **end_flight_date**: 货主托运信息航班日期区间结束，例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
     - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）；不传则查询全部
     - **agent**: 代理单位 (支持模糊匹配)
@@ -640,19 +644,30 @@ async def get_cost_consignments(
         e_date = _parse_date(end_warehouse_date)
         if e_date:
             query_obj = query_obj.filter(CostConsignment.warehouse_entry_date <= e_date)
-            
-    # 2. 客户名称模糊查询
+
+    # 2. 货主托运信息航班日期区间筛选；与进仓日期条件相互独立。
+    if start_flight_date:
+        s_date = _parse_date(start_flight_date)
+        if s_date:
+            query_obj = query_obj.filter(CostConsignment.flight_date >= s_date)
+
+    if end_flight_date:
+        e_date = _parse_date(end_flight_date)
+        if e_date:
+            query_obj = query_obj.filter(CostConsignment.flight_date <= e_date)
+
+    # 3. 客户名称模糊查询
     if customer_name and customer_name.strip():
         query_obj = query_obj.filter(CostConsignment.customer_name.like(f"%{customer_name.strip()}%"))
 
     if status is not None:
         query_obj = query_obj.filter(CostConsignment.status == status.value)
         
-    # 3. 代理单位模糊查询
+    # 4. 代理单位模糊查询
     if agent and agent.strip():
         query_obj = query_obj.filter(CostConsignment.agent.like(f"%{agent.strip()}%"))
         
-    # 4. 航司单号/航班单号模糊查询：覆盖响应中全部三个 flight_doc_no 字段，
+    # 5. 航司单号/航班单号模糊查询：覆盖响应中全部三个 flight_doc_no 字段，
     #    并保留对货主托运提单 bill_of_lading 的兼容查询。
     if flight_doc_no and flight_doc_no.strip():
         doc_no = flight_doc_no.strip()
@@ -663,7 +678,7 @@ async def get_cost_consignments(
             (CostConsignment.pay_dom_air_flight_doc_no.like(f"%{doc_no}%"))
         )
         
-    # 5. 航班号模糊查询：覆盖响应中全部三个 flight_no 字段。
+    # 6. 航班号模糊查询：覆盖响应中全部三个 flight_no 字段。
     if flight_no and flight_no.strip():
         f_no = flight_no.strip()
         query_obj = query_obj.filter(
@@ -994,7 +1009,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件首列为状态（未提交/已提交/作废），包含三级分组表头及 116 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致，国内空运不导出航空单位字段。
+    导出文件首列为状态（未提交/已提交/作废），包含三级分组表头及 90 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -1121,17 +1136,10 @@ async def export_cost_consignments_to_excel(
 
             # (3) 应付款项 - 国际空运
             _v_str(rec.pay_intl_air_outsource_unit),
-            _v_str(rec.pay_intl_air_origin),
-            _v_str(rec.pay_intl_air_destination),
-            _v_str(rec.pay_intl_air_flight_doc_no),
-            _v_str(rec.pay_intl_air_flight_no),
-            _v_date(rec.pay_intl_air_flight_date),
-            rec.pay_intl_air_pieces if rec.pay_intl_air_pieces is not None else "",
             _v_num(rec.pay_intl_air_weight),
             _v_num(rec.pay_intl_air_volume),
             _v_num(rec.pay_intl_air_chargeable_weight),
             _v_num(rec.pay_intl_air_rate),
-            format_freight_method_for_export(rec.pay_intl_air_freight_method),
             _v_num(rec.pay_intl_air_freight),
             _v_num(rec.pay_intl_air_lading_fee),
             _v_num(rec.pay_intl_air_split_fee),
@@ -1142,21 +1150,17 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_intl_air_consumables_fee),
             _v_num(rec.pay_intl_air_front_warehouse),
             _v_num(rec.pay_intl_air_other_fee),
-            _v_str(rec.pay_intl_air_remark),
             _v_num(rec.pay_intl_air_subtotal),
 
             # (3) 应付款项 - 报关
-            _v_date(rec.pay_customs_date),
             _v_str(rec.pay_customs_agent),
             _v_num(rec.pay_customs_fee),
             _v_num(rec.pay_customs_continuation_sheet_fee),
             _v_num(rec.pay_customs_inspection_delete_fee),
-            _v_num(rec.pay_customs_other_fee),
             _v_str(rec.pay_customs_remark),
             _v_num(rec.pay_customs_subtotal),
 
             # (3) 应付款项 - 地面操作
-            _v_date(rec.pay_ground_date),
             _v_str(rec.pay_ground_outsource_unit),
             _v_num(rec.pay_ground_chargeable_weight),
             _v_num(rec.pay_ground_rate),
@@ -1164,40 +1168,25 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_ground_lading_express_fee),
             _v_num(rec.pay_ground_security_customs_fee),
             _v_num(rec.pay_ground_pallet_exit_fee),
-            _v_num(rec.pay_ground_other_fee),
             _v_str(rec.pay_ground_remark),
             _v_num(rec.pay_ground_subtotal),
 
             # (3) 应付款项 - 汽运
-            _v_date(rec.pay_trucking_date),
             _v_str(rec.pay_trucking_outsource_unit),
-            rec.pay_trucking_pieces if rec.pay_trucking_pieces is not None else "",
             _v_num(rec.pay_trucking_weight),
-            _v_num(rec.pay_trucking_volume),
             _v_num(rec.pay_trucking_unit_price),
             _v_num(rec.pay_trucking_freight),
             _v_num(rec.pay_trucking_doc_fee),
             _v_num(rec.pay_trucking_other_fee),
-            _v_str(rec.pay_trucking_remark),
             _v_num(rec.pay_trucking_subtotal),
 
             # (3) 应付款项 - 国内空运
-            _v_date(rec.pay_dom_air_date),
             _v_str(rec.pay_dom_air_outsource_unit),
-            _v_str(rec.pay_dom_air_origin),
-            _v_str(rec.pay_dom_air_destination),
-            _v_str(rec.pay_dom_air_airline),
-            _v_str(rec.pay_dom_air_flight_doc_no),
-            _v_str(rec.pay_dom_air_flight_no),
-            _v_date(rec.pay_dom_air_flight_date),
-            rec.pay_dom_air_pieces if rec.pay_dom_air_pieces is not None else "",
             _v_num(rec.pay_dom_air_weight),
             _v_num(rec.pay_dom_air_chargeable_weight),
             _v_num(rec.pay_dom_air_rate),
-            format_freight_method_for_export(rec.pay_dom_air_freight_method),
             _v_num(rec.pay_dom_air_freight),
             _v_num(rec.pay_dom_air_other_fee),
-            _v_str(rec.pay_dom_air_remark),
             _v_num(rec.pay_dom_air_subtotal),
 
             # (3) 应付款项 - 总计
@@ -1215,6 +1204,11 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.profit),
             _v_num(rec.profit_margin),
         ]
+
+        if len(row_data) != len(headers):
+            raise RuntimeError(
+                f"费用登记导出表头与数据列数量不一致：{len(headers)} != {len(row_data)}"
+            )
         
         ws.append(row_data)
         ws.row_dimensions[r_idx].height = 22

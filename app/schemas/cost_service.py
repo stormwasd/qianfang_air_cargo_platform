@@ -222,6 +222,8 @@ class CostConsignmentQuery(BaseModel):
     """单据信息-列表 查询参数"""
     start_warehouse_date: Optional[str] = Field(None, description="进仓开始日期 (YYYY-MM-DD)")
     end_warehouse_date: Optional[str] = Field(None, description="进仓结束日期 (YYYY-MM-DD)")
+    start_flight_date: Optional[str] = Field(None, description="航班开始日期 (YYYY-MM-DD)")
+    end_flight_date: Optional[str] = Field(None, description="航班结束日期 (YYYY-MM-DD)")
     customer_name: Optional[str] = Field(None, description="客户名称 (模糊匹配)")
     status: Optional[CostConsignmentSubmissionStatus] = Field(None, description="单据状态：0=未提交，1=已提交，2=作废")
     agent: Optional[str] = Field(None, description="代理单位 (模糊匹配)")

@@ -272,6 +272,7 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     `updated_at` datetime NOT NULL COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_warehouse_entry_date` (`warehouse_entry_date`),
+    KEY `idx_flight_date` (`flight_date`),
     KEY `idx_customer_name` (`customer_name`),
     KEY `idx_agent` (`agent`),
     KEY `idx_status` (`status`),

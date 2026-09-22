@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 
 from app.schemas.cost_service import (
+    CostConsignmentQuery,
     CostConsignmentSubmissionStatus,
     PayableDomAir,
     PayableGround,
@@ -12,6 +13,37 @@ from app.schemas.cost_service import (
 
 
 class CostServiceSchemaTests(unittest.TestCase):
+    def test_list_date_filters_are_optional_and_independent(self):
+        query = CostConsignmentQuery(start_flight_date="2026-09-20")
+
+        self.assertEqual(query.start_flight_date, "2026-09-20")
+        self.assertIsNone(query.end_flight_date)
+        self.assertIsNone(query.start_warehouse_date)
+        self.assertIsNone(query.end_warehouse_date)
+
+    def test_cost_consignment_flight_date_filter_is_indexed(self):
+        model_source = (
+            Path(__file__).parents[1] / "app" / "models" / "cost_service.py"
+        ).read_text(encoding="utf-8")
+        create_script = (
+            Path(__file__).parents[1]
+            / "sql"
+            / "migration_create_cost_service_consignments.sql"
+        ).read_text(encoding="utf-8")
+        migration_script = (
+            Path(__file__).parents[1]
+            / "sql"
+            / "migration_add_cost_consignment_flight_date_index.sql"
+        ).read_text(encoding="utf-8")
+
+        cost_model_source = model_source.split("class CostConsignment(Base):", maxsplit=1)[1]
+        self.assertIn(
+            'flight_date = Column(Date, nullable=True, index=True, comment="航班日期")',
+            cost_model_source,
+        )
+        self.assertIn("KEY `idx_flight_date` (`flight_date`)", create_script)
+        self.assertIn("ADD INDEX `idx_flight_date` (`flight_date`)", migration_script)
+
     def test_consignment_submission_status_uses_numeric_values(self):
         self.assertEqual(CostConsignmentSubmissionStatus.UNSUBMITTED.value, 0)
         self.assertEqual(CostConsignmentSubmissionStatus.SUBMITTED.value, 1)

@@ -128,17 +128,24 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
 
 
 class CostExcelLayoutTests(unittest.TestCase):
-    def test_removed_air_columns_are_not_exported(self):
-        self.assertEqual(len(COST_EXPORT_HEADERS), 116)
+    def test_customer_marked_columns_are_not_exported(self):
+        self.assertEqual(len(COST_EXPORT_HEADERS), 90)
         self.assertEqual(COST_EXPORT_HEADERS[0], "状态")
-        self.assertNotIn("国空应付-航空公司", COST_EXPORT_HEADERS)
-        self.assertNotIn("国空应付-托运日期", COST_EXPORT_HEADERS)
-        self.assertNotIn("国空内应付-航空单位", COST_EXPORT_HEADERS)
-        # 国内空运的航空公司仍是有效业务字段，只移除测试反馈的航空单位。
-        self.assertIn("国空内应付-航空公司", COST_EXPORT_HEADERS)
-        self.assertIn("汽运应付-托运日期", COST_EXPORT_HEADERS)
-        self.assertIn("国空内应付-托运日期", COST_EXPORT_HEADERS)
-        self.assertIn("地面应付-托运日期", COST_EXPORT_HEADERS)
+        removed_headers = {
+            "国空应付-始发站", "国空应付-到达站", "国空应付-航班单号",
+            "国空应付-航班号", "国空应付-航班日期", "国空应付-件数",
+            "国空应付-运费计算方式", "国空应付-备注",
+            "汽运应付-托运日期", "汽运应付-件数", "汽运应付-体积", "汽运应付-备注",
+            "国空内应付-托运日期", "国空内应付-始发站", "国空内应付-到达站",
+            "国空内应付-航空公司", "国空内应付-航空单号", "国空内应付-航班号",
+            "国空内应付-航班日期", "国空内应付-件数", "国空内应付-运费计算方式",
+            "国空内应付-备注", "报关应付-报关日期", "报关应付-其他费用",
+            "地面应付-托运日期", "地面应付-其他费用",
+        }
+        self.assertEqual(len(removed_headers), 26)
+        for header in removed_headers:
+            with self.subTest(header=header):
+                self.assertNotIn(header, COST_EXPORT_HEADERS)
 
     def test_export_titles_use_product_wording(self):
         expected_headers = {
@@ -147,11 +154,9 @@ class CostExcelLayoutTests(unittest.TestCase):
             "应收-前置仓费",
             "国空应付-实际重量",
             "国空应付-单价",
-            "国空应付-运费计算方式",
             "国空应付-燃油费",
             "国空应付-TC费",
             "国空内应付-实际重量",
-            "国空内应付-运费计算方式",
         }
         for header in expected_headers:
             with self.subTest(header=header):
@@ -178,59 +183,53 @@ class CostExcelLayoutTests(unittest.TestCase):
         headers = append_cost_export_headers(worksheet)
 
         merged_ranges = {str(item) for item in worksheet.merged_cells.ranges}
-        self.assertEqual(len(headers), 116)
-        self.assertEqual(worksheet.max_column, 116)
+        self.assertEqual(len(headers), 90)
+        self.assertEqual(worksheet.max_column, 90)
         self.assertEqual(worksheet["A1"].value, "状态")
         self.assertEqual(headers[0], "状态")
         self.assertEqual(merged_ranges, {
-            "A1:A3", "B1:R2", "S1:AL2", "AM1:DF1",
-            "AM2:BJ2", "BK2:BR2", "BS2:CC2", "CD2:CN2",
-            "CO2:DE2", "DF2:DF3", "DG1:DH2", "DI1:DJ2", "DK1:DL2",
+            "A1:A3", "B1:R2", "S1:AL2", "AM1:CF1",
+            "AM2:BB2", "BC2:BH2", "BI2:BQ2", "BR2:BX2",
+            "BY2:CE2", "CF2:CF3", "CG1:CH2", "CI1:CJ2", "CK1:CL2",
         })
         workbook.close()
 
     def test_every_export_section_keeps_its_expected_boundaries(self):
-        expected_boundaries = {
-            "应收-单价": 17,
-            "应收-运费计算方式": 18,
-            "应收-运费": 19,
-            "应收-燃油费": 20,
-            "国空应付-外发单位": 37,
-            "国空应付-单价": 47,
-            "国空应付-运费计算方式": 48,
-            "国空应付-运费": 49,
-            "国空应付-备注": 59,
-            "国空应付-小计": 60,
-            "报关应付-报关日期": 61,
-            "报关应付-备注": 67,
-            "报关应付-小计": 68,
-            "地面应付-托运日期": 69,
-            "地面应付-备注": 78,
-            "地面应付-小计": 79,
-            "汽运应付-托运日期": 80,
-            "汽运应付-备注": 89,
-            "汽运应付-小计": 90,
-            "国空内应付-托运日期": 91,
-            "国空内应付-费率": 102,
-            "国空内应付-运费计算方式": 103,
-            "国空内应付-运费": 104,
-            "国空内应付-备注": 106,
-            "国空内应付-小计": 107,
-            "应付合计": 108,
-            "利润率(%)": 114,
+        expected_indexes = {
+            "应收-单价": 18,
+            "应收-运费计算方式": 19,
+            "应收-运费": 20,
+            "应收-燃油费": 21,
+            "国空应付-外发单位": 38,
+            "国空应付-单价": 42,
+            "国空应付-运费": 43,
+            "国空应付-小计": 53,
+            "报关应付-报关代理": 54,
+            "报关应付-备注": 58,
+            "报关应付-小计": 59,
+            "地面应付-外发单位": 60,
+            "地面应付-备注": 67,
+            "地面应付-小计": 68,
+            "汽运应付-外发单位": 69,
+            "汽运应付-小计": 75,
+            "国空内应付-外发单位": 76,
+            "国空内应付-费率": 79,
+            "国空内应付-运费": 80,
+            "国空内应付-小计": 82,
+            "应付合计": 83,
+            "利润率(%)": 89,
         }
 
-        for header, expected_index in expected_boundaries.items():
+        for header, expected_index in expected_indexes.items():
             with self.subTest(header=header):
-                # 状态为独立首列，其余原有字段整体右移一列。
-                self.assertEqual(COST_EXPORT_HEADERS.index(header), expected_index + 1)
+                self.assertEqual(COST_EXPORT_HEADERS.index(header), expected_index)
 
     def test_each_payable_subtotal_is_the_last_column_in_its_group(self):
         expected_group_ends = {
-            "国空应付-小计": "报关应付-报关日期",
-            "报关应付-小计": "地面应付-托运日期",
-            "地面应付-小计": "汽运应付-托运日期",
-            "汽运应付-小计": "国空内应付-托运日期",
+            "国空应付-小计": "报关应付-报关代理",
+            "报关应付-小计": "地面应付-外发单位",
+            "地面应付-小计": "汽运应付-外发单位",
+            "汽运应付-小计": "国空内应付-外发单位",
             "国空内应付-小计": "应付合计",
         }
 
