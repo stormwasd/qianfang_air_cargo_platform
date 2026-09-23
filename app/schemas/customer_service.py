@@ -77,6 +77,7 @@ class ConsignmentInfoQuery(BaseModel):
     start_date: Optional[str] = Field(None, description="制单日期区间-开始日期 (YYYY-MM-DD)")
     end_date: Optional[str] = Field(None, description="制单日期区间-结束日期 (YYYY-MM-DD)")
     customer_name: Optional[str] = Field(None, description="客户名称 (模糊查询)")
+    destination: Optional[str] = Field(None, description="目的站 (模糊查询，仅匹配始发站-目的站的最后一段)")
     status: Optional[ConsignmentSubmissionStatus] = Field(None, description="单据状态：0=未提交，1=已提交，2=作废")
     sort_by: ConsignmentInfoSortField = Field(
         ConsignmentInfoSortField.CREATE_TIME,

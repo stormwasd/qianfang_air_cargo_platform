@@ -9948,6 +9948,35 @@ Authorization: Bearer <access_token>
 
 **部署**：存量数据库先确保已执行两台原 `status` 字段迁移，再执行 `sql/migration_add_consignment_void_status.sql`。该迁移不新增字段、不改默认值、不改变已有 `0/1` 数据，只将数据库字段注释统一为 `0=未提交，1=已提交，2=作废`。操作记录功能同时需要 `sql/migration_create_consignment_operation_logs.sql`。
 
+#### 23.9 客服接单台列表目的站模糊搜索
+
+**接口地址**：`GET /api/v1/customer-service/consignments`
+
+列表接口新增以下可选 Query 参数，原有请求和响应结构保持不变：
+
+| 参数名 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `destination` | string | 否 | 目的站模糊搜索；仅匹配 `origin_destination` 中最后一个 `-` 后的内容 |
+
+**匹配规则**：
+
+- `origin_destination` 存储完整航线，可能包含始发站和多个经停站。接口按最后一个英文半角连字符 `-` 分隔，取最后一段作为目的站。例如 `SZX-CKG-KUL` 的目的站是 `KUL`。
+- 搜索采用包含式模糊匹配。对目的站 `KUL`，传 `K`、`U`、`L`、`KU`、`UL` 或 `KUL` 均可匹配；英文字母不区分大小写。
+- 支持中文目的站及中文片段。例如航线 `深圳-广州-吉隆坡国际机场` 的目的站为`吉隆坡国际机场`，传`隆坡`或`国际`均可匹配。
+- 始发站及中间经停站不参与匹配。例如 `KUL-SIN` 不会因传入 `destination=KUL` 而返回，`深圳-广州-吉隆坡` 也不会因传入 `destination=广州` 而返回。
+- 参数首尾空白会被去除；不传、传空字符串或仅传空白时不增加目的站筛选条件。输入中的 `%`、`_` 按普通字符匹配，不作为数据库通配符。
+- `destination` 可独立使用，也可与日期、客户名称、状态和排序参数组合；多个筛选条件之间为 AND 关系。目的站筛选在总数统计和分页之前执行，因此 `data.total` 是筛选后的记录总数。
+- 本功能不改变 `origin_destination` 的写入格式、列表响应字段或 Excel 导出规则，无需数据库迁移。
+
+**请求示例**：
+
+```http
+GET /api/v1/customer-service/consignments?destination=UL&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+若数据库存在 `origin_destination=SZX-CKG-KUL`，上述请求会返回该记录；返回数据仍在 `items[].origin_destination` 中提供完整航线 `SZX-CKG-KUL`。
+
 
 
 

@@ -388,6 +388,7 @@ async def get_consignments(
     start_date: Optional[str] = Query(None, description="制单开始日期 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="制单结束日期 (YYYY-MM-DD)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
+    destination: Optional[str] = Query(None, description="目的站 (模糊查询，仅匹配始发站-目的站的最后一段)"),
     status: Optional[ConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
     sort_by: ConsignmentInfoSortField = Query(
         ConsignmentInfoSortField.CREATE_TIME,
@@ -409,6 +410,7 @@ async def get_consignments(
     - **start_date**: 制单日期区间开始，例如 '2026-07-25'
     - **end_date**: 制单日期区间结束，例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
+    - **destination**: 目的站 (支持中英文模糊匹配，仅匹配 `origin_destination` 最后一个 `-` 后的内容)
     - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）
     - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `create_time`
     - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
@@ -435,6 +437,20 @@ async def get_consignments(
         c_name = customer_name.strip()
         if c_name:
             query_obj = query_obj.filter(ConsignmentInfo.customer_name.like(f"%{c_name}%"))
+
+    # 航线可能包含多个经停站，例如 SZX-CKG-KUL；目的站只取最后一段。
+    if destination:
+        destination_keyword = destination.strip()
+        if destination_keyword:
+            final_destination = func.trim(
+                func.substring_index(ConsignmentInfo.origin_destination, "-", -1)
+            )
+            query_obj = query_obj.filter(
+                func.upper(final_destination).contains(
+                    destination_keyword.upper(),
+                    autoescape=True,
+                )
+            )
 
     if status is not None:
         query_obj = query_obj.filter(ConsignmentInfo.status == status.value)
