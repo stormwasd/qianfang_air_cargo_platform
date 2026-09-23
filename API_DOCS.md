@@ -9977,6 +9977,33 @@ Authorization: Bearer <token>
 
 若数据库存在 `origin_destination=SZX-CKG-KUL`，上述请求会返回该记录；返回数据仍在 `items[].origin_destination` 中提供完整航线 `SZX-CKG-KUL`。
 
+#### 23.10 客服接单台列表航班号模糊搜索
+
+**接口地址**：`GET /api/v1/customer-service/consignments`
+
+列表接口新增以下可选 Query 参数，原有请求和响应结构保持不变：
+
+| 参数名 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `flight_no` | string | 否 | 客服接单台列表航班号模糊搜索 |
+
+**匹配规则**：
+
+- `flight_no` 仅匹配客服接单台列表数据自身的 `items[].flight_no`，即数据库 `consignment_infos.flight_no`；不扩展匹配费用登记台中的国际空运应付或国内空运应付航班号。
+- 搜索采用包含式模糊匹配。例如列表航班号为 `ZH1234` 时，传 `ZH`、`123`、`H12` 或完整的 `ZH1234` 均可匹配；英文字母不区分大小写，也支持中文内容及中文片段。
+- 参数首尾空白会被去除；不传、传空字符串或仅传空白时不增加航班号筛选条件。输入中的 `%`、`_` 按普通字符匹配，不作为数据库通配符。
+- `flight_no` 可独立使用，也可与日期、客户名称、目的站、状态和排序参数组合；多个筛选条件之间为 AND 关系。航班号筛选在总数统计和分页之前执行，因此 `data.total` 是筛选后的记录总数。
+- 本功能不改变航班号的写入格式、列表响应字段或 Excel 导出规则，无需数据库迁移。
+
+**请求示例**：
+
+```http
+GET /api/v1/customer-service/consignments?flight_no=H12&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+若数据库存在 `flight_no=ZH1234`，上述请求会返回该记录，响应中的 `items[].flight_no` 仍为完整航班号 `ZH1234`。
+
 
 
 

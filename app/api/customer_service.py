@@ -389,6 +389,7 @@ async def get_consignments(
     end_date: Optional[str] = Query(None, description="制单结束日期 (YYYY-MM-DD)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
     destination: Optional[str] = Query(None, description="目的站 (模糊查询，仅匹配始发站-目的站的最后一段)"),
+    flight_no: Optional[str] = Query(None, description="航班号 (模糊查询)"),
     status: Optional[ConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
     sort_by: ConsignmentInfoSortField = Query(
         ConsignmentInfoSortField.CREATE_TIME,
@@ -411,6 +412,7 @@ async def get_consignments(
     - **end_date**: 制单日期区间结束，例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
     - **destination**: 目的站 (支持中英文模糊匹配，仅匹配 `origin_destination` 最后一个 `-` 后的内容)
+    - **flight_no**: 客服接单台航班号 (支持模糊匹配)
     - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）
     - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `create_time`
     - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
@@ -448,6 +450,17 @@ async def get_consignments(
             query_obj = query_obj.filter(
                 func.upper(final_destination).contains(
                     destination_keyword.upper(),
+                    autoescape=True,
+                )
+            )
+
+    # 仅匹配客服接单台列表自身的航班号，不扩展到费用登记台应付信息。
+    if flight_no:
+        flight_no_keyword = flight_no.strip()
+        if flight_no_keyword:
+            query_obj = query_obj.filter(
+                func.upper(ConsignmentInfo.flight_no).contains(
+                    flight_no_keyword.upper(),
                     autoescape=True,
                 )
             )
