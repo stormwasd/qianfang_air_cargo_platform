@@ -630,11 +630,14 @@ async def get_waybill_stock_overview(
         claimed_count = 0
         total_capacity = 0
         batch_ids = []
+        last_claim_date = None
         
         for b in batches:
             claimed_count += b.claim_quantity
             total_capacity += calculate_max_capacity(b.first_number, b.last_number)
             batch_ids.append(b.id)
+            if last_claim_date is None or b.claim_date > last_claim_date:
+                last_claim_date = b.claim_date
             
         claimable_count = total_capacity - claimed_count if total_capacity > claimed_count else 0
         
@@ -656,6 +659,7 @@ async def get_waybill_stock_overview(
         results.append({
             "stock_id": str(stock.id),
             "airline_name": stock.airline_name,
+            "last_claim_date": last_claim_date.isoformat() if last_claim_date else None,
             "total_authorized_count": stock.total_authorized_count,
             "claimed_count": claimed_count,
             "claimable_count": claimable_count,

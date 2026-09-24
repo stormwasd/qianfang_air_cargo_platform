@@ -1,5 +1,53 @@
 # API 文档
 
+## 单号库总览
+
+`GET /api/v1/waybill-stocks/overview`
+
+查询各航司单号库的领单及使用情况。调用方需要拥有 `bill` 权限。
+
+查询参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `airline_name` | string | 否 | 航司名称精确筛选；不传时返回全部单号库 |
+
+成功响应中的 `data` 为数组，每个元素包含：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `stock_id` | string | 单号库 ID |
+| `airline_name` | string | 航司名称 |
+| `last_claim_date` | string \| null | 最后领单日期，格式为 `YYYY-MM-DD`；取该单号库全部领单批次中最大的业务领单日期 `claim_date`，无领单批次时为 `null` |
+| `total_authorized_count` | integer \| null | 核定单号总数 |
+| `claimed_count` | integer | 已领单数量 |
+| `claimable_count` | integer | 按现有批次首尾单号容量计算的可领单数量 |
+| `unused_count` | integer | 未使用单号数量 |
+| `used_count` | integer | 已使用单号数量 |
+
+`last_claim_date` 按业务日期判断，不按批次录入时间判断。补录历史批次不会覆盖一个更晚的领单日期。该字段仅新增返回信息，不改变已有统计字段的含义。
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "data": [
+    {
+      "stock_id": "123456789012345678",
+      "airline_name": "china_southern_air",
+      "last_claim_date": "2026-09-20",
+      "total_authorized_count": 1000,
+      "claimed_count": 300,
+      "claimable_count": 700,
+      "unused_count": 180,
+      "used_count": 120
+    }
+  ],
+  "msg": "获取单号库总览成功"
+}
+```
+
 ## 开单成功后自动后处理配置
 
 深航和南航分别提供独立的环境变量开关，用于控制开单成功后的整条自动后处理链。为兼容既有部署环境，配置项继续沿用 `AUTO_PRINT` 名称，但控制范围已扩展为费用读取、结算单、运单同步、制单、文件生成及自动打印：
