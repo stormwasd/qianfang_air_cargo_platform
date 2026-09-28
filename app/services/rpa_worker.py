@@ -29,6 +29,13 @@ from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.helpers import get_china_now
 
 
+# The approval-data RPA flows have existed in two process versions.  The
+# older process reports success as status 2, while the newer/Tangyi process
+# reports success as status 5.  Keep these values local to the approval flows
+# instead of changing the status handling for unrelated RPA tasks.
+RPA_APPROVAL_SUCCESS_STATUSES = frozenset((2, 5))
+
+
 def _get_error_detail(e: Exception) -> str:
     """从异常中提取完整的错误描述信息。
     
@@ -2771,7 +2778,7 @@ class RPAWorker:
                     continue
                     
                 status = status_info.get("status")
-                if status == 2:
+                if status in RPA_APPROVAL_SUCCESS_STATUSES:
                     print(f"{self._log_prefix} 批复数据获取任务 {task.id} 执行成功")
                     rpa_task_service.complete_task(db, task.id, True)
                     return
@@ -2831,11 +2838,11 @@ class RPAWorker:
                     continue
                     
                 status = status_info.get("status")
-                if status in [2, 5]:
+                if status in RPA_APPROVAL_SUCCESS_STATUSES:
                     print(f"{self._log_prefix} 南航批复数据获取任务 {task.id} 执行成功")
                     rpa_task_service.complete_task(db, task.id, True)
                     return
-                elif status in [3, 6, 7]:
+                elif status in (3, 6, 7):
                     error_msg = status_info.get("statusDesc", "RPA执行失败")
                     print(f"{self._log_prefix} 南航批复数据获取任务 {task.id} 失败: {error_msg}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
