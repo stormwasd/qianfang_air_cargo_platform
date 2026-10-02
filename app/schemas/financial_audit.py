@@ -158,6 +158,7 @@ class AirFinancialAuditItemResponse(BaseModel):
     source_id: str = Field(..., description="来源主表ID")
     audit_status: int = Field(0, description="业务审核状态")
     financial_audit_status: int = Field(0, description="财务审核状态")
+    financial_auditor_name: Optional[str] = Field(None, description="财务审核人名称（审核账号的用户姓名）")
     flight_date: Optional[str] = Field(None, description="航班日期")
     customer_name: Optional[str] = Field(None, description="客户名称（通常为前端传入的客户ID）")
     actual_customer_name: Optional[str] = Field(None, description="真实客户名称（根据客户ID匹配得到）")

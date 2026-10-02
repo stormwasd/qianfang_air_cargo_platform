@@ -63,6 +63,27 @@
 - 两个航司的开关相互独立，修改 `.env` 后需要重启应用服务生效。
 - `POST /api/v1/waybills/{waybill_id}/print-document` 手动打印接口不受影响。
 
+## 空运财务审核
+
+`GET /api/v1/financial-audit/air` 返回的列表项包含财务审核人字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `financial_auditor_name` | string | 财务审核人名称，来源为审核账号的用户姓名（`users.name`）；未审核或没有审核人时返回空字符串 |
+
+该字段对应费用登记台“空运单据审核”详情中的“审核人”，适用于深航、南航、同行空运和手动新增空运单据。
+
+## 托运书
+
+`POST /api/v1/consignment-notes` 和 `PUT /api/v1/consignment-notes/{note_id}` 的 `form_data` 为动态 JSON。汽运（`transport_type="1"`）支持以下收件信息字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `form_data.consignee_info` | string | 收件人 |
+| `form_data.contact_phone` | string | 联系电话 |
+
+这两个字段随 `form_data` 原样保存，并在托运书列表和详情接口中原样返回；历史数据未填写时不补写。生成汽运托运书 PDF 时也会展示这两个字段。
+
 ## 南航货物类型数据字典自动同步
 
 该功能为后台内部同步任务，不新增前端调用接口。
