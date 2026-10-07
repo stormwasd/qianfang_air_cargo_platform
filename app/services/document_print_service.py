@@ -29,12 +29,27 @@ SHENZHEN_AIR_ALIASES = frozenset({"1", "深圳航空", "shenzhen_air"})
 CHINA_SOUTHERN_AIR_ALIASES = frozenset({"2", "南方航空", "china_southern_air"})
 
 
-def is_post_waybill_automation_enabled(airline: str) -> bool:
-    """返回指定航司是否允许执行开单成功后的自动后处理链。
+def is_auto_document_after_waybill_enabled(airline: str) -> bool:
+    """返回指定航司是否在开单成功后自动制单。
 
-    配置项沿用既有 AUTO_PRINT 命名以保持部署配置兼容，但实际统一控制
-    结算、制单、文件生成和自动打印等连续后处理。无法识别的航司按关闭处理。
+    新制单开关未配置时回退到原自动打单开关，保证只配置旧变量的部署
+    在升级后保持原有行为。无法识别的航司按关闭处理。
     """
+    if airline in SHENZHEN_AIR_ALIASES:
+        configured = settings.RPA_SHENZHEN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED
+        if configured is not None:
+            return configured
+        return settings.RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED
+    if airline in CHINA_SOUTHERN_AIR_ALIASES:
+        configured = settings.RPA_CHINA_SOUTHERN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED
+        if configured is not None:
+            return configured
+        return settings.RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED
+    return False
+
+
+def is_auto_print_after_waybill_enabled(airline: str) -> bool:
+    """返回指定航司是否在开单成功或制单成功后自动创建打印任务。"""
     if airline in SHENZHEN_AIR_ALIASES:
         return settings.RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED
     if airline in CHINA_SOUTHERN_AIR_ALIASES:
@@ -42,9 +57,12 @@ def is_post_waybill_automation_enabled(airline: str) -> bool:
     return False
 
 
-def is_auto_print_after_waybill_enabled(airline: str) -> bool:
-    """兼容旧调用名称，自动打印遵循开单后自动处理总开关。"""
-    return is_post_waybill_automation_enabled(airline)
+def is_post_waybill_automation_enabled(airline: str) -> bool:
+    """返回指定航司是否需要执行开单成功后的任一自动后处理。"""
+    return (
+        is_auto_document_after_waybill_enabled(airline)
+        or is_auto_print_after_waybill_enabled(airline)
+    )
 
 
 def _get_project_root() -> Path:
@@ -153,7 +171,8 @@ def build_rpa_file_path(waybill_id: int, filename: str) -> str:
 def prepare_shenzhen_air_print_tasks(
     waybill_id: int,
     waybill_number: str,
-    business_config: dict
+    business_config: dict,
+    include_document_files: bool = True,
 ) -> Dict[str, Any]:
     """
     准备深航打单任务参数
@@ -166,6 +185,7 @@ def prepare_shenzhen_air_print_tasks(
         waybill_id: 运单ID
         waybill_number: 运单号
         business_config: 业务参数配置
+        include_document_files: 是否包含本地生成的制单文件打印任务
     
     Returns:
         打单任务参数，包含所有需要打印的任务列表
@@ -174,27 +194,28 @@ def prepare_shenzhen_air_print_tasks(
     
     waybill_number_8 = waybill_number.split("-")[-1] if "-" in waybill_number else waybill_number
     
-    files = list_waybill_files(waybill_id)
-    for file_info in files:
-        filename = file_info["filename"]
-        doc_type = file_info["doc_type"]
-        
-        printer_name = get_printer_name_from_config(
-            business_config, "shenzhen_air", doc_type
-        )
-        
-        if printer_name:
-            rpa_file_path = build_rpa_file_path(waybill_id, filename)
-            
-            tasks.append({
-                "type": "file_print",
-                "job_uuid": settings.RPA_FILE_PRINT_JOB_UUID,
-                "description": f"深航-制单文档打印-{doc_type}",
-                "params": {
-                    "absolute_path_to_the_file": rpa_file_path,
-                    "printer_name": printer_name
-                }
-            })
+    if include_document_files:
+        files = list_waybill_files(waybill_id)
+        for file_info in files:
+            filename = file_info["filename"]
+            doc_type = file_info["doc_type"]
+
+            printer_name = get_printer_name_from_config(
+                business_config, "shenzhen_air", doc_type
+            )
+
+            if printer_name:
+                rpa_file_path = build_rpa_file_path(waybill_id, filename)
+
+                tasks.append({
+                    "type": "file_print",
+                    "job_uuid": settings.RPA_FILE_PRINT_JOB_UUID,
+                    "description": f"深航-制单文档打印-{doc_type}",
+                    "params": {
+                        "absolute_path_to_the_file": rpa_file_path,
+                        "printer_name": printer_name
+                    }
+                })
     
     shenzhen_air_config = business_config.get("shenzhen_air", {})
     booking_config = shenzhen_air_config.get("booking", {})
@@ -233,7 +254,8 @@ def prepare_shenzhen_air_print_tasks(
 def prepare_china_southern_air_print_tasks(
     waybill_id: int,
     waybill_number: str,
-    business_config: dict
+    business_config: dict,
+    include_document_files: bool = True,
 ) -> Dict[str, Any]:
     """
     准备南航打单任务参数
@@ -248,6 +270,7 @@ def prepare_china_southern_air_print_tasks(
         waybill_id: 运单ID
         waybill_number: 运单号
         business_config: 业务参数配置
+        include_document_files: 是否包含本地生成的制单文件打印任务
     
     Returns:
         打单任务参数，包含所有需要打印的任务列表
@@ -268,7 +291,7 @@ def prepare_china_southern_air_print_tasks(
     tangyi_app_path = tangyi_login_config.get("address_of_the_application_executable_file_tangyi", "")
     
     waybill_dir = get_waybill_files_dir(waybill_id)
-    if waybill_dir:
+    if include_document_files and waybill_dir:
         files = list_waybill_files(waybill_id)
         for file_info in files:
             filename = file_info["filename"]
@@ -357,7 +380,8 @@ def prepare_print_tasks(
     waybill_id: int,
     waybill_number: str,
     airline: str,
-    business_config: dict
+    business_config: dict,
+    include_document_files: bool = True,
 ) -> Dict[str, Any]:
     """
     根据航司类型准备打单任务参数
@@ -367,14 +391,19 @@ def prepare_print_tasks(
         waybill_number: 运单号
         airline: 航司代码 ("1" 或 "shenzhen_air" 为深航, "2" 或 "china_southern_air" 为南航)
         business_config: 业务参数配置
+        include_document_files: 是否包含本地生成的制单文件打印任务
     
     Returns:
         打单任务参数
     """
     if airline in ["1", "深圳航空", "shenzhen_air"]:
-        return prepare_shenzhen_air_print_tasks(waybill_id, waybill_number, business_config)
+        return prepare_shenzhen_air_print_tasks(
+            waybill_id, waybill_number, business_config, include_document_files
+        )
     elif airline in ["2", "南方航空", "china_southern_air"]:
-        return prepare_china_southern_air_print_tasks(waybill_id, waybill_number, business_config)
+        return prepare_china_southern_air_print_tasks(
+            waybill_id, waybill_number, business_config, include_document_files
+        )
     else:
         raise ValueError(f"不支持的航司类型: {airline}")
 

@@ -23,7 +23,11 @@ from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.nanhang_token import NanHangToken
 from app.services.rpa_service import rpa_service
 from app.services.rpa_task_service import rpa_task_service, PRINT_TASK_TYPES, PRINT_TYPE_REVERSE_MAPPING, PRINT_TYPE_MAPPING
-from app.services.document_print_service import is_post_waybill_automation_enabled
+from app.services.document_print_service import (
+    is_auto_document_after_waybill_enabled,
+    is_auto_print_after_waybill_enabled,
+    is_post_waybill_automation_enabled,
+)
 from app.services.waybill_stock_service import reserve_available_stock_item
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.helpers import get_china_now
@@ -872,6 +876,16 @@ class RPAWorker:
             waybill: 运单对象
             form_data_dict: 运单表单数据字典
         """
+        if not is_auto_document_after_waybill_enabled("1"):
+            print(
+                f"{self._log_prefix} 深航自动制单已关闭，跳过货站文件生成，"
+                f"运单ID: {waybill.id}"
+            )
+            await self._auto_trigger_document_print(
+                db, waybill, form_data_dict, include_document_files=False
+            )
+            return
+
         from app.services.cargo_station_record_service import generate_all_documents
         from app.models.config import BusinessConfig
         
@@ -929,6 +943,16 @@ class RPAWorker:
             waybill: 运单对象
             form_data_dict: 运单表单数据字典
         """
+        if not is_auto_document_after_waybill_enabled("2"):
+            print(
+                f"{self._log_prefix} 南航自动制单已关闭，跳过货站文件生成，"
+                f"运单ID: {waybill.id}"
+            )
+            await self._auto_trigger_document_print(
+                db, waybill, form_data_dict, include_document_files=False
+            )
+            return
+
         from app.services.cargo_station_record_service import generate_csa_all_documents
         from app.models.config import BusinessConfig
         
@@ -965,7 +989,9 @@ class RPAWorker:
                 print(f"{self._log_prefix} 南航无文档需要生成，运单ID: {waybill.id}，将状态标记为已录单并触发打单")
                 waybill.cargo_station_record_status = "3"
                 db.commit()
-                await self._auto_trigger_document_print(db, waybill, form_data_dict)
+                await self._auto_trigger_document_print(
+                    db, waybill, form_data_dict, include_document_files=False
+                )
             else:
                 waybill.cargo_station_record_status = "2"  
                 print(f"{self._log_prefix} 南航货站录单文档生成失败，运单ID: {waybill.id}")
@@ -2305,7 +2331,14 @@ class RPAWorker:
                             await asyncio.sleep(1)
     
     
-    async def _auto_trigger_document_print(self, db, waybill: Waybill, form_data_dict: dict, delay_for_file_transfer: bool = False):
+    async def _auto_trigger_document_print(
+        self,
+        db,
+        waybill: Waybill,
+        form_data_dict: dict,
+        delay_for_file_transfer: bool = False,
+        include_document_files: bool = True,
+    ):
         """
         自动触发打单
         
@@ -2320,6 +2353,7 @@ class RPAWorker:
             waybill: 运单对象
             form_data_dict: 运单表单数据字典
             delay_for_file_transfer: 是否需要等待文件传输完成后再执行打单（货站录单生成文件后需要等待）
+            include_document_files: 是否把已生成的制单文件加入打印任务
         """
         from app.services.document_print_service import (
             get_print_task_count,
@@ -2328,9 +2362,9 @@ class RPAWorker:
         from app.models.config import BusinessConfig
 
         airline = form_data_dict.get("airline", "")
-        if not is_post_waybill_automation_enabled(airline):
+        if not is_auto_print_after_waybill_enabled(airline):
             print(
-                f"{self._log_prefix} [自动打单] 航司开单后自动处理已关闭，"
+                f"{self._log_prefix} [自动打单] 航司自动打单已关闭，"
                 f"跳过自动打单，运单ID: {waybill.id}, 航司: {airline}"
             )
             return
@@ -2376,7 +2410,8 @@ class RPAWorker:
                 waybill_id=waybill.id,
                 waybill_number=waybill.waybill_number,
                 airline=airline,
-                business_config=business_config
+                business_config=business_config,
+                include_document_files=include_document_files,
             )
             
             task_count = get_print_task_count(print_tasks)

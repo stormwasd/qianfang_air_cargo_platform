@@ -79,13 +79,21 @@ class Settings(BaseSettings):
     RPA_CHINA_SOUTHERN_AIR_SECURITY_PRINT_JOB_UUID: str = "afd7fa28e46cd61cf26707c98176556e"
     RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID: str = "1efafa308b1c7a789117747b56b6e6a2"
     RPA_PRINT_FILE_ROOT_PATH: str = "D:\\generated_files_of_qianfang_air_cargo_platform"
+    RPA_SHENZHEN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED: Optional[bool] = Field(
+        default=None,
+        description="深航开单成功后是否自动制单；未配置时兼容使用自动打单开关"
+    )
     RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED: bool = Field(
         default=True,
-        description="深航开单成功后是否执行结算、制单及打印等自动后处理，默认开启"
+        description="深航开单成功后是否自动创建打印任务，默认开启"
+    )
+    RPA_CHINA_SOUTHERN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED: Optional[bool] = Field(
+        default=None,
+        description="南航开单成功后是否自动制单；未配置时兼容使用自动打单开关"
     )
     RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED: bool = Field(
         default=True,
-        description="南航开单成功后是否执行结算、制单及打印等自动后处理，默认开启"
+        description="南航开单成功后是否自动创建打印任务，默认开启"
     )
     RPA_CHINA_SOUTHERN_AIR_QUEUE_WAYBILL_NUMBER: str = "nanhang_air_dingcang_kaidan_queue_waybill_number"  
     RPA_CHINA_SOUTHERN_AIR_QUEUE_RATE: str = "nanhang_air_dingcang_kaidan_queue_rate"  

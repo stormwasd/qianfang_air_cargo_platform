@@ -77,6 +77,41 @@ class PostWaybillAutomationGuardTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(id=203, rpa_queue_uuids="{}"),
         )
 
+    async def test_document_disabled_still_reaches_print_gate_for_both_airlines(self):
+        cases = (
+            ("_auto_generate_cargo_station_documents", "1"),
+            ("_auto_generate_csa_cargo_station_documents", "2"),
+        )
+        for method_name, airline in cases:
+            with self.subTest(airline=airline):
+                trigger_print = AsyncMock()
+                with patch(
+                    "app.services.rpa_worker.is_auto_document_after_waybill_enabled",
+                    return_value=False,
+                ), patch.object(
+                    self.worker,
+                    "_auto_trigger_document_print",
+                    new=trigger_print,
+                ):
+                    await getattr(self.worker, method_name)(
+                        _FakeDB(),
+                        SimpleNamespace(id=300 + int(airline)),
+                        {"airline": airline},
+                    )
+
+                trigger_print.assert_awaited_once()
+
+    async def test_print_disabled_stops_before_database_access(self):
+        with patch(
+            "app.services.rpa_worker.is_auto_print_after_waybill_enabled",
+            return_value=False,
+        ):
+            await self.worker._auto_trigger_document_print(
+                _FakeDB(),
+                SimpleNamespace(id=401, waybill_number="784-12345678"),
+                {"airline": "2"},
+            )
+
     async def _assert_china_southern_air_follow_up_is_skipped(
         self,
         method_name,

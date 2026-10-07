@@ -29,7 +29,11 @@ from app.services.china_southern_air_direct_order import (
     ChinaSouthernAirDirectOrderError,
     china_southern_air_direct_order_service,
 )
-from app.services.document_print_service import is_post_waybill_automation_enabled
+from app.services.document_print_service import (
+    is_auto_document_after_waybill_enabled,
+    is_auto_print_after_waybill_enabled,
+    is_post_waybill_automation_enabled,
+)
 from app.services.waybill_stock_service import (
     confirm_stock_item_used,
     reserve_available_stock_item,
@@ -871,7 +875,7 @@ async def _post_process_china_southern_air_waybill(
     form_data: dict,
     business_config: dict,
 ) -> None:
-    """开单成功后异步生成南航货站文件并创建打印任务。"""
+    """按独立开关执行南航开单成功后的自动制单和自动打单。"""
     if not is_post_waybill_automation_enabled("2"):
         print(
             "[南航直连开单] 开单后自动处理已关闭，"
@@ -880,31 +884,46 @@ async def _post_process_china_southern_air_waybill(
         return
 
     from app.database import SessionLocal
-    from app.services.cargo_station_record_service import generate_csa_all_documents
-
     db = SessionLocal()
     try:
         waybill = db.query(Waybill).filter(Waybill.id == waybill_id).first()
         if waybill is None or waybill.airline_record_status != "3":
             return
 
-        waybill.cargo_station_record_status = "1"
-        db.commit()
-        documents_result = await asyncio.to_thread(
-            generate_csa_all_documents,
-            waybill_id=waybill.id,
-            waybill_number=waybill.waybill_number,
-            form_data=form_data,
-            business_config=business_config,
-        )
-        all_success = all(
-            not document.get("error") and document.get("excel")
-            for document in documents_result.values()
-        )
-        waybill.cargo_station_record_status = "3" if all_success else "2"
-        db.commit()
-        if all_success:
-            _auto_trigger_document_print(db, waybill, form_data, business_config)
+        if is_auto_document_after_waybill_enabled("2"):
+            from app.services.cargo_station_record_service import generate_csa_all_documents
+
+            waybill.cargo_station_record_status = "1"
+            db.commit()
+            documents_result = await asyncio.to_thread(
+                generate_csa_all_documents,
+                waybill_id=waybill.id,
+                waybill_number=waybill.waybill_number,
+                form_data=form_data,
+                business_config=business_config,
+            )
+            all_success = all(
+                not document.get("error") and document.get("excel")
+                for document in documents_result.values()
+            )
+            waybill.cargo_station_record_status = "3" if all_success else "2"
+            db.commit()
+            if all_success:
+                _auto_trigger_document_print(
+                    db,
+                    waybill,
+                    form_data,
+                    business_config,
+                    include_document_files=bool(documents_result),
+                )
+        else:
+            print(
+                "[南航直连开单] 自动制单已关闭，跳过货站文件生成，"
+                f"运单ID: {waybill_id}"
+            )
+            _auto_trigger_document_print(
+                db, waybill, form_data, business_config, include_document_files=False
+            )
     except Exception:
         db.rollback()
         waybill = db.query(Waybill).filter(Waybill.id == waybill_id).first()
@@ -915,7 +934,13 @@ async def _post_process_china_southern_air_waybill(
         db.close()
 
 
-def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, business_config: dict):
+def _auto_trigger_document_print(
+    db: Session,
+    waybill,
+    form_data_dict: dict,
+    business_config: dict,
+    include_document_files: bool = True,
+):
     """
     货站录单成功后自动触发打单
     
@@ -926,6 +951,7 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
         waybill: 运单对象
         form_data_dict: 运单表单数据字典
         business_config: 业务参数配置
+        include_document_files: 是否把已生成的制单文件加入打印任务
     """
     import traceback
     from app.services.document_print_service import (
@@ -936,9 +962,9 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
     from app.models.rpa_task import RPATaskType, RPATargetType
     
     airline = form_data_dict.get("airline", "")
-    if not is_post_waybill_automation_enabled(airline):
+    if not is_auto_print_after_waybill_enabled(airline):
         print(
-            f"[自动打单] 航司开单后自动处理已关闭，跳过自动打单，"
+            f"[自动打单] 航司自动打单已关闭，跳过自动打单，"
             f"运单ID: {waybill.id}, 航司: {airline}"
         )
         return
@@ -958,7 +984,8 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
             waybill_id=waybill.id,
             waybill_number=waybill.waybill_number,
             airline=airline,
-            business_config=business_config
+            business_config=business_config,
+            include_document_files=include_document_files,
         )
         
         task_count = get_print_task_count(print_tasks)
