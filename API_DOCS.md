@@ -68,6 +68,17 @@
 - 深航、南航的制单及打单开关相互独立，修改 `.env` 后需要重启应用服务生效。
 - `POST /api/v1/waybills/{waybill_id}/print-document` 手动打印接口不受影响。
 
+## RPA 开单任务优先级
+
+`rpa_tasks` 按 `priority` 降序、创建时间升序取待执行任务。为减少抓取类任务对用户点击开单的等待，以下任务类型使用专用优先级配置 `RPA_QUEUE_WAYBILL_PRIORITY`：
+
+- `SHENZHEN_AIR_WAYBILL_EXECUTE`：深航开单
+- `CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE`：南航新增运单（兼容历史 RPA 开单链路）
+- `CHINA_SOUTHERN_AIR_DIRECT_INVOICE`：南航直接开单
+- `CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA`：南航修改数据后开单
+
+配置项默认值为 `10`，高于普通任务默认优先级 `1`、保持登录任务优先级 `3` 和重启任务优先级 `4`。南航订舱、取消、出港跟踪、审批、抓取等其他任务优先级不受影响。优先级只影响尚未开始执行的任务，已经处于 `running` 的任务不会被中断；修改 `.env` 后需要重启服务生效。
+
 ## 空运财务审核
 
 `GET /api/v1/financial-audit/air` 返回的列表项包含财务审核人字段：

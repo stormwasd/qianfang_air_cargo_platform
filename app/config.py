@@ -211,6 +211,12 @@ class Settings(BaseSettings):
     RPA_QUEUE_ENABLED: bool = Field(default=True, description="是否启用RPA任务队列模式")
     RPA_QUEUE_POLL_INTERVAL: int = Field(default=2, ge=1, le=60, description="Worker轮询队列间隔（秒），默认2秒")
     RPA_QUEUE_DEFAULT_PRIORITY: int = Field(default=1, ge=1, le=100, description="默认任务优先级，默认1")
+    RPA_QUEUE_WAYBILL_PRIORITY: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="深航/南航开单任务优先级，数值越大越优先，默认10"
+    )
     RPA_QUEUE_WORKER_COUNT: int = Field(default=1, ge=1, le=10, description="Worker数量（对应RPA机器人数量），默认1")
     RPA_QUEUE_TASK_TIMEOUT: int = Field(default=30, ge=10, le=300, description="RPA接口调用超时时间（秒），默认30秒，超时则任务失败")
     RPA_QUEUE_CLEANUP_DAYS: int = Field(default=7, ge=1, le=365, description="已完成任务保留天数，默认7天")

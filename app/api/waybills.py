@@ -1307,7 +1307,7 @@ async def execute_waybill(
         target_type=RPATargetType.WAYBILL.value,
         target_id=int(waybill_id),
         params=rpa_params,
-        priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
+        priority=settings.RPA_QUEUE_WAYBILL_PRIORITY,
         created_by=current_user.id if current_user else None
     )
     
