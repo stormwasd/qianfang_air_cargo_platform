@@ -128,8 +128,8 @@ COST_EXPORT_HEADERS: Tuple[str, ...] = (
     "国空内应付-外发单位", "国空内应付-实际重量", "国空内应付-计费重量",
     "国空内应付-费率", "国空内应付-运费", "国空内应付-其他费用", "国空内应付-小计",
 
-    # 应付款项总计、折让信息、业务信息、经营信息（85-91）
-    "应付合计", "折让人员", "折让费", "业务员", "提成金额", "利润", "利润率(%)",
+    # 应付款项总计、折让信息、业务信息、经营信息（85-92）
+    "应付合计", "折让人员", "费率", "折让费", "业务员", "提成金额", "利润", "利润率(%)",
 )
 
 
@@ -157,8 +157,8 @@ def _leaf_header(raw_header: str) -> str:
 
 def append_cost_export_headers(ws: Worksheet) -> List[str]:
     """写入截图所示的三级分组表头，并返回最底层字段标题。"""
-    if len(COST_EXPORT_HEADERS) != 91:
-        raise RuntimeError("费用登记导出字段数量异常，预期为 91 列")
+    if len(COST_EXPORT_HEADERS) != 92:
+        raise RuntimeError("费用登记导出字段数量异常，预期为 92 列")
 
     leaf_headers = [_leaf_header(header) for header in COST_EXPORT_HEADERS]
     top_headers: List[str] = [""] * len(COST_EXPORT_HEADERS)
@@ -172,8 +172,8 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
         (19, "应收款项"),
         (39, "应付款项"),
         (85, "折让信息"),
-        (87, "业务信息"),
-        (89, "经营信息"),
+        (88, "业务信息"),
+        (90, "经营信息"),
     ):
         top_headers[index] = title
 
@@ -199,9 +199,9 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
     for start_col, end_col in (
         (3, 19),
         (20, 39),
-        (86, 87),
-        (88, 89),
-        (90, 91),
+        (86, 88),
+        (89, 90),
+        (91, 92),
     ):
         ws.merge_cells(
             start_row=1,

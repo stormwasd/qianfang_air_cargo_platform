@@ -141,6 +141,7 @@ class CostRegistration(Base):
     
     # (4) 折让信息
     discount_person = Column(String(100), nullable=True, comment="折让人员")
+    discount_rate = Column(Numeric(10, 2), nullable=True, comment="折让费率")
     discount_fee = Column(Numeric(10, 2), nullable=True, comment="折让费")
 
     # (5) 销售提成
@@ -290,6 +291,7 @@ class CostConsignment(Base):
     
     # (4) 折让信息
     discount_person = Column(String(100), nullable=True, comment="折让人员")
+    discount_rate = Column(Numeric(10, 2), nullable=True, comment="折让费率")
     discount_fee = Column(Numeric(10, 2), nullable=True, comment="折让费")
 
     # (5) 销售提成

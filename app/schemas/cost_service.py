@@ -160,6 +160,7 @@ class PayablesInfo(BaseModel):
 class DiscountInfo(BaseModel):
     """(4) 折让信息"""
     discount_person: Optional[str] = Field(None, description="折让人员")
+    discount_rate: Optional[float] = Field(None, description="费率")
     discount_fee: Optional[float] = Field(None, description="折让费")
 
 

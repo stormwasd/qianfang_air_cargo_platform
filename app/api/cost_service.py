@@ -248,6 +248,7 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
         # (4) 折让信息
         "discount_info": {
             "discount_person": record.discount_person or "",
+            "discount_rate": _to_float(record.discount_rate),
             "discount_fee": _to_float(record.discount_fee),
         },
 
@@ -426,6 +427,11 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
             discount.discount_person
             if discount.discount_person is not None
             else record.discount_person
+        )
+        record.discount_rate = (
+            discount.discount_rate
+            if discount.discount_rate is not None
+            else record.discount_rate
         )
         record.discount_fee = (
             discount.discount_fee
@@ -1009,7 +1015,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件首列为序号、第二列为状态（未提交/已提交/作废），包含三级分组表头及 91 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
+    导出文件首列为序号、第二列为状态（未提交/已提交/作废），包含三级分组表头及 92 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -1196,6 +1202,7 @@ async def export_cost_consignments_to_excel(
 
             # (4) 折让信息
             _v_str(rec.discount_person),
+            _v_num(rec.discount_rate),
             _v_num(rec.discount_fee),
 
             # (5) 销售提成

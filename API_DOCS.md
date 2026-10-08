@@ -9619,7 +9619,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 | 操作记录 | GET | `/api/v1/cost-service/consignments/{consignment_id}/operation-logs` | 单据跨台完整操作记录（详见 23.7） |
 | 单据信息 | DELETE | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-删除（单个） |
 | 单据信息 | POST/DELETE | `/api/v1/cost-service/consignments/batch-delete` | 单据信息-批量删除 |
-| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（序号首列、三级分组表头、91 列字段） |
+| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（序号首列、三级分组表头、92 列字段） |
 
 #### 23.2 数据结构规范说明
 
@@ -9628,10 +9628,12 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - **核心调整**：`receivables` 请求与响应中新增 `receivable_fuel_fee`（燃油费）；同时**不再包含** `agent` 字段（代理字段维护于 `consignor_info` 货主委托信息中）。
 
 2. **`discount_info`（折让信息）字段结构**：
-   - 费用登记保存接口、单据新增接口和单据修改接口的顶层请求体新增 `discount_info`；费用登记查询、单据列表、单据详情以及新增/修改成功响应同步返回该对象。
+   - 费用登记保存接口，以及费用单据新增、修改和对应暂存接口的顶层请求体均包含 `discount_info`；费用登记查询、单据列表、单据详情以及新增、修改、暂存成功响应同步返回该对象。
    - `discount_info.discount_person`：折让人员，字符串，可为空。
+   - `discount_info.discount_rate`：费率，数值，可为空。
    - `discount_info.discount_fee`：折让费，数值，可为空。
-   - 请求示例：`"discount_info": {"discount_person": "张三", "discount_fee": 100}`。
+   - 请求示例：`"discount_info": {"discount_person": "张三", "discount_rate": 7.25, "discount_fee": 100}`。
+   - 存量数据库需执行 `sql/migration_add_cost_discount_rate.sql`，同时为 `cost_registrations` 和 `cost_consignments` 增加可空的 `discount_rate` 字段；全新建表脚本已包含该字段。
 
 3. **`payables.customs`（报关信息）字段调整**：
    - 请求和响应中删除 `rebate`（回扣）字段；报关信息保留 `subtotal`、`date`、`agent`、`customs_fee`、`continuation_sheet_fee`、`inspection_delete_fee`、`other_fee`、`remark`。
@@ -9649,8 +9651,8 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - 存量数据库分别通过 `sql/migration_drop_cost_intl_air_date.sql` 和 `sql/migration_drop_cost_intl_air_airline.sql` 删除对应历史列；全新建表脚本不再创建这两个字段。
 
 6. **Excel 导出规范**：
-   - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 91 列；第 1 列为独立的`序号`，表头合并 `A1:A3`，数据按最终导出顺序从 `1` 连续编号；第 2 列为独立的`状态`，表头合并 `B1:B3`，读取费用单据自身的 `status`，`0` 显示`未提交`、`1` 显示`已提交`、`2` 显示`作废`。应收款项包含`运费计算方式`和`燃油费`列，其中`运费计算方式`位于`单价`和`运费`之间，`燃油费`位于`运费`之后。
-   - 一级分组依次为：`货主托运信息`（第 3-19 列）、`应收款项`（第 20-39 列）、`应付款项`（第 40-85 列）、`折让信息`（第 86-87 列）、`业务信息`（第 88-89 列）、`经营信息`（第 90-91 列）。
+   - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 92 列；第 1 列为独立的`序号`，表头合并 `A1:A3`，数据按最终导出顺序从 `1` 连续编号；第 2 列为独立的`状态`，表头合并 `B1:B3`，读取费用单据自身的 `status`，`0` 显示`未提交`、`1` 显示`已提交`、`2` 显示`作废`。应收款项包含`运费计算方式`和`燃油费`列，其中`运费计算方式`位于`单价`和`运费`之间，`燃油费`位于`运费`之后。
+   - 一级分组依次为：`货主托运信息`（第 3-19 列）、`应收款项`（第 20-39 列）、`应付款项`（第 40-85 列）、`折让信息`（第 86-88 列，依次为`折让人员`、`费率`、`折让费`）、`业务信息`（第 89-90 列）、`经营信息`（第 91-92 列）。
    - `应付款项`二级分组顺序与 Web 端一致：`国际空运信息`（第 40-55 列）、`报关信息`（第 56-61 列）、`地面操作信息`（第 62-70 列）、`汽运信息`（第 71-77 列）、`国内空运信息`（第 78-84 列）；第 85 列为独立的`应付合计`。各二级分组的`小计`均位于本分组最后一列，对应 `BC`、`BI`、`BR`、`BY`、`CF` 列，标题与数据同步移动。
    - 客户确认无需导出的 26 个字段为：国际空运的`始发站`、`到达站`、`航班单号`、`航班号`、`航班日期`、`件数`、`运费计算方式`、`备注`；汽运的`托运日期`、`件数`、`体积`、`备注`；国内空运的`托运日期`、`始发站`、`到达站`、`航空公司`、`航空单号`、`航班号`、`航班日期`、`件数`、`运费计算方式`、`备注`；报关的`报关日期`、`备注`；地面操作的`托运日期`、`备注`。报关信息和地面操作信息中的`其他费用`继续导出。这些裁剪仅作用于 Excel 导出，请求、响应、数据库和费用登记页面保持不变。
    - 此外，导出继续排除历史已废弃字段：国际空运的`托运日期`、`航空公司`，国内空运的`航空单位`，以及报关的`回扣`。

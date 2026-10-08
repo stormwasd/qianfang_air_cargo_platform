@@ -78,6 +78,10 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             pay_ground_subtotal=Decimal("505.25"),
             pay_total=Decimal("1516.75"),
             discount_person="discount person",
+            discount_rate=Decimal("7.25"),
+            discount_fee=Decimal("88.50"),
+            salesperson="salesperson",
+            profit=Decimal("1428.25"),
         )
         zero_record = CostConsignment(
             id=2,
@@ -98,7 +102,7 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         worksheet = workbook.active
         self.addCleanup(workbook.close)
 
-        self.assertEqual(worksheet.max_column, 91)
+        self.assertEqual(worksheet.max_column, 92)
         self.assertEqual(worksheet.max_row, 6)
         self.assertEqual(worksheet["A1"].value, "序号")
         self.assertEqual(worksheet["B1"].value, "状态")
@@ -135,6 +139,10 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             "CF4": 303.75,
             "CG4": 1516.75,
             "CH4": "discount person",
+            "CI4": 7.25,
+            "CJ4": 88.50,
+            "CK4": "salesperson",
+            "CM4": 1428.25,
         }
         for cell, expected in expected_adjacent_values.items():
             with self.subTest(cell=cell):
@@ -143,6 +151,12 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         for cell in ("BH4", "BQ4"):
             with self.subTest(other_fee_cell=cell):
                 self.assertEqual(worksheet[cell].data_type, "n")
+
+        self.assertEqual(
+            [worksheet[f"{column}3"].value for column in ("CH", "CI", "CJ")],
+            ["折让人员", "费率", "折让费"],
+        )
+        self.assertEqual(worksheet["CI4"].data_type, "n")
 
         removed_values = {
             "removed intl origin", "removed intl destination", "removed intl document",

@@ -129,7 +129,7 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
 
 class CostExcelLayoutTests(unittest.TestCase):
     def test_customer_marked_columns_are_not_exported(self):
-        self.assertEqual(len(COST_EXPORT_HEADERS), 91)
+        self.assertEqual(len(COST_EXPORT_HEADERS), 92)
         self.assertEqual(COST_EXPORT_HEADERS[:2], ("序号", "状态"))
         removed_headers = {
             "国空应付-始发站", "国空应付-到达站", "国空应付-航班单号",
@@ -185,15 +185,15 @@ class CostExcelLayoutTests(unittest.TestCase):
         headers = append_cost_export_headers(worksheet)
 
         merged_ranges = {str(item) for item in worksheet.merged_cells.ranges}
-        self.assertEqual(len(headers), 91)
-        self.assertEqual(worksheet.max_column, 91)
+        self.assertEqual(len(headers), 92)
+        self.assertEqual(worksheet.max_column, 92)
         self.assertEqual(worksheet["A1"].value, "序号")
         self.assertEqual(worksheet["B1"].value, "状态")
         self.assertEqual(headers[:2], ["序号", "状态"])
         self.assertEqual(merged_ranges, {
             "A1:A3", "B1:B3", "C1:S2", "T1:AM2", "AN1:CG1",
             "AN2:BC2", "BD2:BI2", "BJ2:BR2", "BS2:BY2",
-            "BZ2:CF2", "CG2:CG3", "CH1:CI2", "CJ1:CK2", "CL1:CM2",
+            "BZ2:CF2", "CG2:CG3", "CH1:CJ2", "CK1:CL2", "CM1:CN2",
         })
         workbook.close()
 
@@ -220,7 +220,11 @@ class CostExcelLayoutTests(unittest.TestCase):
             "国空内应付-运费": 81,
             "国空内应付-小计": 83,
             "应付合计": 84,
-            "利润率(%)": 90,
+            "折让人员": 85,
+            "费率": 86,
+            "折让费": 87,
+            "业务员": 88,
+            "利润率(%)": 91,
         }
 
         for header, expected_index in expected_indexes.items():

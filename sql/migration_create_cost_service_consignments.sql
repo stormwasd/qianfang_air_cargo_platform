@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS `cost_registrations` (
     `pay_total` decimal(10,2) DEFAULT NULL COMMENT '应付合计',
     -- (4) 折让信息
     `discount_person` varchar(100) DEFAULT NULL COMMENT '折让人员',
+    `discount_rate` decimal(10,2) DEFAULT NULL COMMENT '折让费率',
     `discount_fee` decimal(10,2) DEFAULT NULL COMMENT '折让费',
     -- (5) 销售提成
     `salesperson` varchar(100) DEFAULT NULL COMMENT '业务员',
@@ -259,6 +260,7 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     `pay_total` decimal(10,2) DEFAULT NULL COMMENT '应付合计',
     -- (4) 折让信息
     `discount_person` varchar(100) DEFAULT NULL COMMENT '折让人员',
+    `discount_rate` decimal(10,2) DEFAULT NULL COMMENT '折让费率',
     `discount_fee` decimal(10,2) DEFAULT NULL COMMENT '折让费',
     -- (5) 销售提成
     `salesperson` varchar(100) DEFAULT NULL COMMENT '业务员',

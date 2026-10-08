@@ -2,17 +2,86 @@ import unittest
 from pathlib import Path
 
 from app.schemas.cost_service import (
+    CostRegistrationSave,
     CostConsignmentQuery,
     CostConsignmentSubmissionStatus,
+    DiscountInfo,
     PayableDomAir,
     PayableGround,
     PayableIntlAir,
     PayableTrucking,
     ReceivablesInfo,
 )
+from app.api.cost_service import _apply_cost_payload, _format_cost_record
+from app.models.cost_service import CostConsignment, CostRegistration
 
 
 class CostServiceSchemaTests(unittest.TestCase):
+    def test_discount_info_rate_round_trips_through_both_cost_models(self):
+        self.assertIn("discount_rate", DiscountInfo.model_fields)
+        payload = CostRegistrationSave.model_validate(
+            {
+                "discount_info": {
+                    "discount_person": "张三",
+                    "discount_rate": 7.25,
+                    "discount_fee": 88.5,
+                }
+            }
+        )
+
+        for model in (CostRegistration, CostConsignment):
+            with self.subTest(model=model.__name__):
+                model_fields = {"id": 1, "discount_rate": 3.5}
+                if model is CostConsignment:
+                    model_fields["status"] = CostConsignmentSubmissionStatus.SUBMITTED.value
+                record = model(**model_fields)
+                _apply_cost_payload(record, payload)
+                self.assertEqual(record.discount_rate, 7.25)
+                self.assertEqual(
+                    _format_cost_record(record)["discount_info"],
+                    {
+                        "discount_person": "张三",
+                        "discount_rate": 7.25,
+                        "discount_fee": 88.5,
+                    },
+                )
+
+                _apply_cost_payload(
+                    record,
+                    CostRegistrationSave.model_validate(
+                        {"discount_info": {"discount_rate": 0}}
+                    ),
+                )
+                self.assertEqual(record.discount_rate, 0)
+                _apply_cost_payload(
+                    record,
+                    CostRegistrationSave.model_validate(
+                        {"discount_info": {"discount_fee": 99}}
+                    ),
+                )
+                self.assertEqual(record.discount_rate, 0)
+
+    def test_discount_rate_is_present_in_models_and_database_scripts(self):
+        for model in (CostRegistration, CostConsignment):
+            with self.subTest(model=model.__name__):
+                column = model.__table__.columns["discount_rate"]
+                self.assertTrue(column.nullable)
+                self.assertEqual(column.type.precision, 10)
+                self.assertEqual(column.type.scale, 2)
+
+        project_root = Path(__file__).parents[1]
+        create_script = (
+            project_root / "sql" / "migration_create_cost_service_consignments.sql"
+        ).read_text(encoding="utf-8")
+        migration_script = (
+            project_root / "sql" / "migration_add_cost_discount_rate.sql"
+        ).read_text(encoding="utf-8")
+        expected_column = "`discount_rate` decimal(10,2) DEFAULT NULL COMMENT '折让费率'"
+        self.assertEqual(create_script.count(expected_column), 2)
+        self.assertEqual(migration_script.count(expected_column), 2)
+        self.assertIn("ALTER TABLE `cost_registrations`", migration_script)
+        self.assertIn("ALTER TABLE `cost_consignments`", migration_script)
+
     def test_list_date_filters_are_optional_and_independent(self):
         query = CostConsignmentQuery(start_flight_date="2026-09-20")
 
