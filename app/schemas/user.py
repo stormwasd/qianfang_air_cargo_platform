@@ -1,21 +1,20 @@
 """
 用户相关的Pydantic schemas
 """
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, condecimal, validator
 from typing import List, Optional
 from datetime import datetime
-from decimal import Decimal
+
+
+CommissionPercentage = condecimal(ge=0, le=100, decimal_places=2)
 
 
 class UserBase(BaseModel):
     """用户基础schema"""
     phone: str = Field(..., description="手机号", min_length=11, max_length=11)
     name: str = Field(..., description="用户姓名", min_length=1, max_length=50)
-    commission_percentage: Optional[Decimal] = Field(
+    commission_percentage: Optional[CommissionPercentage] = Field(
         None,
-        ge=0,
-        le=100,
-        decimal_places=2,
         description="提成百分比（0-100，最多两位小数）",
     )
     department_ids: List[str] = Field(default_factory=list, description="所属部门ID列表（字符串格式）")
@@ -42,11 +41,8 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """创建用户schema"""
     password: str = Field(..., description="密码", min_length=6, max_length=50)
-    commission_percentage: Decimal = Field(
+    commission_percentage: CommissionPercentage = Field(
         ...,
-        ge=0,
-        le=100,
-        decimal_places=2,
         description="提成百分比（0-100，最多两位小数）",
     )
 
@@ -56,11 +52,8 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = Field(None, description="手机号", min_length=11, max_length=11)
     password: Optional[str] = Field(None, description="密码", min_length=6, max_length=50)
     name: Optional[str] = Field(None, description="用户姓名", min_length=1, max_length=50)
-    commission_percentage: Optional[Decimal] = Field(
+    commission_percentage: Optional[CommissionPercentage] = Field(
         None,
-        ge=0,
-        le=100,
-        decimal_places=2,
         description="提成百分比（0-100，最多两位小数）",
     )
     department_ids: Optional[List[str]] = Field(None, description="所属部门ID列表（字符串格式）")
