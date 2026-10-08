@@ -9628,11 +9628,78 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - **核心调整**：`receivables` 请求与响应中新增 `receivable_fuel_fee`（燃油费）；同时**不再包含** `agent` 字段（代理字段维护于 `consignor_info` 货主委托信息中）。
 
 2. **`discount_info`（折让信息）字段结构**：
-   - 费用登记保存接口，以及费用单据新增、修改和对应暂存接口的顶层请求体均包含 `discount_info`；费用登记查询、单据列表、单据详情以及新增、修改、暂存成功响应同步返回该对象。
+   - 费用登记保存接口，以及费用单据新增、修改和对应暂存接口的顶层请求体均包含 `discount_info`；费用登记查询、单据列表、单据详情以及新增、修改、暂存、作废成功响应同步返回该对象。
    - `discount_info.discount_person`：折让人员，字符串，可为空。
-   - `discount_info.discount_rate`：费率，数值，可为空。
+   - `discount_info.discount_rate`：费率，数值，可为空；`0` 是有效值，不会按空值处理。
    - `discount_info.discount_fee`：折让费，数值，可为空。
-   - 请求示例：`"discount_info": {"discount_person": "张三", "discount_rate": 7.25, "discount_fee": 100}`。
+   - 新增记录时未传费率则保存为数据库 `NULL`，响应返回 `null`。修改已有记录时，省略 `discount_rate` 或显式传 `null` 均保留原值；传入数值（包括 `0`）则覆盖原值。
+   - 请求对象示例：
+
+     ```json
+     {
+       "discount_info": {
+         "discount_person": "张三",
+         "discount_rate": 7.25,
+         "discount_fee": 100
+       }
+     }
+     ```
+
+   - 单条数据响应片段（费用登记查询、保存，单据新增、暂存新增、详情、修改、暂存修改和作废接口）：
+
+     ```json
+     {
+       "code": 0,
+       "data": {
+         "discount_info": {
+           "discount_person": "张三",
+           "discount_rate": 7.25,
+           "discount_fee": 100.0
+         }
+       },
+       "msg": "查询成功"
+     }
+     ```
+
+   - 列表响应中的字段位于 `data.items[].discount_info.discount_rate`：
+
+     ```json
+     {
+       "code": 0,
+       "data": {
+         "total": 1,
+         "items": [
+           {
+             "id": "358000000000000001",
+             "discount_info": {
+               "discount_person": "张三",
+               "discount_rate": 7.25,
+               "discount_fee": 100.0
+             }
+           }
+         ],
+         "page": 1,
+         "pageSize": 10
+       },
+       "msg": "查询成功"
+     }
+     ```
+
+   - 受影响接口明细：
+
+     | HTTP 方法 | 接口路径 | 请求变化 | 响应变化 |
+     |---|---|---|---|
+     | GET | `/api/v1/cost-service/cost-registration` | 无 | `data.discount_info.discount_rate` |
+     | PUT | `/api/v1/cost-service/cost-registration` | `discount_info.discount_rate` | `data.discount_info.discount_rate` |
+     | POST | `/api/v1/cost-service/consignments` | `discount_info.discount_rate` | `data.discount_info.discount_rate` |
+     | POST | `/api/v1/cost-service/consignments/draft` | `discount_info.discount_rate` | `data.discount_info.discount_rate` |
+     | GET | `/api/v1/cost-service/consignments` | 无 | `data.items[].discount_info.discount_rate` |
+     | GET | `/api/v1/cost-service/consignments/{consignment_id}` | 无 | `data.discount_info.discount_rate` |
+     | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | `discount_info.discount_rate` | `data.discount_info.discount_rate` |
+     | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | `discount_info.discount_rate` | `data.discount_info.discount_rate` |
+     | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 无；作废不修改费率 | `data.discount_info.discount_rate` |
+     | POST | `/api/v1/cost-service/consignments/export-excel` | 无 | Excel 折让信息新增“费率”列 |
+
    - 存量数据库需执行 `sql/migration_add_cost_discount_rate.sql`，同时为 `cost_registrations` 和 `cost_consignments` 增加可空的 `discount_rate` 字段；全新建表脚本已包含该字段。
 
 3. **`payables.customs`（报关信息）字段调整**：
