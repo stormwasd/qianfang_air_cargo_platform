@@ -1344,6 +1344,18 @@ Authorization: Bearer <access_token>
 
 ### 4. 账号管理（需要管理员权限）
 
+#### 4.0 提成百分比字段规范
+
+- 字段名：`commission_percentage`，表示账号的提成百分比，JSON 类型为数值。
+- 取值范围：`0` 至 `100`（包含边界），最多保留两位小数；`0` 是有效值。负数、超过 `100` 或超过两位小数时返回 HTTP 422。
+- 新增账号 `POST /api/v1/users`：请求体必填；创建成功响应在 `data.commission_percentage` 返回该值。
+- 账号列表 `GET /api/v1/users`：每条记录在 `data.items[].commission_percentage` 返回该值。
+- 账号详情 `GET /api/v1/users/{user_id}`：在 `data.commission_percentage` 返回该值。
+- 修改用户 `PUT /api/v1/users/{user_id}`：请求体可选；传入数值（包括 `0`）时更新，省略或显式传 `null` 时保留原值；成功响应在 `data.commission_percentage` 返回更新后的值。
+- 为兼容存量账号，数据库字段允许为空；迁移前已存在且尚未维护提成百分比的账号，在列表和详情响应中返回 `null`。
+- 本字段不影响账号权限、启停状态和 JWT，不会因为提成百分比变更而使登录凭证失效。
+- 存量数据库上线前需执行 `sql/migration_add_user_commission_percentage.sql`；通过当前 ORM 新建的数据库会直接包含该字段。
+
 #### 4.1 新增账号
 
 **接口地址**: `POST /api/v1/users`
@@ -1357,6 +1369,7 @@ Authorization: Bearer <access_token>
   "phone": "13800138001",
   "password": "password123",
   "name": "张三",
+  "commission_percentage": 12.5,
   "department_ids": ["260819415803760641", "260819415803760642"],
   "permissions": ["organizational_management", "expense_registration"]
 }
@@ -1373,6 +1386,7 @@ Authorization: Bearer <access_token>
     "id": "260819415803760644",
     "phone": "13800138001",
     "name": "张三",
+    "commission_percentage": 12.5,
     "department_ids": ["260819415803760641", "260819415803760642"],
     "departments": [
       {"id": "260819415803760641", "name": "技术部"},
@@ -1392,6 +1406,7 @@ Authorization: Bearer <access_token>
 - 新增账号默认启用
 - 手机号必须为11位数字且以1开头
 - 密码长度6-50位
+- `commission_percentage` 为必填数值，范围为 `0-100`，最多两位小数
 - 支持多个部门（`department_ids` 为数组）
 - 权限使用固定权限代码（如 `organizational_management`, `expense_registration`）
 - 权限列表中任意一项不在后端权限白名单时，接口返回 `400` 和“权限列表包含无效的权限”，账号不会创建
@@ -1414,6 +1429,7 @@ Authorization: Bearer <access_token>
         "id": "260819415803760640",
         "phone": "13800138000",
         "name": "管理员",
+        "commission_percentage": null,
         "department_ids": ["260819415803760641"],
         "departments": [
           {"id": "260819415803760641", "name": "技术部"}
@@ -1427,6 +1443,7 @@ Authorization: Bearer <access_token>
         "id": "260819415803760644",
         "phone": "13800138001",
         "name": "张三",
+        "commission_percentage": 12.5,
         "department_ids": ["260819415803760641", "260819415803760642"],
         "departments": [
           {"id": "260819415803760641", "name": "技术部"},
@@ -1462,6 +1479,7 @@ Authorization: Bearer <access_token>
     "id": "260819415803760644",
     "phone": "13800138001",
     "name": "张三",
+    "commission_percentage": 12.5,
     "department_ids": ["260819415803760641", "260819415803760642"],
     "departments": [
       {"id": "260819415803760641", "name": "技术部"},
@@ -1476,7 +1494,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-**说明**: 返回指定账号的详细信息，包括所属部门和权限信息
+**说明**: 返回指定账号的详细信息，包括提成百分比、所属部门和权限信息；未维护提成百分比的历史账号返回 `null`
 
 #### 4.4 启用或停用账号（单个）
 
@@ -1590,6 +1608,7 @@ Authorization: Bearer <access_token>
   "phone": "13800138001",
   "password": "newpassword123",
   "name": "张三",
+  "commission_percentage": 15.75,
   "department_ids": ["260819415803760641", "260819415803760642"],
   "permissions": ["waybill", "booking"]
 }
@@ -1604,6 +1623,7 @@ Authorization: Bearer <access_token>
     "id": "260819415803760644",
     "phone": "13800138001",
     "name": "张三",
+    "commission_percentage": 15.75,
     "department_ids": ["260819415803760641", "260819415803760642"],
     "departments": [
       {"id": "260819415803760641", "name": "技术部"},
@@ -1622,6 +1642,7 @@ Authorization: Bearer <access_token>
 
 - 需要管理员权限
 - 所有字段都是可选的，传入值的就修改该用户属性，没传值的就保留原值
+- `commission_percentage` 传入数值（包括 `0`）时更新；省略或传 `null` 时保留原值
 - 如果修改了权限，该用户的JWT将失效，需要重新登录（返回消息中会提示）
 - 手机号不能与其他用户重复
 - 权限使用权限代码（如 `waybill`, `booking`）

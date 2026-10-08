@@ -1,7 +1,7 @@
 """
 用户模型
 """
-from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, Text
+from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, Numeric, Text
 from sqlalchemy.orm import relationship
 from app.database import Base
 from app.models.user_department import user_department
@@ -17,6 +17,9 @@ class User(Base):
     phone = Column(String(11), unique=True, index=True, nullable=False, comment="手机号（账号）")
     password_hash = Column(String(255), nullable=False, comment="密码哈希")
     name = Column(String(50), nullable=False, comment="用户姓名")
+    commission_percentage = Column(
+        Numeric(5, 2), nullable=True, comment="提成百分比"
+    )
     permissions = Column(Text, nullable=False, comment="权限列表，JSON格式存储（存储权限代码，如：[\"admin\", \"waybill\"]）")
     is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
     token_version = Column(BigInteger, default=0, nullable=False, index=True, comment="Token版本号，用于JWT失效机制，权限变更时递增")

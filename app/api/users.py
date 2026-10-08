@@ -23,6 +23,28 @@ from app.utils.helpers import format_permissions_to_json, parse_json_permissions
 router = APIRouter()
 
 
+def _format_user_response(user: User):
+    """统一账号管理的用户响应字段。"""
+    return {
+        "id": str(user.id),
+        "phone": user.phone,
+        "name": user.name,
+        "commission_percentage": (
+            float(user.commission_percentage)
+            if user.commission_percentage is not None
+            else None
+        ),
+        "department_ids": [str(dept.id) for dept in user.departments],
+        "departments": [
+            {"id": str(dept.id), "name": dept.name} for dept in user.departments
+        ],
+        "permissions": parse_json_permissions(user.permissions),
+        "is_active": user.is_active,
+        "created_at": format_datetime_china(user.created_at),
+        "updated_at": format_datetime_china(user.updated_at),
+    }
+
+
 @router.post("", summary="新增账号")
 async def create_user(
     user: UserCreate,
@@ -35,6 +57,7 @@ async def create_user(
     - **phone**: 手机号（账号）
     - **password**: 密码
     - **name**: 用户姓名
+    - **commission_percentage**: 提成百分比（0-100，最多两位小数）
     - **department_ids**: 所属部门ID列表（支持多个部门）
     - **permissions**: 权限列表（前端使用：organizational_management、system、customer_service、expense_registration、admin）
     
@@ -57,6 +80,7 @@ async def create_user(
         phone=user.phone,
         password_hash=get_password_hash(user.password),
         name=user.name,
+        commission_percentage=user.commission_percentage,
         permissions=format_permissions_to_json(user.permissions),
         is_active=True  
     )
@@ -68,19 +92,7 @@ async def create_user(
     db.commit()
     db.refresh(new_user)
     
-    user_permissions = parse_json_permissions(new_user.permissions)
-    user_data = {
-        "id": str(new_user.id),
-        "phone": new_user.phone,
-        "name": new_user.name,
-        "department_ids": [str(dept.id) for dept in new_user.departments],
-        "departments": [{"id": str(dept.id), "name": dept.name} for dept in new_user.departments],
-        "permissions": user_permissions,
-        "is_active": new_user.is_active,
-        "created_at": format_datetime_china(new_user.created_at),
-        "updated_at": format_datetime_china(new_user.updated_at)
-    }
-    return success_response(data=user_data, msg="账号创建成功")
+    return success_response(data=_format_user_response(new_user), msg="账号创建成功")
 
 
 @router.get("", summary="查看已创建账号")
@@ -95,21 +107,7 @@ async def get_users(
     """
     users = db.query(User).options(joinedload(User.departments)).order_by(User.created_at.desc()).all()
     
-    user_list = []
-    for user in users:
-        user_permissions = parse_json_permissions(user.permissions)
-        user_dict = {
-            "id": str(user.id),
-            "phone": user.phone,
-            "name": user.name,
-            "department_ids": [str(dept.id) for dept in user.departments],
-            "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
-            "permissions": user_permissions,
-            "is_active": user.is_active,
-            "created_at": format_datetime_china(user.created_at),
-            "updated_at": format_datetime_china(user.updated_at)
-        }
-        user_list.append(user_dict)
+    user_list = [_format_user_response(user) for user in users]
     
     return success_response(
         data={"total": len(user_list), "items": user_list},
@@ -134,21 +132,7 @@ async def get_user(
     if not user:
         raise NotFoundException("用户不存在")
     
-    user_permissions = parse_json_permissions(user.permissions)
-    
-    user_data = {
-        "id": str(user.id),
-        "phone": user.phone,
-        "name": user.name,
-        "department_ids": [str(dept.id) for dept in user.departments],
-        "departments": [{"id": str(dept.id), "name": dept.name} for dept in user.departments],
-        "permissions": user_permissions,
-        "is_active": user.is_active,
-        "created_at": format_datetime_china(user.created_at),
-        "updated_at": format_datetime_china(user.updated_at)
-    }
-    
-    return success_response(data=user_data, msg="查询成功")
+    return success_response(data=_format_user_response(user), msg="查询成功")
 
 
 @router.put("/{user_id}/status", summary="启用或停用账号")
@@ -269,6 +253,7 @@ async def update_user(
     - **phone**: 手机号（可选）
     - **password**: 密码（可选）
     - **name**: 用户姓名（可选）
+    - **commission_percentage**: 提成百分比（可选，0-100，最多两位小数）
     - **department_ids**: 所属部门ID列表（可选）
     - **permissions**: 权限列表（可选）
     
@@ -295,6 +280,9 @@ async def update_user(
     
     if user_update.name is not None:
         target_user.name = user_update.name
+
+    if user_update.commission_percentage is not None:
+        target_user.commission_percentage = user_update.commission_percentage
     
     if user_update.department_ids is not None:
         if user_update.department_ids:
@@ -323,24 +311,11 @@ async def update_user(
     db.commit()
     db.refresh(target_user)
     
-    user_permissions = parse_json_permissions(target_user.permissions)
-    user_data = {
-        "id": str(target_user.id),
-        "phone": target_user.phone,
-        "name": target_user.name,
-        "department_ids": [str(dept.id) for dept in target_user.departments],
-        "departments": [{"id": str(dept.id), "name": dept.name} for dept in target_user.departments],
-        "permissions": user_permissions,
-        "is_active": target_user.is_active,
-        "created_at": format_datetime_china(target_user.created_at),
-        "updated_at": format_datetime_china(target_user.updated_at)
-    }
-    
     msg = "用户信息修改成功"
     if permissions_changed:
         msg += "，由于权限已变更，该用户的JWT已失效，需要重新登录"
     
-    return success_response(data=user_data, msg=msg)
+    return success_response(data=_format_user_response(target_user), msg=msg)
 
 
 @router.delete("/batch", summary="批量删除账号 (DELETE /batch)")
