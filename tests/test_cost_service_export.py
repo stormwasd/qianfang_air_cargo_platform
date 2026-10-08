@@ -98,17 +98,20 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         worksheet = workbook.active
         self.addCleanup(workbook.close)
 
-        self.assertEqual(worksheet.max_column, 90)
+        self.assertEqual(worksheet.max_column, 91)
         self.assertEqual(worksheet.max_row, 6)
-        self.assertEqual(worksheet["A1"].value, "状态")
-        self.assertEqual(worksheet["A4"].value, "未提交")
-        self.assertEqual(worksheet["A5"].value, "已提交")
+        self.assertEqual(worksheet["A1"].value, "序号")
+        self.assertEqual(worksheet["B1"].value, "状态")
+        self.assertEqual([worksheet[f"A{row}"].value for row in range(4, 7)], [1, 2, 3])
+        self.assertEqual(worksheet["A4"].alignment.horizontal, "center")
+        self.assertEqual(worksheet["B4"].value, "未提交")
+        self.assertEqual(worksheet["B5"].value, "已提交")
         for subtotal_cell, expected in {
-            "BB": 101.25,
-            "BH": 404.00,
-            "BQ": 505.25,
-            "BX": 202.50,
-            "CE": 303.75,
+            "BC": 101.25,
+            "BI": 404.00,
+            "BR": 505.25,
+            "BY": 202.50,
+            "CF": 303.75,
         }.items():
             with self.subTest(subtotal_cell=subtotal_cell):
                 self.assertEqual(worksheet[f"{subtotal_cell}3"].value, "小计")
@@ -118,26 +121,26 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(worksheet[f"{subtotal_cell}6"].value)
 
         expected_adjacent_values = {
-            "AM4": "international",
-            "BB4": 101.25,
-            "BC4": "customs agent",
-            "BG4": 904.25,
-            "BH4": 404.00,
-            "BI4": "ground unit",
-            "BP4": 905.25,
-            "BQ4": 505.25,
-            "BR4": "trucking unit",
-            "BX4": 202.50,
-            "BY4": "domestic unit",
-            "CE4": 303.75,
-            "CF4": 1516.75,
-            "CG4": "discount person",
+            "AN4": "international",
+            "BC4": 101.25,
+            "BD4": "customs agent",
+            "BH4": 904.25,
+            "BI4": 404.00,
+            "BJ4": "ground unit",
+            "BQ4": 905.25,
+            "BR4": 505.25,
+            "BS4": "trucking unit",
+            "BY4": 202.50,
+            "BZ4": "domestic unit",
+            "CF4": 303.75,
+            "CG4": 1516.75,
+            "CH4": "discount person",
         }
         for cell, expected in expected_adjacent_values.items():
             with self.subTest(cell=cell):
                 self.assertEqual(worksheet[cell].value, expected)
 
-        for cell in ("BG4", "BP4"):
+        for cell in ("BH4", "BQ4"):
             with self.subTest(other_fee_cell=cell):
                 self.assertEqual(worksheet[cell].data_type, "n")
 

@@ -129,8 +129,8 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
 
 class CostExcelLayoutTests(unittest.TestCase):
     def test_customer_marked_columns_are_not_exported(self):
-        self.assertEqual(len(COST_EXPORT_HEADERS), 90)
-        self.assertEqual(COST_EXPORT_HEADERS[0], "状态")
+        self.assertEqual(len(COST_EXPORT_HEADERS), 91)
+        self.assertEqual(COST_EXPORT_HEADERS[:2], ("序号", "状态"))
         removed_headers = {
             "国空应付-始发站", "国空应付-到达站", "国空应付-航班单号",
             "国空应付-航班号", "国空应付-航班日期", "国空应付-件数",
@@ -185,41 +185,42 @@ class CostExcelLayoutTests(unittest.TestCase):
         headers = append_cost_export_headers(worksheet)
 
         merged_ranges = {str(item) for item in worksheet.merged_cells.ranges}
-        self.assertEqual(len(headers), 90)
-        self.assertEqual(worksheet.max_column, 90)
-        self.assertEqual(worksheet["A1"].value, "状态")
-        self.assertEqual(headers[0], "状态")
+        self.assertEqual(len(headers), 91)
+        self.assertEqual(worksheet.max_column, 91)
+        self.assertEqual(worksheet["A1"].value, "序号")
+        self.assertEqual(worksheet["B1"].value, "状态")
+        self.assertEqual(headers[:2], ["序号", "状态"])
         self.assertEqual(merged_ranges, {
-            "A1:A3", "B1:R2", "S1:AL2", "AM1:CF1",
-            "AM2:BB2", "BC2:BH2", "BI2:BQ2", "BR2:BX2",
-            "BY2:CE2", "CF2:CF3", "CG1:CH2", "CI1:CJ2", "CK1:CL2",
+            "A1:A3", "B1:B3", "C1:S2", "T1:AM2", "AN1:CG1",
+            "AN2:BC2", "BD2:BI2", "BJ2:BR2", "BS2:BY2",
+            "BZ2:CF2", "CG2:CG3", "CH1:CI2", "CJ1:CK2", "CL1:CM2",
         })
         workbook.close()
 
     def test_every_export_section_keeps_its_expected_boundaries(self):
         expected_indexes = {
-            "应收-单价": 18,
-            "应收-运费计算方式": 19,
-            "应收-运费": 20,
-            "应收-燃油费": 21,
-            "国空应付-外发单位": 38,
-            "国空应付-单价": 42,
-            "国空应付-运费": 43,
-            "国空应付-小计": 53,
-            "报关应付-报关代理": 54,
-            "报关应付-其他费用": 58,
-            "报关应付-小计": 59,
-            "地面应付-外发单位": 60,
-            "地面应付-其他费用": 67,
-            "地面应付-小计": 68,
-            "汽运应付-外发单位": 69,
-            "汽运应付-小计": 75,
-            "国空内应付-外发单位": 76,
-            "国空内应付-费率": 79,
-            "国空内应付-运费": 80,
-            "国空内应付-小计": 82,
-            "应付合计": 83,
-            "利润率(%)": 89,
+            "应收-单价": 19,
+            "应收-运费计算方式": 20,
+            "应收-运费": 21,
+            "应收-燃油费": 22,
+            "国空应付-外发单位": 39,
+            "国空应付-单价": 43,
+            "国空应付-运费": 44,
+            "国空应付-小计": 54,
+            "报关应付-报关代理": 55,
+            "报关应付-其他费用": 59,
+            "报关应付-小计": 60,
+            "地面应付-外发单位": 61,
+            "地面应付-其他费用": 68,
+            "地面应付-小计": 69,
+            "汽运应付-外发单位": 70,
+            "汽运应付-小计": 76,
+            "国空内应付-外发单位": 77,
+            "国空内应付-费率": 80,
+            "国空内应付-运费": 81,
+            "国空内应付-小计": 83,
+            "应付合计": 84,
+            "利润率(%)": 90,
         }
 
         for header, expected_index in expected_indexes.items():

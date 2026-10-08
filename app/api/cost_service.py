@@ -1009,7 +1009,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件首列为状态（未提交/已提交/作废），包含三级分组表头及 90 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
+    导出文件首列为序号、第二列为状态（未提交/已提交/作废），包含三级分组表头及 91 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -1088,8 +1088,10 @@ async def export_cost_consignments_to_excel(
             return val.strftime("%Y-%m-%d %H:%M:%S")
         return str(val)
 
-    for r_idx, rec in enumerate(records, 4):
+    for sequence, rec in enumerate(records, 1):
+        r_idx = sequence + 3
         row_data = [
+            sequence,
             format_submission_status_for_export(
                 getattr(rec, "status", CostConsignmentSubmissionStatus.SUBMITTED.value)
             ),
@@ -1217,7 +1219,9 @@ async def export_cost_consignments_to_excel(
             cell = ws.cell(row=r_idx, column=c_idx)
             cell.font = data_font
             cell.border = thin_border
-            if isinstance(val, (int, float)):
+            if c_idx == 1:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif isinstance(val, (int, float)):
                 cell.alignment = Alignment(horizontal="right", vertical="center")
             elif any(k in headers[c_idx - 1] for k in ("时间", "日期")):
                 cell.alignment = Alignment(horizontal="center", vertical="center")

@@ -88,46 +88,47 @@ def format_bill_of_lading_for_export(value: object) -> str:
 
 
 COST_EXPORT_HEADERS: Tuple[str, ...] = (
+    "序号",
     "状态",
 
-    # 货主托运信息（2-18）
+    # 货主托运信息（3-19）
     "制单时间", "内部单据ID", "进仓日期", "客户名称", "始发站-目的站",
     "报关", "提单", "航班日期", "航班号", "航班单号",
     "件数", "实际重量(kg)", "计费重量(kg)", "体积(m³)", "一程重量(kg)",
     "代理", "委托备注",
 
-    # 应收款项（19-38）
+    # 应收款项（20-39）
     "应收-单价", "应收-运费计算方式", "应收-运费", "应收-燃油费", "应收-提单费/信息录入费", "应收-分单费 电报费/底账费",
     "应收-报关费", "应收-续页费", "应收-海关查验费", "应收-磁检费/安检费",
     "应收-TC费", "应收-前置仓费", "应收-制单费",
     "应收-制单分单费", "应收-垫板费", "应收-打板/装箱费", "应收-探板费",
     "应收-耗材费", "应收-一程费用", "应收-合计",
 
-    # 应付款项 - 国际空运（39-54）
+    # 应付款项 - 国际空运（40-55）
     "国空应付-外发单位", "国空应付-实际重量", "国空应付-体积",
     "国空应付-计费重量", "国空应付-单价", "国空应付-运费", "国空应付-提单费",
     "国空应付-分单费", "国空应付-燃油费", "国空应付-TC费",
     "国空应付-报关费", "国空应付-续页费", "国空应付-耗材费", "国空应付-前置仓",
     "国空应付-其他费用", "国空应付-小计",
 
-    # 应付款项 - 报关（55-60）
+    # 应付款项 - 报关（56-61）
     "报关应付-报关代理", "报关应付-报关费", "报关应付-续页费",
     "报关应付-查验/删单费", "报关应付-其他费用", "报关应付-小计",
 
-    # 应付款项 - 地面操作（61-69）
+    # 应付款项 - 地面操作（62-70）
     "地面应付-外发单位", "地面应付-计费重量",
     "地面应付-费率", "地面应付-运费", "地面应付-提单/快件处置费", "地面应付-安检/报关费",
     "地面应付-打板/退场费", "地面应付-其他费用", "地面应付-小计",
 
-    # 应付款项 - 汽运（70-76）
+    # 应付款项 - 汽运（71-77）
     "汽运应付-外发单位", "汽运应付-重量", "汽运应付-单价",
     "汽运应付-运费", "汽运应付-制单费", "汽运应付-其他费用", "汽运应付-小计",
 
-    # 应付款项 - 国内空运（77-83）
+    # 应付款项 - 国内空运（78-84）
     "国空内应付-外发单位", "国空内应付-实际重量", "国空内应付-计费重量",
     "国空内应付-费率", "国空内应付-运费", "国空内应付-其他费用", "国空内应付-小计",
 
-    # 应付款项总计、折让信息、业务信息、经营信息（84-90）
+    # 应付款项总计、折让信息、业务信息、经营信息（85-91）
     "应付合计", "折让人员", "折让费", "业务员", "提成金额", "利润", "利润率(%)",
 )
 
@@ -156,8 +157,8 @@ def _leaf_header(raw_header: str) -> str:
 
 def append_cost_export_headers(ws: Worksheet) -> List[str]:
     """写入截图所示的三级分组表头，并返回最底层字段标题。"""
-    if len(COST_EXPORT_HEADERS) != 90:
-        raise RuntimeError("费用登记导出字段数量异常，预期为 90 列")
+    if len(COST_EXPORT_HEADERS) != 91:
+        raise RuntimeError("费用登记导出字段数量异常，预期为 91 列")
 
     leaf_headers = [_leaf_header(header) for header in COST_EXPORT_HEADERS]
     top_headers: List[str] = [""] * len(COST_EXPORT_HEADERS)
@@ -165,24 +166,25 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
 
     # 一级分组：货主托运、应收、应付、折让、业务、经营。
     for index, title in (
-        (0, "状态"),
-        (1, "货主托运信息"),
-        (18, "应收款项"),
-        (38, "应付款项"),
-        (84, "折让信息"),
-        (86, "业务信息"),
-        (88, "经营信息"),
+        (0, "序号"),
+        (1, "状态"),
+        (2, "货主托运信息"),
+        (19, "应收款项"),
+        (39, "应付款项"),
+        (85, "折让信息"),
+        (87, "业务信息"),
+        (89, "经营信息"),
     ):
         top_headers[index] = title
 
     # 应付款项下的二级分组。
     for index, title in (
-        (38, "国际空运信息"),
-        (54, "报关信息"),
-        (60, "地面操作信息"),
-        (69, "汽运信息"),
-        (76, "国内空运信息"),
-        (83, "应付合计"),
+        (39, "国际空运信息"),
+        (55, "报关信息"),
+        (61, "地面操作信息"),
+        (70, "汽运信息"),
+        (77, "国内空运信息"),
+        (84, "应付合计"),
     ):
         subgroup_headers[index] = title
 
@@ -191,14 +193,15 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
     ws.append(leaf_headers)
 
     ws.merge_cells(start_row=1, start_column=1, end_row=3, end_column=1)
+    ws.merge_cells(start_row=1, start_column=2, end_row=3, end_column=2)
 
     # 无二级分组的一级标题跨前两行；应付款项保留完整三级结构。
     for start_col, end_col in (
-        (2, 18),
-        (19, 38),
-        (85, 86),
-        (87, 88),
-        (89, 90),
+        (3, 19),
+        (20, 39),
+        (86, 87),
+        (88, 89),
+        (90, 91),
     ):
         ws.merge_cells(
             start_row=1,
@@ -206,15 +209,15 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
             end_row=2,
             end_column=end_col,
         )
-    ws.merge_cells(start_row=1, start_column=39, end_row=1, end_column=84)
+    ws.merge_cells(start_row=1, start_column=40, end_row=1, end_column=85)
 
-    for start_col, end_col in ((39, 54), (55, 60), (61, 69), (70, 76), (77, 83)):
+    for start_col, end_col in ((40, 55), (56, 61), (62, 70), (71, 77), (78, 84)):
         ws.merge_cells(
             start_row=2,
             start_column=start_col,
             end_row=2,
             end_column=end_col,
         )
-    ws.merge_cells(start_row=2, start_column=84, end_row=3, end_column=84)
+    ws.merge_cells(start_row=2, start_column=85, end_row=3, end_column=85)
 
     return leaf_headers
