@@ -115,20 +115,21 @@ COST_EXPORT_HEADERS: Tuple[str, ...] = (
     "报关应付-报关代理", "报关应付-报关费", "报关应付-续页费",
     "报关应付-查验/删单费", "报关应付-其他费用", "报关应付-小计",
 
-    # 应付款项 - 地面操作（62-70）
+    # 应付款项 - 地面操作（62-72）
     "地面应付-外发单位", "地面应付-计费重量",
-    "地面应付-费率", "地面应付-运费", "地面应付-提单/快件处置费", "地面应付-安检/报关费",
+    "地面应付-费率", "地面应付-前置仓", "地面应付-TC费", "地面应付-提货费",
+    "地面应付-提单/快件处置费", "地面应付-安检/报关费",
     "地面应付-打板/退场费", "地面应付-其他费用", "地面应付-小计",
 
-    # 应付款项 - 汽运（71-77）
+    # 应付款项 - 汽运（73-79）
     "汽运应付-外发单位", "汽运应付-重量", "汽运应付-单价",
     "汽运应付-运费", "汽运应付-制单费", "汽运应付-其他费用", "汽运应付-小计",
 
-    # 应付款项 - 国内空运（78-84）
+    # 应付款项 - 国内空运（80-86）
     "国空内应付-外发单位", "国空内应付-实际重量", "国空内应付-计费重量",
     "国空内应付-费率", "国空内应付-运费", "国空内应付-其他费用", "国空内应付-小计",
 
-    # 应付款项总计、折让信息、业务信息、经营信息（85-92）
+    # 应付款项总计、折让信息、业务信息、经营信息（87-94）
     "应付合计", "折让人员", "费率", "折让费", "业务员", "提成金额", "利润", "利润率(%)",
 )
 
@@ -157,8 +158,8 @@ def _leaf_header(raw_header: str) -> str:
 
 def append_cost_export_headers(ws: Worksheet) -> List[str]:
     """写入截图所示的三级分组表头，并返回最底层字段标题。"""
-    if len(COST_EXPORT_HEADERS) != 92:
-        raise RuntimeError("费用登记导出字段数量异常，预期为 92 列")
+    if len(COST_EXPORT_HEADERS) != 94:
+        raise RuntimeError("费用登记导出字段数量异常，预期为 94 列")
 
     leaf_headers = [_leaf_header(header) for header in COST_EXPORT_HEADERS]
     top_headers: List[str] = [""] * len(COST_EXPORT_HEADERS)
@@ -171,9 +172,9 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
         (2, "货主托运信息"),
         (19, "应收款项"),
         (39, "应付款项"),
-        (85, "折让信息"),
-        (88, "业务信息"),
-        (90, "经营信息"),
+        (87, "折让信息"),
+        (90, "业务信息"),
+        (92, "经营信息"),
     ):
         top_headers[index] = title
 
@@ -182,9 +183,9 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
         (39, "国际空运信息"),
         (55, "报关信息"),
         (61, "地面操作信息"),
-        (70, "汽运信息"),
-        (77, "国内空运信息"),
-        (84, "应付合计"),
+        (72, "汽运信息"),
+        (79, "国内空运信息"),
+        (86, "应付合计"),
     ):
         subgroup_headers[index] = title
 
@@ -199,9 +200,9 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
     for start_col, end_col in (
         (3, 19),
         (20, 39),
-        (86, 88),
-        (89, 90),
+        (88, 90),
         (91, 92),
+        (93, 94),
     ):
         ws.merge_cells(
             start_row=1,
@@ -209,15 +210,15 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
             end_row=2,
             end_column=end_col,
         )
-    ws.merge_cells(start_row=1, start_column=40, end_row=1, end_column=85)
+    ws.merge_cells(start_row=1, start_column=40, end_row=1, end_column=87)
 
-    for start_col, end_col in ((40, 55), (56, 61), (62, 70), (71, 77), (78, 84)):
+    for start_col, end_col in ((40, 55), (56, 61), (62, 72), (73, 79), (80, 86)):
         ws.merge_cells(
             start_row=2,
             start_column=start_col,
             end_row=2,
             end_column=end_col,
         )
-    ws.merge_cells(start_row=2, start_column=85, end_row=3, end_column=85)
+    ws.merge_cells(start_row=2, start_column=87, end_row=3, end_column=87)
 
     return leaf_headers

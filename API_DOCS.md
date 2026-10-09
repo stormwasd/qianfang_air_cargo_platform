@@ -9657,7 +9657,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 | 操作记录 | GET | `/api/v1/cost-service/consignments/{consignment_id}/operation-logs` | 单据跨台完整操作记录（详见 23.7） |
 | 单据信息 | DELETE | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-删除（单个） |
 | 单据信息 | POST/DELETE | `/api/v1/cost-service/consignments/batch-delete` | 单据信息-批量删除 |
-| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（序号首列、三级分组表头、92 列字段） |
+| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（序号首列、三级分组表头、94 列字段） |
 
 #### 23.2 数据结构规范说明
 
@@ -9756,9 +9756,10 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - 存量数据库分别通过 `sql/migration_drop_cost_intl_air_date.sql` 和 `sql/migration_drop_cost_intl_air_airline.sql` 删除对应历史列；全新建表脚本不再创建这两个字段。
 
 6. **Excel 导出规范**：
-   - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 92 列；第 1 列为独立的`序号`，表头合并 `A1:A3`，数据按最终导出顺序从 `1` 连续编号；第 2 列为独立的`状态`，表头合并 `B1:B3`，读取费用单据自身的 `status`，`0` 显示`未提交`、`1` 显示`已提交`、`2` 显示`作废`。应收款项包含`运费计算方式`和`燃油费`列，其中`运费计算方式`位于`单价`和`运费`之间，`燃油费`位于`运费`之后。
-   - 一级分组依次为：`货主托运信息`（第 3-19 列）、`应收款项`（第 20-39 列）、`应付款项`（第 40-85 列）、`折让信息`（第 86-88 列，依次为`折让人员`、`费率`、`折让费`）、`业务信息`（第 89-90 列）、`经营信息`（第 91-92 列）。
-   - `应付款项`二级分组顺序与 Web 端一致：`国际空运信息`（第 40-55 列）、`报关信息`（第 56-61 列）、`地面操作信息`（第 62-70 列）、`汽运信息`（第 71-77 列）、`国内空运信息`（第 78-84 列）；第 85 列为独立的`应付合计`。各二级分组的`小计`均位于本分组最后一列，对应 `BC`、`BI`、`BR`、`BY`、`CF` 列，标题与数据同步移动。
+   - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 94 列；第 1 列为独立的`序号`，表头合并 `A1:A3`，数据按最终导出顺序从 `1` 连续编号；第 2 列为独立的`状态`，表头合并 `B1:B3`，读取费用单据自身的 `status`，`0` 显示`未提交`、`1` 显示`已提交`、`2` 显示`作废`。应收款项包含`运费计算方式`和`燃油费`列，其中`运费计算方式`位于`单价`和`运费`之间，`燃油费`位于`运费`之后。
+   - 一级分组依次为：`货主托运信息`（第 3-19 列）、`应收款项`（第 20-39 列）、`应付款项`（第 40-87 列）、`折让信息`（第 88-90 列，依次为`折让人员`、`费率`、`折让费`）、`业务信息`（第 91-92 列）、`经营信息`（第 93-94 列）。
+   - `应付款项`二级分组顺序与 Web 端一致：`国际空运信息`（第 40-55 列）、`报关信息`（第 56-61 列）、`地面操作信息`（第 62-72 列）、`汽运信息`（第 73-79 列）、`国内空运信息`（第 80-86 列）；第 87 列为独立的`应付合计`。各二级分组的`小计`均位于本分组最后一列，对应 `BC`、`BI`、`BT`、`CA`、`CH` 列，标题与数据同步移动。
+   - 地面操作中的原“运费”列改为“前置仓”，其后新增“TC费”和“提货费”，分别对应 `payables.ground.freight`、`tc_fee`、`pickup_fee`，位于第 65-67 列（`BM`、`BN`、`BO`）。金额导出为数值（包括 `0`），未填写时留空。其他费用分组的“运费”名称不变。
    - 客户确认无需导出的 26 个字段为：国际空运的`始发站`、`到达站`、`航班单号`、`航班号`、`航班日期`、`件数`、`运费计算方式`、`备注`；汽运的`托运日期`、`件数`、`体积`、`备注`；国内空运的`托运日期`、`始发站`、`到达站`、`航空公司`、`航空单号`、`航班号`、`航班日期`、`件数`、`运费计算方式`、`备注`；报关的`报关日期`、`备注`；地面操作的`托运日期`、`备注`。报关信息和地面操作信息中的`其他费用`继续导出。这些裁剪仅作用于 Excel 导出，请求、响应、数据库和费用登记页面保持不变。
    - 此外，导出继续排除历史已废弃字段：国际空运的`托运日期`、`航空公司`，国内空运的`航空单位`，以及报关的`回扣`。
    - 客服接单台导出 `POST /api/v1/customer-service/consignments/export-excel` 使用单行表头，共 18 列，数据从第 2 行开始。第 1 列为`状态`，读取客服单据自身的 `status`，`0` 显示`未提交`、`1` 显示`已提交`、`2` 显示`作废`，原有 17 列整体右移。两台状态取各自数据库字段；正常作废流程会在同一事务同步两台状态。
@@ -9807,6 +9808,69 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - 不传排序参数时，继续保持原有的“进仓日期倒序、制单时间倒序、ID倒序”顺序，不影响现有调用方。
    - 当主排序字段值相同时，系统依次使用另一个时间字段和 ID 以相同方向排序，保证分页结果稳定且不会因并列值产生随机顺序。
    - 示例：按制单时间正序查询：`GET /api/v1/cost-service/consignments?sort_by=create_time&sort_order=asc&page=1&pageSize=10`；按进仓日期倒序查询：`GET /api/v1/cost-service/consignments?sort_by=warehouse_entry_date&sort_order=desc&page=1&pageSize=10`。
+
+11. **`payables.ground`（地面操作信息）字段调整**：
+   - 原“运费”展示名称改为“前置仓”，继续使用 `payables.ground.freight` 入参和返回字段，数据库列仍为 `pay_ground_freight`；不新增替代字段、不迁移或清空原金额。前端应修改该字段的显示文字，并在其后依次新增“TC费”和“提货费”。
+   - 新增字段定义（登记模板和费用单据一致）：
+
+     | 字段路径 | 类型 | 必填 | 数据库列 | 说明 |
+     |---|---|---|---|---|
+     | `payables.ground.tc_fee` | number / null | 否 | `pay_ground_tc_fee` | TC费，数据库金额精度为 `decimal(10,2)` |
+     | `payables.ground.pickup_fee` | number / null | 否 | `pay_ground_pickup_fee` | 提货费，数据库金额精度为 `decimal(10,2)` |
+
+   - 新建时未传或传 `null`，数据库保存为 `NULL`，响应返回 `null`；更新时省略字段或显式传 `null` 均保留原值，传入数值（包括 `0`）则覆盖原值。省略整个 `payables` 或 `ground` 对象也不改变原有金额。
+   - `subtotal`（地面应付小计）、`pay_total`（应付合计）、利润等仍按现有规则由客户端提交；后端不因新增这两个字段自动重算或覆盖合计。
+   - 地面操作完整字段为：`subtotal`、`date`、`outsource_unit`、`chargeable_weight`、`rate`、`freight`（前置仓）、`tc_fee`、`pickup_fee`、`lading_express_fee`、`security_customs_fee`、`pallet_exit_fee`、`other_fee`、`remark`。
+   - 保存、新增、暂存和修改的请求片段：
+
+     ```json
+     {
+       "payables": {
+         "ground": {
+           "freight": 120,
+           "tc_fee": 35.5,
+           "pickup_fee": 20
+         }
+       }
+     }
+     ```
+
+   - 查询或写入成功后的单条响应片段：
+
+     ```json
+     {
+       "code": 0,
+       "data": {
+         "payables": {
+           "ground": {
+             "freight": 120.0,
+             "tc_fee": 35.5,
+             "pickup_fee": 20.0
+           }
+         }
+       },
+       "msg": "查询成功"
+     }
+     ```
+
+   - 列表中的对应字段位于 `data.items[].payables.ground.tc_fee` 和 `data.items[].payables.ground.pickup_fee`；无新金额的历史记录也返回这两个键，值为 `null`。费用登记模板尚不存在时仍返回 `data: null`。
+   - 受影响接口明细（以下“新字段”指 `payables.ground.tc_fee` 和 `payables.ground.pickup_fee`）：
+
+     | HTTP 方法 | 接口路径 | 请求变化 | 响应变化 |
+     |---|---|---|---|
+     | GET | `/api/v1/cost-service/cost-registration` | 无 | `data` 中新增两个字段 |
+     | PUT | `/api/v1/cost-service/cost-registration` | 可传新字段 | `data` 中新增两个字段 |
+     | POST | `/api/v1/cost-service/consignments` | 可传新字段 | `data` 中新增两个字段 |
+     | POST | `/api/v1/cost-service/consignments/draft` | 可传新字段 | `data` 中新增两个字段 |
+     | GET | `/api/v1/cost-service/consignments` | 查询参数不变 | `data.items[]` 中新增两个字段 |
+     | GET | `/api/v1/cost-service/consignments/{consignment_id}` | 无 | `data` 中新增两个字段 |
+     | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 可传新字段 | `data` 中新增两个字段 |
+     | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 可传新字段 | `data` 中新增两个字段 |
+     | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 无；作废不改金额 | `data` 中新增两个字段 |
+     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 地面操作改名并新增两列，总列数为 94；位置详见上方 Excel 规范 |
+
+   - 上线代码前，存量数据库需执行 `sql/migration_add_cost_ground_fees.sql`，为 `cost_registrations` 和 `cost_consignments` 同时增加两个可空金额列；历史记录默认 `NULL`。全新建表脚本 `sql/migration_create_cost_service_consignments.sql` 已包含新列，新库不再重复执行增量脚本。
+   - 新字段仅属于费用登记台，客服接单台的请求、响应和 Excel 导出不增加这两个字段；现有货主委托信息同步保持原规则，客服保存不会覆盖这两个费用金额。
 
 #### 23.3 客服接单台与费用登记台数据双向实时同步规范
 

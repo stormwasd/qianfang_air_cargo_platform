@@ -236,6 +236,8 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
                 "chargeable_weight": _to_float(record.pay_ground_chargeable_weight),
                 "rate": _to_float(record.pay_ground_rate),
                 "freight": _to_float(record.pay_ground_freight),
+                "tc_fee": _to_float(record.pay_ground_tc_fee),
+                "pickup_fee": _to_float(record.pay_ground_pickup_fee),
                 "lading_express_fee": _to_float(record.pay_ground_lading_express_fee),
                 "security_customs_fee": _to_float(record.pay_ground_security_customs_fee),
                 "pallet_exit_fee": _to_float(record.pay_ground_pallet_exit_fee),
@@ -414,6 +416,8 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
             record.pay_ground_chargeable_weight = g.chargeable_weight if g.chargeable_weight is not None else record.pay_ground_chargeable_weight
             record.pay_ground_rate = g.rate if g.rate is not None else record.pay_ground_rate
             record.pay_ground_freight = g.freight if g.freight is not None else record.pay_ground_freight
+            record.pay_ground_tc_fee = g.tc_fee if g.tc_fee is not None else record.pay_ground_tc_fee
+            record.pay_ground_pickup_fee = g.pickup_fee if g.pickup_fee is not None else record.pay_ground_pickup_fee
             record.pay_ground_lading_express_fee = g.lading_express_fee if g.lading_express_fee is not None else record.pay_ground_lading_express_fee
             record.pay_ground_security_customs_fee = g.security_customs_fee if g.security_customs_fee is not None else record.pay_ground_security_customs_fee
             record.pay_ground_pallet_exit_fee = g.pallet_exit_fee if g.pallet_exit_fee is not None else record.pay_ground_pallet_exit_fee
@@ -1015,7 +1019,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件首列为序号、第二列为状态（未提交/已提交/作废），包含三级分组表头及 92 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
+    导出文件首列为序号、第二列为状态（未提交/已提交/作废），包含三级分组表头及 94 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -1173,6 +1177,8 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.pay_ground_chargeable_weight),
             _v_num(rec.pay_ground_rate),
             _v_num(rec.pay_ground_freight),
+            _v_num(rec.pay_ground_tc_fee),
+            _v_num(rec.pay_ground_pickup_fee),
             _v_num(rec.pay_ground_lading_express_fee),
             _v_num(rec.pay_ground_security_customs_fee),
             _v_num(rec.pay_ground_pallet_exit_fee),

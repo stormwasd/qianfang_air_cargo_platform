@@ -17,6 +17,37 @@ from app.models.cost_service import CostConsignment, CostRegistration
 
 
 class CostServiceSchemaTests(unittest.TestCase):
+    def test_ground_fees_round_trip_and_preserve_existing_update_semantics(self):
+        for model in (CostRegistration, CostConsignment):
+            with self.subTest(model=model.__name__):
+                record = model(id=1, pay_ground_freight=120, pay_ground_subtotal=200, pay_total=500)
+                if model is CostConsignment:
+                    record.status = CostConsignmentSubmissionStatus.SUBMITTED.value
+                ground = _format_cost_record(record)["payables"]["ground"]
+                self.assertIsNone(ground["tc_fee"])
+                self.assertIsNone(ground["pickup_fee"])
+                _apply_cost_payload(record, CostRegistrationSave.model_validate({
+                    "payables": {"ground": {"tc_fee": 35.5, "pickup_fee": 20}},
+                }))
+                ground = _format_cost_record(record)["payables"]["ground"]
+                self.assertEqual(ground["freight"], 120)
+                self.assertEqual(ground["tc_fee"], 35.5)
+                self.assertEqual(ground["pickup_fee"], 20)
+                self.assertEqual(ground["subtotal"], 200)
+                self.assertEqual(record.pay_total, 500)
+
+                for body in ({}, {"payables": None}, {"payables": {"ground": None}},
+                             {"payables": {"ground": {"tc_fee": None, "pickup_fee": None}}}):
+                    _apply_cost_payload(record, CostRegistrationSave.model_validate(body))
+                    self.assertEqual(record.pay_ground_tc_fee, 35.5)
+                    self.assertEqual(record.pay_ground_pickup_fee, 20)
+                _apply_cost_payload(record, CostRegistrationSave.model_validate({
+                    "payables": {"ground": {"tc_fee": 0, "pickup_fee": 0}},
+                }))
+                ground = _format_cost_record(record)["payables"]["ground"]
+                self.assertEqual(ground["tc_fee"], 0)
+                self.assertEqual(ground["pickup_fee"], 0)
+
     def test_discount_info_rate_round_trips_through_both_cost_models(self):
         self.assertIn("discount_rate", DiscountInfo.model_fields)
         payload = CostRegistrationSave.model_validate(

@@ -129,7 +129,7 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
 
 class CostExcelLayoutTests(unittest.TestCase):
     def test_customer_marked_columns_are_not_exported(self):
-        self.assertEqual(len(COST_EXPORT_HEADERS), 92)
+        self.assertEqual(len(COST_EXPORT_HEADERS), 94)
         self.assertEqual(COST_EXPORT_HEADERS[:2], ("序号", "状态"))
         removed_headers = {
             "国空应付-始发站", "国空应付-到达站", "国空应付-航班单号",
@@ -159,6 +159,9 @@ class CostExcelLayoutTests(unittest.TestCase):
             "国空内应付-实际重量",
             "报关应付-其他费用",
             "地面应付-其他费用",
+            "地面应付-前置仓",
+            "地面应付-TC费",
+            "地面应付-提货费",
         }
         for header in expected_headers:
             with self.subTest(header=header):
@@ -173,6 +176,7 @@ class CostExcelLayoutTests(unittest.TestCase):
             "国空应付-借单/磁检/燃油/提货费",
             "国空应付-TC/入网/处置费",
             "国空内应付-重量",
+            "地面应付-运费",
         }
         for header in old_headers:
             with self.subTest(header=header):
@@ -185,15 +189,15 @@ class CostExcelLayoutTests(unittest.TestCase):
         headers = append_cost_export_headers(worksheet)
 
         merged_ranges = {str(item) for item in worksheet.merged_cells.ranges}
-        self.assertEqual(len(headers), 92)
-        self.assertEqual(worksheet.max_column, 92)
+        self.assertEqual(len(headers), 94)
+        self.assertEqual(worksheet.max_column, 94)
         self.assertEqual(worksheet["A1"].value, "序号")
         self.assertEqual(worksheet["B1"].value, "状态")
         self.assertEqual(headers[:2], ["序号", "状态"])
         self.assertEqual(merged_ranges, {
-            "A1:A3", "B1:B3", "C1:S2", "T1:AM2", "AN1:CG1",
-            "AN2:BC2", "BD2:BI2", "BJ2:BR2", "BS2:BY2",
-            "BZ2:CF2", "CG2:CG3", "CH1:CJ2", "CK1:CL2", "CM1:CN2",
+            "A1:A3", "B1:B3", "C1:S2", "T1:AM2", "AN1:CI1",
+            "AN2:BC2", "BD2:BI2", "BJ2:BT2", "BU2:CA2",
+            "CB2:CH2", "CI2:CI3", "CJ1:CL2", "CM1:CN2", "CO1:CP2",
         })
         workbook.close()
 
@@ -211,20 +215,23 @@ class CostExcelLayoutTests(unittest.TestCase):
             "报关应付-其他费用": 59,
             "报关应付-小计": 60,
             "地面应付-外发单位": 61,
-            "地面应付-其他费用": 68,
-            "地面应付-小计": 69,
-            "汽运应付-外发单位": 70,
-            "汽运应付-小计": 76,
-            "国空内应付-外发单位": 77,
-            "国空内应付-费率": 80,
-            "国空内应付-运费": 81,
-            "国空内应付-小计": 83,
-            "应付合计": 84,
-            "折让人员": 85,
-            "费率": 86,
-            "折让费": 87,
-            "业务员": 88,
-            "利润率(%)": 91,
+            "地面应付-前置仓": 64,
+            "地面应付-TC费": 65,
+            "地面应付-提货费": 66,
+            "地面应付-其他费用": 70,
+            "地面应付-小计": 71,
+            "汽运应付-外发单位": 72,
+            "汽运应付-小计": 78,
+            "国空内应付-外发单位": 79,
+            "国空内应付-费率": 82,
+            "国空内应付-运费": 83,
+            "国空内应付-小计": 85,
+            "应付合计": 86,
+            "折让人员": 87,
+            "费率": 88,
+            "折让费": 89,
+            "业务员": 90,
+            "利润率(%)": 93,
         }
 
         for header, expected_index in expected_indexes.items():
