@@ -1346,13 +1346,13 @@ Authorization: Bearer <access_token>
 
 #### 4.0 提成百分比字段规范
 
-- 字段名：`commission_percentage`，表示账号的提成百分比，JSON 类型为数值。
+- 字段名：`commission_percentage`，表示账号的提成百分比，JSON 类型为数值或 `null`。
 - 取值范围：`0` 至 `100`（包含边界），最多保留两位小数；`0` 是有效值。负数、超过 `100` 或超过两位小数时返回 HTTP 422。
-- 新增账号 `POST /api/v1/users`：请求体必填；创建成功响应在 `data.commission_percentage` 返回该值。
+- 新增账号 `POST /api/v1/users`：请求体非必填；省略或显式传 `null` 时保存为空，创建成功响应的 `data.commission_percentage` 返回 `null`；传入有效数值时保存并返回该值（包括 `0`）。
 - 账号列表 `GET /api/v1/users`：每条记录在 `data.items[].commission_percentage` 返回该值。
 - 账号详情 `GET /api/v1/users/{user_id}`：在 `data.commission_percentage` 返回该值。
 - 修改用户 `PUT /api/v1/users/{user_id}`：请求体可选；传入数值（包括 `0`）时更新，省略或显式传 `null` 时保留原值；成功响应在 `data.commission_percentage` 返回更新后的值。
-- 为兼容存量账号，数据库字段允许为空；迁移前已存在且尚未维护提成百分比的账号，在列表和详情响应中返回 `null`。
+- 数据库字段允许为空；未填写提成百分比的新账号，以及尚未维护该字段的历史账号，在列表和详情响应中均返回 `null`，不自动赋值为 `0`。
 - 本字段不影响账号权限、启停状态和 JWT，不会因为提成百分比变更而使登录凭证失效。
 - 存量数据库上线前需执行 `sql/migration_add_user_commission_percentage.sql`；通过当前 ORM 新建的数据库会直接包含该字段。
 
@@ -1406,7 +1406,8 @@ Authorization: Bearer <access_token>
 - 新增账号默认启用
 - 手机号必须为11位数字且以1开头
 - 密码长度6-50位
-- `commission_percentage` 为必填数值，范围为 `0-100`，最多两位小数
+- `commission_percentage` 非必填；省略或传 `null` 时保存为空，创建、列表和详情响应返回 `null`；传入数值时范围为 `0-100`，最多两位小数，`0` 是有效值
+- 未填写时，前端应省略 `commission_percentage` 或传 `null`；空字符串 `""` 不是有效数值，会返回 HTTP 422
 - 支持多个部门（`department_ids` 为数组）
 - 权限使用固定权限代码（如 `organizational_management`, `expense_registration`）
 - 权限列表中任意一项不在后端权限白名单时，接口返回 `400` 和“权限列表包含无效的权限”，账号不会创建

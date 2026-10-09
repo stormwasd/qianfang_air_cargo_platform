@@ -41,10 +41,6 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """创建用户schema"""
     password: str = Field(..., description="密码", min_length=6, max_length=50)
-    commission_percentage: CommissionPercentage = Field(
-        ...,
-        description="提成百分比（0-100，最多两位小数）",
-    )
 
 
 class UserUpdate(BaseModel):

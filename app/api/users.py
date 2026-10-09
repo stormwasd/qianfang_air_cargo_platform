@@ -57,7 +57,7 @@ async def create_user(
     - **phone**: 手机号（账号）
     - **password**: 密码
     - **name**: 用户姓名
-    - **commission_percentage**: 提成百分比（0-100，最多两位小数）
+    - **commission_percentage**: 提成百分比（可选，0-100，最多两位小数；省略或传null时保存为空）
     - **department_ids**: 所属部门ID列表（支持多个部门）
     - **permissions**: 权限列表（前端使用：organizational_management、system、customer_service、expense_registration、admin）
     

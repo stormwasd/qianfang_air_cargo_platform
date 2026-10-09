@@ -79,7 +79,7 @@ class UserCommissionPercentageTests(unittest.IsolatedAsyncioTestCase):
             permissions=["admin"],
         )
 
-    def test_create_requires_percentage_and_validates_range_and_scale(self):
+    def test_create_optional_percentage_validates_range_and_scale(self):
         base = {
             "phone": "13800138000",
             "password": "123456",
@@ -91,8 +91,12 @@ class UserCommissionPercentageTests(unittest.IsolatedAsyncioTestCase):
                 UserCreate.model_validate(
                     {**base, "commission_percentage": percentage}
                 )
-        with self.assertRaises(ValidationError):
-            UserCreate.model_validate(base)
+        self.assertIsNone(UserCreate.model_validate(base).commission_percentage)
+        self.assertIsNone(
+            UserCreate.model_validate(
+                {**base, "commission_percentage": None}
+            ).commission_percentage
+        )
 
         self.assertEqual(
             UserCreate.model_validate(
@@ -114,6 +118,39 @@ class UserCommissionPercentageTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(db.added.commission_percentage, Decimal("12.50"))
         self.assertEqual(response.data["commission_percentage"], 12.5)
+
+    async def test_create_without_percentage_persists_and_returns_null(self):
+        base = self.create_payload().model_dump(exclude={"commission_percentage"})
+        for fields in ({}, {"commission_percentage": None}):
+            with self.subTest(fields=fields):
+                db = UserSession()
+                response = await create_user(
+                    UserCreate.model_validate({**base, **fields}),
+                    current_user=None,
+                    db=db,
+                )
+                self.assertIsNone(db.added.commission_percentage)
+                self.assertIsNone(response.data["commission_percentage"])
+                list_response = await get_users(
+                    current_user=None, db=UserSession([db.added])
+                )
+                self.assertIsNone(
+                    list_response.data["items"][0]["commission_percentage"]
+                )
+                detail_response = await get_user(
+                    "1", current_user=None, db=UserSession([db.added])
+                )
+                self.assertIsNone(detail_response.data["commission_percentage"])
+
+    def test_openapi_marks_create_percentage_optional_and_nullable(self):
+        from app.main import app
+
+        schema = app.openapi()["components"]["schemas"]["UserCreate"]
+        self.assertNotIn("commission_percentage", schema["required"])
+        self.assertIn(
+            {"type": "null"},
+            schema["properties"]["commission_percentage"]["anyOf"],
+        )
 
     async def test_list_and_detail_return_percentage_including_historical_null(self):
         percentage_user = make_user(Decimal("8.25"))
