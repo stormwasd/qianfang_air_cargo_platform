@@ -148,6 +148,7 @@ class CostRegistration(Base):
 
     # (5) 销售提成
     salesperson = Column(String(100), nullable=True, comment="业务员")
+    commission_percentage = Column(Numeric(5, 2), nullable=True, comment="提成百分比")
     commission_amount = Column(Numeric(10, 2), nullable=True, comment="提成金额")
     
     # (6) 经营信息
@@ -300,6 +301,7 @@ class CostConsignment(Base):
 
     # (5) 销售提成
     salesperson = Column(String(100), nullable=True, comment="业务员")
+    commission_percentage = Column(Numeric(5, 2), nullable=True, comment="提成百分比")
     commission_amount = Column(Numeric(10, 2), nullable=True, comment="提成金额")
     
     # (6) 经营信息

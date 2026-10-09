@@ -9757,7 +9757,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 
 6. **Excel 导出规范**：
    - 导出文件使用三行分组表头，数据记录从第 4 行开始，共 94 列；第 1 列为独立的`序号`，表头合并 `A1:A3`，数据按最终导出顺序从 `1` 连续编号；第 2 列为独立的`状态`，表头合并 `B1:B3`，读取费用单据自身的 `status`，`0` 显示`未提交`、`1` 显示`已提交`、`2` 显示`作废`。应收款项包含`运费计算方式`和`燃油费`列，其中`运费计算方式`位于`单价`和`运费`之间，`燃油费`位于`运费`之后。
-   - 一级分组依次为：`货主托运信息`（第 3-19 列）、`应收款项`（第 20-39 列）、`应付款项`（第 40-87 列）、`折让信息`（第 88-90 列，依次为`折让人员`、`费率`、`折让费`）、`业务信息`（第 91-92 列）、`经营信息`（第 93-94 列）。
+   - 一级分组依次为：`货主托运信息`（第 3-19 列）、`应收款项`（第 20-39 列）、`应付款项`（第 40-87 列）、`折让信息`（第 88-90 列，依次为`折让人员`、`费率`、`折让费`）、`业务信息`（第 91-92 列，依次为`业务员`、`提成金额`）、`经营信息`（第 93-94 列）。
    - `应付款项`二级分组顺序与 Web 端一致：`国际空运信息`（第 40-55 列）、`报关信息`（第 56-61 列）、`地面操作信息`（第 62-72 列）、`汽运信息`（第 73-79 列）、`国内空运信息`（第 80-86 列）；第 87 列为独立的`应付合计`。各二级分组的`小计`均位于本分组最后一列，对应 `BC`、`BI`、`BT`、`CA`、`CH` 列，标题与数据同步移动。
    - 地面操作中的原“运费”列改为“前置仓”，其后新增“TC费”和“提货费”，分别对应 `payables.ground.freight`、`tc_fee`、`pickup_fee`，位于第 65-67 列（`BM`、`BN`、`BO`）。金额导出为数值（包括 `0`），未填写时留空。其他费用分组的“运费”名称不变。
    - 客户确认无需导出的 26 个字段为：国际空运的`始发站`、`到达站`、`航班单号`、`航班号`、`航班日期`、`件数`、`运费计算方式`、`备注`；汽运的`托运日期`、`件数`、`体积`、`备注`；国内空运的`托运日期`、`始发站`、`到达站`、`航空公司`、`航空单号`、`航班号`、`航班日期`、`件数`、`运费计算方式`、`备注`；报关的`报关日期`、`备注`；地面操作的`托运日期`、`备注`。报关信息和地面操作信息中的`其他费用`继续导出。这些裁剪仅作用于 Excel 导出，请求、响应、数据库和费用登记页面保持不变。
@@ -9871,6 +9871,53 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 
    - 上线代码前，存量数据库需执行 `sql/migration_add_cost_ground_fees.sql`，为 `cost_registrations` 和 `cost_consignments` 同时增加两个可空金额列；历史记录默认 `NULL`。全新建表脚本 `sql/migration_create_cost_service_consignments.sql` 已包含新列，新库不再重复执行增量脚本。
    - 新字段仅属于费用登记台，客服接单台的请求、响应和 Excel 导出不增加这两个字段；现有货主委托信息同步保持原规则，客服保存不会覆盖这两个费用金额。
+
+12. **`sales_commission`（销售提成）提成百分比**：
+   - 销售提成对象新增 `commission_percentage` 字段，完整结构为 `salesperson`（业务员）、`commission_percentage`（提成百分比）、`commission_amount`（提成金额）。列表返回路径为 `data.items[].sales_commission.commission_percentage`，其他单条响应返回路径为 `data.sales_commission.commission_percentage`。
+   - `commission_percentage` 是后端派生并保存的响应字段，不是费用登记台请求字段。其响应类型为数值或 `null`，取值来源于账号管理中对应用户的提成百分比（账号字段范围为 `0-100`、最多两位小数，`0` 是有效值）。
+   - 前端业务员下拉框的数据来源为账号列表 `GET /api/v1/users`。选择账号后，费用保存请求只需将该账号的 `name` 写入 `sales_commission.salesperson`；保存时后端按 `users.name` 精确匹配账号，将账号当前的 `commission_percentage` 固化为费用记录的提成百分比快照并在响应中返回。账号日后修改提成百分比不会反向改写历史费用数据。
+   - 提交空字符串业务员时，同时清空费用记录中的提成百分比；提交的非空业务员未匹配到账号时，为兼容历史自由文本业务员，仍保存业务员文本，但提成百分比保存为 `NULL`，不会沿用上一位业务员的旧百分比。修改时未提交 `salesperson`，则业务员及其百分比都保持原值。
+   - **提成金额计算边界**：后端不根据利润和提成百分比计算、重算或覆盖 `commission_amount`。`commission_amount` 仍完全按前端提交值保存；“利润 × 提成百分比”的计算由前端完成。即使请求提供了 `operating_info.profit`，且业务员成功匹配出提成百分比，但未提供 `commission_amount`，后端也不会自动生成提成金额。
+   - 请求示例：
+
+     ```json
+     {
+       "sales_commission": {
+         "salesperson": "张三",
+         "commission_amount": 100
+       }
+     }
+     ```
+
+   - 响应片段：
+
+     ```json
+     {
+       "sales_commission": {
+         "salesperson": "张三",
+         "commission_percentage": 12.5,
+         "commission_amount": 100.0
+       }
+     }
+     ```
+
+   - 受影响接口明细：
+
+     | HTTP 方法 | 接口路径 | 请求变化 | 响应变化 |
+     |---|---|---|---|
+     | GET | `/api/v1/cost-service/cost-registration` | 无 | `data.sales_commission.commission_percentage` |
+     | PUT | `/api/v1/cost-service/cost-registration` | `sales_commission.salesperson` 触发后台匹配；无新增请求字段 | `data.sales_commission.commission_percentage` |
+     | POST | `/api/v1/cost-service/consignments` | `sales_commission.salesperson` 触发后台匹配；无新增请求字段 | `data.sales_commission.commission_percentage` |
+     | POST | `/api/v1/cost-service/consignments/draft` | `sales_commission.salesperson` 触发后台匹配；无新增请求字段 | `data.sales_commission.commission_percentage` |
+     | GET | `/api/v1/cost-service/consignments` | 查询参数不变 | `data.items[].sales_commission.commission_percentage` |
+     | GET | `/api/v1/cost-service/consignments/{consignment_id}` | 无 | `data.sales_commission.commission_percentage` |
+     | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | `sales_commission.salesperson` 触发后台匹配；无新增请求字段 | `data.sales_commission.commission_percentage` |
+     | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | `sales_commission.salesperson` 触发后台匹配；无新增请求字段 | `data.sales_commission.commission_percentage` |
+     | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 无；作废不修改提成数据 | `data.sales_commission.commission_percentage` |
+     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 无变化；不导出提成百分比，仍为 94 列 |
+
+   - `commission_percentage` 仅供接口返回给前端计算，不作为页面展示字段，也不进入 Excel。Excel 业务信息区域保持第 91-92 列（`CM-CN`），依次为业务员、提成金额；经营信息保持第 93-94 列（`CO-CP`），导出总列数仍为 94。
+   - 存量数据库上线前需执行 `sql/migration_add_cost_sales_commission_percentage.sql`，同时为 `cost_registrations` 和 `cost_consignments` 增加可空的 `decimal(5,2)` 字段；全新建表脚本已包含该字段。
 
 #### 23.3 客服接单台与费用登记台数据双向实时同步规范
 

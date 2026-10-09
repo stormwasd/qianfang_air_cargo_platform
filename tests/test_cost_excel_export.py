@@ -131,6 +131,7 @@ class CostExcelLayoutTests(unittest.TestCase):
     def test_customer_marked_columns_are_not_exported(self):
         self.assertEqual(len(COST_EXPORT_HEADERS), 94)
         self.assertEqual(COST_EXPORT_HEADERS[:2], ("序号", "状态"))
+        self.assertNotIn("提成百分比", COST_EXPORT_HEADERS)
         removed_headers = {
             "国空应付-始发站", "国空应付-到达站", "国空应付-航班单号",
             "国空应付-航班号", "国空应付-航班日期", "国空应付-件数",
@@ -231,6 +232,7 @@ class CostExcelLayoutTests(unittest.TestCase):
             "费率": 88,
             "折让费": 89,
             "业务员": 90,
+            "提成金额": 91,
             "利润率(%)": 93,
         }
 

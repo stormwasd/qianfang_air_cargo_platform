@@ -1,5 +1,7 @@
 import unittest
+from decimal import Decimal
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from app.schemas.cost_service import (
     CostRegistrationSave,
@@ -14,9 +16,137 @@ from app.schemas.cost_service import (
 )
 from app.api.cost_service import _apply_cost_payload, _format_cost_record
 from app.models.cost_service import CostConsignment, CostRegistration
+from app.models.user import User
 
 
 class CostServiceSchemaTests(unittest.TestCase):
+    def test_sales_commission_percentage_round_trips_without_backend_calculation(self):
+        for model in (CostRegistration, CostConsignment):
+            with self.subTest(model=model.__name__):
+                model_fields = {"id": 1, "commission_percentage": Decimal("12.50")}
+                if model is CostConsignment:
+                    model_fields["status"] = CostConsignmentSubmissionStatus.SUBMITTED.value
+                record = model(**model_fields)
+
+                _apply_cost_payload(
+                    record,
+                    CostRegistrationSave.model_validate(
+                        {
+                            "sales_commission": {"salesperson": None},
+                            "operating_info": {"profit": 1000},
+                        }
+                    ),
+                )
+
+                self.assertEqual(record.commission_percentage, 12.5)
+                self.assertIsNone(record.commission_amount)
+                self.assertEqual(
+                    _format_cost_record(record)["sales_commission"],
+                    {
+                        "salesperson": "",
+                        "commission_percentage": 12.5,
+                        "commission_amount": None,
+                    },
+                )
+
+                _apply_cost_payload(
+                    record,
+                    CostRegistrationSave.model_validate(
+                        {
+                            "sales_commission": {
+                                "commission_amount": 88.8,
+                            },
+                            "operating_info": {"profit": 2000},
+                        }
+                    ),
+                )
+                self.assertEqual(record.commission_percentage, 12.5)
+                self.assertEqual(record.commission_amount, 88.8)
+
+    def test_salesperson_uses_matching_account_commission_percentage(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = User(
+            id=2,
+            name="张三",
+            commission_percentage=Decimal("18.75"),
+        )
+        record = CostConsignment(
+            id=1,
+            status=CostConsignmentSubmissionStatus.SUBMITTED.value,
+        )
+
+        _apply_cost_payload(
+            record,
+            CostRegistrationSave.model_validate(
+                {
+                    "sales_commission": {
+                        "salesperson": "张三",
+                    },
+                    "operating_info": {"profit": 1000},
+                }
+            ),
+            db,
+        )
+
+        db.query.assert_called_once_with(User)
+        self.assertEqual(record.salesperson, "张三")
+        self.assertEqual(record.commission_percentage, Decimal("18.75"))
+        self.assertIsNone(record.commission_amount)
+
+    def test_unmatched_or_cleared_salesperson_does_not_keep_stale_percentage(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        record = CostConsignment(
+            id=1,
+            status=CostConsignmentSubmissionStatus.SUBMITTED.value,
+            salesperson="旧业务员",
+            commission_percentage=Decimal("10.00"),
+        )
+
+        _apply_cost_payload(
+            record,
+            CostRegistrationSave.model_validate(
+                {"sales_commission": {"salesperson": "历史自由文本"}}
+            ),
+            db,
+        )
+        self.assertEqual(record.salesperson, "历史自由文本")
+        self.assertIsNone(record.commission_percentage)
+
+        _apply_cost_payload(
+            record,
+            CostRegistrationSave.model_validate(
+                {"sales_commission": {"salesperson": ""}}
+            ),
+            db,
+        )
+        self.assertEqual(record.salesperson, "")
+        self.assertIsNone(record.commission_percentage)
+
+    def test_sales_commission_percentage_is_present_in_models_and_database_scripts(self):
+        for model in (CostRegistration, CostConsignment):
+            with self.subTest(model=model.__name__):
+                column = model.__table__.columns["commission_percentage"]
+                self.assertTrue(column.nullable)
+                self.assertEqual(column.type.precision, 5)
+                self.assertEqual(column.type.scale, 2)
+
+        project_root = Path(__file__).parents[1]
+        create_script = (
+            project_root / "sql" / "migration_create_cost_service_consignments.sql"
+        ).read_text(encoding="utf-8")
+        migration_script = (
+            project_root / "sql" / "migration_add_cost_sales_commission_percentage.sql"
+        ).read_text(encoding="utf-8")
+        expected_column = (
+            "`commission_percentage` decimal(5,2) DEFAULT NULL "
+            "COMMENT '提成百分比'"
+        )
+        self.assertEqual(create_script.count(expected_column), 2)
+        self.assertEqual(migration_script.count(expected_column), 2)
+        self.assertIn("ALTER TABLE `cost_registrations`", migration_script)
+        self.assertIn("ALTER TABLE `cost_consignments`", migration_script)
+
     def test_ground_fees_round_trip_and_preserve_existing_update_semantics(self):
         for model in (CostRegistration, CostConsignment):
             with self.subTest(model=model.__name__):

@@ -84,6 +84,8 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             discount_rate=Decimal("7.25"),
             discount_fee=Decimal("88.50"),
             salesperson="salesperson",
+            commission_percentage=Decimal("12.50"),
+            commission_amount=Decimal("171.39"),
             profit=Decimal("1428.25"),
         )
         zero_record = CostConsignment(
@@ -150,6 +152,7 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             "CK4": 7.25,
             "CL4": 88.50,
             "CM4": "salesperson",
+            "CN4": 171.39,
             "CO4": 1428.25,
         }
         for cell, expected in expected_adjacent_values.items():
@@ -165,6 +168,12 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             ["折让人员", "费率", "折让费"],
         )
         self.assertEqual(worksheet["CK4"].data_type, "n")
+        self.assertEqual(
+            [worksheet[f"{column}3"].value for column in ("CM", "CN")],
+            ["业务员", "提成金额"],
+        )
+        self.assertNotIn("提成百分比", [cell.value for cell in worksheet[3]])
+        self.assertEqual(worksheet["CN4"].data_type, "n")
         for column, title in (("BM", "前置仓"), ("BN", "TC费"), ("BO", "提货费")):
             self.assertEqual(worksheet[f"{column}3"].value, title)
             self.assertEqual(worksheet[f"{column}4"].data_type, "n")

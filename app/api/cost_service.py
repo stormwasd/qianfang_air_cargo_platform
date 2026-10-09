@@ -257,6 +257,7 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
         # (5) 销售提成
         "sales_commission": {
             "salesperson": record.salesperson or "",
+            "commission_percentage": _to_float(record.commission_percentage),
             "commission_amount": _to_float(record.commission_amount),
         },
         
@@ -274,7 +275,11 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
     return data
 
 
-def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
+def _apply_cost_payload(
+    record: Any,
+    payload: CostRegistrationSave,
+    db: Optional[Session] = None,
+):
     """从层级化 Payload 赋值属性到 ORM 模型对象"""
     # 1. 货主委托信息
     if payload.consignor_info is not None:
@@ -446,7 +451,16 @@ def _apply_cost_payload(record: Any, payload: CostRegistrationSave):
     # 5. 销售提成
     if payload.sales_commission is not None:
         sc = payload.sales_commission
-        record.salesperson = sc.salesperson if sc.salesperson is not None else record.salesperson
+        if sc.salesperson is not None:
+            record.salesperson = sc.salesperson
+            salesperson_name = sc.salesperson.strip()
+            if not salesperson_name:
+                record.commission_percentage = None
+            elif db is not None:
+                salesperson = db.query(User).filter(User.name == salesperson_name).first()
+                record.commission_percentage = (
+                    salesperson.commission_percentage if salesperson else None
+                )
         record.commission_amount = sc.commission_amount if sc.commission_amount is not None else record.commission_amount
 
     # 6. 经营信息
@@ -489,13 +503,13 @@ async def save_cost_registration(
     record = db.query(CostRegistration).first()
     
     if record:
-        _apply_cost_payload(record, payload)
+        _apply_cost_payload(record, payload, db)
         db.commit()
         db.refresh(record)
         msg = "费用信息登记更新成功"
     else:
         record = CostRegistration()
-        _apply_cost_payload(record, payload)
+        _apply_cost_payload(record, payload, db)
         db.add(record)
         db.commit()
         db.refresh(record)
@@ -521,7 +535,7 @@ async def create_cost_consignment(
         creator_id=current_user.id,
         status=CostConsignmentSubmissionStatus.SUBMITTED.value,
     )
-    _apply_cost_payload(new_record, payload)
+    _apply_cost_payload(new_record, payload, db)
     
     # 若制单时间未传入，自动填充当前时间
     if not new_record.create_time:
@@ -572,7 +586,7 @@ async def create_cost_consignment_draft(
         creator_id=current_user.id,
         status=CostConsignmentSubmissionStatus.UNSUBMITTED.value,
     )
-    _apply_cost_payload(new_record, payload)
+    _apply_cost_payload(new_record, payload, db)
     if not new_record.create_time:
         new_record.create_time = get_china_now()
 
@@ -796,7 +810,7 @@ async def update_cost_consignment_draft(
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
 
     _ensure_cost_consignment_not_voided(record)
-    _apply_cost_payload(record, payload)
+    _apply_cost_payload(record, payload, db)
     record.status = CostConsignmentSubmissionStatus.UNSUBMITTED.value
     append_consignment_operation(db, record.id, current_user, source="cost_service", action="draft")
     db.commit()
@@ -825,7 +839,7 @@ async def update_cost_consignment(
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
 
     _ensure_cost_consignment_not_voided(record)
-    _apply_cost_payload(record, payload)
+    _apply_cost_payload(record, payload, db)
     record.status = CostConsignmentSubmissionStatus.SUBMITTED.value
     
     # 同步更新客服接单台 (ConsignmentInfo) 中的对应记录

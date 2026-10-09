@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS `cost_registrations` (
     `discount_fee` decimal(10,2) DEFAULT NULL COMMENT '折让费',
     -- (5) 销售提成
     `salesperson` varchar(100) DEFAULT NULL COMMENT '业务员',
+    `commission_percentage` decimal(5,2) DEFAULT NULL COMMENT '提成百分比',
     `commission_amount` decimal(10,2) DEFAULT NULL COMMENT '提成金额',
     -- (6) 经营信息
     `profit` decimal(10,2) DEFAULT NULL COMMENT '利润',
@@ -268,6 +269,7 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     `discount_fee` decimal(10,2) DEFAULT NULL COMMENT '折让费',
     -- (5) 销售提成
     `salesperson` varchar(100) DEFAULT NULL COMMENT '业务员',
+    `commission_percentage` decimal(5,2) DEFAULT NULL COMMENT '提成百分比',
     `commission_amount` decimal(10,2) DEFAULT NULL COMMENT '提成金额',
     -- (6) 经营信息
     `profit` decimal(10,2) DEFAULT NULL COMMENT '利润',
