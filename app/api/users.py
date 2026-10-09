@@ -1,12 +1,12 @@
 """
 账号管理接口
 """
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from app.core.exceptions import BadRequestException, NotFoundException, ForbiddenException, ConflictException
 from app.core.response import success_response
 from app.utils.response_helpers import model_to_dict, convert_model_list
 from sqlalchemy.orm import Session, joinedload
-from typing import List
+from typing import Annotated, List, Optional
 from app.database import get_db
 from app.models.user import User
 from app.models.department import Department
@@ -98,14 +98,22 @@ async def create_user(
 @router.get("", summary="查看已创建账号")
 async def get_users(
     current_user = Depends(require_admin),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    name: Annotated[Optional[str], Query(description="用户名称（包含匹配，去除首尾空白；不传或空白时不筛选）")] = None,
 ):
     """
     查看已创建账号接口（需要管理员权限）
     
-    返回所有账号的列表
+    - **name**: 用户名称（可选，模糊查询；省略或空白时返回全部账号）
+
+    返回匹配账号的列表，total 为匹配账号总数。
     """
-    users = db.query(User).options(joinedload(User.departments)).order_by(User.created_at.desc()).all()
+    query = db.query(User).options(joinedload(User.departments))
+    if name:
+        name_keyword = name.strip()
+        if name_keyword:
+            query = query.filter(User.name.contains(name_keyword, autoescape=True))
+    users = query.order_by(User.created_at.desc()).all()
     
     user_list = [_format_user_response(user) for user in users]
     
