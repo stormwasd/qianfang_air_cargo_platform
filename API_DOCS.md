@@ -86,8 +86,11 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `financial_auditor_name` | string | 财务审核人名称，来源为审核账号的用户姓名（`users.name`）；未审核或没有审核人时返回空字符串 |
+| `agent_name` | string | 代理名称；仅来源为托运书的同行空运单据返回 `consignment_notes.company_name`，深航/南航 RPA 数据和手动新增财务单据返回空字符串 |
 
 该字段对应费用登记台“空运单据审核”详情中的“审核人”，适用于深航、南航、同行空运和手动新增空运单据。
+
+应付信息中的 `payable.agent_name` 遵循同一来源规则：仅关联托运书的同行空运单据返回代理公司名称，其他来源返回 `null`。深航/南航 RPA 页面中的“代理人”或“代理人编码”不属于本系统的业务代理名称，不会映射到该字段。`POST /api/v1/financial-audit/air/audit` 暂存或提交时，后端会按来源重新校准该字段，避免请求值或历史暂存值覆盖托运书代理公司；`POST /api/v1/financial-audit/air` 手动新增的财务单据不关联托运书，因此忽略传入的 `payable.agent_name` 并保存为 `null`。
 
 ## 托运书
 

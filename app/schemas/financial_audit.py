@@ -18,7 +18,7 @@ class AirFinancialAuditQuery(BaseModel):
     pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 
 class PayableRequest(BaseModel):
-    agent_name: Optional[str] = Field(None, description="代理名称(仅同行空运)")
+    agent_name: Optional[str] = Field(None, description="代理名称（仅关联托运书的同行空运有效，以托运书代理公司为准）")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     billing_pieces: Optional[str] = Field(None, description="开单件数")
     billing_weight: Optional[str] = Field(None, description="开单重量")
@@ -89,7 +89,7 @@ class AirFinancialAuditDataUpsert(BaseModel):
     receivable: Optional[ReceivableRequest] = Field(None, description="应收板块全部数据")
 
 class PayableResponse(BaseModel):
-    agent_name: Optional[str] = Field(None, description="代理名称(仅同行空运)")
+    agent_name: Optional[str] = Field(None, description="代理名称（仅关联托运书的同行空运返回）")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     billing_pieces: Optional[str] = Field(None, description="开单件数")
     billing_weight: Optional[str] = Field(None, description="开单重量")
@@ -162,7 +162,7 @@ class AirFinancialAuditItemResponse(BaseModel):
     flight_date: Optional[str] = Field(None, description="航班日期")
     customer_name: Optional[str] = Field(None, description="客户名称（通常为前端传入的客户ID）")
     actual_customer_name: Optional[str] = Field(None, description="真实客户名称（根据客户ID匹配得到）")
-    agent_name: Optional[str] = Field(None, description="代理名称")
+    agent_name: Optional[str] = Field(None, description="代理名称（仅关联托运书的同行空运返回）")
     airline: Optional[str] = Field(None, description="航空公司")
     waybill_number: Optional[str] = Field(None, description="运单号")
     origin: Optional[str] = Field(None, description="始发站")

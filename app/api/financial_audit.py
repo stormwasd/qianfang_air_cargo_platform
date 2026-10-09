@@ -70,6 +70,17 @@ def safe_int(val: Any) -> int:
 def safe_str(val: Any) -> str:
     return str(val) if val is not None else ""
 
+
+def get_canonical_agent_name(
+    source_type: str,
+    consignment_note: Optional[ConsignmentNote] = None,
+) -> str:
+    """Return the business agent name only for consignment-note records."""
+    if source_type != "peer_air" or consignment_note is None:
+        return ""
+    return safe_str(consignment_note.company_name)
+
+
 def format_decimal(val: float) -> str:
     return f"{val:.2f}"
 
@@ -250,7 +261,7 @@ async def get_air_financial_audits(
                 "audit_status": md.audit_status if md else 0,
                 "financial_audit_status": fa.financial_audit_status if fa else 0,
                 "customer_name": md.customer_name if md else "",
-                "agent_name": safe_str(export.agent),
+                "agent_name": get_canonical_agent_name("shenzhen_air"),
                 "airline": "深航",
                 "cargo_name": safe_str(export.cargo_name),
                 "billing_quantity": safe_str(export.quantity),
@@ -342,7 +353,7 @@ async def get_air_financial_audits(
                 "audit_status": md.audit_status if md else 0,
                 "financial_audit_status": fa.financial_audit_status if fa else 0,
                 "customer_name": md.customer_name if md else "",
-                "agent_name": safe_str(approval.agent_code),
+                "agent_name": get_canonical_agent_name("china_southern_air"),
                 "airline": "南航",
                 "cargo_name": safe_str(approval.goods_name),
                 "billing_quantity": pieces,
@@ -444,7 +455,7 @@ async def get_air_financial_audits(
                 "audit_status": md.audit_status if md else 0,
                 "financial_audit_status": fa.financial_audit_status if fa else 0,
                 "customer_name": md.customer_name if md else "",
-                "agent_name": note.company_name or "",
+                "agent_name": get_canonical_agent_name("peer_air", note),
                 "airline": note.airline or "",
                 "cargo_name": form_dict.get("cargo_name", ""),
                 "billing_quantity": safe_str(form_dict.get("quantity", "")),
@@ -473,7 +484,10 @@ async def get_air_financial_audits(
         else:
             manual_q = manual_q.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
 
-    for fa in manual_q.all():
+    # Manually created financial records are not consignment notes and therefore
+    # have no business agent. An agent filter must only return linked peer records.
+    manual_records = [] if query.agent_name else manual_q.all()
+    for fa in manual_records:
         recv = fa.receivable_data or {}
         if isinstance(recv, str):
             try:
@@ -489,7 +503,7 @@ async def get_air_financial_audits(
 
         fl_date = recv.get("flight_date", "") or ""
         wb_number = recv.get("waybill_number", "") or ""
-        agent_name_val = pay.get("agent_name", "") or ""
+        agent_name_val = get_canonical_agent_name(fa.source_type)
 
         if waybill_list and wb_number not in waybill_list:
             continue
@@ -505,10 +519,6 @@ async def get_air_financial_audits(
         if query.flight_number and query.flight_number not in (recv.get("flight_number", "") or ""):
             continue
             
-        if query.agent_name and query.agent_name not in agent_name_val:
-            if fa.source_type == "peer_air":
-                continue
-
         candidate_items.append({
             "source_type": fa.source_type,
             "source_id": str(fa.id),
@@ -612,6 +622,7 @@ async def get_air_financial_audits(
                 safe_float(pay_raw.get("delivery_cost"))
             )
             pay_raw["total_cost"] = format_decimal(calc_total_cost)
+            pay_raw["agent_name"] = None
 
             payable_res = PayableResponse(**{k: (str(v) if v is not None else None) for k, v in pay_raw.items() if k in PayableResponse.model_fields})
             receivable_dict = {k: (str(v) if v is not None else None) for k, v in recv_raw.items() if k in ReceivableResponse.model_fields}
@@ -1048,6 +1059,10 @@ async def get_air_financial_audits(
                     p_override = {}
             if isinstance(p_override, dict):
                 payable_dict.update({k: str(v) for k, v in p_override.items() if v is not None})
+
+        # Agent names are owned by the consignment note. This also suppresses
+        # stale RPA values that may already exist in historical override JSON.
+        payable_dict["agent_name"] = item["agent_name"] or None
         
         calc_total_cost = (
             safe_float(payable_dict.get("air_freight")) +
@@ -1168,6 +1183,7 @@ async def audit_air_financial(
 
     exists = False
     is_manual = False
+    canonical_agent_name = ""
 
     if source_type == "shenzhen_air":
         exists_record = db.query(ShenzhenAirBookingExport.id).filter(ShenzhenAirBookingExport.id == source_id).first()
@@ -1176,8 +1192,10 @@ async def audit_air_financial(
         exists_record = db.query(ChinaSouthernAirApprovalData.id).filter(ChinaSouthernAirApprovalData.id == source_id).first()
         if exists_record: exists = True
     elif source_type == "peer_air":
-        exists_record = db.query(ConsignmentNote.id).filter(ConsignmentNote.id == source_id, ConsignmentNote.transport_type == "0").first()
-        if exists_record: exists = True
+        exists_record = db.query(ConsignmentNote).filter(ConsignmentNote.id == source_id, ConsignmentNote.transport_type == "0").first()
+        if exists_record:
+            exists = True
+            canonical_agent_name = get_canonical_agent_name(source_type, exists_record)
     else:
         raise HTTPException(status_code=400, detail="Invalid source_type")
 
@@ -1213,7 +1231,9 @@ async def audit_air_financial(
             db.add(fa_data)
 
     if req.payable is not None:
-        fa_data.payable_data = req.payable.model_dump()
+        payable_data = req.payable.model_dump()
+        payable_data["agent_name"] = canonical_agent_name or None
+        fa_data.payable_data = payable_data
     if req.receivable is not None:
         fa_data.receivable_data = req.receivable.model_dump()
 
@@ -1261,6 +1281,7 @@ async def create_air_financial_audit(
         derived_source_type = "peer_air"
 
     pay_dict = req.payable.model_dump()
+    pay_dict["agent_name"] = None
     pay_dict["_creator_name"] = current_user.name
 
     new_id = generate_id()
