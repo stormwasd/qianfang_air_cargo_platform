@@ -1,0 +1,434 @@
+[
+  {
+    "source": "www.kinggo.com.har",
+    "config": {
+      "parameter": "oOr6SIhu",
+      "version": "0",
+      "alphabet": "qrcklmDoExthWJiHAp1sVYKU3RFMQw8IGfPO92bvLNj.7zXBaSnu0TC6gy_4Ze5d",
+      "keyHex": "52f6af72303208e7039d020305020707",
+      "challengeHex": "4814f8bd49dcb32c6edee3c41ab88817aff810a2656643030aa945b106de1275688197522aa32dba85f5fe584996788c",
+      "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+      "sessionTag": 28554956,
+      "flags": 1703985,
+      "environmentCode": 1,
+      "source": "www.kinggo.com.har"
+    },
+    "samples": [
+      {
+        "url": "https://www.kinggo.com/static/plugin/dwz.frag.xml?_=1791738765184",
+        "token": "0geJ9QAlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlkV92m14g8Pwk4lyLmrBcwOmWk1jgGI8yQTWnvb25KxjSFdGeRtLrwS6ShNGSOxNQl8.1G_uaPQENY99u_gUICO",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28554956,
+          "randomHigh": 171574,
+          "timestampLow32": 737402730,
+          "requestDigest": 867953840,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 3822281841,
+          "payloadHex": "0b37001a0031000101b3b6cc00029e362bf3df6a33bbecb0203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/awb/shipebook/get_Ship_Ebook",
+        "token": "0gzPUVqlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlcqM8zxP1J90W59MzGQKpy91kOCcXeq4RJchrcejrg_UErZ42mzBg2NrB6LdfOOI8jwlJzACYRHBqQWa8rhPVa5",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28554956,
+          "randomHigh": 488460,
+          "timestampLow32": 737402732,
+          "requestDigest": 79033288,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 3805845328,
+          "payloadHex": "0b37001a0031000101b3b6cc0007740c2bf3df6c04b5f3c8203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/403",
+        "token": "0X_B2.qlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOcrUkxKcVumhWuKCkUT8t40o5AJpar_p1jcYJKqwSReWlA",
+        "metadata": {
+          "type": 11,
+          "length": 28,
+          "flags": 131109,
+          "environmentCode": 1,
+          "sessionTag": 2729686733,
+          "randomHigh": 488460,
+          "timestampLow32": 737402732,
+          "requestDigest": 2598468317,
+          "contextHex": "5554462d38",
+          "checksum": 3148604844,
+          "payloadHex": "0b1c000200250001a2b3b6cd0007740c2bf3df6c9ae17add055554462d38"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/jump_notice?_=1791738765185",
+        "token": "0EebLJalqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlckOsLEeM0MGqotZ3_qPPJiZplOqkWb17qWSolCSCOi87Fq6hjbCoiK4hp2RZWh15eFcDXO5XMAjgq06HQYxbNk",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28554956,
+          "randomHigh": 955708,
+          "timestampLow32": 737402735,
+          "requestDigest": 260302200,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 601466935,
+          "payloadHex": "0b37001a0031000101b3b6cc000e953c2bf3df6f0f83e578203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/loginRemind/searchRemind?_=1791738765186",
+        "token": "0vCeCkqlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlqDR75c6j7uMxXkB6vt9SQX3IHmR72KOKTDxw7gQi1TtsSLrlPoH7_nAb4au9YO2tsgCx0G6.WVBa3KXGd5keyS",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28554956,
+          "randomHigh": 985750,
+          "timestampLow32": 737402737,
+          "requestDigest": 156144203,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 2674882060,
+          "payloadHex": "0b37001a0031000101b3b6cc000f0a962bf3df71094e924b203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/awb/sms_alert/getCountSms",
+        "token": "0vn7olqlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlkfVI3PePqM_qybrNzVi.LUCEwUtEy4h186U.q5Z5M3Gun2MzeE7a.b3bghuPXD7.uC5RScWI6OmkD1V0z9XWhs",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28554956,
+          "randomHigh": 74086,
+          "timestampLow32": 737402739,
+          "requestDigest": 3957329314,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 2670397200,
+          "payloadHex": "0b37001a0031000101b3b6cc000121662bf3df73ebe00da2203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/awb/sms_alert/getCountSms",
+        "token": "05QGcHalqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlcP1vRZq6c5i1rEnWBu8Fww9dpMMlg2LN895EVV0ul2o38sot4lW4DW0jNaPr.ABPAFTxiRqzw78xTGy2LEmcih",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28554956,
+          "randomHigh": 743483,
+          "timestampLow32": 737402741,
+          "requestDigest": 3957329314,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 4190634559,
+          "payloadHex": "0b37001a0031000101b3b6cc000b583b2bf3df75ebe00da2203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/awb/sms_alert/getCountSms",
+        "token": "0DKfy6GlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlq3y9fgvT9WlOS5mN0EDGEBLnQUtM_YYiVyvF7UH7fNtbYOL8fNTSQzMQhB7Y44xowQMxPnGR1QJDF6yuPhKJ1V",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28554956,
+          "randomHigh": 140455,
+          "timestampLow32": 737402743,
+          "requestDigest": 3957329314,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 426277342,
+          "payloadHex": "0b37001a0031000101b3b6cc000224a72bf3df77ebe00da2203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      }
+    ],
+    "generated": [
+      {
+        "options": {
+          "url": "/awb/sms_alert/getCountSms",
+          "timestampMs": 1791738765314,
+          "randomHigh": 999999
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "02Ojh4qlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlkZrGnQrzD51E81EM2pzXme1gqUTKE_zlYnG2wI5KiyDL0y5YIfLqsXAi5RWXBsbDDUOjaX4_i0ofzQ7dzjrtb8",
+          "url": "https://www.kinggo.com/awb/sms_alert/getCountSms?oOr6SIhu=02Ojh4qlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlkZrGnQrzD51E81EM2pzXme1gqUTKE_zlYnG2wI5KiyDL0y5YIfLqsXAi5RWXBsbDDUOjaX4_i0ofzQ7dzjrtb8",
+          "payloadHex": "0b37001a0031000101b3b6cc000f423f2bf3e002ebe00da2203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/static/plugin/dwz.frag.xml?_=1791738765184",
+          "timestampMs": 1791738765315,
+          "randomHigh": 999998
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "0GUaAialqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlc.AD1FsJ49cCb9lJ79QVSVryMjto2DVd_Fl9OSlN0z5fIbsagtnIB.EMSX4N0sUh5RNnVjdQOp29egdXSM04pi",
+          "url": "https://www.kinggo.com/static/plugin/dwz.frag.xml?_=1791738765184&oOr6SIhu=0GUaAialqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlc.AD1FsJ49cCb9lJ79QVSVryMjto2DVd_Fl9OSlN0z5fIbsagtnIB.EMSX4N0sUh5RNnVjdQOp29egdXSM04pi",
+          "payloadHex": "0b37001a0031000101b3b6cc000f423e2bf3e00333bbecb0203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/example?a=1&a=2&empty=",
+          "timestampMs": 1791738765316,
+          "randomHigh": 999997
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "089MUqqlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlruFhiyPLvBqdkVE3GyAvsiGIbMvEkz1u0OBdgtn3zh5CzpsehenOVeYgurGrJtDDKSIizRd5vb4VCZzs6Modde",
+          "url": "https://www.kinggo.com/example?a=1&a=2&empty=&oOr6SIhu=089MUqqlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlruFhiyPLvBqdkVE3GyAvsiGIbMvEkz1u0OBdgtn3zh5CzpsehenOVeYgurGrJtDDKSIizRd5vb4VCZzs6Modde",
+          "payloadHex": "0b37001a0031000101b3b6cc000f423d2bf3e004f06a70f1203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/a/../awb/sms_alert/getCountSms",
+          "timestampMs": 1791738765317,
+          "randomHigh": 999996
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "01Sg1cqlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlcjHQDcHeBq5eIIPelqTrY3oi4pJUAwjpZh7zbMB_a4IRqDxRUhbqN7cUja5BpBD9qfjnDLfKi6LI4yEmfHzy1H",
+          "url": "https://www.kinggo.com/awb/sms_alert/getCountSms?oOr6SIhu=01Sg1cqlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlcjHQDcHeBq5eIIPelqTrY3oi4pJUAwjpZh7zbMB_a4IRqDxRUhbqN7cUja5BpBD9qfjnDLfKi6LI4yEmfHzy1H",
+          "payloadHex": "0b37001a0031000101b3b6cc000f423c2bf3e005ebe00da2203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/example?space=hello+world&x=*",
+          "timestampMs": 1791738765318,
+          "randomHigh": 999995
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "03vPmDalqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlr9kvmpZYfqJGWlVHCB_GHYfBT56hOs0brJo4oNooUm3OBZtqGduD6vfVUsqKF26CsqanpGOEGcwnjg8XG7F2j8",
+          "url": "https://www.kinggo.com/example?space=hello+world&x=*&oOr6SIhu=03vPmDalqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlr9kvmpZYfqJGWlVHCB_GHYfBT56hOs0brJo4oNooUm3OBZtqGduD6vfVUsqKF26CsqanpGOEGcwnjg8XG7F2j8",
+          "payloadHex": "0b37001a0031000101b3b6cc000f423b2bf3e00699037adc203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/example?oOr6SIhu=old&page=1#section",
+          "timestampMs": 1791738765319,
+          "randomHigh": 999994
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "0k3aCSGlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlcOQ5tKCe6_Du0gB_BvuheDWYgC9oQ.9Y6VmW5Vx36oEPFeWWRR0e1w.imK1fGg2FC_OOYDB2oX7669W3lq.Itu",
+          "url": "https://www.kinggo.com/example?oOr6SIhu=0k3aCSGlqWlGV5hTx6hW7Mz4OSrjgPr8B5rcPRKRkqajNpMlD6fxTFEDUVPjOhMjmeIy31RRgOlcOQ5tKCe6_Du0gB_BvuheDWYgC9oQ.9Y6VmW5Vx36oEPFeWWRR0e1w.imK1fGg2FC_OOYDB2oX7669W3lq.Itu&page=1#section",
+          "payloadHex": "0b37001a0031000101b3b6cc000f423a2bf3e00794f623b3203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      }
+    ]
+  },
+  {
+    "source": "www.kinggo.com_1.har",
+    "config": {
+      "parameter": "oOr6SIhu",
+      "version": "0",
+      "alphabet": "qrcklmDoExthWJiHAp1sVYKU3RFMQw8IGfPO92bvLNj.7zXBaSnu0TC6gy_4Ze5d",
+      "keyHex": "f6fe6654fc21f355d836030005050704",
+      "challengeHex": "bd5159547b4d84a4b1b1b978217d9236221be2554341abd54a1cca02a08ae500f377cd17e8b05a5c99eba6421b0323ed",
+      "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+      "sessionTag": 28555249,
+      "flags": 1703985,
+      "environmentCode": 1,
+      "source": "www.kinggo.com_1.har"
+    },
+    "samples": [
+      {
+        "url": "https://www.kinggo.com/static/plugin/dwz.frag.xml?_=1791740885095",
+        "token": "0p.xW6AlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4Vr9qIGKHNp0_LQ983yqW1Fqacuzedalu2zFJy8JX69jSNydgtGHivyyeKQYkZKVqw1D5AzEHMJuoX5BX1RbsxLB",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28555249,
+          "randomHigh": 645201,
+          "timestampLow32": 739522621,
+          "requestDigest": 724159642,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 1186090205,
+          "payloadHex": "0b37001a0031000101b3b7f10009d8512c14383d2b29cc9a203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/awb/shipebook/get_Ship_Ebook",
+        "token": "0H49M5alqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VcG64ge4FbHoOx5jpbaCQiLmivozewpgmtkaoTGHboEiyUTGx1AlSk0RGkrM5AV1HB8yTXeaF2oMwH7_yBkcSV3",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28555249,
+          "randomHigh": 801107,
+          "timestampLow32": 739522623,
+          "requestDigest": 79033288,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 1069095931,
+          "payloadHex": "0b37001a0031000101b3b7f1000c39532c14383f04b5f3c8203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/403",
+        "token": "0ltH9HqlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO41rYgM4HMKHRkS1NYbFMs0QrGDaFV5n7mg4JM_O_UDvHdA",
+        "metadata": {
+          "type": 11,
+          "length": 28,
+          "flags": 131109,
+          "environmentCode": 1,
+          "sessionTag": 2729687026,
+          "randomHigh": 801107,
+          "timestampLow32": 739522623,
+          "requestDigest": 2598468317,
+          "contextHex": "5554462d38",
+          "checksum": 279176252,
+          "payloadHex": "0b1c000200250001a2b3b7f2000c39532c14383f9ae17add055554462d38"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/jump_notice?_=1791740885096",
+        "token": "0NRX_aqlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VrXhjdVVxek60KHpo0c.xNxZZrW6KpiPi_tbm1JU9miN2awGczAu7bHmsyT5tZ811TwHQjX9EX0gO6WY1FjQF3f",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28555249,
+          "randomHigh": 142051,
+          "timestampLow32": 739522626,
+          "requestDigest": 4179600510,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 2778446528,
+          "payloadHex": "0b37001a0031000101b3b7f100022ae32c143842f91fa47e203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/loginRemind/searchRemind?_=1791740885097",
+        "token": "0_wzAJAlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VcvpagH7BPXsxF6gOEaZaVZkK7HqbGYXEellfOA2bWEkd0nipAwueLHVW87B._0_90oVF1fYqGveSYHiBoT_PoU",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28555249,
+          "randomHigh": 676843,
+          "timestampLow32": 739522628,
+          "requestDigest": 299676257,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 3923464245,
+          "payloadHex": "0b37001a0031000101b3b7f1000a53eb2c14384411dcb261203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "url": "https://www.kinggo.com/awb/sms_alert/getCountSms",
+        "token": "0y6dxDGlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VcDoawnNhgQSjMMESUJvNt4qhMCfpRlQnRNibEtgdizJTXyTqcre6mDO2xIpyk8_XdR16ZE2ONAYp1W7VgvxJg2",
+        "metadata": {
+          "type": 11,
+          "length": 55,
+          "flags": 1703985,
+          "environmentCode": 1,
+          "sessionTag": 28555249,
+          "randomHigh": 408203,
+          "timestampLow32": 739522630,
+          "requestDigest": 3957329314,
+          "contextHex": "3ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5",
+          "checksum": 3883911450,
+          "payloadHex": "0b37001a0031000101b3b7f100063a8b2c143846ebe00da2203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      }
+    ],
+    "generated": [
+      {
+        "options": {
+          "url": "/awb/sms_alert/getCountSms",
+          "timestampMs": 1791738765314,
+          "randomHigh": 999999
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "0Ky8b0AlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4Vkjdw2wqdnHmFkp_R_GtGAD4.t71h0wMySQOq38ft_4LTGyRjJdhby4kVJa.yZ7N_.5J32x476g0.W_7S7hv8gE",
+          "url": "https://www.kinggo.com/awb/sms_alert/getCountSms?oOr6SIhu=0Ky8b0AlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4Vkjdw2wqdnHmFkp_R_GtGAD4.t71h0wMySQOq38ft_4LTGyRjJdhby4kVJa.yZ7N_.5J32x476g0.W_7S7hv8gE",
+          "payloadHex": "0b37001a0031000101b3b7f1000f423f2bf3e002ebe00da2203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/static/plugin/dwz.frag.xml?_=1791738765184",
+          "timestampMs": 1791738765315,
+          "randomHigh": 999998
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "05JCddqlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VcH_g2HfuNgcdyBoIs_PZ16oR.Qm5HaFuqpXFEZ1rFQA2bKVZ8og8M675xemE7GZIheSHWUK6k0qAN39kJtYGLS",
+          "url": "https://www.kinggo.com/static/plugin/dwz.frag.xml?_=1791738765184&oOr6SIhu=05JCddqlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VcH_g2HfuNgcdyBoIs_PZ16oR.Qm5HaFuqpXFEZ1rFQA2bKVZ8og8M675xemE7GZIheSHWUK6k0qAN39kJtYGLS",
+          "payloadHex": "0b37001a0031000101b3b7f1000f423e2bf3e00333bbecb0203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/example?a=1&a=2&empty=",
+          "timestampMs": 1791738765316,
+          "randomHigh": 999997
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "0_uuJMGlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4Vrcz_jbmIrqbItI_vghLava_iBM42YV8ZUt7Efob6MIgBYGeeXeawdq9Hx9NSkcijLEoLjWewKuurIgEcGDZpyy",
+          "url": "https://www.kinggo.com/example?a=1&a=2&empty=&oOr6SIhu=0_uuJMGlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4Vrcz_jbmIrqbItI_vghLava_iBM42YV8ZUt7Efob6MIgBYGeeXeawdq9Hx9NSkcijLEoLjWewKuurIgEcGDZpyy",
+          "payloadHex": "0b37001a0031000101b3b7f1000f423d2bf3e004f06a70f1203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/a/../awb/sms_alert/getCountSms",
+          "timestampMs": 1791738765317,
+          "randomHigh": 999996
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "0qj8qFalqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4Vk2zaxNFHSqNk5P20WZN60H3o3r4dXl8M8XEv2zY0DUe5I8CoKRj7hRa.r8kBMK2oX_hZuM7MJ10a3mRuqzJiGg",
+          "url": "https://www.kinggo.com/awb/sms_alert/getCountSms?oOr6SIhu=0qj8qFalqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4Vk2zaxNFHSqNk5P20WZN60H3o3r4dXl8M8XEv2zY0DUe5I8CoKRj7hRa.r8kBMK2oX_hZuM7MJ10a3mRuqzJiGg",
+          "payloadHex": "0b37001a0031000101b3b7f1000f423c2bf3e005ebe00da2203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/example?space=hello+world&x=*",
+          "timestampMs": 1791738765318,
+          "randomHigh": 999995
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "0YcluQqlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VkK1_W8ecJYSZHq1h9TRcTmhq8c2EhyHVwI1ElSsRoZ_l_.v4rE77Cy8WsvftfaRhBr0HGtDgXerer2dnTleHuk",
+          "url": "https://www.kinggo.com/example?space=hello+world&x=*&oOr6SIhu=0YcluQqlqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VkK1_W8ecJYSZHq1h9TRcTmhq8c2EhyHVwI1ElSsRoZ_l_.v4rE77Cy8WsvftfaRhBr0HGtDgXerer2dnTleHuk",
+          "payloadHex": "0b37001a0031000101b3b7f1000f423b2bf3e00699037adc203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      },
+      {
+        "options": {
+          "url": "/example?oOr6SIhu=old&page=1#section",
+          "timestampMs": 1791738765319,
+          "randomHigh": 999994
+        },
+        "result": {
+          "parameter": "oOr6SIhu",
+          "value": "0J2MXWalqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VqP8qdVcq7J1AatkNt_X2qrqdaZ09UMz7s2fvxXizGBn_8qXs.XZHs7bABM9sBzWHmg.pJnqXMSDR9Xy59PEaLP",
+          "url": "https://www.kinggo.com/example?oOr6SIhu=0J2MXWalqWhTpKYp4s3197MDy8cme9O3PD5xYA0D.TVLQnGtGPXVqZ6IJm5PaK2nR__RcDaWO4VqP8qdVcq7J1AatkNt_X2qrqdaZ09UMz7s2fvxXizGBn_8qXs.XZHs7bABM9sBzWHmg.pJnqXMSDR9Xy59PEaLP&page=1#section",
+          "payloadHex": "0b37001a0031000101b3b7f1000f423a2bf3e00794f623b3203ef704c76157913f67f93ef66dafc53b44a64113f09189edccaad99f2f0e19f5"
+        }
+      }
+    ]
+  }
+]
