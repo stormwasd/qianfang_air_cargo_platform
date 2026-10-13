@@ -79,6 +79,26 @@
 
 配置项默认值为 `10`，高于普通任务默认优先级 `1`、保持登录任务优先级 `3` 和重启任务优先级 `4`。南航订舱、取消、出港跟踪、审批、抓取等其他任务优先级不受影响。优先级只影响尚未开始执行的任务，已经处于 `running` 的任务不会被中断；修改 `.env` 后需要重启服务生效。
 
+## 深航获取 HAR 周期任务
+
+新增 RPA 任务类型 `SHENZHEN_AIR_GET_HAR`（中文名称“深航获取har”），流程定义如下：
+
+| 字段 | 值 |
+| --- | --- |
+| `process_detail_uuid` | `9d55ee2fbd0460f44c1dd1c47f5f7e32` |
+| `version` | `0.0.2` |
+| `process_param` | `{"system_url":"https://www.kinggo.com/main"}` |
+
+部署时执行 `sql/migration_insert_shenzhen_air_get_har.sql` 写入或校准 `task_processes`；应用启动也会补齐缺失记录，但不会覆盖已有流程配置。之后需要通过机器人管理接口为目标机器人分配 `SHENZHEN_AIR_GET_HAR` 权限，保存配置时系统会自动创建该机器人的 RPA Job。`GET /api/v1/robots/task-types` 会返回这一新任务类型。
+
+当 `RPA_QUEUE_ENABLED=True` 时，服务启动会立即为每台拥有该权限的启用机器人尝试创建一次任务，之后按以下配置循环调度：
+
+| 配置项 | 默认值 | 范围 | 说明 |
+| --- | --- | --- | --- |
+| `RPA_SHENZHEN_AIR_GET_HAR_INTERVAL_SECONDS` | `1800` | `1-86400` 秒 | 同一机器人两轮调度的等待间隔；修改后需重启服务 |
+
+调度器会跳过已经存在 pending/running 同类任务的机器人，避免任务堆积。该流程不使用 RPA 数据队列；RPA Job 成功结束后任务即完成，HAR 文件的实际保存位置由 RPA 流程自身配置决定。
+
 ## 空运财务审核
 
 `GET /api/v1/financial-audit/air` 返回的列表项包含财务审核人字段：

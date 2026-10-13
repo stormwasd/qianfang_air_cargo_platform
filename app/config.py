@@ -148,6 +148,10 @@ class Settings(BaseSettings):
         default=1800, ge=1, le=86400,
         description="南航获取Token任务定时调度间隔（秒），默认1800秒（30分钟）"
     )
+    RPA_SHENZHEN_AIR_GET_HAR_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=1, le=86400,
+        description="深航获取HAR任务定时调度间隔（秒），默认1800秒（30分钟）"
+    )
 
     # 携程航班接口代理。默认关闭以保持非 Docker/既有部署的原行为；
     # docker-compose 会显式开启并指向同编排内的 proxy_pool 服务。

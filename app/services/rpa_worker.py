@@ -412,6 +412,8 @@ class RPAWorker:
                     await self._execute_china_southern_air_departure_tracking(db, task)
                 elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_GET_TOKEN.value:
                     await self._execute_china_southern_air_get_token(db, task)
+                elif task.task_type == RPATaskType.SHENZHEN_AIR_GET_HAR.value:
+                    await self._execute_shenzhen_air_get_har(db, task)
                 else:
                     print(f"{self._log_prefix} 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -3605,6 +3607,96 @@ class RPAWorker:
             rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
         finally:
             await self._cleanup_queues(queues_info)
+
+    async def _execute_shenzhen_air_get_har(self, db, task: RPATask):
+        """执行无返回队列的深航获取 HAR 周期任务。"""
+        print(f"{self._log_prefix} 准备执行深航获取HAR任务: {task.id}")
+        job_uuid = task.job_uuid or self._resolve_job_uuid(db, task.task_type)
+        if not job_uuid:
+            error_msg = (
+                "未找到深航获取HAR任务 "
+                f"(task_type={task.task_type}) 对应的 job_uuid"
+            )
+            print(f"{self._log_prefix} {error_msg}")
+            rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+            return
+
+        try:
+            params = json.loads(task.params) if task.params else {}
+            if not isinstance(params, dict):
+                params = {}
+            system_url = params.get("system_url") or "https://www.kinggo.com/main"
+            print(
+                f"{self._log_prefix} [SHENZHEN_AIR_GET_HAR] "
+                f"实际发送给RPA的参数: system_url={system_url}"
+            )
+            response_data = await rpa_service.create_shenzhen_air_get_har(
+                system_url=system_url,
+                job_uuid=job_uuid,
+            )
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(response_data)
+            if not work_uuid:
+                raise ValueError("RPA 接口未返回有效的 workUuid")
+            rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
+            print(f"{self._log_prefix} 成功创建深航获取HAR任务, workUuid: {work_uuid}")
+            await self._poll_shenzhen_air_get_har_status(
+                db, task, job_uuid, work_uuid
+            )
+        except Exception as exc:
+            error_msg = _get_error_detail(exc)
+            print(
+                f"{self._log_prefix} 执行深航获取HAR任务异常: "
+                f"{error_msg}\n{traceback.format_exc()}"
+            )
+            rpa_task_service.complete_task(
+                db, task.id, False, error_message=error_msg
+            )
+
+    async def _poll_shenzhen_air_get_har_status(
+        self,
+        db,
+        task: RPATask,
+        job_uuid: str,
+        work_uuid: str,
+    ) -> None:
+        """轮询深航获取 HAR Job，成功后直接结束任务。"""
+        poll_count = 0
+        while poll_count < settings.RPA_POLL_MAX_COUNT:
+            try:
+                response_data = await rpa_service.query_shenzhen_air_waybill_status(
+                    job_uuid=job_uuid
+                )
+                status_info = rpa_service.extract_status_from_query_response(
+                    response_data, work_uuid
+                )
+                if status_info:
+                    status = status_info.get("status")
+                    status_desc = status_info.get("statusDesc", "")
+                    if status == 5:
+                        print(f"{self._log_prefix} 深航获取HAR任务执行成功: {work_uuid}")
+                        rpa_task_service.complete_task(db, task.id, True)
+                        return
+                    if status in (3, 4):
+                        error_msg = f"RPA任务执行失败: {status_desc} (status={status})"
+                        rpa_task_service.complete_task(
+                            db, task.id, False, error_message=error_msg
+                        )
+                        return
+                await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+                poll_count += 1
+            except Exception as exc:
+                print(
+                    f"{self._log_prefix} 轮询深航获取HAR任务状态异常: "
+                    f"{_get_error_detail(exc)}"
+                )
+                await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+                poll_count += 1
+
+        error_msg = (
+            "轮询任务状态超时 "
+            f"(超过 {settings.RPA_POLL_MAX_COUNT * settings.RPA_POLL_INTERVAL} 秒)"
+        )
+        rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
 
     @staticmethod
     def _clean_single_token_str(s: Any) -> str:

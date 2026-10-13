@@ -14,8 +14,8 @@ from app.core.exceptions import BaseAPIException
 from app.core.response import error_response
 
 
-def _init_nanhang_token_process():
-    """在应用启动时，自动校验建表 nanhang_token 以及初始化 task_processes 对应流程配置"""
+def _init_rpa_processes():
+    """自动校验建表，并补齐系统内置的 RPA 流程配置。"""
     try:
         from app.database import engine, Base, SessionLocal
         from app.models.robot import TaskProcess
@@ -44,29 +44,50 @@ def _init_nanhang_token_process():
                 db.commit()
                 print(f"[Init] 自动清洗存量 nanhang_token 历史数据: {cleaned_count} 条")
 
-            # 2. 校验补齐 task_processes 流程配置
-            process = db.query(TaskProcess).filter(TaskProcess.task_name == "CHINA_SOUTHERN_AIR_GET_TOKEN").first()
-            if not process:
-                new_process = TaskProcess(
+            # 2. 校验补齐 task_processes 流程配置。已有记录由迁移 SQL 或管理接口维护，
+            # 启动过程只补缺，避免意外覆盖线上调整。
+            process_defaults = (
+                {
+                    "task_name": "CHINA_SOUTHERN_AIR_GET_TOKEN",
+                    "chinese_name": "南航获取token",
+                    "process_detail_uuid": "ccd69aab94b92dec70bd05dfd6f3aa21",
+                    "version": "0.0.2",
+                    "process_param": '{"system_url":"https://cargo.csair.com/tangb2gweb/order-management","queue_token_name":""}',
+                },
+                {
+                    "task_name": "SHENZHEN_AIR_GET_HAR",
+                    "chinese_name": "深航获取har",
+                    "process_detail_uuid": "9d55ee2fbd0460f44c1dd1c47f5f7e32",
+                    "version": "0.0.2",
+                    "process_param": '{"system_url":"https://www.kinggo.com/main"}',
+                },
+            )
+            added_processes = []
+            for defaults in process_defaults:
+                process = db.query(TaskProcess).filter(
+                    TaskProcess.task_name == defaults["task_name"]
+                ).first()
+                if process:
+                    continue
+                now = get_china_now()
+                db.add(TaskProcess(
                     id=random.randint(100000000000000000, 999999999999999999),
-                    task_name="CHINA_SOUTHERN_AIR_GET_TOKEN",
-                    chinese_name="南航获取token",
-                    process_detail_uuid="ccd69aab94b92dec70bd05dfd6f3aa21",
-                    version="0.0.2",
-                    process_param='{"system_url":"https://cargo.csair.com/tangb2gweb/order-management","queue_token_name":""}',
-                    created_at=get_china_now(),
-                    updated_at=get_china_now()
-                )
-                db.add(new_process)
+                    created_at=now,
+                    updated_at=now,
+                    **defaults,
+                ))
+                added_processes.append(defaults["task_name"])
+
+            if added_processes:
                 db.commit()
-                print("[Init] 自动补齐 task_processes 流程配置: CHINA_SOUTHERN_AIR_GET_TOKEN")
+                print(f"[Init] 自动补齐 task_processes 流程配置: {', '.join(added_processes)}")
         except Exception as e:
             db.rollback()
             print(f"[Init] 校验 task_processes 失败: {e}")
         finally:
             db.close()
     except Exception as e:
-        print(f"[Init] 初始化 nanhang_token 模块异常: {e}")
+        print(f"[Init] 初始化 RPA 流程模块异常: {e}")
 
 
 @asynccontextmanager
@@ -75,7 +96,7 @@ async def lifespan(app: FastAPI):
     应用生命周期管理
     启动时启动RPA Worker，关闭时停止Worker
     """
-    _init_nanhang_token_process()
+    _init_rpa_processes()
     # 南航货物类型同步为后端直连接口任务，不依赖 RPA 队列是否启用。
     from app.services.csa_cargo_type_sync import csa_cargo_type_sync_scheduler
     csa_cargo_type_sync_scheduler.start()
@@ -111,6 +132,8 @@ async def lifespan(app: FastAPI):
         csa_departure_status_alert.start()
         from app.services.csa_get_token_scheduler import csa_get_token_scheduler
         csa_get_token_scheduler.start()
+        from app.services.shenzhen_air_get_har_scheduler import shenzhen_air_get_har_scheduler
+        shenzhen_air_get_har_scheduler.start()
         from app.services.departure_actual_time_sync import departure_actual_time_sync
         departure_actual_time_sync.start()
     else:
@@ -152,6 +175,8 @@ async def lifespan(app: FastAPI):
         csa_departure_status_alert.stop()
         from app.services.csa_get_token_scheduler import csa_get_token_scheduler
         csa_get_token_scheduler.stop()
+        from app.services.shenzhen_air_get_har_scheduler import shenzhen_air_get_har_scheduler
+        shenzhen_air_get_har_scheduler.stop()
         from app.services.departure_actual_time_sync import departure_actual_time_sync
         departure_actual_time_sync.stop()
 
