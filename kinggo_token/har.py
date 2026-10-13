@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urljoin, urlsplit
@@ -13,6 +14,36 @@ from urllib.parse import parse_qsl, urljoin, urlsplit
 from .generator import (
     Config, _form_query, _request_url, decode_token, encode_payload, generate, inspect_token,
 )
+
+
+def _launch_options(channel: str | None, executable_path: str | None) -> dict[str, Any]:
+    """Keep Windows' Edge default; use bundled Chromium on other platforms."""
+    options: dict[str, Any] = {"headless": True}
+    executable_path = executable_path or os.environ.get("EDGE_EXECUTABLE")
+    if executable_path:
+        options["executable_path"] = executable_path
+    else:
+        if channel == "auto":
+            channel = "msedge" if sys.platform == "win32" else None
+        if channel:
+            options["channel"] = channel
+    return options
+
+
+def _launch_error(options: dict[str, Any], error: Exception) -> str:
+    if "executable_path" in options:
+        hint = ("Check --executable-path / executable_path / EDGE_EXECUTABLE and the browser's system dependencies. "
+                "Remove the override to use automatic browser selection.")
+    elif options.get("channel") == "msedge":
+        hint = ("Install Microsoft Edge, or run 'python -m playwright install chromium' "
+                "and select '--browser chromium' (API: channel=None).")
+    elif "channel" not in options:
+        hint = ("Install Chromium in the same Python environment and OS user: "
+                "'python -m playwright install --with-deps chromium'. "
+                "On Ubuntu, system dependency installation requires sudo privileges.")
+    else:
+        hint = f"Install the requested browser channel {options['channel']!r} and its system dependencies."
+    return f"Browser launch failed. {hint}\nOriginal error: {error}"
 
 
 def _entries(path: str | Path) -> list[dict[str, Any]]:
@@ -56,15 +87,19 @@ def select_config(token: str, probe: dict[str, Any]) -> dict[str, Any]:
 
 async def replay_offline(
     har_path: str | Path, url: str, method: str = "POST", body: str | None = None,
-    *, channel: str | None = "msedge", executable_path: str | None = None,
+    *, channel: str | None = "auto", executable_path: str | None = None,
     timeout_ms: int = 30000,
 ) -> dict[str, Any]:
     """Async API suitable for FastAPI. Uses no logged-in browser or outbound requests.
 
     Browser state is recreated from scripts, not from the user's browser cookies.
-    Set channel=None to use Playwright Chromium on servers.
+    Default channel='auto': Edge on Windows, Playwright Chromium elsewhere.
+    Set channel=None to explicitly use Playwright Chromium on any platform.
     """
-    from playwright.async_api import async_playwright
+    if any(character in url for character in "\r\n\t"):
+        raise ValueError("Target URL must not contain newlines or tabs; use /awb/sms_alert/getCountSms on one line")
+
+    from playwright.async_api import Error as PlaywrightError, async_playwright
 
     entries = _entries(har_path)
     main = next((e for e in entries if urlsplit(e["request"]["url"]).path == "/main" and _text(e)), None)
@@ -100,13 +135,11 @@ async def replay_offline(
     page_errors: list[str] = []
 
     async with async_playwright() as playwright:
-        launch_options: dict[str, Any] = {"headless": True}
-        executable_path = executable_path or os.environ.get("EDGE_EXECUTABLE")
-        if executable_path:
-            launch_options["executable_path"] = executable_path
-        elif channel:
-            launch_options["channel"] = channel
-        browser = await playwright.chromium.launch(**launch_options)
+        launch_options = _launch_options(channel, executable_path)
+        try:
+            browser = await playwright.chromium.launch(**launch_options)
+        except PlaywrightError as error:
+            raise RuntimeError(_launch_error(launch_options, error)) from error
         try:
             context_options: dict[str, Any] = {"service_workers": "block"}
             if user_agent:

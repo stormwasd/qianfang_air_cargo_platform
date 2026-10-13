@@ -18,7 +18,8 @@ def main() -> int:
     extract.add_argument("--method", default="POST")
     extract.add_argument("--body")
     extract.add_argument("--output", default="kinggo_token/config-from-har.json")
-    extract.add_argument("--browser", choices=["msedge", "chromium"], default="msedge")
+    extract.add_argument("--browser", choices=["auto", "msedge", "chromium"], default="auto",
+                         help="auto (default): Edge on Windows, Chromium on Linux/macOS")
     extract.add_argument("--executable-path")
     generate_parser = commands.add_parser("generate", help="Generate a fresh parameter")
     generate_parser.add_argument("url")
@@ -37,7 +38,7 @@ def main() -> int:
             from .har import replay_offline
             result = asyncio.run(replay_offline(
                 args.har_path, args.url, args.method, args.body,
-                channel=None if args.browser == "chromium" else "msedge",
+                channel=None if args.browser == "chromium" else args.browser,
                 executable_path=args.executable_path,
             ))
             output = Path(args.output)
@@ -58,7 +59,7 @@ def main() -> int:
             result = {"status": "PASS", "samples": count, "exactMatches": count}
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    except (ValueError, KeyError, OSError, ImportError) as error:
+    except (ValueError, KeyError, OSError, ImportError, RuntimeError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 

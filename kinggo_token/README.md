@@ -1,6 +1,6 @@
 # Kinggo oOr6SIhu（Python 3.10）
 
-这是已验证的 Node `generate.cjs` 和 `replay-offline.cjs` 的 Python 移植。独立目录可直接导入，不需要 Node.js。纯 Python 生成复用项目已有的 `cryptography==41.0.7`；从 HAR 提取配置使用新增的 `playwright==1.55.0`，在独立无界面 Edge 中执行 HAR 内的原站脚本。
+这是已验证的 Node `generate.cjs` 和 `replay-offline.cjs` 的 Python 移植。独立目录可直接导入，不需要 Node.js。纯 Python 生成复用项目已有的 `cryptography==41.0.7`；从 HAR 提取配置使用新增的 `playwright==1.55.0`，在独立无界面浏览器中执行 HAR 内的原站脚本。默认自动选择浏览器：Windows 使用 Edge，Linux/macOS 使用 Playwright Chromium。
 
 ## 安装与首次使用
 
@@ -86,14 +86,29 @@ $env:KINGGO_TEST_HARS='C:\Users\17658\Pictures\www.kinggo.com.har;C:\Users\17658
 python -m unittest kinggo_token.tests.test_har -v
 ```
 
-Linux/服务器没有 Edge 时，另行安装浏览器及系统依赖：
+## Ubuntu 服务器使用
+
+在运行项目的同一个 Conda/虚拟环境、同一个系统用户下安装 Chromium。安装 pip 包不会自动下载浏览器；安装系统依赖时会请求 sudo 权限：
 
 ```bash
+cd /home/lhj/Personal/Normal/qianfang_air_cargo_platform
+python -m pip install -r requirements.txt
 python -m playwright install --with-deps chromium
-python -m kinggo_token extract capture.har /awb/sms_alert/getCountSms --browser chromium
+python -m kinggo_token extract "generated_files/www.kinggo.com.har" "/awb/sms_alert/getCountSms" --method POST --browser chromium --output "kinggo_token/config-from-har.json"
+python -m kinggo_token generate "/awb/sms_alert/getCountSms" --config "kinggo_token/config-from-har.json"
 ```
 
-API 使用 `channel=None` 选择 Playwright Chromium。自定义 Edge 路径可用 CLI `--executable-path`、API `executable_path` 或环境变量 `EDGE_EXECUTABLE`。
+`generate` 输出的 `value` 就是 `oOr6SIhu`，`url` 是完整请求 URL。只打印参数值：
+
+```bash
+python -c 'from kinggo_token import generate, load_config; print(generate("/awb/sms_alert/getCountSms", load_config("kinggo_token/config-from-har.json"))["value"])'
+```
+
+更新代码后 Ubuntu 不加 `--browser` 也会自动选择 Chromium；显式使用 `--browser chromium` 同样兼容旧版本。Ubuntu 无需安装 Edge 或图形桌面。系统依赖已由管理员安装时，可仅执行 `python -m playwright install chromium` 下载当前用户的浏览器。管理员单独安装依赖可执行 `sudo /当前环境的绝对路径/bin/python -m playwright install-deps chromium`，然后由运行项目的用户执行下载命令。
+
+API 默认 `channel="auto"`，也可显式使用 `channel=None` 选择 Playwright Chromium、`channel="msedge"` 选择 Edge。自定义路径可用 CLI `--executable-path`、API `executable_path` 或环境变量 `EDGE_EXECUTABLE`；显式路径优先于浏览器选择。
+
+若提示浏览器未安装，请确认安装命令和运行命令使用的是同一 Python 环境及用户。浏览器启动失败会给出安装提示并保留旧配置。输入接口路径时，`/awb/sms_alert/getCountSms` 应完整写在一个参数中；不要在引号里的 `/` 后插入空格或换行。
 
 ## 已验证的范围
 
