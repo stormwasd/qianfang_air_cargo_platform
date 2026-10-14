@@ -18,11 +18,11 @@ python -m pip install cryptography==41.0.7 playwright==1.55.0
 ```
 
 1. 在 Edge 登录 Kinggo，打开 F12 → Network，保留日志后刷新 `/main`，让目标接口出现。
-2. 导出**包含响应内容**的 HAR。文件需包含 `/main`、页面加载的两段保护脚本和带 `oOr6SIhu` 的请求。只有请求列表、缺少脚本响应内容的 HAR 不够。
+2. 导出**包含响应内容及敏感数据**的 HAR。文件需包含 `/main`、页面加载的两段保护脚本和带 `oOr6SIhu` 的请求。Edge/Chrome 默认脱敏导出可能移除 Cookie；在 Network 设置中启用允许导出含敏感数据的 HAR，然后选择类似“Export HAR (with sensitive data)”的导出选项（不同版本名称不同）。只有响应内容还不足以保证保存了 Cookie。
 3. 提取该次页面的配置（不需要手工抄 AES 密钥等字段）：
 
 ```powershell
-python -m kinggo_token extract "C:\Users\17658\Pictures\www.kinggo.com_1.har" /awb/sms_alert/getCountSms --method POST --output kinggo_token/config-from-har.json
+python -m kinggo_token extract "C:\Users\17658\Pictures\www.kinggo.com_1.har" /awb/sms_alert/getCountSms --method POST --output kinggo_token/config-from-har.json --require-cookie
 ```
 
 4. 生成新参数：
@@ -31,7 +31,35 @@ python -m kinggo_token extract "C:\Users\17658\Pictures\www.kinggo.com_1.har" /a
 python -m kinggo_token generate /awb/sms_alert/getCountSms --config kinggo_token/config-from-har.json
 ```
 
-输出的 `value` 是 `oOr6SIhu` 的值，`url` 是已添加该参数的完整 URL。每次调用自动使用当前毫秒时间和新的随机数。
+输出的 `value` 是 `oOr6SIhu` 的值，`url` 是已添加该参数的完整 URL，`cookie` 是 HAR 捕获的实际请求 Cookie。每次调用自动使用当前毫秒时间和新的随机数；Cookie 保留捕获值，不自动刷新。
+
+## 从 HAR 同时拿到 Cookie
+
+`extract` 将 `cookie`、`cookieStatus`、`cookieSource` 一起输出并保存到配置。之后 `generate` 从该配置读取并返回 `cookie`，不用每次重新读 HAR 或启动浏览器。截图中 Request Headers → Cookie 的整段文本，应作为 HTTP **请求头** `Cookie` 发送，不要加到 URL 或 Body 中。
+
+```python
+from kinggo_token import generate, load_config
+
+config = load_config("kinggo_token/config-from-har.json")
+result = generate("/awb/sms_alert/getCountSms", config)
+cookie = result.get("cookie", "")
+if not cookie:
+    raise ValueError("配置中没有 Cookie，请重新导出包含敏感数据的 HAR 并提取")
+request_url = result["url"]
+headers = {"Cookie": cookie}  # 在发送请求时使用；其他所需请求头按实际接口补齐
+```
+
+仅查看 HAR 是否有 Cookie，无需浏览器：
+
+```bash
+python -m kinggo_token cookies "generated_files/www.kinggo.com.har" "/awb/sms_alert/getCountSms" --method POST --require-cookie
+```
+
+优先使用目标路径及方法的最新请求，保留 Cookie 头原文；无头部时从该请求的 `request.cookies` 重建。不会把多个时刻的 Cookie 拼接，也不会将响应的 `Set-Cookie` 当成请求 Cookie。提取配置时限制在原页面的 `pageref` 内；没有目标请求时才退回同源 `/awb/` 业务请求，并通过 `cookieSource` 和 `cookieWarning` 标明，需核对会话和路径作用域。
+
+`--require-cookie` 在 Cookie 缺失时直接失败，保留已有配置，且不会启动提取浏览器。不加此选项时维持原来的纯参数功能，仍可生成配置，但输出 `cookie: ""`、`cookieStatus: "missing"` 和说明。旧版配置没有 `cookie` 字段时，`generate` 返回格式不变。
+
+Cookie 是登录后的会话数据，只能从 HAR 中已有数据提取，不能从 `oOr6SIhu` 反推出，也不能延长登录有效期。本机之前提供的三份 HAR 均没有 Cookie，请重新导出含敏感数据的 HAR。新配置包含登录信息，应作为凭据存放；当前 Git/Docker 忽略规则已排除生成配置。
 
 ## 项目代码中调用
 
@@ -55,7 +83,7 @@ request_url = result["url"]
 
 返回字典包括 `parameter`、`value`、`url`、`payloadHex`，与 Node 输出字段一致。通常不要指定时间和随机数；`timestamp_ms`、`random_high` 等可选参数用于复现和测试。
 
-实际请求仍需使用对应有效登录会话的 Cookie 及接口所需请求头。配置文件不是登录 Cookie；本模块生成参数，不维护登录或发送业务请求。刷新或重新登录后，如果页面下发配置变化，重新导出 HAR 并提取配置。不要把测试样本的配置长期当作生产配置。
+实际请求仍需使用对应有效登录会话的 Cookie 及接口所需请求头。新版配置可以携带 HAR 捕获的 Cookie，本模块不维护登录或发送业务请求。刷新或重新登录后，如果页面下发配置或 Cookie 变化，重新导出 HAR 并提取配置。不要把测试样本的配置长期当作生产配置。
 
 FastAPI 等异步代码可直接提取配置：
 
@@ -130,8 +158,8 @@ Docker 部署：Dockerfile 在镜像构建阶段安装 Chromium 和系统依赖�
 docker compose build app
 docker compose up -d --no-deps app
 docker compose exec app python -m kinggo_token check-browser --browser chromium
-docker compose exec app python -m kinggo_token extract "generated_files/www.kinggo.com.har" "/awb/sms_alert/getCountSms" --method POST --browser chromium --output "generated_files/kinggo/config-from-har.json"
-docker compose exec app python -c 'from kinggo_token import generate, load_config; print(generate("/awb/sms_alert/getCountSms", load_config("generated_files/kinggo/config-from-har.json"))["value"])'
+docker compose exec app python -m kinggo_token extract "generated_files/www.kinggo.com.har" "/awb/sms_alert/getCountSms" --method POST --browser chromium --output "generated_files/kinggo/config-from-har.json" --require-cookie
+docker compose exec app python -m kinggo_token generate "/awb/sms_alert/getCountSms" --config "generated_files/kinggo/config-from-har.json"
 ```
 
 Compose 场景配置写到已挂载的 `generated_files/kinggo/`，重建容器后仍保留。直接主机运行可继续使用 `kinggo_token/config-from-har.json`。本地 HAR 和会话配置已从 Docker 构建上下文排除，请将 HAR 放到主机挂载的 `generated_files/` 中。HAR 路径是普通文件名 `generated_files/www.kinggo.com.har`，不要粘贴 Markdown 链接形式。

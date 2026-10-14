@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urljoin, urlsplit
@@ -80,6 +81,81 @@ def _entries(path: str | Path) -> list[dict[str, Any]]:
         return json.load(handle)["log"]["entries"]
 
 
+def _cookie_header(request: dict[str, Any]) -> tuple[str, str]:
+    """Prefer the exact outgoing header; never treat Set-Cookie as Cookie."""
+    values = [header["value"] for header in request.get("headers", [])
+              if header["name"].lower() == "cookie" and header.get("value")]
+    if values:
+        cookie, field = "; ".join(values), "request.headers.Cookie"
+    else:
+        pairs = []
+        for item in request.get("cookies", []):
+            name, value = item.get("name"), item.get("value", "")
+            if not isinstance(name, str) or not name or not isinstance(value, str):
+                raise ValueError("Invalid HAR request cookie")
+            if re.search(r"[\s;=]", name) or ";" in value:
+                raise ValueError("Invalid HAR request cookie name or value")
+            pairs.append(f"{name}={value}")
+        cookie, field = "; ".join(pairs), "request.cookies"
+    if not isinstance(cookie, str) or any(ord(c) < 32 or ord(c) == 127 for c in cookie):
+        raise ValueError("Invalid control character in HAR Cookie header")
+    return cookie, field
+
+
+def _select_cookie(
+    entries: list[dict[str, Any]], url: str, method: str, *, page_ref: str | None = None,
+    require_cookie: bool = False,
+) -> dict[str, Any]:
+    parts, _ = _request_url(url, "oOr6SIhu")
+    candidates = []
+    for index, entry in enumerate(entries):
+        request = entry["request"]
+        source = urlsplit(request["url"])
+        if (source.scheme, source.netloc) != (parts.scheme, parts.netloc):
+            continue
+        if page_ref is not None and entry.get("pageref") != page_ref:
+            continue
+        exact = source.path == parts.path and request.get("method", "").upper() == method.upper()
+        # Fallback only to business requests on this page, not assets or other origins.
+        if not exact and not source.path.startswith("/awb/"):
+            continue
+        try:
+            timestamp = datetime.fromisoformat(entry.get("startedDateTime", "").replace("Z", "+00:00"))
+            timestamp_key = timestamp.replace(tzinfo=timestamp.tzinfo or timezone.utc).timestamp()
+        except (ValueError, TypeError, OverflowError):
+            timestamp_key = float("-inf")
+        candidates.append((exact, timestamp_key, index, entry))
+
+    result: dict[str, Any] = {"cookie": "", "cookieStatus": "missing", "cookieSource": None}
+    if candidates:
+        exact, _, _, entry = max(candidates, key=lambda candidate: candidate[:3])
+        cookie, field = _cookie_header(entry["request"])
+        if cookie:
+            source = urlsplit(entry["request"]["url"])
+            result.update(cookie=cookie, cookieStatus="captured", cookieSource={
+                "path": source.path, "method": entry["request"].get("method", ""),
+                "startedDateTime": entry.get("startedDateTime"), "field": field,
+                "match": "target" if exact else "same-origin-business-request",
+            })
+            if not exact:
+                result["cookieWarning"] = "Cookie came from another /awb/ request; verify its scope and session for your target."
+    if not result["cookie"]:
+        result["cookieWarning"] = (
+            "No Cookie in the selected HAR request. Export a new HAR with sensitive data "
+            "after login; sanitized HAR files omit Cookie. Cookie cannot be reconstructed from oOr6SIhu."
+        )
+        if require_cookie:
+            raise ValueError(result["cookieWarning"])
+    return result
+
+
+def extract_cookie(
+    har_path: str | Path, url: str, method: str = "POST", *, require_cookie: bool = False,
+) -> dict[str, Any]:
+    """Read one outgoing Cookie from a HAR without a browser or network."""
+    return _select_cookie(_entries(har_path), url, method, require_cookie=require_cookie)
+
+
 def _text(entry: dict[str, Any]) -> str:
     content = entry["response"]["content"]
     text = content.get("text", "")
@@ -118,6 +194,7 @@ async def replay_offline(
     har_path: str | Path, url: str, method: str = "POST", body: str | None = None,
     *, channel: str | None = "auto", executable_path: str | None = None,
     timeout_ms: int = 30000,
+    require_cookie: bool = False,
 ) -> dict[str, Any]:
     """Async API suitable for FastAPI. Uses no logged-in browser or outbound requests.
 
@@ -158,6 +235,8 @@ async def replay_offline(
     if f"{requested_parts.scheme}://{requested_parts.netloc}" != origin:
         raise ValueError("Target URL must match HAR origin")
     method = method.upper()
+    cookie_fields = _select_cookie(entries, requested_url, method, page_ref=main.get("pageref"),
+                                   require_cookie=require_cookie)
     user_agent = next((h["value"] for h in main["request"]["headers"] if h["name"].lower() == "user-agent"), None)
     permitted = {loader_url, engine_url}
     captured: dict[str, str] | None = None
@@ -217,7 +296,8 @@ async def replay_offline(
             probe = await page.evaluate("() => window.__configProbe")
             config = select_config(captured["value"], probe)
             config["source"] = Path(har_path).name
-            return {"parameter": config["parameter"], **captured, "config": config,
+            config.update(cookie_fields)
+            return {"parameter": config["parameter"], **captured, **cookie_fields, "config": config,
                     "payload": inspect_token(captured["value"], config), "validation": "offline only"}
         finally:
             await browser.close()

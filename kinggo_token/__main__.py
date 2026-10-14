@@ -18,6 +18,12 @@ def main() -> int:
     extract.add_argument("--method", default="POST")
     extract.add_argument("--body")
     extract.add_argument("--output", default="kinggo_token/config-from-har.json")
+    extract.add_argument("--require-cookie", action="store_true", help="Fail without a captured Cookie; preserve previous config")
+    cookies = commands.add_parser("cookies", help="Read outgoing Cookie from HAR without a browser")
+    cookies.add_argument("har_path")
+    cookies.add_argument("url")
+    cookies.add_argument("--method", default="POST")
+    cookies.add_argument("--require-cookie", action="store_true")
     check = commands.add_parser("check-browser", help="Check headless browser startup without a HAR or network")
     for browser_parser in (extract, check):
         browser_parser.add_argument("--browser", choices=["auto", "msedge", "chromium"], default="auto",
@@ -42,6 +48,7 @@ def main() -> int:
                 args.har_path, args.url, args.method, args.body,
                 channel=None if args.browser == "chromium" else args.browser,
                 executable_path=args.executable_path,
+                require_cookie=args.require_cookie,
             ))
             output = Path(args.output)
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +57,9 @@ def main() -> int:
             temporary.write_text(json.dumps(result["config"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             temporary.replace(output)
             result["configPath"] = str(output.resolve())
+        elif args.command == "cookies":
+            from .har import extract_cookie
+            result = extract_cookie(args.har_path, args.url, args.method, require_cookie=args.require_cookie)
         elif args.command == "check-browser":
             from .har import check_browser
             result = asyncio.run(check_browser(

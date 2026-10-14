@@ -214,8 +214,18 @@ def generate(url: str, config: Config, **options: Any) -> dict[str, Any]:
     if not replaced:
         pairs.append((config["parameter"], value))
     signed_url = urlunsplit(parts._replace(query=_form_query(pairs)))
-    return {"parameter": config["parameter"], "value": value, "url": signed_url,
-            "payloadHex": payload.hex()}
+    result = {"parameter": config["parameter"], "value": value, "url": signed_url,
+              "payloadHex": payload.hex()}
+    # Cookie is captured session data, separate from the signing algorithm.
+    if "cookie" in config:
+        cookie = config["cookie"]
+        if not isinstance(cookie, str) or any(ord(c) < 32 or ord(c) == 127 for c in cookie):
+            raise ValueError("config.cookie must be a Cookie header string without control characters")
+        result.update(cookie=cookie, cookieStatus="captured" if cookie else "missing")
+        for field in ("cookieSource", "cookieWarning"):
+            if field in config:
+                result[field] = config[field]
+    return result
 
 
 def inspect_token(token: str, config: Config) -> dict[str, Any]:

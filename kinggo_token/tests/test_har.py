@@ -19,6 +19,9 @@ class OfflineReplayTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(har=path):
                 # Include non-text base64 content as found in normal browser HARs.
                 har = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+                for entry in har["log"]["entries"]:
+                    if "/awb/sms_alert/getCountSms" in entry["request"]["url"]:
+                        entry["request"]["headers"].append({"name": "Cookie", "value": "sid=synthetic-test-only"})
                 har["log"]["entries"].append({
                     "request": {"url": "https://www.kinggo.com/test-image.png"},
                     "response": {"content": {"encoding": "base64", "text": "/wAB"}},
@@ -28,6 +31,8 @@ class OfflineReplayTests(unittest.IsolatedAsyncioTestCase):
                     augmented.write_text(json.dumps(har), encoding="utf-8")
                     result = await replay_offline(augmented, "/awb/sms_alert/getCountSms")
                 payload = result["payload"]
+                self.assertEqual(result["cookie"], "sid=synthetic-test-only")
+                self.assertEqual(result["config"]["cookie"], result["cookie"])
                 regenerated = generate(
                     result["url"], result["config"], timestamp_ms=payload["timestampLow32"],
                     random_high=payload["randomHigh"], flags=payload["flags"],
@@ -35,6 +40,7 @@ class OfflineReplayTests(unittest.IsolatedAsyncioTestCase):
                     session_tag=payload["sessionTag"], context_hex=payload["contextHex"],
                 )
                 self.assertEqual(regenerated["value"], result["value"])
+                self.assertEqual(regenerated["cookie"], result["cookie"])
                 self.assertGreater(verify_har(path, result["config"]), 0)
 
 

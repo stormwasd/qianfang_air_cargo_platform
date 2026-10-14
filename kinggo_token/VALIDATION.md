@@ -33,3 +33,9 @@
 生产主机确认是 CentOS，部署采用项目现有 Docker Compose：在 Debian 12 镜像内安装 Chromium 和系统依赖，提供 `bash scripts/setup_kinggo.sh` 构建、启动并检查应用。增加 `check-browser` 无网络启动检查，HAR 和本地配置不进入镜像；容器配置保存到已挂载的 `generated_files/kinggo/`。
 
 Python 3.10 回归 14 项通过，包含两份 HAR 提取；本机真实 Chromium 无界面检查通过。首次回归曾出现原脚本随机字段超出纯构造器范围的偶发结果，后续回归通过，该分支未修改生成算法。本地完整 Docker 构建在下载依赖阶段按用户要求中止，尚未完成镜像及 CentOS 服务器端验证；部署脚本和镜像构建会主动检查实际浏览器启动结果。
+
+## Cookie 提取（2026-10-14）
+
+新增 HAR 请求 Cookie 提取，支持原始 Cookie 头和 `request.cookies`；配置保存后 `generate` 会附带返回 Cookie，不改变加密输入或旧配置输出。增加不依赖浏览器的 `cookies` 命令及 `extract --require-cookie` 严格检查。测试覆盖目标请求/时间选择、页面与域名隔离、回退来源、空值和同名 Cookie、脱敏缺失、控制字符校验、配置持久化及失败时保留旧配置。
+
+本机三份原始 HAR 均没有请求 Cookie（头部及 cookies 数组都为空）。为测试实际浏览器流程，仅向临时 HAR 的短信请求注入虚构 Cookie，原始文件不变；`www.kinggo.com_1.har` 的提取、Cookie 返回和全部 6 个 token 重建通过。原始 14 个 HAR token 和 12 个 Node 固定向量继续匹配。共 22 项单元测试及 1 项真实 Edge 集成测试验证，不包含线上登录验收。
