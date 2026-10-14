@@ -62,3 +62,8 @@ config.local.py
 
 # Generated files (mounted as volume, not baked into image)
 generated_files/
+
+# HAR captures and page/session configs belong in runtime storage, not the image.
+*.har
+kinggo_token/config*.json
+kinggo_token/tests/local-*.json

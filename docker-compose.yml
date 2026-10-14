@@ -116,6 +116,9 @@ services:
       dockerfile: Dockerfile
     container_name: qianfang-app
     restart: always
+    # Reap browser child processes and provide shared memory for headless Chromium.
+    init: true
+    shm_size: "256mb"
     env_file:
       - .env
     environment:

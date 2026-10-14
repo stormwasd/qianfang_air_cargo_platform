@@ -88,6 +88,8 @@ python -m unittest kinggo_token.tests.test_har -v
 
 ## Ubuntu 服务器使用
 
+纯命令行 Ubuntu VPS 可运行：提取器启用 `headless=True`，无需桌面、DISPLAY 或 Xvfb。仍需安装 Chromium 可执行文件及系统库。下面是主机直接部署的步骤；Docker 部署见后文。
+
 在运行项目的同一个 Conda/虚拟环境、同一个系统用户下安装 Chromium。安装 pip 包不会自动下载浏览器；安装系统依赖时会请求 sudo 权限：
 
 ```bash
@@ -109,6 +111,32 @@ python -c 'from kinggo_token import generate, load_config; print(generate("/awb/
 API 默认 `channel="auto"`，也可显式使用 `channel=None` 选择 Playwright Chromium、`channel="msedge"` 选择 Edge。自定义路径可用 CLI `--executable-path`、API `executable_path` 或环境变量 `EDGE_EXECUTABLE`；显式路径优先于浏览器选择。
 
 若提示浏览器未安装，请确认安装命令和运行命令使用的是同一 Python 环境及用户。浏览器启动失败会给出安装提示并保留旧配置。输入接口路径时，`/awb/sms_alert/getCountSms` 应完整写在一个参数中；不要在引号里的 `/` 后插入空格或换行。
+
+### CentOS / 阿里云 VPS 部署
+
+CentOS 主机使用项目现有 Docker Compose 方案，浏览器运行在 Debian 容器内，主机无需安装浏览器、桌面或 Playwright 系统依赖。Playwright 1.55 的 `install --with-deps` 适用于支持的 Ubuntu/Debian 系统，不应直接当作 CentOS 的安装方法。VPS 需已有可运行的 Docker/Compose 以及项目生产 `.env`。
+
+进入项目根目录，一条命令完成应用镜像构建、启动及无界面浏览器检查（支持 `docker compose` 和 `docker-compose`）：
+
+```bash
+bash scripts/setup_kinggo.sh
+```
+
+首次构建需要下载 Python 依赖和 Chromium，后续构建利用 Docker 层缓存；下载失败会停止部署。主机直接使用 Conda 的用户也可在 Windows 上提取配置，将 JSON 复制到服务器后仅执行纯 Python `generate`，这时 CentOS 完全不需要浏览器。
+
+Docker 部署：Dockerfile 在镜像构建阶段安装 Chromium 和系统依赖，浏览器位于 `/opt/playwright`，并执行启动检查。Compose 给应用容器启用 init 和 256 MB 共享内存。服务启动时不重复下载浏览器；运行时无需桌面。构建基础系统固定为 Playwright 1.55 支持的 Debian 12，保留原有 Python 3.11。
+
+```bash
+docker compose build app
+docker compose up -d --no-deps app
+docker compose exec app python -m kinggo_token check-browser --browser chromium
+docker compose exec app python -m kinggo_token extract "generated_files/www.kinggo.com.har" "/awb/sms_alert/getCountSms" --method POST --browser chromium --output "generated_files/kinggo/config-from-har.json"
+docker compose exec app python -c 'from kinggo_token import generate, load_config; print(generate("/awb/sms_alert/getCountSms", load_config("generated_files/kinggo/config-from-har.json"))["value"])'
+```
+
+Compose 场景配置写到已挂载的 `generated_files/kinggo/`，重建容器后仍保留。直接主机运行可继续使用 `kinggo_token/config-from-har.json`。本地 HAR 和会话配置已从 Docker 构建上下文排除，请将 HAR 放到主机挂载的 `generated_files/` 中。HAR 路径是普通文件名 `generated_files/www.kinggo.com.har`，不要粘贴 Markdown 链接形式。
+
+单独检查部署环境：`python -m kinggo_token check-browser --browser chromium`。出现 `status: PASS` 表示浏览器成功启动并执行了 JavaScript；它不证明接口的登录会话或参数已被 Kinggo 服务器接受。提取配置还需 HAR 含 `/main` 和脚本响应内容。
 
 ## 已验证的范围
 

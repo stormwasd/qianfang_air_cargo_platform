@@ -27,3 +27,9 @@
 - Python 3.10.2 完整回归 12 项测试通过，包括 Windows/Linux/macOS 浏览器选择、CLI 传参和失败时保留配置，以及原有 14 个 HAR 样本、12 个 Node 对照向量、两份 HAR 的真实 Edge 提取。
 - 另用本机 Chromium 执行真实 CLI 提取，新 HAR 全部 6/6 参数通过验证；故意指定不存在的可执行文件，确认给出清晰错误且不写入配置。
 - 本次未连接用户的 Ubuntu 服务器。Linux 浏览器选择通过模拟平台验证；实际 Ubuntu 运行仍需在服务器当前 Python 环境及系统用户下安装 Chromium 和系统依赖。
+
+## CentOS 部署接入（2026-10-14）
+
+生产主机确认是 CentOS，部署采用项目现有 Docker Compose：在 Debian 12 镜像内安装 Chromium 和系统依赖，提供 `bash scripts/setup_kinggo.sh` 构建、启动并检查应用。增加 `check-browser` 无网络启动检查，HAR 和本地配置不进入镜像；容器配置保存到已挂载的 `generated_files/kinggo/`。
+
+Python 3.10 回归 14 项通过，包含两份 HAR 提取；本机真实 Chromium 无界面检查通过。首次回归曾出现原脚本随机字段超出纯构造器范围的偶发结果，后续回归通过，该分支未修改生成算法。本地完整 Docker 构建在下载依赖阶段按用户要求中止，尚未完成镜像及 CentOS 服务器端验证；部署脚本和镜像构建会主动检查实际浏览器启动结果。

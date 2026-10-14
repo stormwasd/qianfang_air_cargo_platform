@@ -6,10 +6,11 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from kinggo_token.__main__ import main
-from kinggo_token.har import _launch_error, _launch_options, replay_offline
+from kinggo_token.har import _launch_error, _launch_options, check_browser, replay_offline
 
 
 class BrowserSelectionTests(unittest.TestCase):
@@ -58,6 +59,37 @@ class InvalidUrlTests(unittest.IsolatedAsyncioTestCase):
     async def test_embedded_newline_is_rejected_before_har_or_browser_access(self):
         with self.assertRaisesRegex(ValueError, "newlines"):
             await replay_offline("nonexistent.har", "/ \nawb/sms_alert/getCountSms")
+
+
+class BrowserSmokeCheckTests(unittest.IsolatedAsyncioTestCase):
+    async def test_smoke_check_closes_browser_on_success_and_failure(self):
+        for javascript_result in [2, 0]:
+            with self.subTest(javascript_result=javascript_result):
+                page = SimpleNamespace(evaluate=AsyncMock(return_value=javascript_result))
+                browser = SimpleNamespace(new_page=AsyncMock(return_value=page),
+                                          close=AsyncMock(), version="test-version")
+                playwright = SimpleNamespace(chromium=SimpleNamespace(launch=AsyncMock(return_value=browser)))
+                manager = AsyncMock()
+                manager.__aenter__.return_value = playwright
+                with patch("playwright.async_api.async_playwright", return_value=manager), patch.dict(os.environ, {}, clear=True):
+                    if javascript_result == 2:
+                        self.assertEqual(await check_browser(channel=None),
+                                         {"status": "PASS", "headless": True, "browserVersion": "test-version"})
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "smoke check failed"):
+                            await check_browser(channel=None)
+                playwright.chromium.launch.assert_awaited_once_with(headless=True)
+                browser.close.assert_awaited_once()
+
+    async def test_missing_browser_provides_install_hint(self):
+        from playwright.async_api import Error
+
+        playwright = SimpleNamespace(chromium=SimpleNamespace(launch=AsyncMock(side_effect=Error("missing"))))
+        manager = AsyncMock()
+        manager.__aenter__.return_value = playwright
+        with patch("playwright.async_api.async_playwright", return_value=manager), patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "install --with-deps chromium"):
+                await check_browser(channel=None)
 
 
 if __name__ == "__main__":

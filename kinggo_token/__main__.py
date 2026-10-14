@@ -18,9 +18,11 @@ def main() -> int:
     extract.add_argument("--method", default="POST")
     extract.add_argument("--body")
     extract.add_argument("--output", default="kinggo_token/config-from-har.json")
-    extract.add_argument("--browser", choices=["auto", "msedge", "chromium"], default="auto",
-                         help="auto (default): Edge on Windows, Chromium on Linux/macOS")
-    extract.add_argument("--executable-path")
+    check = commands.add_parser("check-browser", help="Check headless browser startup without a HAR or network")
+    for browser_parser in (extract, check):
+        browser_parser.add_argument("--browser", choices=["auto", "msedge", "chromium"], default="auto",
+                                    help="auto (default): Edge on Windows, Chromium on Linux/macOS")
+        browser_parser.add_argument("--executable-path")
     generate_parser = commands.add_parser("generate", help="Generate a fresh parameter")
     generate_parser.add_argument("url")
     generate_parser.add_argument("--config", required=True)
@@ -48,6 +50,12 @@ def main() -> int:
             temporary.write_text(json.dumps(result["config"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             temporary.replace(output)
             result["configPath"] = str(output.resolve())
+        elif args.command == "check-browser":
+            from .har import check_browser
+            result = asyncio.run(check_browser(
+                channel=None if args.browser == "chromium" else args.browser,
+                executable_path=args.executable_path,
+            ))
         elif args.command == "generate":
             result = generate(args.url, load_config(args.config),
                               timestamp_ms=args.timestamp_ms, random_high=args.random_high)

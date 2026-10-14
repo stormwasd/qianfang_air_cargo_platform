@@ -46,6 +46,35 @@ def _launch_error(options: dict[str, Any], error: Exception) -> str:
     return f"Browser launch failed. {hint}\nOriginal error: {error}"
 
 
+async def _launch_browser(playwright: Any, options: dict[str, Any]) -> Any:
+    from playwright.async_api import Error as PlaywrightError
+
+    try:
+        return await playwright.chromium.launch(**options)
+    except PlaywrightError as error:
+        raise RuntimeError(_launch_error(options, error)) from error
+
+
+async def check_browser(
+    *, channel: str | None = "auto", executable_path: str | None = None,
+) -> dict[str, Any]:
+    """Deployment smoke check: start a headless browser without network or HAR."""
+    from playwright.async_api import Error as PlaywrightError, async_playwright
+
+    options = _launch_options(channel, executable_path)
+    async with async_playwright() as playwright:
+        browser = await _launch_browser(playwright, options)
+        try:
+            page = await browser.new_page()
+            if await page.evaluate("() => 1 + 1") != 2:
+                raise RuntimeError("Browser JavaScript smoke check failed")
+            return {"status": "PASS", "headless": True, "browserVersion": browser.version}
+        except PlaywrightError as error:
+            raise RuntimeError(f"Browser smoke check failed: {error}") from error
+        finally:
+            await browser.close()
+
+
 def _entries(path: str | Path) -> list[dict[str, Any]]:
     with Path(path).open(encoding="utf-8-sig") as handle:
         return json.load(handle)["log"]["entries"]
@@ -99,7 +128,7 @@ async def replay_offline(
     if any(character in url for character in "\r\n\t"):
         raise ValueError("Target URL must not contain newlines or tabs; use /awb/sms_alert/getCountSms on one line")
 
-    from playwright.async_api import Error as PlaywrightError, async_playwright
+    from playwright.async_api import async_playwright
 
     entries = _entries(har_path)
     main = next((e for e in entries if urlsplit(e["request"]["url"]).path == "/main" and _text(e)), None)
@@ -136,10 +165,7 @@ async def replay_offline(
 
     async with async_playwright() as playwright:
         launch_options = _launch_options(channel, executable_path)
-        try:
-            browser = await playwright.chromium.launch(**launch_options)
-        except PlaywrightError as error:
-            raise RuntimeError(_launch_error(launch_options, error)) from error
+        browser = await _launch_browser(playwright, launch_options)
         try:
             context_options: dict[str, Any] = {"service_workers": "block"}
             if user_agent:
