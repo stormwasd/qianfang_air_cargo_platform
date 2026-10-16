@@ -381,10 +381,11 @@ async def update_waybill(
     - 可更新 form_data（整体替换）与可选的 booking_date
     - waybill_number、departure_time、各执行状态等由系统/RPA 维护，不可通过本接口修改
     """
-    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).with_for_update().first()
     if not waybill:
         raise NotFoundException("运单不存在")
 
+    _ensure_no_active_shenzhen_direct_task(db, waybill.id)
     if waybill.airline_record_status not in ("0", "2"):
         raise BadRequestException(
             "仅未开单或开单失败状态的运单可修改；当前运单正在开单中或已开单成功，无法修改"
@@ -1229,6 +1230,16 @@ def _extract_china_southern_air_waybill_params(form_data: dict, business_config:
     return params
 
 
+def _ensure_no_active_shenzhen_direct_task(db: Session, waybill_id: int) -> None:
+    from app.models.waybill import ShenzhenAirDirectWaybillTask
+    task = db.query(ShenzhenAirDirectWaybillTask).filter(
+        ShenzhenAirDirectWaybillTask.waybill_id == waybill_id,
+        ShenzhenAirDirectWaybillTask.status.in_(["pending", "running", "unknown"]),
+    ).first()
+    if task:
+        raise BadRequestException(f"该运单已有待执行、执行中或待核查的深航直连任务，任务ID: {task.id}")
+
+
 @router.post("/{waybill_id}/execute", summary="确认并执行运单")
 async def execute_waybill(
     waybill_id: str,
@@ -1240,20 +1251,20 @@ async def execute_waybill(
     
     此接口会：
     1. 根据运单的airline判断是否为深航（airline="1"或"深圳航空"）
-    2. 如果是深航，创建RPA任务并加入队列
-    3. Worker会从队列中取出任务执行RPA调用
+    2. 根据配置创建KingGo直连或原RPA开单任务并加入队列
+    3. Worker会从对应队列中取出任务执行
     4. 前端可以通过任务ID或运单状态轮询获取执行结果
     
     - **waybill_id**: 运单ID（字符串格式）
     
     返回：
-    - task_id: RPA任务ID，可用于查询任务状态
+    - task_id: 开单任务ID，可通过任务状态接口查询
     """
     from app.config import settings
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
-    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).with_for_update().first()
     if not waybill:
         raise NotFoundException("运单不存在")
     
@@ -1264,14 +1275,59 @@ async def execute_waybill(
     if not is_shenzhen_air:
         raise BadRequestException("当前仅支持深圳航空的运单执行")
     
+    if waybill.airline_record_status == "3" or waybill.waybill_number:
+        raise BadRequestException("该运单已有运单号或已开单成功，不能重复开单")
+
+    _ensure_no_active_shenzhen_direct_task(db, waybill.id)
     existing_task = rpa_task_service.get_pending_task_for_target(
-        db,
-        target_type=RPATargetType.WAYBILL.value,
-        target_id=int(waybill_id),
-        task_type=RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value
+        db, target_type=RPATargetType.WAYBILL.value, target_id=waybill.id,
+        task_type=RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value,
     )
     if existing_task:
         raise BadRequestException(f"该运单已有待执行或执行中的开单任务，任务ID: {existing_task.id}")
+
+    if settings.SHENZHEN_AIR_WAYBILL_EXECUTION_MODE == "direct":
+        from app.models.waybill import ShenzhenAirDirectWaybillTask, ShenzhenAirDirectWaybillTaskStatus
+        if waybill.airline_record_status not in {"0", "2"}:
+            raise BadRequestException("该运单正在开单或已开单成功，不能重复执行")
+        business_config = _get_business_config(db)
+        if not business_config:
+            raise BadRequestException("业务参数配置不存在，无法调用深航开单接口")
+        from app.services.shenzhen_air_direct_waybill import ShenzhenAirDirectWaybillService, ShenzhenAirDirectWaybillError
+        try:
+            values = ShenzhenAirDirectWaybillService.get_form_values(form_data_dict, business_config)
+            ShenzhenAirDirectWaybillService.validate_configuration()
+        except ShenzhenAirDirectWaybillError as exc:
+            raise BadRequestException(str(exc)) from exc
+        if not settings.SHENZHEN_AIR_DIRECT_WAYBILL_QUEUE_ENABLED:
+            raise BadRequestException("深航直连开单任务队列当前已禁用")
+        task = ShenzhenAirDirectWaybillTask(
+            waybill_id=int(waybill_id), status=ShenzhenAirDirectWaybillTaskStatus.PENDING,
+            priority=settings.RPA_QUEUE_WAYBILL_PRIORITY,
+            created_by=current_user.id if current_user else None,
+            request_data=json.dumps({"form_data": form_data_dict, "values": values}, ensure_ascii=False),
+        )
+        db.add(task)
+        waybill.airline_record_status = "1"
+        db.commit()
+        db.refresh(task)
+        return success_response(data={
+            "id": str(waybill.id), "waybill_number": waybill.waybill_number,
+            "form_data": form_data_dict, "airline_record_status": waybill.airline_record_status,
+            "cargo_station_record_status": waybill.cargo_station_record_status,
+            "document_print_status": waybill.document_print_status,
+            "waybill_void_status": waybill.waybill_void_status,
+            "airline_record_time": format_datetime_china(waybill.airline_record_time),
+            "cargo_station_record_time": format_datetime_china(waybill.cargo_station_record_time),
+            "document_print_time": format_datetime_china(waybill.document_print_time),
+            "departure_time": format_datetime_china(waybill.departure_time),
+            "booking_date": waybill.booking_date.isoformat(), "rpa_work_uuid": waybill.rpa_work_uuid,
+            "rpa_queue_uuids": waybill.rpa_queue_uuids, "created_at": format_datetime_china(waybill.created_at),
+            "updated_at": format_datetime_china(waybill.updated_at), "task_id": str(task.id),
+            "execution_mode": "direct",
+            "direct_task_status": task.status,
+            "direct_task_error": task.error_message,
+        }, msg="深航直连接口开单任务已加入执行队列，请等待处理")
     
     business_config = _get_business_config(db)
     if not business_config:

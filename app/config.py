@@ -152,6 +152,46 @@ class Settings(BaseSettings):
         default=1800, ge=1, le=86400,
         description="深航获取HAR任务定时调度间隔（秒），默认1800秒（30分钟）"
     )
+    SHENZHEN_AIR_WAYBILL_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航 POST /waybills/{id}/execute 执行模式：direct=KingGo接口，rpa=原RPA流程",
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_QUEUE_ENABLED: bool = Field(
+        default=True, description="是否启用深航KingGo直连接口持久化任务队列"
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_WORKER_COUNT: int = Field(
+        default=1, ge=1, le=20, description="深航KingGo直连接口Worker数量；共享账号开单由数据库互斥串行领取"
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_POLL_INTERVAL: int = Field(
+        default=2, ge=1, le=60, description="深航KingGo直连接口Worker轮询间隔（秒）"
+    )
+    SHENZHEN_AIR_KINGGO_HAR_PATH: str = Field(
+        default="generated_files/www.kinggo.com.har",
+        description="每次KingGo请求重新提取签名配置和Cookie所用的HAR文件路径",
+    )
+    SHENZHEN_AIR_KINGGO_API_ORIGIN: str = Field(
+        default="https://www.kinggo.com",
+        description="KingGo API传输地址；仅用于本地模拟测试时可覆盖为本地地址",
+    )
+    SHENZHEN_AIR_KINGGO_BROWSER: Literal["auto", "msedge", "chromium"] = Field(
+        default="auto", description="离线HAR签名提取使用的浏览器；生产Linux建议chromium",
+    )
+    SHENZHEN_AIR_KINGGO_EXECUTABLE_PATH: Optional[str] = Field(
+        default=None, description="可选的HAR提取浏览器可执行文件路径",
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_HTTP_TIMEOUT_SECONDS: int = Field(
+        default=30, ge=5, le=180, description="单次KingGo HTTP请求超时秒数",
+    )
+    SHENZHEN_AIR_KINGGO_AGENT_TYPE: str = Field(default="1", description="KingGo深航开单代理类型")
+    SHENZHEN_AIR_KINGGO_AGENT_NAME: str = Field(default="", description="KingGo深航开单代理名称")
+    SHENZHEN_AIR_KINGGO_AGENT_ID: str = Field(default="", description="KingGo深航开单代理ID")
+    SHENZHEN_AIR_KINGGO_AGENT_CODE: str = Field(default="", description="KingGo深航开单代理编码")
+    SHENZHEN_AIR_KINGGO_OPER_ID: str = Field(default="", description="KingGo深航操作员ID")
+    SHENZHEN_AIR_KINGGO_PICK_TEL_NO: str = Field(default="", description="KingGo深航提货联系电话")
+    SHENZHEN_AIR_KINGGO_CNE_ADDR: str = Field(default="", description="KingGo深航收货地址代码")
+    SHENZHEN_AIR_KINGGO_CABIN_TYPE: str = Field(default="F", description="KingGo深航舱位代码；与提供的开单表单一致")
+    SHENZHEN_AIR_KINGGO_CABIN_TYPE_NAME: str = Field(default="F舱", description="KingGo深航舱位名称")
+    SHENZHEN_AIR_KINGGO_PAY_TYPE: str = Field(default="1", description="KingGo深航付款方式")
 
     # 携程航班接口代理。默认关闭以保持非 Docker/既有部署的原行为；
     # docker-compose 会显式开启并指向同编排内的 proxy_pool 服务。

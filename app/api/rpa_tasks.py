@@ -8,6 +8,7 @@ from app.core.response import success_response
 from app.core.exceptions import NotFoundException
 from app.database import get_db
 from app.models.rpa_task import RPATask, RPATaskStatus
+from app.models.waybill import ShenzhenAirDirectWaybillTask
 from app.services.rpa_task_service import rpa_task_service
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china
@@ -15,19 +16,19 @@ from app.utils.helpers import format_datetime_china
 router = APIRouter()
 
 
-@router.get("/{task_id}", summary="查询RPA任务状态")
+@router.get("/{task_id}", summary="查询RPA或深航直连开单任务状态")
 async def get_task_status(
     task_id: str,
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    查询单个RPA任务的状态
+    查询单个RPA或深航直连开单任务的状态
     
     - **task_id**: 任务ID（字符串格式）
     
     返回任务的详细信息，包括：
-    - 任务状态（pending/running/success/failed/timeout）
+    - 任务状态（pending/running/success/failed/timeout；深航直连另有unknown待核查状态）
     - 目标类型和ID
     - RPA workUuid
     - 创建时间、开始时间、完成时间
@@ -38,7 +39,29 @@ async def get_task_status(
         raise NotFoundException("任务不存在")
     task = rpa_task_service.get_task_by_id(db, parsed_task_id)
     if not task:
-        raise NotFoundException("任务不存在或已完成")
+        direct_task = db.query(ShenzhenAirDirectWaybillTask).filter(
+            ShenzhenAirDirectWaybillTask.id == parsed_task_id
+        ).first()
+        if not direct_task:
+            raise NotFoundException("任务不存在或已完成")
+        try:
+            direct_result = json.loads(direct_task.result) if direct_task.result else None
+        except (TypeError, json.JSONDecodeError):
+            direct_result = direct_task.result
+        return success_response(data={
+            "id": str(direct_task.id), "task_type": "SHENZHEN_AIR_WAYBILL_EXECUTE",
+            "target_type": "waybill", "target_id": str(direct_task.waybill_id),
+            "status": direct_task.status, "priority": direct_task.priority,
+            "work_uuid": None, "job_uuid": None, "result": direct_result,
+            "error_message": direct_task.error_message,
+            "created_by": str(direct_task.created_by) if direct_task.created_by else None,
+            "created_at": format_datetime_china(direct_task.created_at),
+            "started_at": format_datetime_china(direct_task.started_at) if direct_task.started_at else None,
+            "finished_at": format_datetime_china(direct_task.finished_at) if direct_task.finished_at else None,
+            "execution_mode": "direct",
+            "stage": direct_task.stage,
+            "candidate_waybill_number": direct_task.candidate_waybill_number,
+        }, msg="查询成功")
     
     result_data = None
     if task.result:

@@ -1,7 +1,7 @@
 """
 运单模型
 """
-from sqlalchemy import Column, BigInteger, String, DateTime, Text, Date
+from sqlalchemy import Column, BigInteger, String, DateTime, Text, Date, Index, Integer
 from sqlalchemy.orm import validates
 from app.database import Base
 from app.utils.snowflake import generate_id
@@ -60,4 +60,43 @@ class Waybill(Base):
 
     def __repr__(self):
         return f"<Waybill(id={self.id}, waybill_number={self.waybill_number})>"
+
+
+class ShenzhenAirDirectWaybillTaskStatus:
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+
+class ShenzhenAirDirectWaybillQueueLock(Base):
+    """Single-row mutex for claiming tasks against the shared KingGo account."""
+    __tablename__ = "shenzhen_air_direct_waybill_queue_lock"
+
+    id = Column(Integer, primary_key=True)
+
+
+class ShenzhenAirDirectWaybillTask(Base):
+    """Persistent queue for KingGo direct waybill creation."""
+    __tablename__ = "shenzhen_air_direct_waybill_tasks"
+
+    id = Column(BigInteger, primary_key=True, default=generate_id, index=True)
+    waybill_id = Column(BigInteger, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default=ShenzhenAirDirectWaybillTaskStatus.PENDING, index=True)
+    priority = Column(Integer, nullable=False, default=10)
+    created_by = Column(BigInteger, nullable=True, index=True)
+    request_data = Column(Text, nullable=False)
+    stage = Column(String(20), nullable=False, default="preparing")
+    candidate_waybill_number = Column(String(50), nullable=True)
+    result = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_shenzhen_direct_waybill_task_status_created", "status", "created_at"),
+        Index("idx_shenzhen_direct_waybill_task_waybill_status", "waybill_id", "status"),
+    )
 

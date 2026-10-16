@@ -1,0 +1,5 @@
+simulation: shenzhen-waybill
+routing: path
+mocks:
+  - routeKey: kinggo
+    path: ../mocks/kinggo/config.yaml

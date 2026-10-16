@@ -99,6 +99,91 @@
 
 调度器会跳过已经存在 pending/running 同类任务的机器人，避免任务堆积。该流程不使用 RPA 数据队列；RPA Job 成功结束后任务即完成，HAR 文件的实际保存位置由 RPA 流程自身配置决定。
 
+## 深航 KingGo 直连接口开单
+
+`POST /api/v1/waybills/{waybill_id}/execute` 默认通过 KingGo HTTP 接口创建深航运单；原有 RPA 开单实现和作废流程保留。设置 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE=rpa` 可切回原 RPA 开单任务队列。调用权限与既有运单操作权限一致。
+
+直连模式校验运单表单、业务默认值、HAR路径和账号配置后创建独立任务表 `shenzhen_air_direct_waybill_tasks`，保存本次表单和解析后的参数快照，同时将运单状态置为 `1`。任务不进入 `rpa_tasks`，不会被 RPA Worker 领取。接口保持异步入队后立即返回，响应保留既有运单字段及 `task_id`，新增 `execution_mode=direct`、`direct_task_status`、`direct_task_error`。`GET /api/v1/rpa-tasks/{task_id}` 可查询任务状态，直连任务额外返回 `execution_mode=direct`、`stage`（`preparing/submitting/confirmed`）、`candidate_waybill_number`（提交前保存的完整候选单号，未提交时为 null）。状态为 `pending/running/success/failed/unknown`；列表和统计接口仍仅统计RPA任务。开单成功后更新运单号、航司状态和开单时间，并复用现有深航开单后处理开关创建结算单、制单和打印任务；两个自动化开关均关闭时不创建结算单或后续任务。
+
+调用前必须在运行服务的文件系统配置有效 KingGo HAR，默认路径 `generated_files/www.kinggo.com.har`。Docker 部署中该目录挂载到 `/app/generated_files`。每一次对六个 KingGo 接口的 HTTP 请求都会重新读取 HAR、离线执行 `/main` 保护脚本提取配置和 Cookie，并针对当前实际请求 URL 重新生成 `oOr6SIhu`；不会缓存签名配置或 Cookie。`SHENZHEN_AIR_KINGGO_BROWSER` 控制提取浏览器；Linux/Docker 建议使用 `chromium`。HAR 不含可用 Cookie、HAR 无效或签名生成失败时，该次请求不会发给 KingGo。
+
+接口依次为：`get_awb_no` 获取 `479` 前缀后的八位单号，按航线/日期/货运代码查询运单信息，查询航班并精确匹配航班号/航线/日期及起飞时间，查询费用，调用 `check_awb` 校验，最后调用 `submit_awb` 提交。字段从 `form_data.flight_info`、`shipper_consignee_info`、`cargo_info` 映射。代理身份、操作员、提货电话、收货地址代码和付款方式从环境变量读取，账号字段必须按真实账号填写。与提供的检查/提交表单一致，舱位默认为 `F/F舱`，`oldCabinType` 使用运单信息响应的 `cabinType`；固定舱位代码和名称必须同时设置；两者均置空时使用运单信息返回的舱位。
+
+上游调用契约（路径相对于 `https://www.kinggo.com`，每次独立附加新签名和Cookie）：
+
+| 顺序 | 方法及路径 | 输入与成功结果 |
+| --- | --- | --- |
+| 1 | `GET /awb/inland/get_awb_no` | 查询参数 `inlandAwbType=0`、`awbPrefix=479`、当前毫秒时间戳 `_`；要求 `retCode=100` 且 `result` 为8位数字 |
+| 2 | `POST /awb/inland/get_bill_info_by_code` | 航线、日期、航班、表单货运代码、`awbType=0`、`awbPrefix=479`、空 `transCity`；读取 `retCode=100` 的 `result` 元数据 |
+| 3 | `POST /awb/inland/get_flight_no` | `depCode/destCode/flightDate`；响应为数组，要求唯一匹配航班，读取 `takeoffTime/carrierCode` |
+| 4 | `POST /awb/inland/computational_costs?nti=90` | 航线、日期、航班、计费重量，元数据 `awbType/billCode/feeModel`，配置 `agentType`，`insuranceValue=0`，空 `custNo/transCity`；响应为费用对象 |
+| 5 | `POST /awb/inland/check_awb?nti=90` | 完整开单表单；仅 `retCode=100` 允许进入提交阶段 |
+| 6 | `POST /awb/inland/submit_awb?nti=90` | 与检查相同的完整表单、独立生成的新签名；要求 `retCode=100`、`result.awbNo` 等于候选单号、`result.awbId` 非空 |
+
+检查及提交的主要映射：
+
+| KingGo字段 | 来源 |
+| --- | --- |
+| `awbPrefix/awbNo` | 固定 `479` / 第1步单号；本地保存为 `479-八位单号` |
+| `depCode/destCode/flightDate/flightNo/transDate` | `flight_info.origin_station/destination/flight_date/flight_number/flight_date`；始发站为空时使用业务默认值 |
+| `shpInfo/cneInfo` | `shipper_consignee_info.shipper_info/consignee_info`；发货人为空时使用业务默认值 |
+| `pieces/weight/chargeWeight` | `cargo_info.quantity/weight/chargeable_weight`；必须为正数，件数必须为整数 |
+| `aliasCode/goodsCode/goodsName/packName/transNote` | `cargo_info.freight_code/cargo_code/cargo_name/package/cargo_name`；允许沿用对应业务默认值 |
+| `billCode/aug/ldcFlag/feeModel/fastFreightFlag/dealCode/oldCabinType` | 第2步元数据，`oldCabinType` 对应 `cabinType` |
+| `takeOffTime/carrierCode` | 第3步匹配航班的 `takeoffTime/carrierCode` |
+| `formerRate/aviationRate/formerFee/aviationFee` | 第4步 `aviationRate/aviationRate/aviationFee/aviationFee` |
+| 保险、燃油、管理、派送、地面、延误、杂费的费率及金额、`otherTotalFee/depOtherFee` | 第4步同名字段，保留合法零值；缺少必要费用字段时中止 |
+| `totalFee` | 使用十进制相加：`aviationFee + otherTotalFee` |
+| `operDate` | 中国时区的实际操作日期 |
+| 账号身份字段、舱位、付款方式 | 下表环境配置；其他空值、固定字段按提供的开单表单设置，`tlicellCellinfos=[]` |
+
+直连入队响应新增字段示例（其余既有运单字段仍返回；此时尚未开单成功）：
+
+```json
+{"execution_mode":"direct","task_id":"369409067778707456","airline_record_status":"1","direct_task_status":"pending","direct_task_error":null}
+```
+
+任务详情的 `result` 成功时包含 `waybill_number`、`awb_id`、`aviation_rate`、`aviation_fee`、`delivery_fee`；费用值保留上游的数字或数字字符串类型。失败时读取 `error_message`；`unknown` 必须结合 `candidate_waybill_number` 人工核查。任务ID、运单ID均以字符串返回。
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE` | `direct` | `direct` 使用 KingGo 接口；`rpa` 使用原 RPA 流程 |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_QUEUE_ENABLED` | `True` | 是否启动独立持久化直连 Worker |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_WORKER_COUNT` | `1` | Worker 数量；共享账号由数据库互斥串行领取开单任务 |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_POLL_INTERVAL` | `2` | 空队列轮询秒数 |
+| `SHENZHEN_AIR_KINGGO_HAR_PATH` | `generated_files/www.kinggo.com.har` | HAR 文件路径 |
+| `SHENZHEN_AIR_KINGGO_API_ORIGIN` | `https://www.kinggo.com` | KingGo API 传输地址；仅本地模拟测试可覆盖 |
+| `SHENZHEN_AIR_KINGGO_BROWSER` | `auto` | `auto`、`msedge` 或 `chromium` |
+| `SHENZHEN_AIR_KINGGO_EXECUTABLE_PATH` | 空 | 可选浏览器可执行文件路径 |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_HTTP_TIMEOUT_SECONDS` | `30` | 每个上游请求超时秒数 |
+| `SHENZHEN_AIR_KINGGO_AGENT_TYPE` | `1` | KingGo 代理类型 |
+| `SHENZHEN_AIR_KINGGO_AGENT_NAME/ID/CODE` | 空 | 当前账号代理名称、ID 和编码 |
+| `SHENZHEN_AIR_KINGGO_OPER_ID` | 空 | KingGo 操作员 ID |
+| `SHENZHEN_AIR_KINGGO_PICK_TEL_NO` | 空 | 提货联系电话 |
+| `SHENZHEN_AIR_KINGGO_CNE_ADDR` | 空 | KingGo 收货地址代码 |
+| `SHENZHEN_AIR_KINGGO_CABIN_TYPE(_NAME)` | `F` / `F舱` | 固定舱位代码和名称；两者均置空时使用运单信息响应 |
+| `SHENZHEN_AIR_KINGGO_PAY_TYPE` | `1` | 付款方式 |
+
+每次提取时将实际方法、URL和完整编码表单交给HAR原脚本，随后将原脚本产生的 `requestDigest` 传入 `generate` 生成本次新签名，保证提取和实际发送使用同一份请求体。POST 使用 `application/x-www-form-urlencoded`。签名/Cookie提取失败不降级发送。HAR含有会话Cookie，不得提交代码仓库、写入日志或API响应。
+
+提交请求发出前失败会标记 `failed`，可重新执行。提交发出前先独立提交数据库事务，将 `stage=submitting` 和候选单号持久化；数据库写入失败则不发送提交请求。之后的网络异常、非2xx、业务拒绝、无效响应、返回单号不一致或本地结果落库异常均保守标记 `unknown`，禁止自动重试或自动降级RPA。切换到RPA模式也不能绕过 `pending/running/unknown` 直连任务。`PUT /api/v1/waybills/{id}` 修改运单时同样阻止这些任务关联的运单被修改。单任务上限20分钟，每分钟检查超过30分钟的遗留running任务；未跨过提交边界的任务置failed，已跨过的任务置unknown。人工必须先按候选单号核查KingGo并确认/修复本地运单、任务状态；未确认上游结果前不能将unknown直接改为failed重试。
+
+确认成功时校验返回的八位运单号与候选号一致且包含 `awbId`，原子持久化运单号和任务成功状态。后续结算/制单/打印异常不会导致再次开单；后处理抛出异常时在任务 `result.post_processing_error` 中提示人工检查。直连模式不自动重发任何上游请求。
+
+共享 KingGo 账号的领取过程通过 `shenzhen_air_direct_waybill_queue_lock` 单行锁协调：同一时刻只允许一个直连开单任务处于 running，多线程、多进程使用同一数据库时也遵循此限制，避免获取候选单号后尚未提交就被另一任务重复领取。互斥行仅在领取事务中加锁，HAR提取和HTTP请求期间不持有数据库连接。候选单号是否预占尚未得到上游契约确认，因此采用串行策略。
+
+数据库部署：执行 `sql/migration_create_shenzhen_air_direct_waybill_tasks.sql`（幂等创建任务表、领取互斥表并初始化互斥行）；应用启动的模型建表逻辑也会创建这两张新表，首次领取时自动补齐互斥行。现有RPA表和流程不变。启动Worker的主机需安装项目依赖及Playwright Chromium（`python -m playwright install --with-deps chromium`）。本地验证使用提供的 `postman/simulations/shenzhen-waybill.sim.yaml`，依据本次提供的六个KingGo接口样例构造，不含真实Cookie或签名。
+
+本地回归方式（PowerShell，模拟服务启动后另开终端执行测试）：
+
+```powershell
+postman simulation run postman/simulations/shenzhen-waybill.sim.yaml --port 4900 --output ndjson --no-history
+$env:KINGGO_SIM_ORIGIN='http://127.0.0.1:4900/kinggo'
+python -m unittest tests.test_shenzhen_air_direct_waybill -v
+```
+
+模拟测试使用虚拟签名替代HAR提取，其余业务映射、HTTP编码、上游错误处理均运行实际客户端。真实HAR离线提取验证与模拟HTTP验证分别进行，不能视为真实KingGo账号开单成功的证明。
+
 ## 空运财务审核
 
 `GET /api/v1/financial-audit/air` 返回的列表项包含财务审核人字段：
