@@ -1,5 +1,21 @@
 # API 文档
 
+## 深航订舱-过机-装机数据获取（KingGo直连下载）
+
+定时管理器 TransitLoadingManager 默认通过 KingGo 接口 POST /awb/query/export/119
+下载 AwbQueryExport.xlsx（按北京时间当天过滤操作日期与航班日期）到
+RPA_GENERATED_FILES_DIR，文件名格式为 AwbQueryExport_YYYYMMDD_HHMMSS.xlsx。
+后续文件扫描与解析入库逻辑不变。每次请求都会从 HAR 文件重新提取 Cookie 和
+签名（oOr6SIhu 由签名生成），下载失败仅记录日志，本轮不再下发 RPA 任务。
+
+切换回原 RPA 下载流程：
+
+```env
+SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE=rpa
+```
+
+该配置默认 direct；rpa 模式完整保留原有定时下发 RPA 下载任务的逻辑。
+
 ## 单号库总览
 
 `GET /api/v1/waybill-stocks/overview`

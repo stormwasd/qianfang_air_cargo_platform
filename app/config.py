@@ -160,6 +160,10 @@ class Settings(BaseSettings):
         default="direct",
         description="深航 POST /waybills/{id}/void 执行模式：direct=KingGo接口，rpa=原RPA流程",
     )
+    SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航订舱-过机-装机数据获取执行模式：direct=KingGo接口下载，rpa=原RPA下载流程",
+    )
     SHENZHEN_AIR_DIRECT_WAYBILL_QUEUE_ENABLED: bool = Field(
         default=True, description="是否启用深航KingGo直连接口持久化任务队列"
     )

@@ -113,6 +113,23 @@ class TransitLoadingManager:
 
     async def _scan_and_enqueue_transit_loading(self) -> None:
         """创建下载表格任务"""
+        if settings.SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE == "direct":
+            from app.services.shenzhen_air_direct_transit_loading import (
+                ShenzhenAirDirectTransitLoadingError,
+                shenzhen_air_direct_transit_loading_service,
+            )
+
+            try:
+                export_path = await shenzhen_air_direct_transit_loading_service.download_export()
+            except ShenzhenAirDirectTransitLoadingError as exc:
+                print(f"[TransitLoadingManager] KingGo过机装机表直连下载失败: {exc}")
+                return
+            print(
+                "[TransitLoadingManager] KingGo过机装机表直连下载完成: "
+                f"{export_path.name}"
+            )
+            return
+
         db = SessionLocal()
         try:
             existing = rpa_task_service.get_pending_task_for_target(
