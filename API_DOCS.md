@@ -166,6 +166,35 @@
 
 每次提取时将实际方法、URL和完整编码表单交给HAR原脚本，随后将原脚本产生的 `requestDigest` 传入 `generate` 生成本次新签名，保证提取和实际发送使用同一份请求体。POST 使用 `application/x-www-form-urlencoded`。签名/Cookie提取失败不降级发送。HAR含有会话Cookie，不得提交代码仓库、写入日志或API响应。
 
+## 深航运单作废
+
+`POST /api/v1/waybills/{waybill_id}/void` 对深航默认使用 KingGo 直连接口；南航行为保持原有 RPA 队列不变。设置 `SHENZHEN_AIR_WAYBILL_VOID_EXECUTION_MODE=rpa` 可将深航切回原 RPA 作废流程。直连模式在本次请求内完成查询和删除，不创建新的任务表。
+
+直连流程如下：
+
+1. 从本地 `waybill_number` 校验并取得 `479-` 后的8位数字。
+2. `POST /awb/query/index/119?flag=true`，以 `application/x-www-form-urlencoded` 发送查询表单（`awbPrefixQ=479`、`awbNoQ=8位单号`，其余筛选条件使用全量安全范围）。
+3. 从返回 HTML 中仅匹配 `awbPrefix=479`、`awbNo=8位单号` 的唯一表格行，并校验该行的 `rel` 与 hidden `awbId` 一致，取得 KingGo 的真实 `awbId`；不会使用本地运单 ID。
+4. 使用本次查询得到的 `awbId` 调用 `POST /awb/query/delete_awb_info/119?awbId=...`，请求体为空。
+5. 只有 HTTP 2xx 且 JSON 返回 `statusCode="200"`、`message="成功删除"` 时才将本地运单和关联结算单置为作废成功（`waybill_void_status="3"`）。
+
+查询和删除每次都从 HAR 离线提取 Cookie，并针对精确的方法、URL 和请求体重新生成 `oOr6SIhu`；不会复用旧签名或 Cookie。HAR、Cookie、签名和上游 HTML 不会写入日志或接口响应。查询不到、匹配不唯一或业务失败时标记作废失败（`"2"`）；删除请求已发出但结果不确定时保留作废中（`"1"`），阻止盲目重试，需人工核查 KingGo 后处理。成功响应在原有运单字段基础上增加：
+
+| 字段 | 说明 |
+| --- | --- |
+| `execution_mode` | `direct` |
+| `direct_void_status` | `success` |
+| `kinggo_awb_id` | KingGo 查询到的上游运单 ID |
+| `task_id` | 直连同步执行时为 `null`；RPA 模式仍返回原 RPA 任务 ID |
+
+配置项：
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_WAYBILL_VOID_EXECUTION_MODE` | `direct` | `direct` 使用 KingGo 查询/删除接口；`rpa` 使用原深航 RPA 作废流程 |
+
+该配置仅影响深航作废，不影响深航开单配置 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE`，修改 `.env` 后需重启服务。
+
 提交请求发出前失败会标记 `failed`，可重新执行。提交发出前先独立提交数据库事务，将 `stage=submitting` 和候选单号持久化；数据库写入失败则不发送提交请求。之后的网络异常、非2xx、业务拒绝、无效响应、返回单号不一致或本地结果落库异常均保守标记 `unknown`，禁止自动重试或自动降级RPA。切换到RPA模式也不能绕过 `pending/running/unknown` 直连任务。`PUT /api/v1/waybills/{id}` 修改运单时同样阻止这些任务关联的运单被修改。单任务上限20分钟，每分钟检查超过30分钟的遗留running任务；未跨过提交边界的任务置failed，已跨过的任务置unknown。人工必须先按候选单号核查KingGo并确认/修复本地运单、任务状态；未确认上游结果前不能将unknown直接改为failed重试。
 
 确认成功时校验返回的八位运单号与候选号一致且包含 `awbId`，原子持久化运单号和任务成功状态。后续结算/制单/打印异常不会导致再次开单；后处理抛出异常时在任务 `result.post_processing_error` 中提示人工检查。直连模式不自动重发任何上游请求。

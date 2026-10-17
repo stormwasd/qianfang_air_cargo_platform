@@ -765,6 +765,37 @@ def _get_business_config(db: Session) -> dict:
     return json.loads(config.config_data)
 
 
+def _sync_waybill_void_settlements(db: Session, waybill: Waybill) -> None:
+    """同步作废成功状态到关联结算单，失败不影响运单成功落库。"""
+    if not waybill.waybill_number:
+        return
+    try:
+        from sqlalchemy import cast, String
+        settlements = db.query(Settlement).filter(
+            func.cast(
+                func.json_extract(
+                    cast(Settlement.form_data, JSON),
+                    "$.master_airwaybill_number",
+                ),
+                String(100),
+            ) == waybill.waybill_number
+        ).all()
+        if not settlements:
+            for settlement in db.query(Settlement).all():
+                try:
+                    data = json.loads(settlement.form_data)
+                except (TypeError, ValueError):
+                    continue
+                if data.get("master_airwaybill_number") == waybill.waybill_number:
+                    settlements.append(settlement)
+        for settlement in settlements:
+            settlement.waybill_void_status = "3"
+    except Exception as exc:
+        # KingGo has already confirmed deletion; do not turn that into a
+        # retryable failure merely because a legacy settlement row is malformed.
+        print(f"同步深航运单作废状态到结算单失败: {type(exc).__name__}")
+
+
 def _reserve_china_southern_air_stock_item(db: Session) -> WaybillStockItem:
     """以行锁预占一个南航可用单号，避免并发开单重复分配。"""
     stock_item = reserve_available_stock_item(db, "china_southern_air")
@@ -1417,7 +1448,7 @@ async def void_waybill(
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
-    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).with_for_update().first()
     if not waybill:
         raise NotFoundException("运单不存在")
     
@@ -1453,6 +1484,63 @@ async def void_waybill(
     
     if not waybill_number_8 or len(waybill_number_8) != 8:
         raise BadRequestException(f"运单号格式不正确，无法提取后八位: {waybill.waybill_number}")
+
+    if is_shenzhen_air and settings.SHENZHEN_AIR_WAYBILL_VOID_EXECUTION_MODE == "direct":
+        if waybill.waybill_void_status == "3":
+            raise BadRequestException("该运单已作废成功，不能重复作废")
+        if waybill.waybill_void_status == "1":
+            raise BadRequestException("该运单正在作废或作废结果待核查，请勿重复提交")
+
+        from app.services.shenzhen_air_direct_waybill_void import (
+            ShenzhenAirDirectWaybillVoidError,
+            shenzhen_air_direct_waybill_void_service,
+        )
+
+        # Persist the in-progress marker before leaving the transaction. If a
+        # delete request times out, this marker intentionally blocks blind retry.
+        waybill.waybill_void_status = "1"
+        db.commit()
+        try:
+            result = await shenzhen_air_direct_waybill_void_service.void_waybill(
+                waybill.waybill_number
+            )
+        except ShenzhenAirDirectWaybillVoidError as exc:
+            if not exc.outcome_unknown:
+                waybill.waybill_void_status = "2"
+                db.commit()
+            raise BadRequestException(str(exc)) from exc
+        except Exception as exc:
+            waybill.waybill_void_status = "2"
+            db.commit()
+            raise BadRequestException("深航直连接口作废失败，请稍后重试") from exc
+
+        waybill.waybill_void_status = "3"
+        _sync_waybill_void_settlements(db, waybill)
+        db.commit()
+        db.refresh(waybill)
+        form_data_dict = json.loads(waybill.form_data)
+        waybill_data = {
+            "id": str(waybill.id),
+            "waybill_number": waybill.waybill_number,
+            "form_data": form_data_dict,
+            "airline_record_status": waybill.airline_record_status,
+            "cargo_station_record_status": waybill.cargo_station_record_status,
+            "document_print_status": waybill.document_print_status,
+            "waybill_void_status": waybill.waybill_void_status,
+            "airline_record_time": format_datetime_china(waybill.airline_record_time),
+            "cargo_station_record_time": format_datetime_china(waybill.cargo_station_record_time),
+            "document_print_time": format_datetime_china(waybill.document_print_time),
+            "departure_time": format_datetime_china(waybill.departure_time),
+            "booking_date": waybill.booking_date.isoformat(),
+            "rpa_work_uuid": waybill.rpa_work_uuid,
+            "created_at": format_datetime_china(waybill.created_at),
+            "updated_at": format_datetime_china(waybill.updated_at),
+            "task_id": None,
+            "execution_mode": "direct",
+            "direct_void_status": "success",
+            "kinggo_awb_id": result["awb_id"],
+        }
+        return success_response(data=waybill_data, msg="深航运单已通过KingGo直连接口作废")
     
     rpa_params = {
         "waybill_number_8": waybill_number_8
