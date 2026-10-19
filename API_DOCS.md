@@ -16,6 +16,26 @@ SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE=rpa
 
 该配置默认 direct；rpa 模式完整保留原有定时下发 RPA 下载任务的逻辑。
 
+## 深航订舱-批复数据获取
+
+配置 `SHENZHEN_AIR_APPROVAL_EXECUTION_MODE=direct` 时，调度器按北京时间下载今天和明天
+两份普通机型批复文件到 `generated_files`，请求 KingGo
+`POST /agent_order_look/export/125`，固定发送 `depCode=SZX`、`agentCode=SZXFDH`、
+`orderType=1`、`ss=1`、`nn=0`，并使用当日 `flightDate`。每次请求从 HAR 重新提取 Cookie
+和 `oOr6SIhu` 签名，下载文件继续由现有批复 Excel 扫描器解析入库。
+
+直连普通机型流程不创建 `rpa_tasks` 任务；网络、鉴权或文件格式失败时不标记任何数据，
+下一轮定时调度自动重试。原 RPA 模式完整保留。宽体机批复使用不同的报表和解析器，
+即使普通机型为 direct，宽体机仍沿用原 `SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY` RPA 流程。
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_APPROVAL_EXECUTION_MODE` | `direct` | 普通机型批复使用 KingGo 直连或原 RPA |
+| `RPA_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS` | `900` | 直连/RPA 调度间隔（秒） |
+| `SHENZHEN_AIR_KINGGO_HAR_PATH` | `generated_files/www.kinggo.com.har` | HAR 签名与 Cookie 来源 |
+
+下载的文件名以 `订舱查询导出` 开头，写入既有 `RPA_GENERATED_FILES_DIR`，不新增业务表。
+
 ## 深航订舱-计飞时间-集装器数据获取
 
 文件扫描器从 `AwbQueryExport*.xlsx` 读取单号、航程和航班日期后，按既有携程
@@ -156,7 +176,7 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 
 直连模式校验运单表单、业务默认值、HAR路径和账号配置后创建独立任务表 `shenzhen_air_direct_waybill_tasks`，保存本次表单和解析后的参数快照，同时将运单状态置为 `1`。任务不进入 `rpa_tasks`，不会被 RPA Worker 领取。接口保持异步入队后立即返回，响应保留既有运单字段及 `task_id`，新增 `execution_mode=direct`、`direct_task_status`、`direct_task_error`。`GET /api/v1/rpa-tasks/{task_id}` 可查询任务状态，直连任务额外返回 `execution_mode=direct`、`stage`（`preparing/submitting/confirmed`）、`candidate_waybill_number`（提交前保存的完整候选单号，未提交时为 null）。状态为 `pending/running/success/failed/unknown`；列表和统计接口仍仅统计RPA任务。开单成功后更新运单号、航司状态和开单时间，并复用现有深航开单后处理开关创建结算单、制单和打印任务；两个自动化开关均关闭时不创建结算单或后续任务。
 
-调用前必须在运行服务的文件系统配置有效 KingGo HAR，默认路径 `generated_files/www.kinggo.com.har`。Docker 部署中该目录挂载到 `/app/generated_files`。每一次对六个 KingGo 接口的 HTTP 请求都会重新读取 HAR、离线执行 `/main` 保护脚本提取配置和 Cookie，并针对当前实际请求 URL 重新生成 `oOr6SIhu`；不会缓存签名配置或 Cookie。`SHENZHEN_AIR_KINGGO_BROWSER` 控制提取浏览器；Linux/Docker 建议使用 `chromium`。HAR 不含可用 Cookie、HAR 无效或签名生成失败时，该次请求不会发给 KingGo。
+调用前必须在运行服务的文件系统配置有效 KingGo HAR，默认路径 `generated_files/www.kinggo.com.har`。Docker 部署中该目录挂载到 `/app/generated_files`。每一次 KingGo HTTP 请求都会重新读取 HAR、离线执行 `/main` 保护脚本提取配置和 Cookie，并针对当前实际请求 URL 重新生成 `oOr6SIhu`；不会缓存签名配置或 Cookie。`SHENZHEN_AIR_KINGGO_BROWSER` 控制提取浏览器；Linux/Docker 建议使用 `chromium`。HAR 不含可用 Cookie、HAR 无效或签名生成失败时，该次请求不会发给 KingGo。
 
 接口依次为：`get_awb_no` 获取 `479` 前缀后的八位单号，按航线/日期/货运代码查询运单信息，查询航班并精确匹配航班号/航线/日期及起飞时间，查询费用，调用 `check_awb` 校验，最后调用 `submit_awb` 提交。字段从 `form_data.flight_info`、`shipper_consignee_info`、`cargo_info` 映射。代理身份、操作员、提货电话、收货地址代码和付款方式从环境变量读取，账号字段必须按真实账号填写。与提供的检查/提交表单一致，舱位默认为 `F/F舱`，`oldCabinType` 使用运单信息响应的 `cabinType`；固定舱位代码和名称必须同时设置；两者均置空时使用运单信息返回的舱位。
 

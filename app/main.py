@@ -113,6 +113,11 @@ async def lifespan(app: FastAPI):
         from app.services.transit_loading_manager import transit_loading_manager
         transit_loading_manager.start()
         transit_loading_started = True
+    approval_scheduler_started = False
+    if not settings.RPA_QUEUE_ENABLED and settings.SHENZHEN_AIR_APPROVAL_EXECUTION_MODE == "direct":
+        from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
+        shenzhen_air_approval_scheduler.start()
+        approval_scheduler_started = True
     if settings.RPA_QUEUE_ENABLED:
         from app.services.rpa_worker import rpa_worker_manager
         rpa_worker_manager.start_workers()
@@ -122,8 +127,9 @@ async def lifespan(app: FastAPI):
         if not transit_loading_started:
             from app.services.transit_loading_manager import transit_loading_manager
             transit_loading_manager.start()
-        from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
-        shenzhen_air_approval_scheduler.start()
+        if not approval_scheduler_started:
+            from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
+            shenzhen_air_approval_scheduler.start()
         from app.services.china_southern_air_approval_scheduler import china_southern_air_approval_scheduler
         china_southern_air_approval_scheduler.start()
         from app.services.shenzhen_air_approval_alert import shenzhen_air_approval_alert
@@ -168,8 +174,9 @@ async def lifespan(app: FastAPI):
         if settings.RPA_QUEUE_ENABLED or settings.SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE == "direct":
             from app.services.transit_loading_manager import transit_loading_manager
             transit_loading_manager.stop()
-        from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
-        shenzhen_air_approval_scheduler.stop()
+        if settings.RPA_QUEUE_ENABLED or settings.SHENZHEN_AIR_APPROVAL_EXECUTION_MODE == "direct":
+            from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
+            shenzhen_air_approval_scheduler.stop()
         from app.services.china_southern_air_approval_scheduler import china_southern_air_approval_scheduler
         china_southern_air_approval_scheduler.stop()
         from app.services.shenzhen_air_approval_alert import shenzhen_air_approval_alert
@@ -192,6 +199,13 @@ async def lifespan(app: FastAPI):
         shenzhen_air_get_har_scheduler.stop()
         from app.services.departure_actual_time_sync import departure_actual_time_sync
         departure_actual_time_sync.stop()
+    else:
+        if settings.SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE == "direct":
+            from app.services.transit_loading_manager import transit_loading_manager
+            transit_loading_manager.stop()
+        if settings.SHENZHEN_AIR_APPROVAL_EXECUTION_MODE == "direct":
+            from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
+            shenzhen_air_approval_scheduler.stop()
 
 
 def create_application() -> FastAPI:

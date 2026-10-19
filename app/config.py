@@ -164,6 +164,10 @@ class Settings(BaseSettings):
         default="direct",
         description="深航订舱-过机-装机数据获取执行模式：direct=KingGo接口下载，rpa=原RPA下载流程",
     )
+    SHENZHEN_AIR_APPROVAL_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航订舱-批复数据获取执行模式：direct=KingGo接口下载普通机型批复，rpa=原RPA流程",
+    )
     SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
         default="direct",
         description="深航订舱-计飞时间-集装器数据获取执行模式：direct=KingGo接口，rpa=原RPA流程",
