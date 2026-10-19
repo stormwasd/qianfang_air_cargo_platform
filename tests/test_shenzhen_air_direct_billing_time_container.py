@@ -86,6 +86,20 @@ class DirectBillingTimeContainerTests(unittest.IsolatedAsyncioTestCase):
     def test_parse_empty_page_is_safe(self):
         self.assertEqual(self.service.parse_rows("<html><body>登录</body></html>"), [])
 
+    async def test_direct_scheduler_does_not_enqueue_rpa_task(self):
+        from app.services.transit_loading_manager import TransitLoadingManager
+        from app.config import settings
+
+        manager = TransitLoadingManager()
+        direct_process = AsyncMock()
+        with patch.object(settings, "SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE", "direct"), \
+             patch.object(manager, "_process_direct_billing_time_container_records", direct_process), \
+             patch.object(manager, "_enqueue_billing_time_task", AsyncMock()) as enqueue_rpa:
+            await manager._enqueue_missing_billing_tasks()
+
+        direct_process.assert_awaited_once()
+        enqueue_rpa.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()

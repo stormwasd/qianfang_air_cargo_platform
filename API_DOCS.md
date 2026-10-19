@@ -19,9 +19,9 @@ SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE=rpa
 ## 深航订舱-计飞时间-集装器数据获取
 
 文件扫描器从 `AwbQueryExport*.xlsx` 读取单号、航程和航班日期后，按既有携程
-`ready_time - 105` 分钟创建 `SHENZHEN_AIR_BILLING_TIME_CONTAINER` 子任务。
-子任务默认通过 KingGo 直连 GET `/awb/query/getaway` 获取 HTML 表格；RPA
-执行器和队列消费逻辑完整保留，可通过配置切换：
+`ready_time - 105` 分钟调度处理。直连模式由定时管理器直接调用 KingGo GET
+`/awb/query/getaway` 获取 HTML 表格，不创建 `rpa_tasks` 记录；RPA 执行器和队列消费
+逻辑完整保留，可通过配置切换：
 
 ```env
 SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
@@ -32,20 +32,24 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 `nti=119` 和 `historyCheck=false`。返回页面只解析 `#getWay` 下九列表格数据，
 跳过表头和“合计”行，字段按原 RPA 映射写入
 `shenzhen_air_billing_time_containers`，并继续查询携程预飞时间。空数据、登录页、
-网络或上游错误按现有任务重试间隔重新排队；成功后标记 Excel 明细完成并删除任务。
-直连失败不会调用 RPA。设置为 `rpa` 后沿用原队列、机器人权限、轮询和消费逻辑。
+网络或上游错误不标记 Excel 明细完成，由下一次定时扫描重试；成功后标记 Excel 明细完成。
+直连失败不会调用 RPA。设置为 `rpa` 后才创建
+`SHENZHEN_AIR_BILLING_TIME_CONTAINER` 队列任务，并沿用原队列、机器人权限、轮询和消费逻辑。
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE` | `direct` | `direct` 使用 KingGo GET 接口；`rpa` 使用原 RPA 流程 |
-| `RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS` | 由现有配置决定 | 直连空数据或失败时的重试间隔 |
+| `RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS` | 由现有配置决定 | 仅 RPA 模式的任务重试间隔；直连模式在下一次定时扫描重试 |
 | `SHENZHEN_AIR_KINGGO_HAR_PATH` | `generated_files/www.kinggo.com.har` | 每次请求提取签名和 Cookie 的 HAR |
 | `SHENZHEN_AIR_KINGGO_API_ORIGIN` | `https://www.kinggo.com` | KingGo 地址；本地模拟可覆盖 |
 | `SHENZHEN_AIR_DIRECT_WAYBILL_HTTP_TIMEOUT_SECONDS` | `30` | 直连请求超时秒数 |
 
 上游返回的九列依次映射为 `sequence`、`flight_number`、`flight_date`、
 `billing_time`、`origin`、`destination`、`quantity`、`weight`、`container`。
-该内部任务不新增业务表，也不改变 Excel 解析入库流程。
+直连模式不新增任务表，也不改变 Excel 解析入库流程；RPA 模式继续使用现有 `rpa_tasks`。
+切换到直连后，管理器会清理遗留的待执行计飞集装器 RPA 任务；正在执行的旧任务会先完成，
+避免与直连请求并发处理同一条 Excel 明细。
+直连管理器不依赖 `RPA_QUEUE_ENABLED`，但 Excel 来源仍须配置为直连过机装机下载，或由其他流程提供文件。
 
 ## 单号库总览
 

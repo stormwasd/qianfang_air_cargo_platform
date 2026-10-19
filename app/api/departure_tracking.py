@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from typing import Optional, List
+from app.config import settings
 from app.database import get_db
 from app.api.deps import get_current_active_user
 from app.core.response import success_response
@@ -149,7 +150,12 @@ async def get_shenzhen_air_departures(
         items.append(item_schema.model_dump(mode="json"))
 
     data_update_time = None
-    last_success = rpa_task_service.get_last_success_time(db, RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value)
+    if settings.SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE == "direct":
+        last_success = db.query(func.max(ShenzhenAirBillingTimeContainer.created_at)).scalar()
+    else:
+        last_success = rpa_task_service.get_last_success_time(
+            db, RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value
+        )
     if last_success:
         data_update_time = last_success.strftime("%Y-%m-%d %H:%M")
     elif exports and hasattr(exports[0], 'updated_at') and exports[0].updated_at:

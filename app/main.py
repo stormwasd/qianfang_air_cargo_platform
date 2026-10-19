@@ -106,14 +106,22 @@ async def lifespan(app: FastAPI):
     direct_booking_worker_manager.start_workers()
     from app.services.shenzhen_air_direct_waybill_worker import shenzhen_air_direct_waybill_worker_manager
     shenzhen_air_direct_waybill_worker_manager.start_workers()
+    # 过机装机直连模式同时负责扫描 Excel 并驱动计飞/集装器直连处理，
+    # 不应依赖 RPA 队列开关；RPA 模式仍在下方 RPA 分支中启动。
+    transit_loading_started = False
+    if not settings.RPA_QUEUE_ENABLED and settings.SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE == "direct":
+        from app.services.transit_loading_manager import transit_loading_manager
+        transit_loading_manager.start()
+        transit_loading_started = True
     if settings.RPA_QUEUE_ENABLED:
         from app.services.rpa_worker import rpa_worker_manager
         rpa_worker_manager.start_workers()
         print(f"RPA任务队列已启用，启动了 {len(rpa_worker_manager.workers)} 个Worker")
         from app.services.keep_login_scheduler import rpa_keep_login_scheduler
         rpa_keep_login_scheduler.start()
-        from app.services.transit_loading_manager import transit_loading_manager
-        transit_loading_manager.start()
+        if not transit_loading_started:
+            from app.services.transit_loading_manager import transit_loading_manager
+            transit_loading_manager.start()
         from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
         shenzhen_air_approval_scheduler.start()
         from app.services.china_southern_air_approval_scheduler import china_southern_air_approval_scheduler
@@ -157,8 +165,9 @@ async def lifespan(app: FastAPI):
         print("RPA Worker已停止")
         from app.services.keep_login_scheduler import rpa_keep_login_scheduler
         rpa_keep_login_scheduler.stop()
-        from app.services.transit_loading_manager import transit_loading_manager
-        transit_loading_manager.stop()
+        if settings.RPA_QUEUE_ENABLED or settings.SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE == "direct":
+            from app.services.transit_loading_manager import transit_loading_manager
+            transit_loading_manager.stop()
         from app.services.shenzhen_air_approval_scheduler import shenzhen_air_approval_scheduler
         shenzhen_air_approval_scheduler.stop()
         from app.services.china_southern_air_approval_scheduler import china_southern_air_approval_scheduler
