@@ -18,23 +18,25 @@ SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE=rpa
 
 ## 深航订舱-批复数据获取
 
-配置 `SHENZHEN_AIR_APPROVAL_EXECUTION_MODE=direct` 时，调度器按北京时间下载今天和明天
-两份普通机型批复文件到 `generated_files`，请求 KingGo
-`POST /agent_order_look/export/125`，固定发送 `depCode=SZX`、`agentCode=SZXFDH`、
-`orderType=1`、`ss=1`、`nn=0`，并使用当日 `flightDate`。每次请求从 HAR 重新提取 Cookie
-和 `oOr6SIhu` 签名，下载文件继续由现有批复 Excel 扫描器解析入库。
+配置 `SHENZHEN_AIR_APPROVAL_EXECUTION_MODE=direct` 时，调度器按北京时间分别下载今天和明天
+的普通机型及宽体机批复文件到 `RPA_GENERATED_FILES_DIR`。普通机型请求 KingGo
+`POST /agent_order_look/export/125`，宽体机请求 `POST /agent_order_look_wide/export/858`；
+均固定发送 `depCode=SZX`、`agentCode=SZXFDH`、`ss=1`、`nn=0` 和对应的 `flightDate`，
+普通机型额外发送 `orderType=1`（宽体接口参数不含此字段）。每次请求从 HAR 重新提取
+Cookie 和 `oOr6SIhu` 签名。文件名分别以 `订舱查询导出`、`宽体机订舱查询与修改导出` 开头，
+由现有批复 Excel 扫描器按原解析逻辑分别解析入库。
 
-直连普通机型流程不创建 `rpa_tasks` 任务；网络、鉴权或文件格式失败时不标记任何数据，
-下一轮定时调度自动重试。原 RPA 模式完整保留。宽体机批复使用不同的报表和解析器，
-即使普通机型为 direct，宽体机仍沿用原 `SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY` RPA 流程。
+直连模式下普通机型和宽体机均不创建对应的 `rpa_tasks` 任务；网络、鉴权或文件格式失败时
+不标记任何数据，下一轮定时调度自动重试。原 RPA 模式完整保留，切换为 `rpa` 后两种机型
+均按原流程调度 `SHENZHEN_AIR_APPROVAL_DATA` 和 `SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY`。
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `SHENZHEN_AIR_APPROVAL_EXECUTION_MODE` | `direct` | 普通机型批复使用 KingGo 直连或原 RPA |
+| `SHENZHEN_AIR_APPROVAL_EXECUTION_MODE` | `direct` | 普通及宽体批复使用 KingGo 直连或原 RPA |
 | `RPA_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS` | `900` | 直连/RPA 调度间隔（秒） |
 | `SHENZHEN_AIR_KINGGO_HAR_PATH` | `generated_files/www.kinggo.com.har` | HAR 签名与 Cookie 来源 |
 
-下载的文件名以 `订舱查询导出` 开头，写入既有 `RPA_GENERATED_FILES_DIR`，不新增业务表。
+下载文件写入既有 `RPA_GENERATED_FILES_DIR`，不新增业务表。
 
 ## 深航订舱-计飞时间-集装器数据获取
 

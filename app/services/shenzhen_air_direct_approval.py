@@ -18,7 +18,9 @@ class ShenzhenAirDirectApprovalError(RuntimeError):
 class ShenzhenAirDirectApprovalService:
     ORIGIN = "https://www.kinggo.com"
     EXPORT_PATH = "/agent_order_look/export/125"
+    WIDE_BODY_EXPORT_PATH = "/agent_order_look_wide/export/858"
     FILE_PREFIX = "订舱查询导出"
+    WIDE_BODY_FILE_PREFIX = "宽体机订舱查询与修改导出"
 
     BASE_FIELDS = (
         ("pageNum", ""),
@@ -53,9 +55,13 @@ class ShenzhenAirDirectApprovalService:
             raise ShenzhenAirDirectApprovalError("深航批复导出日期必须为YYYY-MM-DD") from exc
 
     @classmethod
-    def build_query_body(cls, flight_date: str | datetime) -> str:
+    def build_query_body(cls, flight_date: str | datetime, wide_body: bool = False) -> str:
         date_text = cls.normalize_flight_date(flight_date)
-        fields = [(name, date_text if name == "flightDate" else value) for name, value in cls.BASE_FIELDS]
+        fields = [
+            (name, date_text if name == "flightDate" else value)
+            for name, value in cls.BASE_FIELDS
+            if not (wide_body and name == "orderType")
+        ]
         return urlencode(fields)
 
     async def _auth(self, path: str, body: str) -> tuple[str, dict[str, str]]:
@@ -100,15 +106,36 @@ class ShenzhenAirDirectApprovalService:
             **auth_headers,
         }
 
-    def _resolve_output_path(self, flight_date: str | datetime, now=None) -> Path:
+    def _resolve_output_path(self, flight_date: str | datetime, file_prefix: str, now=None) -> Path:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         date_text = self.normalize_flight_date(flight_date).replace("-", "")
         stamp = (now or get_china_now()).strftime("%Y%m%d_%H%M%S_%f")
-        return self.output_dir / f"{self.FILE_PREFIX}_{date_text}_{stamp}.xlsx"
+        return self.output_dir / f"{file_prefix}_{date_text}_{stamp}.xlsx"
 
     async def download_export(self, flight_date: str | datetime, now=None) -> Path:
-        body = self.build_query_body(flight_date)
-        signed_url, auth_headers = await self._auth(self.EXPORT_PATH, body)
+        return await self._download_export(
+            flight_date, self.EXPORT_PATH, self.FILE_PREFIX, wide_body=False, now=now
+        )
+
+    async def download_wide_body_export(self, flight_date: str | datetime, now=None) -> Path:
+        return await self._download_export(
+            flight_date,
+            self.WIDE_BODY_EXPORT_PATH,
+            self.WIDE_BODY_FILE_PREFIX,
+            wide_body=True,
+            now=now,
+        )
+
+    async def _download_export(
+        self,
+        flight_date: str | datetime,
+        path: str,
+        file_prefix: str,
+        wide_body: bool,
+        now=None,
+    ) -> Path:
+        body = self.build_query_body(flight_date, wide_body=wide_body)
+        signed_url, auth_headers = await self._auth(path, body)
         canonical = urlsplit(signed_url)
         request_url = self.origin + canonical.path + ("?" + canonical.query if canonical.query else "")
         try:
@@ -121,14 +148,17 @@ class ShenzhenAirDirectApprovalService:
                     content=body,
                 )
         except httpx.HTTPError as exc:
-            raise ShenzhenAirDirectApprovalError("KingGo深航批复表下载请求网络异常") from exc
+            report_type = "宽体批复表" if wide_body else "批复表"
+            raise ShenzhenAirDirectApprovalError(f"KingGo深航{report_type}下载请求网络异常") from exc
         if not 200 <= response.status_code < 300:
+            report_type = "宽体批复表" if wide_body else "批复表"
             raise ShenzhenAirDirectApprovalError(
-                "KingGo深航批复表下载失败（HTTP %s）" % response.status_code
+                f"KingGo深航{report_type}下载失败（HTTP {response.status_code}）"
             )
         if not response.content.startswith(b"PK"):
-            raise ShenzhenAirDirectApprovalError("KingGo深航批复表下载内容不是有效的xlsx文件")
-        output_path = self._resolve_output_path(flight_date, now)
+            report_type = "宽体批复表" if wide_body else "批复表"
+            raise ShenzhenAirDirectApprovalError(f"KingGo深航{report_type}下载内容不是有效的xlsx文件")
+        output_path = self._resolve_output_path(flight_date, file_prefix, now)
         output_path.write_bytes(response.content)
         return output_path
 

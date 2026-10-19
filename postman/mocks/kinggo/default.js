@@ -24,6 +24,16 @@ http.createServer(async (req, res) => {
     res.writeHead(200, { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     return res.end(Buffer.from("PK\x03\x04sanitized-xlsx", "binary"));
   }
+  if (path.endsWith("agent_order_look_wide/export/858")) {
+    if (req.method !== "POST") return send(400, { error: "method" });
+    if (fields.get("depCode") !== "SZX" || fields.get("agentCode") !== "SZXFDH" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(fields.get("flightDate") || "") ||
+        fields.get("ss") !== "1" || fields.get("nn") !== "0" || fields.has("orderType")) {
+      return send(400, { error: "wide-body approval contract" });
+    }
+    res.writeHead(200, { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    return res.end(Buffer.from("PK\x03\x04sanitized-xlsx", "binary"));
+  }
   if (path.endsWith("getaway")) {
     if (req.method !== "GET") return send(400, { error: "method" });
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
