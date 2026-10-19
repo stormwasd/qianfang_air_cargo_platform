@@ -209,6 +209,20 @@ class Settings(BaseSettings):
     SHENZHEN_AIR_KINGGO_CABIN_TYPE_NAME: str = Field(default="F舱", description="KingGo深航舱位名称")
     SHENZHEN_AIR_KINGGO_PAY_TYPE: str = Field(default="1", description="KingGo深航付款方式")
 
+    # 深航航班时间来源：KingGo优先，携程按需兜底；不影响南航。
+    SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED: bool = Field(
+        default=True, description="启用深航KingGo航班表同步及优先查询，不依赖RPA队列"
+    )
+    SHENZHEN_AIR_FLIGHT_INFO_SYNC_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=60, le=86400, description="深航KingGo航班表同步间隔（秒）"
+    )
+    SHENZHEN_AIR_FLIGHT_INFO_SYNC_RETRY_SECONDS: int = Field(
+        default=60, ge=10, le=3600, description="深航KingGo航班表同步失败重试间隔（秒）"
+    )
+    SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED: bool = Field(
+        default=True, description="深航缺失计飞/实飞或需要预飞时间时是否允许调用原携程客户端"
+    )
+
     # 携程航班接口代理。默认关闭以保持非 Docker/既有部署的原行为；
     # docker-compose 会显式开启并指向同编排内的 proxy_pool 服务。
     CTRIP_PROXY_ENABLED: bool = Field(

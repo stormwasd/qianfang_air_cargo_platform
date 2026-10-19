@@ -12,7 +12,7 @@ from typing import Optional, List
 from app.config import settings
 from app.database import SessionLocal
 import httpx
-from app.utils.ctrip_client import ctrip_client
+from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.departure_manual_data import ShenzhenAirDepartureManualData
@@ -160,13 +160,15 @@ class ShenzhenAirDepartureStatusAlertService:
         routing = record.routing or ""
         clean_billing_flight = self._clean_flight_no(billing_flight)
 
-        # 条件 2：通过携程获取预飞时间 ready_time，必须满足 当前时间 >= 预飞时间 才触发
+        # 条件2：优先以预飞时间作门槛，缺失时使用KingGo计飞或已有计飞。
         now = datetime.now()
         ready_dt = None
         planned_time_str = ""
 
         if routing and "-" in routing and clean_billing_flight:
-            flight_res = await ctrip_client.get_flight_times(clean_billing_flight, flight_date, routing)
+            flight_res = await shenzhen_air_flight_times.get_flight_times(
+                clean_billing_flight, flight_date, routing, required_times=("planned_time", "ready_time")
+            )
             if flight_res:
                 if flight_res.get("planned_time"):
                     planned_time_str = flight_res.get("planned_time")
@@ -180,6 +182,14 @@ class ShenzhenAirDepartureStatusAlertService:
                     except ValueError:
                         pass
 
+        # Without an estimated departure, use the known scheduled departure
+        # as the existing time gate fallback, without presenting it as ready_time.
+        if not ready_dt and planned_time_str:
+            try:
+                ready_dt = datetime.fromisoformat(planned_time_str)
+            except ValueError:
+                pass
+
         if not ready_dt and containers and containers[0].billing_time:
             bt_clean = str(containers[0].billing_time).strip().replace(":", "")
             if len(bt_clean) >= 4:
@@ -190,7 +200,7 @@ class ShenzhenAirDepartureStatusAlertService:
                 except ValueError:
                     pass
 
-        # 触发判定：若无法解析预飞时间，或当前时间尚未达到预飞时间，则不触发通知
+        # 触发判定：无有效时间门槛或尚未到达门槛时不通知。
         if not ready_dt or now < ready_dt:
             return
 
@@ -221,7 +231,9 @@ class ShenzhenAirDepartureStatusAlertService:
         
         for flt in query_flights:
             if routing and "-" in routing:
-                flight_res = await ctrip_client.get_flight_times(flt, flight_date, routing)
+                flight_res = await shenzhen_air_flight_times.get_flight_times(
+                    flt, flight_date, routing, required_times=("actual_time",)
+                )
                 if flight_res and flight_res.get("actual_time"):
                     act_time = flight_res.get("actual_time")
                     actual_time_displays.append(f"{flt} / {act_time}")

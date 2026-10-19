@@ -14,6 +14,24 @@ http.createServer(async (req, res) => {
   }
   const fields = new URLSearchParams(body);
   if (!url.searchParams.has("oOr6SIhu")) return send(400, { error: "missing signature" });
+  if (path === "/flight_info/index/92") {
+    const day = fields.get("flightDateStart");
+    const page = fields.get("pageNum");
+    if (req.method !== "POST" || url.searchParams.get("flag") !== "true" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(day || "") || fields.get("flightDateEnd") !== day ||
+        fields.get("flightStatusStrQ") !== "1" || fields.get("areaTypeQ") !== "D" ||
+        fields.get("numPerPage") !== "200" || !["1", "2"].includes(page)) {
+      return send(400, { error: "flight info contract" });
+    }
+    const headers = ["序号", "日期", "航班号", "航程", "区域", "起飞", "到达", "实际起飞", "实际到达",
+      "飞机号", "机型", "宽/窄", "状态", "总重量", "总体积", "控制重量", "控制体积", "开放重量", "货机", "详情"];
+    const cells = [page, day, page === "1" ? "ZH9883" : "ZH9884", "SZX-HGH", "国内", "0930", "1130",
+      page === "1" ? "0945" : "", "", "B1234", "738", "窄", "正常", "5000", "30", "4000", "20", "1000", "否", ""];
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    return res.end(`<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+      <tbody><tr target="flight_info_id" rel="${page}">${cells.map(c => `<td>${c}</td>`).join("")}</tr></tbody></table>
+      <div class="pagination" totalCount="2" numPerPage="1" currentPage="${page}"></div>`);
+  }
   if (path.endsWith("agent_order_look/export/125")) {
     if (req.method !== "POST") return send(400, { error: "method" });
     if (fields.get("depCode") !== "SZX" || fields.get("agentCode") !== "SZXFDH" ||

@@ -17,7 +17,7 @@ from app.services.wechat_alert_config import (
     WechatAlertScene,
     should_send_wechat_alert,
 )
-from app.utils.ctrip_client import ctrip_client
+from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
 
 
 class ShenzhenAirDepartureAlertManager:
@@ -134,10 +134,11 @@ class ShenzhenAirDepartureAlertManager:
                 if not planned_dt:
                     flight_no_to_query = export.billing_flight
                     if flight_no_to_query and export.routing:
-                        ctrip_times = await ctrip_client.get_flight_times(
+                        ctrip_times = await shenzhen_air_flight_times.get_flight_times(
                             flight_no=flight_no_to_query,
                             flight_date=today_str,
-                            routing=export.routing
+                            routing=export.routing,
+                            required_times=("planned_time",),
                         )
                         if ctrip_times and ctrip_times.get("planned_time"):
                             try:

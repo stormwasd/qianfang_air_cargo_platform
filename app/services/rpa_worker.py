@@ -3139,7 +3139,7 @@ class RPAWorker:
                         
                         records_to_insert = []
                         has_invalid_flight = False
-                        from app.utils.ctrip_client import ctrip_client
+                        from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
                         for row in billing_data:
                             if not row or not isinstance(row, list) or len(row) < 9:
                                 continue
@@ -3155,22 +3155,23 @@ class RPAWorker:
                             try:
                                 if flight_number:
                                     print(
-                                        f"{self._log_prefix} 查询深航航班携程时间: "
+                                        f"{self._log_prefix} 查询深航航班时间（KingGo优先）: "
                                         f"flight={flight_number}, date={str(row[2]).strip()}, "
                                         f"routing={str(row[4]).strip()}-{str(row[5]).strip()}"
                                     )
-                                    ctrip_times = await ctrip_client.get_flight_times(
+                                    ctrip_times = await shenzhen_air_flight_times.get_flight_times(
                                         flight_number, str(row[2]).strip(),
-                                        f"{str(row[4]).strip()}-{str(row[5]).strip()}"
+                                        f"{str(row[4]).strip()}-{str(row[5]).strip()}",
+                                        required_times=("planned_time",),
                                     )
                                     planned_time = (ctrip_times or {}).get("planned_time")
                                     print(
-                                        f"{self._log_prefix} 深航航班携程时间返回: "
+                                        f"{self._log_prefix} 深航航班时间返回: "
                                         f"flight={flight_number}, planned_time={planned_time}, "
                                         f"ready_time={(ctrip_times or {}).get('ready_time') if ctrip_times else None}"
                                     )
                             except Exception as exc:
-                                print(f"{self._log_prefix} 获取深航预飞时间失败: {exc}")
+                                print(f"{self._log_prefix} 获取深航计飞时间失败: {exc}")
                             record = ShenzhenAirBillingTimeContainer(
                                 booking_export_id=booking_export_id,
                                 waybill_number_8=waybill_number_8,

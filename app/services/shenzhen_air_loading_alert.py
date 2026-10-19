@@ -14,7 +14,7 @@ from app.services.wechat_alert_config import (
     WechatAlertScene,
     should_send_wechat_alert,
 )
-from app.utils.ctrip_client import ctrip_client
+from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
 import httpx
 
 class ShenzhenAirLoadingAlertManager:
@@ -111,10 +111,11 @@ class ShenzhenAirLoadingAlertManager:
                             pass
                 
                 if not billing_dt and billing_flight and routing:
-                    ctrip_times = await ctrip_client.get_flight_times(
+                    ctrip_times = await shenzhen_air_flight_times.get_flight_times(
                         flight_no=billing_flight,
                         flight_date=today_str,
-                        routing=routing
+                        routing=routing,
+                        required_times=("planned_time",),
                     )
                     if ctrip_times and ctrip_times.get("planned_time"):
                         try:
@@ -132,10 +133,11 @@ class ShenzhenAirLoadingAlertManager:
                 # 2. 获取预飞时间（ready_time），仅用于模板展示
                 display_ready_time = "/"
                 if billing_flight and routing:
-                    ctrip_times = await ctrip_client.get_flight_times(
+                    ctrip_times = await shenzhen_air_flight_times.get_flight_times(
                         flight_no=billing_flight,
                         flight_date=today_str,
-                        routing=routing
+                        routing=routing,
+                        required_times=("ready_time",),
                     )
                     if ctrip_times and ctrip_times.get("ready_time"):
                         ready_time_str = str(ctrip_times.get("ready_time")).strip()

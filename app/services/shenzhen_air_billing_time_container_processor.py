@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.transit_loading import ShenzhenAirBookingExport
-from app.utils.ctrip_client import ctrip_client
+from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
 
 
 @dataclass(frozen=True)
@@ -47,16 +47,17 @@ async def persist_shenzhen_air_billing_rows(
         planned_time = None
         if flight_number:
             try:
-                ctrip_times = await ctrip_client.get_flight_times(
+                ctrip_times = await shenzhen_air_flight_times.get_flight_times(
                     flight_number,
                     str(row[2]).strip(),
                     f"{str(row[4]).strip()}-{str(row[5]).strip()}",
+                    required_times=("planned_time",),
                 )
                 planned_time = (ctrip_times or {}).get("planned_time")
             except Exception as exc:
                 # A missing Ctrip value must not discard otherwise valid
                 # KingGo data; the existing actual-time sync can retry later.
-                print(f"获取深航预飞时间失败: {exc}")
+                print(f"获取深航计飞时间失败: {exc}")
 
         records.append(ShenzhenAirBillingTimeContainer(
             booking_export_id=booking_export_id,

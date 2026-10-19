@@ -12,6 +12,7 @@ from app.models.csa_departure_tracking import CsaLalamoveInformation
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.utils.ctrip_client import ctrip_client
+from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
 from app.utils.helpers import get_china_now
 
 
@@ -298,10 +299,11 @@ class DepartureActualTimeSync:
                 try:
                     current_time = get_china_now().replace(tzinfo=None)
                     if not row.planned_time:
-                        result = await ctrip_client.get_flight_times(
+                        result = await shenzhen_air_flight_times.get_flight_times(
                             row.flight_number,
                             row.flight_date,
                             f"{row.origin}-{row.destination}",
+                            required_times=("planned_time",),
                         )
                         planned_time = (
                             (result or {}).get("planned_time") if result else None
@@ -314,7 +316,7 @@ class DepartureActualTimeSync:
                             continue
                         row.planned_time = str(planned_time)
                         print(
-                            "[DepartureActualTimeSync] 深航预飞时间补偿成功: "
+                            "[DepartureActualTimeSync] 深航计飞时间补偿成功: "
                             f"id={row_id}, flight={flight_label}, planned={planned_time}"
                         )
 
@@ -357,11 +359,12 @@ class DepartureActualTimeSync:
                         f"id={row_id}, flight={flight_label}, "
                         f"attempt={_parse_attempt_count(row.actual_time_attempts)}"
                     )
-                    result = await ctrip_client.get_flight_times(
+                    result = await shenzhen_air_flight_times.get_flight_times(
                         row.flight_number,
                         row.flight_date,
                         f"{row.origin}-{row.destination}",
                         force_refresh=True,
+                        required_times=("actual_time",),
                     )
                     if result and result.get("actual_time"):
                         row.actual_time = str(result["actual_time"])

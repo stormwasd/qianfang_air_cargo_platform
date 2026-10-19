@@ -1,5 +1,49 @@
 # API 文档
 
+## 深航 KingGo 航班表同步与时间来源
+
+深航业务优先从 `shenzhen_air_flight_info` 查询计飞、实飞时间；南航继续使用原携程客户端。
+无需创建 RPA 任务。新增表在应用现有 `Base.metadata.create_all` 启动过程中自动创建，
+也可手动执行 `sql/migration_create_shenzhen_air_flight_info.sql`。
+
+上游接口：`POST /flight_info/index/92?flag=true`。每页均重新从有效 HAR 提取 Cookie，
+按当前 URL 及实际 POST 请求体生成 `oOr6SIhu`，不使用示例 Cookie 或固定签名。
+请求体包含 `flightNoQ`、`carrierCodeQ`、`depCodeQ`、`destCodeQ`、`planeCodeQ`、`planeTypeQ`
+（均为空）、`flightDateStart/flightDateEnd`（同一查询日期）、`flightStatusStrQ=1`、`areaTypeQ=D`，
+并发送 `pageNum=1..N`、`numPerPage=200`。历史日期补充 `historyCheck=true`。
+按返回的 `totalCount/numPerPage` 获取完整分页；登录页、列结构变化、HTTP失败、重复页、
+日期不匹配或条数不完整都不提交本轮数据。完整抓取最多100页、总等待最多120秒。
+
+主表保存日期、航班号、起降站、上游ID、区域、起飞/到达/实际起飞/实际到达时间、飞机号、
+机型、宽窄、状态、总重量/体积、控制重量/体积、开放重量及货机标识。
+唯一键为 `(flight_date, flight_number, origin, destination)`，防止同一航班号跨日期或航段串数据。
+新增航段插入，已有航段逐字段比较，仅变化时 UPDATE 并修改 `updated_at`；不会全表删除重建。
+空的实际起飞保留为缺失，不填造时间；本轮未返回的历史记录保留。
+
+启动时先尝试同步北京时间当天的数据，随后启动消费者和独立后台同步，不受 `RPA_QUEUE_ENABLED` 限制。
+启动同步失败不会阻止应用启动，后台按重试间隔重试；消费者查询明天或历史日期时也会按需同步该日。
+同一进程跨线程共享同步互斥及日期级限频，避免每个运单重复下载全部航班；多进程通过数据库唯一键防重复。
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED` | `True` | 启用KingGo同步及深航时间优先查询；关闭后仅按兜底开关调用携程 |
+| `SHENZHEN_AIR_FLIGHT_INFO_SYNC_INTERVAL_SECONDS` | `1800` | 正常同步间隔，60—86400秒 |
+| `SHENZHEN_AIR_FLIGHT_INFO_SYNC_RETRY_SECONDS` | `60` | 失败重试间隔，10—3600秒 |
+| `SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED` | `True` | 深航所需时间缺失时允许调用原携程；不改变南航，也不强制开启代理 |
+
+内部时间约定：`planned_time` 为计飞/计划起飞，优先取 KingGo“起飞”；`actual_time` 为实飞，
+优先取“实际起飞”；`ready_time` 为预飞/预计起飞，仅携程能补齐，KingGo不提供该字段。
+查询按航班号、日期和起降站匹配，中文站名只能在匹配唯一航段时命中。
+KingGo只有HHMM：按航班日期组合北京时间，实飞取距离计飞最近的一天；
+实飞钟点比计飞早超过12小时按次日处理，晚超过12小时按前一日处理（兼容凌晨航班提前起飞）。
+超过12小时的延误与跨日提前无法仅凭HHMM准确区分。无效时间留空。携程仅补缺失值，不覆盖已有KingGo时间；
+携程兜底异常也保留已取得的KingGo时间。
+
+深航计飞集装器的定时处理使用计飞时间减105分钟；出港/装机预警继续使用原提前量。
+展示预飞时仅使用真实 `ready_time`，缺失展示 `/`；出港状态判断无预飞时可用计飞作为触发基准，
+但不把该值写成预飞。实飞补偿继续保留原延迟、次数和重试策略。关闭携程兜底后，
+依赖缺失时间的处理等待后续同步；已有正常数据照常使用。现有深航RPA和直连处理均走此来源规则。
+
 ## 深航订舱-过机-装机数据获取（KingGo直连下载）
 
 定时管理器 TransitLoadingManager 默认通过 KingGo 接口 POST /awb/query/export/119
@@ -40,8 +84,8 @@ Cookie 和 `oOr6SIhu` 签名。文件名分别以 `订舱查询导出`、`宽体
 
 ## 深航订舱-计飞时间-集装器数据获取
 
-文件扫描器从 `AwbQueryExport*.xlsx` 读取单号、航程和航班日期后，按既有携程
-`ready_time - 105` 分钟调度处理。直连模式由定时管理器直接调用 KingGo GET
+文件扫描器从 `AwbQueryExport*.xlsx` 读取单号、航程和航班日期后，优先以 KingGo 计飞
+（缺失时按配置使用携程计飞，最后使用携程预飞）减105分钟调度处理。直连模式由定时管理器直接调用 KingGo GET
 `/awb/query/getaway` 获取 HTML 表格，不创建 `rpa_tasks` 记录；RPA 执行器和队列消费
 逻辑完整保留，可通过配置切换：
 
@@ -53,7 +97,7 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 `oOr6SIhu`，并发送 `awbPrefix=479`、Excel 单号、Excel 航程、Excel 航班日期、
 `nti=119` 和 `historyCheck=false`。返回页面只解析 `#getWay` 下九列表格数据，
 跳过表头和“合计”行，字段按原 RPA 映射写入
-`shenzhen_air_billing_time_containers`，并继续查询携程预飞时间。空数据、登录页、
+`shenzhen_air_billing_time_containers`，其中 `planned_time` 按上述来源规则补充计飞时间。空数据、登录页、
 网络或上游错误不标记 Excel 明细完成，由下一次定时扫描重试；成功后标记 Excel 明细完成。
 直连失败不会调用 RPA。设置为 `rpa` 后才创建
 `SHENZHEN_AIR_BILLING_TIME_CONTAINER` 队列任务，并沿用原队列、机器人权限、轮询和消费逻辑。

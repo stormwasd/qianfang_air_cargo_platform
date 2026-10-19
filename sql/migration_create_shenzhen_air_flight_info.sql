@@ -1,0 +1,27 @@
+-- KingGo 航班表；航班号跨日期、航段会复用，因此使用组合唯一键。
+CREATE TABLE IF NOT EXISTS `shenzhen_air_flight_info` (
+    `id` BIGINT NOT NULL PRIMARY KEY,
+    `flight_date` DATE NOT NULL,
+    `flight_number` VARCHAR(20) NOT NULL,
+    `origin` VARCHAR(3) NOT NULL,
+    `destination` VARCHAR(3) NOT NULL,
+    `kinggo_id` VARCHAR(50) DEFAULT NULL,
+    `area` VARCHAR(20) DEFAULT NULL,
+    `takeoff_time` VARCHAR(20) DEFAULT NULL COMMENT '计飞时间；不是预飞时间',
+    `arrival_time` VARCHAR(20) DEFAULT NULL,
+    `actual_departure_time` VARCHAR(20) DEFAULT NULL,
+    `actual_arrival_time` VARCHAR(20) DEFAULT NULL,
+    `aircraft_number` VARCHAR(30) DEFAULT NULL,
+    `aircraft_type` VARCHAR(30) DEFAULT NULL,
+    `body_type` VARCHAR(10) DEFAULT NULL,
+    `status` VARCHAR(30) DEFAULT NULL,
+    `total_weight` VARCHAR(50) DEFAULT NULL,
+    `total_volume` VARCHAR(50) DEFAULT NULL,
+    `control_weight` VARCHAR(50) DEFAULT NULL,
+    `control_volume` VARCHAR(50) DEFAULT NULL,
+    `free_weight` VARCHAR(50) DEFAULT NULL,
+    `cargo_flag` VARCHAR(10) DEFAULT NULL,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    UNIQUE KEY `uq_szx_flight_segment` (`flight_date`, `flight_number`, `origin`, `destination`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='深航业务KingGo航班数据';

@@ -169,7 +169,7 @@ class TransitLoadingManager:
             db.close()
 
     async def _enqueue_missing_billing_tasks(self) -> None:
-        """为旧版本遗留或此前携程查询失败的主表记录补建子任务。"""
+        """为旧版本遗留或此前航班时间查询失败的主表记录补建子任务。"""
         if settings.SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE == "direct":
             await self._process_direct_billing_time_container_records()
             return
@@ -230,7 +230,7 @@ class TransitLoadingManager:
         export_record: ShenzhenAirBookingExport,
         system_account: str,
     ) -> bool:
-        """按携程计飞时间为一条深航主表记录创建唯一子任务。"""
+        """按深航优先时间源为一条主表记录创建唯一子任务。"""
         if str(export_record.departure_tracking_completed or "0") == "1":
             return False
         existing_task = rpa_task_service.get_existing_task_for_target(
@@ -242,7 +242,7 @@ class TransitLoadingManager:
         if existing_task:
             return False
 
-        from app.utils.ctrip_client import ctrip_client
+        from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
 
         flight_no = str(export_record.billing_flight or "").strip()
         flight_date = str(export_record.flight_date or "").strip()
@@ -261,20 +261,20 @@ class TransitLoadingManager:
         if flight_day < get_china_now().date():
             return False
         try:
-            ctrip_times = await ctrip_client.get_flight_times(
-                flight_no, flight_date, routing
+            ctrip_times = await shenzhen_air_flight_times.get_flight_times(
+                flight_no, flight_date, routing, required_times=("planned_time",)
             )
         except Exception as exc:
             print(
-                "[TransitLoadingManager] 携程计飞时间查询异常，"
+                "[TransitLoadingManager] 深航计飞时间查询异常，"
                 "本轮暂不创建子任务: "
                 f"waybill={export_record.waybill_number}, error={exc}"
             )
             return False
-        ready_time = (ctrip_times or {}).get("ready_time")
+        ready_time = (ctrip_times or {}).get("planned_time") or (ctrip_times or {}).get("ready_time")
         if not ready_time:
             print(
-                "[TransitLoadingManager] 携程未返回有效计飞时间，本轮暂不创建子任务: "
+                "[TransitLoadingManager] 未取得有效航班时间，本轮暂不创建子任务: "
                 f"waybill={export_record.waybill_number}, flight={flight_no}, "
                 f"date={flight_date}, routing={routing}"
             )
@@ -286,7 +286,7 @@ class TransitLoadingManager:
             ) - timedelta(minutes=105)
         except (TypeError, ValueError) as exc:
             print(
-                "[TransitLoadingManager] 携程计飞时间格式无效，本轮暂不创建子任务: "
+                "[TransitLoadingManager] 深航航班时间格式无效，本轮暂不创建子任务: "
                 f"waybill={export_record.waybill_number}, ready_time={ready_time}, "
                 f"error={exc}"
             )
@@ -460,7 +460,7 @@ class TransitLoadingManager:
             ShenzhenAirDirectBillingTimeContainerError,
             shenzhen_air_direct_billing_time_container_service,
         )
-        from app.utils.ctrip_client import ctrip_client
+        from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
 
         db = SessionLocal()
         try:
@@ -510,10 +510,10 @@ class TransitLoadingManager:
                     routing = str(record.routing or "").strip()
                     if not flight_no or not flight_date or not routing:
                         continue
-                    ctrip_times = await ctrip_client.get_flight_times(
-                        flight_no, flight_date, routing
+                    ctrip_times = await shenzhen_air_flight_times.get_flight_times(
+                        flight_no, flight_date, routing, required_times=("planned_time",)
                     )
-                    ready_time = (ctrip_times or {}).get("ready_time")
+                    ready_time = (ctrip_times or {}).get("planned_time") or (ctrip_times or {}).get("ready_time")
                     if not ready_time:
                         continue
                     scheduled_at = datetime.fromisoformat(

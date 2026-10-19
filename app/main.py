@@ -97,6 +97,12 @@ async def lifespan(app: FastAPI):
     启动时启动RPA Worker，关闭时停止Worker
     """
     _init_rpa_processes()
+    # Seed KingGo times before Shenzhen consumers start. Failures leave the
+    # existing data/fallback available and are retried by the independent sync.
+    from app.services.shenzhen_air_flight_info import shenzhen_air_flight_info_sync
+    from app.utils.helpers import get_china_now
+    await shenzhen_air_flight_info_sync.ensure_fresh(get_china_now().date())
+    shenzhen_air_flight_info_sync.start()
     # 南航货物类型同步为后端直连接口任务，不依赖 RPA 队列是否启用。
     from app.services.csa_cargo_type_sync import csa_cargo_type_sync_scheduler
     csa_cargo_type_sync_scheduler.start()
@@ -158,6 +164,7 @@ async def lifespan(app: FastAPI):
     
     yield
 
+    shenzhen_air_flight_info_sync.stop()
     csa_cargo_type_sync_scheduler.stop()
     csa_waybill_stock_scan_scheduler.stop()
     from app.services.direct_booking_worker import direct_booking_worker_manager
