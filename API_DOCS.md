@@ -16,6 +16,37 @@ SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE=rpa
 
 该配置默认 direct；rpa 模式完整保留原有定时下发 RPA 下载任务的逻辑。
 
+## 深航订舱-计飞时间-集装器数据获取
+
+文件扫描器从 `AwbQueryExport*.xlsx` 读取单号、航程和航班日期后，按既有携程
+`ready_time - 105` 分钟创建 `SHENZHEN_AIR_BILLING_TIME_CONTAINER` 子任务。
+子任务默认通过 KingGo 直连 GET `/awb/query/getaway` 获取 HTML 表格；RPA
+执行器和队列消费逻辑完整保留，可通过配置切换：
+
+```env
+SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
+```
+
+直连请求每次从 HAR 重新提取 Cookie 和签名，生成当前毫秒时间戳 `_` 及新的
+`oOr6SIhu`，并发送 `awbPrefix=479`、Excel 单号、Excel 航程、Excel 航班日期、
+`nti=119` 和 `historyCheck=false`。返回页面只解析 `#getWay` 下九列表格数据，
+跳过表头和“合计”行，字段按原 RPA 映射写入
+`shenzhen_air_billing_time_containers`，并继续查询携程预飞时间。空数据、登录页、
+网络或上游错误按现有任务重试间隔重新排队；成功后标记 Excel 明细完成并删除任务。
+直连失败不会调用 RPA。设置为 `rpa` 后沿用原队列、机器人权限、轮询和消费逻辑。
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE` | `direct` | `direct` 使用 KingGo GET 接口；`rpa` 使用原 RPA 流程 |
+| `RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS` | 由现有配置决定 | 直连空数据或失败时的重试间隔 |
+| `SHENZHEN_AIR_KINGGO_HAR_PATH` | `generated_files/www.kinggo.com.har` | 每次请求提取签名和 Cookie 的 HAR |
+| `SHENZHEN_AIR_KINGGO_API_ORIGIN` | `https://www.kinggo.com` | KingGo 地址；本地模拟可覆盖 |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_HTTP_TIMEOUT_SECONDS` | `30` | 直连请求超时秒数 |
+
+上游返回的九列依次映射为 `sequence`、`flight_number`、`flight_date`、
+`billing_time`、`origin`、`destination`、`quantity`、`weight`、`container`。
+该内部任务不新增业务表，也不改变 Excel 解析入库流程。
+
 ## 单号库总览
 
 `GET /api/v1/waybill-stocks/overview`

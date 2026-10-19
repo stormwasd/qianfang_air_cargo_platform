@@ -14,6 +14,15 @@ http.createServer(async (req, res) => {
   }
   const fields = new URLSearchParams(body);
   if (!url.searchParams.has("oOr6SIhu")) return send(400, { error: "missing signature" });
+  if (path.endsWith("getaway")) {
+    if (req.method !== "GET") return send(400, { error: "method" });
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    return res.end(`
+      <div id="getWay"><table><tbody>
+        <tr><td>1</td><td>ZH9883</td><td>2026-10-19</td><td>0930</td><td>SZX</td><td>杭州</td><td>1</td><td>5.0</td><td>ZH7298</td></tr>
+        <tr><td></td><td>合计</td><td></td><td></td><td></td><td></td><td>1</td><td>5.0</td><td></td></tr>
+      </tbody></table></div>`);
+  }
   if ((path.endsWith("get_awb_no") ? "GET" : "POST") !== req.method) return send(400, { error: "method" });
   if (path.endsWith("check_awb") || path.endsWith("submit_awb")) {
     for (const [key, expected] of Object.entries({
