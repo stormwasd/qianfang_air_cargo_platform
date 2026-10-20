@@ -1,6 +1,9 @@
-from pydantic import BaseModel, Field
+from decimal import Decimal
+import math
 from typing import List, Optional
 from datetime import date
+
+from pydantic import BaseModel, Field, model_validator
 
 class AirFinancialAuditQuery(BaseModel):
     waybill_number: Optional[str] = Field(None, description="运单号，支持输入多个，英文逗号隔开")
@@ -17,7 +20,35 @@ class AirFinancialAuditQuery(BaseModel):
     page: int = Field(1, ge=1, description="页码")
     pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 
-class PayableRequest(BaseModel):
+class FinancialAuditRequestModel(BaseModel):
+    """财务审核板块请求模型的兼容基类。
+
+    费用、件数和重量字段历史上定义为字符串。部分客户端会将这些值
+    以 JSON number 发送，这里仅对模型中已声明的字段做字符串规范化，
+    避免改变其他字段的校验行为。
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_numeric_string_fields(cls, value):
+        if not isinstance(value, dict):
+            return value
+
+        normalized = dict(value)
+        for field_name in cls.model_fields:
+            field_value = normalized.get(field_name)
+            if isinstance(field_value, bool):
+                continue
+            if isinstance(field_value, float) and not math.isfinite(field_value):
+                continue
+            if isinstance(field_value, Decimal) and not field_value.is_finite():
+                continue
+            if isinstance(field_value, (int, float, Decimal)):
+                normalized[field_name] = str(field_value)
+        return normalized
+
+
+class PayableRequest(FinancialAuditRequestModel):
     agent_name: Optional[str] = Field(None, description="代理名称（仅关联托运书的同行空运有效，以托运书代理公司为准）")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     billing_pieces: Optional[str] = Field(None, description="开单件数")
@@ -42,7 +73,7 @@ class PayableRequest(BaseModel):
     delivery_cost: Optional[str] = Field(None, description="派送成本")
     total_cost: Optional[str] = Field(None, description="成本合计")
 
-class ReceivableRequest(BaseModel):
+class ReceivableRequest(FinancialAuditRequestModel):
     waybill_number: Optional[str] = Field(None, description="运单号（新增接口时必传）")
     flight_date: Optional[str] = Field(None, description="航班日期")
     customer_name: Optional[str] = Field(None, description="客户名称")

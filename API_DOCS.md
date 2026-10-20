@@ -343,6 +343,8 @@ python -m unittest tests.test_shenzhen_air_direct_waybill -v
 
 应付信息中的 `payable.agent_name` 遵循同一来源规则：仅关联托运书的同行空运单据返回代理公司名称，其他来源返回 `null`。深航/南航 RPA 页面中的“代理人”或“代理人编码”不属于本系统的业务代理名称，不会映射到该字段。`POST /api/v1/financial-audit/air/audit` 暂存或提交时，后端会按来源重新校准该字段，避免请求值或历史暂存值覆盖托运书代理公司；`POST /api/v1/financial-audit/air` 手动新增的财务单据不关联托运书，因此忽略传入的 `payable.agent_name` 并保存为 `null`。
 
+`POST /api/v1/financial-audit/air/audit?action=save|submit` 的 `payable` 和 `receivable` 请求模型中，原本定义为字符串的件数、重量、费率和费用字段同时兼容 JSON number 与 string。后端接收 number 后会统一规范化为字符串再保存；`null` 和已有字符串保持不变，布尔值、数组和对象仍会触发参数校验错误。操作类型通过 query 参数 `action` 传递，请求体中的同名字段不会作为操作类型使用。请求字段应使用后端定义的名称（例如违规罚款使用 `penalty_fee`）；未声明字段不会进入保存数据。
+
 ## 托运书
 
 `POST /api/v1/consignment-notes` 和 `PUT /api/v1/consignment-notes/{note_id}` 的 `form_data` 为动态 JSON。汽运（`transport_type="1"`）支持以下收件信息字段：
