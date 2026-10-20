@@ -5,7 +5,7 @@ import json
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, String
-from sqlalchemy.dialects.mysql import JSON
+from sqlalchemy.dialects.mysql import CHAR, JSON
 from app.core.exceptions import NotFoundException
 from app.core.response import success_response
 from app.database import get_db
@@ -152,7 +152,7 @@ async def get_settlements(
                     func.cast(Settlement.form_data, JSON),
                     "$.airline"
                 ),
-                func.CHAR
+                CHAR()
             ).like(f"%{query.airline}%")
         )
     
@@ -163,7 +163,7 @@ async def get_settlements(
                     func.cast(Settlement.form_data, JSON),
                     "$.destination"
                 ),
-                func.CHAR
+                CHAR()
             ).like(f"%{query.destination}%")
         )
     
@@ -174,21 +174,21 @@ async def get_settlements(
                     func.cast(Settlement.form_data, JSON),
                     "$.customer_name"
                 ),
-                func.CHAR
+                CHAR()
             ).like(f"%{query.customer_name}%"),
             func.cast(
                 func.json_extract(
                     func.cast(Settlement.form_data, JSON),
                     "$.shipper"
                 ),
-                func.CHAR
+                CHAR()
             ).like(f"%{query.customer_name}%"),
             func.cast(
                 func.json_extract(
                     func.cast(Settlement.form_data, JSON),
                     "$.consignor"
                 ),
-                func.CHAR
+                CHAR()
             ).like(f"%{query.customer_name}%")
         )
         query_obj = query_obj.filter(customer_name_filter)
@@ -200,7 +200,7 @@ async def get_settlements(
                     func.cast(Settlement.form_data, JSON),
                     "$.flight_number"
                 ),
-                func.CHAR
+                CHAR()
             ).like(f"%{query.flight_number}%")
         )
     
@@ -211,7 +211,7 @@ async def get_settlements(
                     func.cast(Settlement.form_data, JSON),
                     "$.master_airwaybill_number"
                 ),
-                func.CHAR
+                CHAR()
             ).like(f"%{query.master_airwaybill_number}%")
         )
     
@@ -222,7 +222,7 @@ async def get_settlements(
                     func.cast(Settlement.form_data, JSON),
                     "$.settlement_status"
                 ),
-                func.CHAR
+                CHAR()
             ) == query.settlement_status
         )
     
@@ -233,7 +233,7 @@ async def get_settlements(
                     func.cast(Settlement.form_data, JSON),
                     "$.financial_review"
                 ),
-                func.CHAR
+                CHAR()
             ) == query.financial_review
         )
     
