@@ -460,6 +460,7 @@ class TransitLoadingManager:
             ShenzhenAirDirectBillingTimeContainerError,
             shenzhen_air_direct_billing_time_container_service,
         )
+        from app.services.tracking_execution_time import DIRECT_BILLING_SUCCESS_TYPE, record_success_time
         from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
 
         db = SessionLocal()
@@ -529,6 +530,7 @@ class TransitLoadingManager:
                     rows = await shenzhen_air_direct_billing_time_container_service.fetch_rows(
                         record.waybill_number, routing, flight_date
                     )
+                    record_success_time(DIRECT_BILLING_SUCCESS_TYPE)
                     result = await persist_shenzhen_air_billing_rows(
                         db, rows, record.waybill_number, record.id
                     )

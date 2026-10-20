@@ -13,6 +13,7 @@ from sqlalchemy import or_, func
 
 from app.models.rpa_task import RPATaskType
 from app.services.rpa_task_service import rpa_task_service
+from app.services.tracking_execution_time import RPA_EXECUTION_SUCCESS_TYPES, format_success_time
 
 @router.get("", summary="南航订舱批复跟踪列表")
 async def get_china_southern_air_approvals(
@@ -27,6 +28,8 @@ async def get_china_southern_air_approvals(
 ):
     """
     查询南航订舱批复数据
+    data_update_time 为批复 RPA 最后成功运行时间（北京时间），不是出港时间，
+    也不是业务行更新时间；无成功记录返回 null，空列表仍返回已有成功时间。
     """
     model = ChinaSouthernAirApprovalData
     query = db.query(model)
@@ -55,12 +58,6 @@ async def get_china_southern_air_approvals(
         model.id.desc()
     ).offset(offset).limit(pageSize).all()
 
-    if not records:
-        return success_response(
-            data={"total": total, "items": [], "data_update_time": None},
-            msg="查询成功"
-        )
-
     items = []
     for record in records:
         record_dict = {k: v for k, v in record.__dict__.items() if not k.startswith('_')}
@@ -69,12 +66,10 @@ async def get_china_southern_air_approvals(
         item_schema = ChinaSouthernAirApprovalItem(**record_dict)
         items.append(item_schema.model_dump(mode="json"))
 
-    data_update_time = None
-    last_success = rpa_task_service.get_last_success_time(db, RPATaskType.CHINA_SOUTHERN_AIR_APPROVAL_DATA.value)
-    if last_success:
-        data_update_time = last_success.strftime("%Y-%m-%d %H:%M")
-    elif records and hasattr(records[0], 'updated_at') and records[0].updated_at:
-        data_update_time = records[0].updated_at.strftime("%Y-%m-%d %H:%M")
+    last_success = rpa_task_service.get_last_success_time(
+        db, RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.CHINA_SOUTHERN_AIR_APPROVAL_DATA.value]
+    )
+    data_update_time = format_success_time(last_success)
 
     return success_response(
         data={"total": total, "items": items, "data_update_time": data_update_time},

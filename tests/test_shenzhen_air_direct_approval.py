@@ -2,10 +2,12 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
 
 from app.services.shenzhen_air_direct_approval import (
+    DIRECT_APPROVAL_SUCCESS_TYPES,
     ShenzhenAirDirectApprovalError,
     ShenzhenAirDirectApprovalService,
 )
@@ -121,8 +123,8 @@ class DirectApprovalTests(unittest.IsolatedAsyncioTestCase):
         from app.services.shenzhen_air_approval_scheduler import ShenzhenAirApprovalScheduler
 
         service = ShenzhenAirApprovalScheduler()
-        download_standard = AsyncMock()
-        download_wide = AsyncMock()
+        download_standard = AsyncMock(return_value=Path("standard.xlsx"))
+        download_wide = AsyncMock(return_value=Path("wide.xlsx"))
         with patch.object(settings, "SHENZHEN_AIR_APPROVAL_EXECUTION_MODE", "direct"), \
              patch.object(settings, "RPA_QUEUE_ENABLED", True), \
              patch.object(service, "_cleanup_pending_direct_switch_tasks"), \
@@ -134,6 +136,7 @@ class DirectApprovalTests(unittest.IsolatedAsyncioTestCase):
                  "app.services.shenzhen_air_direct_approval.shenzhen_air_direct_approval_service.download_wide_body_export",
                  download_wide,
              ), \
+             patch("app.services.tracking_execution_time.record_success_time", return_value=True) as record_success, \
              patch("app.services.shenzhen_air_approval_scheduler.get_china_now", return_value=datetime(2026, 10, 19, 8, 0, 0)):
             await service._enqueue_task()
 
@@ -147,6 +150,125 @@ class DirectApprovalTests(unittest.IsolatedAsyncioTestCase):
             [call.args[0].strftime("%Y-%m-%d") for call in download_wide.await_args_list],
             ["2026-10-19", "2026-10-20"],
         )
+        self.assertEqual(
+            [call.args[0] for call in record_success.call_args_list],
+            [DIRECT_APPROVAL_SUCCESS_TYPES[0]] * 2 + [DIRECT_APPROVAL_SUCCESS_TYPES[1]] * 2,
+        )
+
+    async def test_failed_direct_download_does_not_record_success(self):
+        from app.services.shenzhen_air_approval_scheduler import ShenzhenAirApprovalScheduler
+
+        download_standard = AsyncMock(side_effect=ShenzhenAirDirectApprovalError("request failed"))
+        download_wide = AsyncMock(return_value=Path("wide.xlsx"))
+        with patch(
+            "app.services.shenzhen_air_direct_approval.shenzhen_air_direct_approval_service.download_export",
+            download_standard,
+        ), patch(
+            "app.services.shenzhen_air_direct_approval.shenzhen_air_direct_approval_service.download_wide_body_export",
+            download_wide,
+        ), patch(
+            "app.services.tracking_execution_time.record_success_time",
+            return_value=True,
+        ) as record_success:
+            await ShenzhenAirApprovalScheduler()._download_direct_exports()
+
+        self.assertEqual(download_wide.await_count, 2)
+        self.assertEqual(
+            [call.args[0] for call in record_success.call_args_list],
+            [DIRECT_APPROVAL_SUCCESS_TYPES[1]] * 2,
+        )
+
+    async def test_approval_list_uses_mode_specific_success_time(self):
+        from app.api.shenzhen_air_approval import get_shenzhen_air_approvals
+        from app.config import settings
+        from app.models.rpa_task import RPATaskType
+        from app.services.tracking_execution_time import RPA_EXECUTION_SUCCESS_TYPES
+
+        db = MagicMock()
+        db.query.return_value.count.return_value = 1
+        db.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
+            SimpleNamespace(id=1, updated_at=datetime(2026, 10, 19, 14, 49))
+        ]
+        last_success = datetime(2026, 10, 20, 9, 15)
+        with patch("app.services.rpa_task_service.rpa_task_service.get_last_success_time", return_value=last_success) as get_success:
+            for mode, cabin_type, expected_type in (
+                ("direct", 0, DIRECT_APPROVAL_SUCCESS_TYPES[0]),
+                ("direct", 1, DIRECT_APPROVAL_SUCCESS_TYPES[1]),
+                ("rpa", 0, RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value]),
+                ("rpa", 1, RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value]),
+            ):
+                with self.subTest(mode=mode, cabin_type=cabin_type), patch.object(
+                    settings, "SHENZHEN_AIR_APPROVAL_EXECUTION_MODE", mode
+                ):
+                    result = await get_shenzhen_air_approvals(
+                        flight_date_start=None, flight_date_end=None, flight_number=None,
+                        cabin_type=cabin_type, page=1, pageSize=10, current_user=None, db=db,
+                    )
+                    self.assertEqual(result.data["data_update_time"], "2026-10-20 09:15")
+                    self.assertEqual(get_success.call_args.args[1], expected_type)
+
+    async def test_direct_list_does_not_fall_back_to_old_rpa_or_record_time(self):
+        from app.api.shenzhen_air_approval import get_shenzhen_air_approvals
+        from app.config import settings
+
+        db = MagicMock()
+        db.query.return_value.count.return_value = 1
+        db.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
+            SimpleNamespace(id=1, updated_at=datetime(2026, 10, 19, 14, 49))
+        ]
+        with patch.object(settings, "SHENZHEN_AIR_APPROVAL_EXECUTION_MODE", "direct"), patch(
+            "app.services.rpa_task_service.rpa_task_service.get_last_success_time", return_value=None
+        ):
+            result = await get_shenzhen_air_approvals(
+                flight_date_start=None, flight_date_end=None, flight_number=None,
+                cabin_type=0, page=1, pageSize=10, current_user=None, db=db,
+            )
+            self.assertIsNone(result.data["data_update_time"])
+
+            db.query.return_value.count.return_value = 0
+            db.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+            result = await get_shenzhen_air_approvals(
+                flight_date_start=None, flight_date_end=None, flight_number=None,
+                cabin_type=0, page=1, pageSize=10, current_user=None, db=db,
+            )
+            self.assertEqual(result.data["items"], [])
+            self.assertIsNone(result.data["data_update_time"])
+
+    async def test_direct_list_exposes_success_time_for_empty_report(self):
+        from app.api.shenzhen_air_approval import get_shenzhen_air_approvals
+        from app.config import settings
+
+        db = MagicMock()
+        db.query.return_value.count.return_value = 0
+        db.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+        with patch.object(settings, "SHENZHEN_AIR_APPROVAL_EXECUTION_MODE", "direct"), patch(
+            "app.services.rpa_task_service.rpa_task_service.get_last_success_time",
+            return_value=datetime(2026, 10, 20, 9, 15),
+        ):
+            result = await get_shenzhen_air_approvals(
+                flight_date_start=None, flight_date_end=None, flight_number=None,
+                cabin_type=0, page=1, pageSize=10, current_user=None, db=db,
+            )
+            self.assertEqual(result.data["items"], [])
+            self.assertEqual(result.data["data_update_time"], "2026-10-20 09:15")
+
+    async def test_rpa_list_does_not_use_business_record_time(self):
+        from app.api.shenzhen_air_approval import get_shenzhen_air_approvals
+        from app.config import settings
+
+        db = MagicMock()
+        db.query.return_value.count.return_value = 1
+        db.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
+            SimpleNamespace(id=1, updated_at=datetime(2026, 10, 19, 14, 49))
+        ]
+        with patch.object(settings, "SHENZHEN_AIR_APPROVAL_EXECUTION_MODE", "rpa"), patch(
+            "app.services.rpa_task_service.rpa_task_service.get_last_success_time", return_value=None
+        ):
+            result = await get_shenzhen_air_approvals(
+                flight_date_start=None, flight_date_end=None, flight_number=None,
+                cabin_type=0, page=1, pageSize=10, current_user=None, db=db,
+            )
+            self.assertIsNone(result.data["data_update_time"])
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ from app.services.document_print_service import (
 from app.services.waybill_stock_service import reserve_available_stock_item
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.helpers import get_china_now
+from app.services.tracking_execution_time import record_rpa_execution_success
 
 
 # The approval-data RPA flows have existed in two process versions.  The
@@ -2817,6 +2818,7 @@ class RPAWorker:
                 status = status_info.get("status")
                 if status in RPA_APPROVAL_SUCCESS_STATUSES:
                     print(f"{self._log_prefix} 批复数据获取任务 {task.id} 执行成功")
+                    record_rpa_execution_success(task.task_type, status_info)
                     rpa_task_service.complete_task(db, task.id, True)
                     return
                 elif status == 3:
@@ -2877,6 +2879,7 @@ class RPAWorker:
                 status = status_info.get("status")
                 if status in RPA_APPROVAL_SUCCESS_STATUSES:
                     print(f"{self._log_prefix} 南航批复数据获取任务 {task.id} 执行成功")
+                    record_rpa_execution_success(task.task_type, status_info)
                     rpa_task_service.complete_task(db, task.id, True)
                     return
                 elif status in (3, 6, 7):
@@ -3086,6 +3089,7 @@ class RPAWorker:
                 if status_info:
                     status = status_info.get("status")
                     if status == 5:
+                        record_rpa_execution_success(task.task_type, status_info)
                         await self._handle_shenzhen_air_billing_time_container_success(db, task, queues_info)
                         return
                     elif status == 3:
@@ -3364,7 +3368,14 @@ class RPAWorker:
                     status_desc = status_info.get("statusDesc", "未知状态")
                     
                     if status == 5:  
-                        print(f"{self._log_prefix} 南航出港跟踪任务 {task.id} (workUuid: {work_uuid}) 执行成功")
+                        # RPA 运行成功与明细采集完成是两个事件。即使队列为空、
+                        # 或货拉数据尚未满足完成条件，也应记录本次 RPA 成功运行。
+                        # 明细完成标记和重试仍由后续的数据处理决定。
+                        record_rpa_execution_success(task.task_type, status_info)
+                        print(
+                            f"{self._log_prefix} 南航出港跟踪任务 {task.id} "
+                            f"(workUuid: {work_uuid}) RPA运行成功，开始消费队列并校验数据"
+                        )
                         await self._handle_china_southern_air_departure_tracking_success(db, task, queues_info)
                         return
                     elif status == 3:  

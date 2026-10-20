@@ -1,0 +1,9 @@
+version: 1
+name: RPA departure status and queue contract
+slug: rpa-departure
+protocol: http
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

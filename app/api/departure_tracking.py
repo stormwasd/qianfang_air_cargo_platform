@@ -12,6 +12,9 @@ from app.schemas.departure_tracking import ShenzhenAirDepartureListResponse, She
 
 from app.models.rpa_task import RPATaskType
 from app.services.rpa_task_service import rpa_task_service
+from app.services.tracking_execution_time import (
+    DIRECT_BILLING_SUCCESS_TYPE, RPA_EXECUTION_SUCCESS_TYPES, format_success_time,
+)
 
 router = APIRouter()
 
@@ -33,6 +36,8 @@ async def get_shenzhen_air_departures(
 ):
     """
     查询深航出港列表，主表为 shenzhen_air_booking_exports，附带 shenzhen_air_billing_time_containers 数据。
+    data_update_time 为计飞集装器接口/RPA 最后成功请求/运行时间（北京时间），
+    与后续数据入库状态独立；无成功记录时为 null。
     """
     query = db.query(ShenzhenAirBookingExport)
 
@@ -96,12 +101,6 @@ async def get_shenzhen_air_departures(
     ).offset(offset).limit(pageSize).all()
 
 
-    if not exports:
-        return success_response(
-            data={"total": total, "items": [], "data_update_time": None},
-            msg="查询成功"
-        )
-
     export_ids = [export.id for export in exports]
     containers = []
     manual_datas = []
@@ -149,17 +148,11 @@ async def get_shenzhen_air_departures(
         
         items.append(item_schema.model_dump(mode="json"))
 
-    data_update_time = None
     if settings.SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE == "direct":
-        last_success = db.query(func.max(ShenzhenAirBillingTimeContainer.created_at)).scalar()
+        success_type = DIRECT_BILLING_SUCCESS_TYPE
     else:
-        last_success = rpa_task_service.get_last_success_time(
-            db, RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value
-        )
-    if last_success:
-        data_update_time = last_success.strftime("%Y-%m-%d %H:%M")
-    elif exports and hasattr(exports[0], 'updated_at') and exports[0].updated_at:
-        data_update_time = exports[0].updated_at.strftime("%Y-%m-%d %H:%M")
+        success_type = RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value]
+    data_update_time = format_success_time(rpa_task_service.get_last_success_time(db, success_type))
 
     return success_response(
         data={"total": total, "items": items, "data_update_time": data_update_time},
@@ -258,6 +251,9 @@ async def get_china_southern_air_departures(
     """
     查询南航出港列表，主表为 china_southern_air_approval_data，
     附带 csa_product_information、csa_lalamove_information 和 csa_departure_manual_data 数据。
+    data_update_time 返回本站货物+货拉 RPA 最后一次成功运行的 endTime（北京时间），
+    RPA 未返回有效 endTime 时才使用后台确认时间。无成功记录时为 null，
+    空列表仍返回已有成功时间；明细是否采集完成仍由数据校验结果决定。
     """
     from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
     from app.models.csa_departure_tracking import CsaProductInformation, CsaLalamoveInformation
@@ -333,12 +329,6 @@ async def get_china_southern_air_departures(
         ChinaSouthernAirApprovalData.id.desc()
     ).offset(offset).limit(pageSize).all()
 
-    if not records:
-        return success_response(
-            data={"total": total, "items": [], "data_update_time": None},
-            msg="查询成功"
-        )
-
     record_ids = [r.id for r in records]
     
     product_infos = db.query(CsaProductInformation).filter(
@@ -391,12 +381,10 @@ async def get_china_southern_air_departures(
 
         items.append(item_schema.model_dump(mode="json"))
 
-    data_update_time = None
-    last_success = rpa_task_service.get_last_success_time(db, RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value)
-    if last_success:
-        data_update_time = last_success.strftime("%Y-%m-%d %H:%M")
-    elif records and hasattr(records[0], 'updated_at') and records[0].updated_at:
-        data_update_time = records[0].updated_at.strftime("%Y-%m-%d %H:%M")
+    last_success = rpa_task_service.get_last_success_time(
+        db, RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value]
+    )
+    data_update_time = format_success_time(last_success)
 
     return success_response(
         data={"total": total, "items": items, "data_update_time": data_update_time},

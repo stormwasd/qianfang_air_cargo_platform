@@ -9,6 +9,7 @@ import httpx
 
 from app.config import settings
 from app.utils.helpers import get_china_now
+from app.services.tracking_execution_time import DIRECT_APPROVAL_SUCCESS_TYPES
 
 
 class ShenzhenAirDirectApprovalError(RuntimeError):

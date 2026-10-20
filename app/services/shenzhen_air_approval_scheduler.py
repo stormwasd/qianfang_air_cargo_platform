@@ -176,20 +176,31 @@ class ShenzhenAirApprovalScheduler:
     async def _download_direct_exports(self) -> None:
         """Download standard and wide-body reports for Beijing today/tomorrow."""
         from app.services.shenzhen_air_direct_approval import (
+            DIRECT_APPROVAL_SUCCESS_TYPES,
             ShenzhenAirDirectApprovalError,
             shenzhen_air_direct_approval_service,
         )
+        from app.services.tracking_execution_time import record_success_time
 
         schedule_date = get_china_now()
         dates = (schedule_date, schedule_date + timedelta(days=1))
         reports = (
-            ("普通机型", shenzhen_air_direct_approval_service.download_export),
-            ("宽体机", shenzhen_air_direct_approval_service.download_wide_body_export),
+            (
+                "普通机型",
+                shenzhen_air_direct_approval_service.download_export,
+                DIRECT_APPROVAL_SUCCESS_TYPES[0],
+            ),
+            (
+                "宽体机",
+                shenzhen_air_direct_approval_service.download_wide_body_export,
+                DIRECT_APPROVAL_SUCCESS_TYPES[1],
+            ),
         )
-        for report_label, download in reports:
+        for report_label, download, success_type in reports:
             for flight_date in dates:
                 try:
                     output_path = await download(flight_date)
+                    record_success_time(success_type)
                     print(
                         f"[ShenzhenAirApprovalScheduler] KingGo深航{report_label}批复表直连下载完成: "
                         f"flight_date={flight_date:%Y-%m-%d}, file={output_path.name}"

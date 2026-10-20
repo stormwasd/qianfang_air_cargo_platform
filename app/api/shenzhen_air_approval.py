@@ -8,6 +8,10 @@ from app.core.response import success_response
 from app.models.shenzhen_air_approval import ShenzhenAirApprovalData, ShenzhenAirApprovalWideBodyData
 from app.schemas.shenzhen_air_approval import ShenzhenAirApprovalListResponse, ShenzhenAirApprovalNarrowItem, ShenzhenAirApprovalWideItem
 from app.models.rpa_task import RPATaskType
+from app.config import settings
+from app.services.tracking_execution_time import (
+    DIRECT_APPROVAL_SUCCESS_TYPES, RPA_EXECUTION_SUCCESS_TYPES, format_success_time,
+)
 
 router = APIRouter()
 
@@ -26,6 +30,8 @@ async def get_shenzhen_air_approvals(
     查询深航订舱批复数据，支持根据 cabin_type 切换数据源：
     - cabin_type=0 对应 shenzhen_air_approval_data 表
     - cabin_type=1 对应 shenzhen_air_approval_wide_body_data 表
+    data_update_time 为对应报表类型最后成功请求/运行时间（北京时间），
+    与当前筛选结果及后续数据入库完成状态独立；尚无记录时返回 null。
     """
     if cabin_type == 1:
         model = ShenzhenAirApprovalWideBodyData
@@ -62,12 +68,6 @@ async def get_shenzhen_air_approvals(
         model.id.asc()
     ).offset(offset).limit(pageSize).all()
 
-    if not records:
-        return success_response(
-            data={"total": total, "items": [], "data_update_time": None},
-            msg="查询成功"
-        )
-
     items = []
     for record in records:
         record_dict = {k: v for k, v in record.__dict__.items() if not k.startswith('_')}
@@ -78,18 +78,18 @@ async def get_shenzhen_air_approvals(
         item_schema = schema_class(**record_dict)
         items.append(item_schema.model_dump(mode="json"))
 
-    data_update_time = None
-    target_task_type = (
-        RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value
-        if cabin_type == 1
-        else RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value
-    )
+    if settings.SHENZHEN_AIR_APPROVAL_EXECUTION_MODE == "direct":
+        target_task_type = DIRECT_APPROVAL_SUCCESS_TYPES[1 if cabin_type == 1 else 0]
+    else:
+        rpa_task_type = (
+            RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value
+            if cabin_type == 1
+            else RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value
+        )
+        target_task_type = RPA_EXECUTION_SUCCESS_TYPES[rpa_task_type]
     from app.services.rpa_task_service import rpa_task_service
     last_success = rpa_task_service.get_last_success_time(db, target_task_type)
-    if last_success:
-        data_update_time = last_success.strftime("%Y-%m-%d %H:%M")
-    elif records and hasattr(records[0], 'updated_at') and records[0].updated_at:
-        data_update_time = records[0].updated_at.strftime("%Y-%m-%d %H:%M")
+    data_update_time = format_success_time(last_success)
 
     return success_response(
         data={"total": total, "items": items, "data_update_time": data_update_time},

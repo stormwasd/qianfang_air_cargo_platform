@@ -1,0 +1,7 @@
+simulation: rpa-departure
+routing: path
+mocks:
+  - routeKey: rpa
+    path: ../mocks/rpa-departure/config.yaml
+  - routeKey: kinggo
+    path: ../mocks/kinggo/config.yaml

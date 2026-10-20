@@ -3,12 +3,16 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app.services.rpa_worker import RPAWorker
+from app.models.rpa_task import RPATaskType
 
 
 class RPAApprovalStatusTests(unittest.IsolatedAsyncioTestCase):
     async def test_shenzhen_approval_status_5_completes_task(self):
         worker = RPAWorker(robot_db_id=1, robot_name="测试机器人")
-        task = SimpleNamespace(id=123, job_uuid="job-uuid")
+        task = SimpleNamespace(
+            id=123, job_uuid="job-uuid",
+            task_type=RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value,
+        )
         db = object()
         status_response = {"records": [{"workUuid": "work-uuid", "status": 5}]}
 
@@ -24,6 +28,7 @@ class RPAApprovalStatusTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "app.services.rpa_worker.rpa_task_service.complete_task"
             ) as complete_task,
+            patch("app.services.rpa_worker.record_rpa_execution_success") as record_success,
             patch(
                 "app.services.rpa_worker.rpa_task_service.timeout_task"
             ) as timeout_task,
@@ -39,6 +44,7 @@ class RPAApprovalStatusTests(unittest.IsolatedAsyncioTestCase):
             )
 
         complete_task.assert_called_once_with(db, 123, True)
+        record_success.assert_called_once_with(task.task_type, {"status": 5})
         timeout_task.assert_not_called()
 
 
