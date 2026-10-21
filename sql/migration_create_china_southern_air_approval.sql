@@ -34,7 +34,7 @@ CREATE TABLE `china_southern_air_approval_data` (
   `goods_qty` VARCHAR(255) DEFAULT NULL COMMENT '货物数量(件数/重量/体积)',
   `actual_qty` VARCHAR(255) DEFAULT NULL COMMENT '实走数量(件数/重量/体积)',
   `actual_flight` VARCHAR(255) DEFAULT NULL COMMENT '实走航班',
-  `container` VARCHAR(100) DEFAULT NULL COMMENT '所在容器',
+  `container` TEXT DEFAULT NULL COMMENT '所在容器',
   `cargo_code` VARCHAR(100) DEFAULT NULL COMMENT '货物代码',
   `routing_country` VARCHAR(100) DEFAULT NULL COMMENT '航程国别',
   `department` VARCHAR(100) DEFAULT NULL COMMENT '部门',

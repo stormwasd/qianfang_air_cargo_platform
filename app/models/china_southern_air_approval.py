@@ -41,7 +41,7 @@ class ChinaSouthernAirApprovalData(Base):
     goods_qty = Column(String(255), comment="货物数量(件数/重量/体积)")
     actual_qty = Column(String(255), comment="实走数量(件数/重量/体积)")
     actual_flight = Column(String(255), comment="实走航班")
-    container = Column(String(100), comment="所在容器")
+    container = Column(Text, comment="所在容器")
     cargo_code = Column(String(100), comment="货物代码")
     routing_country = Column(String(100), comment="航程国别")
     department = Column(String(100), comment="部门")
