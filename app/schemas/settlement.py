@@ -27,8 +27,8 @@ class SettlementQuery(BaseModel):
     master_airwaybill_number: Optional[str] = Field(None, description="主单号（模糊搜索，从form_data JSON中提取）")
     settlement_status: Optional[str] = Field(None, description="结算状态（精确匹配，从form_data JSON中提取，可选值：未结算、已结算）")
     financial_review: Optional[str] = Field(None, description="财务审核状态（精确匹配，从form_data JSON中提取，可选值：未审核、已审核）")
-    airline_record_time_start: Optional[date] = Field(None, description="航司录单时间开始（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）")
-    airline_record_time_end: Optional[date] = Field(None, description="航司录单时间结束（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）")
+    flight_date_start: Optional[date] = Field(None, description="航班日期开始（格式：YYYY-MM-DD，从 form_data.flight_date 筛选）")
+    flight_date_end: Optional[date] = Field(None, description="航班日期结束（格式：YYYY-MM-DD，从 form_data.flight_date 筛选）")
     page: int = Field(1, ge=1, description="页码")
     pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 

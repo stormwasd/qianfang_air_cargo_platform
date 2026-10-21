@@ -1,5 +1,9 @@
 # API 文档
 
+## 应收对账空运账单查询
+
+`GET /api/v1/settlements` 支持按航班日期范围筛选，使用 `flight_date_start` 和 `flight_date_end`（`YYYY-MM-DD`）作为起止日期，筛选结算单 `form_data.flight_date`，包含边界日期。两个参数可单独传入，也可组合传入。原 `airline_record_time_start`、`airline_record_time_end` 不再用于查询；响应中的 `airline_record_time` 字段仍表示航司录单时间，不受本次筛选调整影响。
+
 ## 深航 KingGo 航班表同步与时间来源
 
 深航业务优先从 `shenzhen_air_flight_info` 查询计飞、实飞时间；南航继续使用原携程客户端。
