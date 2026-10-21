@@ -1,8 +1,12 @@
 # API 文档
 
-## 应收对账空运账单查询
+## 结算单列表查询
 
-`GET /api/v1/settlements` 支持按航班日期范围筛选，使用 `flight_date_start` 和 `flight_date_end`（`YYYY-MM-DD`）作为起止日期，筛选结算单 `form_data.flight_date`，包含边界日期。两个参数可单独传入，也可组合传入。原 `airline_record_time_start`、`airline_record_time_end` 不再用于查询；响应中的 `airline_record_time` 字段仍表示航司录单时间，不受本次筛选调整影响。
+`GET /api/v1/settlements` 恢复按航司录单时间范围筛选，使用 `airline_record_time_start` 和 `airline_record_time_end`（`YYYY-MM-DD`）作为起止日期，筛选结算单 `form_data.airline_record_time`，包含边界日期。两个参数可单独传入，也可组合传入；未传入时不限制录单日期。`flight_date_start`、`flight_date_end` 不作为本接口的筛选参数。
+
+请求示例：`GET /api/v1/settlements?airline_record_time_start=2026-10-21&airline_record_time_end=2026-10-21`。
+
+其他筛选、分页、作废成功记录排除规则及响应结构保持不变。响应中的 `airline_record_time` 仍优先取关联运单的 `booking_date`，缺失时取 `form_data.airline_record_time`；日期筛选沿用原逻辑，仅使用后者。
 
 ## 深航 KingGo 航班表同步与时间来源
 

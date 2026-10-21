@@ -126,12 +126,12 @@ async def get_settlements(
     - **master_airwaybill_number**: 主单号（模糊搜索，从form_data JSON中提取）
     - **settlement_status**: 结算状态（精确匹配，从form_data JSON中提取，可选值：未结算、已结算）
     - **financial_review**: 财务审核状态（精确匹配，从form_data JSON中提取，可选值：未审核、已审核）
-    - **flight_date_start**: 航班日期开始（格式：YYYY-MM-DD，从 form_data.flight_date 筛选）
-    - **flight_date_end**: 航班日期结束（格式：YYYY-MM-DD，从 form_data.flight_date 筛选）
+    - **airline_record_time_start**: 航司录单时间开始（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）
+    - **airline_record_time_end**: 航司录单时间结束（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）
     - **page**: 页码（默认1）
     - **pageSize**: 每页数量（默认10，最大200）
     
-    支持多条件组合筛选，航班日期从form_data JSON中提取进行日期范围筛选。列表不包含 waybill_void_status='3'（作废成功）的结算单。
+    支持多条件组合筛选，航司录单时间从form_data JSON中提取进行日期范围筛选。列表不包含 waybill_void_status='3'（作废成功）的结算单。
     """
     query_obj = db.query(Settlement).outerjoin(
         Waybill,
@@ -237,19 +237,19 @@ async def get_settlements(
             ) == query.financial_review
         )
     
-    if query.flight_date_start or query.flight_date_end:
-        flight_date_expr = func.json_unquote(
+    if query.airline_record_time_start or query.airline_record_time_end:
+        airline_record_time_expr = func.json_unquote(
             func.json_extract(
                 func.cast(Settlement.form_data, JSON),
-                "$.flight_date"
+                "$.airline_record_time"
             )
         )
-        if query.flight_date_start:
-            start_date_str = query.flight_date_start.isoformat()
-            query_obj = query_obj.filter(flight_date_expr >= start_date_str)
-        if query.flight_date_end:
-            end_date_str = query.flight_date_end.isoformat()
-            query_obj = query_obj.filter(flight_date_expr <= end_date_str)
+        if query.airline_record_time_start:
+            start_date_str = query.airline_record_time_start.isoformat()
+            query_obj = query_obj.filter(airline_record_time_expr >= start_date_str)
+        if query.airline_record_time_end:
+            end_date_str = query.airline_record_time_end.isoformat()
+            query_obj = query_obj.filter(airline_record_time_expr <= end_date_str)
     
     total = query_obj.distinct().count()
     
