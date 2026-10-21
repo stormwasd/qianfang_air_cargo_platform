@@ -1,5 +1,214 @@
 # API 文档
 
+## 应收对账：五个模块（25 个接口）
+
+本节按产品更正后的口径，**全部读取费用登记台应收数据**。统一前缀 `/api/v1/reconciliation/receivable`，均需 `Authorization: Bearer <access_token>`，认证规则与现有对账接口相同。以下是独立新增接口；原 `/api/v1/reconciliation/airline`、`pickup`、`delivery`、`air-agent`、`road-agent` 应付接口及其结算状态继续使用。
+
+### 数据流、模块范围及结算规则
+
+空运数据流：深航/南航原始运单、同行空运托运书 → 业务单据审核 → 费用登记台应收投影（包含财务暂存/审核覆盖值、客户制单费和现有合计计算）→ 应收对账 → 独立标记结算。来源单据须通过业务审核（`audit_status=2`）；费用登记台直接新增的手工单据可查询。财务审核不是强制门槛，可用 `financial_audit_status` 筛选。手工单据的 `source_id` 使用财务记录ID，兼容历史数据库中 `source_id=0` 的记录。
+
+四个空运模块均返回完整应收字段，另提供物流单位元数据；金额不使用应付成本替代。具体范围：
+
+| 模块 | 路径段 | 范围与费用口径 |
+| --- | --- | --- |
+| 航司对账 | `airline` | 全部符合上述审核规则的空运数据；航司、金额均取最终应收值 |
+| 提货单位对账 | `pickup` | 最终上门提货单位非空的空运数据；单位取费用登记台最终 `payable.door_pickup_company`，上门提货费取 `receivable.door_pickup_fee` |
+| 派送单位对账 | `delivery` | 最终派送单位非空，或应收机场提货费/派送费有非零有效金额的空运数据；单位取最终 `payable.delivery_company`，金额取 `receivable.airport_pickup_fee`、`receivable.delivery_fee` |
+| 空运代理对账 | `air-agent` | 全部符合上述审核规则的空运数据；与原空运代理对账读取同源应收值，结算状态独立 |
+| 汽运代理对账 | `road-agent` | 汽运费用登记台同源托运书，见下文；不增加业务审核或财务审核门槛 |
+
+提货/派送单位名称当前只存在于费用登记台应付区，因此仅将其作为归属元数据，不把应付费用当成应收。实走航班号优先使用深航/南航来源记录 `actual_flight`、同行托运书 `form_data.actual_flight`；深航回退至开单航班号，其余回退最终应收航班号。手工新增单据回退最终应收航班号。单位和实走航班号查询批量获取，避免逐单查询。
+
+汽运数据流：`GET /api/v1/consignment-notes?transport_type=1&is_financial=true` 同源的托运书标准列与动态 `form_data` → 汽运应收对账。日期、目的城市和客户原值以托运书标准列为准；其他业务字段直接读取动态表单。当前没有独立汽运应收扩展表，不重算费率或应收总费用。**未保存 `rate`、`total_amount` 时返回 `null`，不自行按“总运费＋其他费用”推算。** 无审核扩展、未审、暂存、已审的汽运托运书均可查询和结算。
+
+每个应收模块分别保存结算状态、操作人和北京时间，五个模块互不联动，也不覆盖原应付五模块状态。查询、导出不创建扩展记录；无扩展记录按未结算处理。确认结算按需创建扩展记录，不修改原始单据、应收/应付JSON、业务审核或财务审核状态，不触发收款/付款。重复确认保留首次操作人和时间；取消清空本模块的操作人和时间，再次取消仍成功，无扩展记录时不创建记录。结算后费用登记台修改数据，会展示最新值，结算状态保持，不保存金额快照。
+
+### 部署：先升级现有表，再启动应用
+
+已有库须在新版应用启动前执行一次 **`sql/migration_add_receivable_reconciliation_fields.sql`**，按文件顺序执行空运、汽运两条 `ALTER TABLE`，两条均成功后再启动。无需新建表、重建表或重跑历史迁移；`create_all` 不会给已有表补列。MySQL DDL 自动提交，若第二条失败，先核对已添加列再处理，不要直接重复执行整个文件。
+
+| 现有表 | 新字段前缀 | 本次新增内容 |
+| --- | --- | --- |
+| `air_financial_audit_data` | `receivable_airline_settlement` | 航司应收结算 |
+| `air_financial_audit_data` | `receivable_pickup_settlement` | 提货单位应收结算 |
+| `air_financial_audit_data` | `receivable_delivery_settlement` | 派送单位应收结算 |
+| `air_financial_audit_data` | `receivable_agent_settlement` | 空运代理应收结算 |
+| `peer_road_departure_manual_data` | `receivable_agent_settlement` | 汽运代理应收结算 |
+
+每组四列：`<前缀>_status` int 默认0，`<前缀>_auditor_id` bigint 可空，`<前缀>_auditor_name` varchar(255) 可空，`<前缀>_time` datetime 可空；每个状态字段带索引。历史应付结算值不迁移至应收，新增状态默认未结算。新建库建表脚本已同步本次字段；其余历史列仍按原初始化/迁移流程创建。本次不新增 `config.py` 配置。
+
+### 全部接口路径
+
+下表路径均相对于 `/api/v1/reconciliation/receivable`。
+
+| 模块 | 方法 | 路径 | 功能 |
+| --- | --- | --- | --- |
+| 航司 | GET | `/airline/air` | 分页列表 |
+| 航司 | POST | `/airline/air/{source_type}/{source_id}/settle` | 确认结算 |
+| 航司 | POST | `/airline/air/{source_type}/{source_id}/cancel-settlement` | 取消结算 |
+| 航司 | POST | `/airline/air/batch-settle` | 批量确认 |
+| 航司 | POST | `/airline/air/export` | 选中/筛选导出 |
+| 提货单位 | GET | `/pickup/air` | 分页列表 |
+| 提货单位 | POST | `/pickup/air/{source_type}/{source_id}/settle` | 确认结算 |
+| 提货单位 | POST | `/pickup/air/{source_type}/{source_id}/cancel-settlement` | 取消结算 |
+| 提货单位 | POST | `/pickup/air/batch-settle` | 批量确认 |
+| 提货单位 | POST | `/pickup/air/export` | 选中/筛选导出 |
+| 派送单位 | GET | `/delivery/air` | 分页列表 |
+| 派送单位 | POST | `/delivery/air/{source_type}/{source_id}/settle` | 确认结算 |
+| 派送单位 | POST | `/delivery/air/{source_type}/{source_id}/cancel-settlement` | 取消结算 |
+| 派送单位 | POST | `/delivery/air/batch-settle` | 批量确认 |
+| 派送单位 | POST | `/delivery/air/export` | 选中/筛选导出 |
+| 空运代理 | GET | `/air-agent/air` | 分页列表 |
+| 空运代理 | POST | `/air-agent/air/{source_type}/{source_id}/settle` | 确认结算 |
+| 空运代理 | POST | `/air-agent/air/{source_type}/{source_id}/cancel-settlement` | 取消结算 |
+| 空运代理 | POST | `/air-agent/air/batch-settle` | 批量确认 |
+| 空运代理 | POST | `/air-agent/air/export` | 选中/筛选导出 |
+| 汽运代理 | GET | `/road-agent/road` | 分页列表 |
+| 汽运代理 | POST | `/road-agent/road/{source_id}/settle` | 确认结算 |
+| 汽运代理 | POST | `/road-agent/road/{source_id}/cancel-settlement` | 取消结算 |
+| 汽运代理 | POST | `/road-agent/road/batch-settle` | 批量确认 |
+| 汽运代理 | POST | `/road-agent/road/export` | 选中/筛选导出 |
+
+### 空运四模块查询参数
+
+沿用对应应付模块的搜索字段；新接口对日期、状态及分页参数显式校验，非法值返回422。运单号、航班日期、客户和航司筛选使用费用登记台**最终应收值**，应用全部筛选后再统计总数和分页，避免财务覆盖值与列表不一致。
+
+| 参数 | 类型/默认 | 说明 |
+| --- | --- | --- |
+| `waybill_numbers` | string，可选 | 完整运单号精确匹配；多个用英文逗号隔开，忽略各项首尾空格和空项 |
+| `flight_date_start` | date，可选 | 航班日期开始，`YYYY-MM-DD`，包含当天 |
+| `flight_date_end` | date，可选 | 航班日期结束，包含当天；日期缺失不满足已传入的日期范围 |
+| `financial_audit_status` | int，可选 | 0未审、1暂存、2已审；不传不限 |
+| `customer_name` | string，可选 | 应收客户原值包含匹配，通常传客户ID；不是公司名称反查 |
+| `settlement_status` | int，可选 | **当前应收模块**的0未结算、1已结算；不传不限 |
+| `page` | int，1 | 页码，至少1 |
+| `pageSize` | int，10 | 每页1～200条 |
+| `airline` | string，可选 | 仅航司、空运代理：最终应收航司精确匹配；`全部`不限 |
+| `actual_flight_number` | string，可选 | 仅提货、派送单位：实走航班号包含匹配 |
+| `pickup_company` | string，可选 | 仅提货单位：最终上门提货单位包含匹配 |
+| `delivery_company` | string，可选 | 仅派送单位：最终派送单位包含匹配 |
+
+GET示例：`/api/v1/reconciliation/receivable/pickup/air?flight_date_start=2026-10-21&flight_date_end=2026-10-22&pickup_company=某提货单位&settlement_status=0&page=1&pageSize=20`。
+
+返回统一包装 `{"code":0,"data":{"items":[...],"total":1,"page":1,"pageSize":20},"msg":"success"}`。空列表成功返回 `items:[]`、`total:0`。空运按最终航班日期、完整运单号、来源ID倒序。
+
+### 空运列表字段（四个模块一致）
+
+业务字段直接平铺，不额外嵌套 `receivable`；费用、件数、重量等采用费用登记台的 string/null，状态为整数，ID为字符串。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `source_type` | string | `shenzhen_air`、`china_southern_air`、`peer_air` |
+| `source_id` | string | 来源主表ID；手工新增单据为财务记录ID，操作/导出原样传回 |
+| `settlement_status` | int | 本应收模块0未结算、1已结算；不使用旧接口的 `*_settlement_status` 字段 |
+| `settlement_auditor_name` | string/null | 本模块结算操作人 |
+| `settlement_time` | string/null | 本模块结算时间，北京时间ISO 8601字符串，如`2026-10-21T17:32:35+08:00`，可能含微秒 |
+| `financial_audit_status` | int | 财务审核状态0/1/2 |
+| `financial_auditor_name` | string/null | 财务审核人 |
+| `actual_customer_name` | string/null | 费用登记台客户公司名称投影 |
+| `actual_flight_number` | string/null | 实走航班号，按上文来源规则获取 |
+| `pickup_company` | string/null | 最终上门提货单位元数据 |
+| `delivery_company` | string/null | 最终派送单位元数据 |
+| `waybill_number` | string/null | 最终应收运单号；仅应收该值为null时回退费用登记台顶层运单号 |
+| `flight_date` | string/null | 航班日期 |
+| `customer_name` | string/null | 应收客户原值，通常为客户ID |
+| `consignee_phone` | string/null | 收货电话 |
+| `origin` / `destination` | string/null | 始发站/目的站 |
+| `airline` / `flight_number` | string/null | 航空公司/应收航班号 |
+| `cargo_name` | string/null | 货物名称 |
+| `pieces` / `weight` | string/null | 件数/重量 |
+| `chargeable_weight` / `freight_rate` | string/null | 计费重量/费率 |
+| `freight` / `document_fee` | string/null | 运费/制单费 |
+| `packaging_fee` | string/null | 包装费 |
+| `telegram_fee` / `telegram_code` | string/null | 电报费/电报号 |
+| `door_pickup_fee` | string/null | 应收上门提货费，不是应付提货成本 |
+| `airport_pickup_fee` | string/null | 应收机场提货费，不是应付成本合计 |
+| `delivery_fee` | string/null | 应收派送费，不是 `delivery_cost` |
+| `carrier_deduction` | string/null | 承运扣款 |
+| `cca` / `other_fees` | string/null | CCA/其他费用 |
+| `other_fee_remark` | string/null | 其他费用说明 |
+| `total_amount` | string/null | 费用登记台最终应收总金额，沿用其现有计算结果 |
+| `payment_method` | string/null | 付款方式 |
+| `consignee` / `pickup_method` | string/null | 收货单位/提货方式 |
+| `collection_payment` / `remark` | string/null | 代收货款/备注 |
+| `gross_profit` | string/null | 费用登记台毛利投影；仅此既有指标涉及成本计算 |
+
+### 汽运查询参数与列表字段
+
+| 参数 | 类型/默认 | 说明 |
+| --- | --- | --- |
+| `date_start` | date，北京时间当天减30天 | 托运日期开始，包含当天 |
+| `date_end` | date，北京时间当天 | 托运日期结束，包含当天 |
+| `customer_name` | string，可选 | 纯数字客户ID精确匹配；其他值同时包含匹配客户原值、公司名称 |
+| `destination_city` | string，可选 | 目的城市包含匹配，`%`/`_`按普通字符匹配 |
+| `settlement_status` | int，可选 | 本汽运应收模块0未结算、1已结算；不传不限 |
+| `page` / `pageSize` | int，1/10 | page至少1；pageSize为1～200 |
+
+汽运包装与空运一致，按托运日期、来源ID倒序。每条包括 `source_id`、`actual_customer_name`、`settlement_status`、`settlement_auditor_name`、`settlement_time`，以及以下 string/null 应收字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `transport_date` / `customer_name` | 托运日期/客户原值（标准列） |
+| `cargo_name` | 货物名称 |
+| `origin_city` / `origin_address` | 始发城市/详细地址 |
+| `destination_city` / `destination_address` | 目的城市（标准列）/详细地址 |
+| `consignee_info` / `contact_phone` | 收货人/联系电话 |
+| `quantity` / `weight` / `volume` | 件数/重量/体积 |
+| `vehicle_type` / `rate` | 车型/费率 |
+| `total_freight` / `other_fees` | 总运费/其他费用 |
+| `total_amount` | 已保存的应收总费用；没有该字段时null |
+
+### 确认、取消及批量结算
+
+单条确认和取消均为POST，无请求体。空运路径的 `source_type` 仅限上述三种，`source_id` 为1～9223372036854775807；汽运只传 `source_id`。空运单据必须存在且通过业务审核，或为费用登记台手工单据；汽运必须是 `transport_type=1` 的托运书。提货/派送确认结算还校验所属模块范围；取消允许清理已移除单位/费用的历史结算。
+
+批量请求：空运四模块使用相同结构：
+
+```json
+{"items":[{"source_type":"shenzhen_air","source_id":"370976932327723008"}]}
+```
+
+汽运使用：
+
+```json
+{"items":[{"source_id":"371229268321112064"}]}
+```
+
+`items`必填，最多1000项；ID必须为正整数字符串且不超过bigint范围。重复项去重；空数组成功处理0条。所有单据先校验再写入，一个不合法则整体失败，不会部分结算。按来源和ID固定顺序锁定现有来源/扩展记录，首次创建扩展也遵循同一顺序。唯一冲突回滚并返回409，可刷新后重试。
+
+确认成功：`{"code":0,"data":null,"msg":"确认结算成功"}`；取消成功消息为`取消结算成功`；批量成功消息如`成功结算2条单据`。
+
+### Excel导出
+
+POST `/export`请求体使用对应列表的筛选字段，另接受可选 `selected_items`（最多1000项），结构与对应批量 `items` 单项相同：
+
+```json
+{
+  "flight_date_start":"2026-10-21",
+  "flight_date_end":"2026-10-22",
+  "settlement_status":0,
+  "selected_items":[{"source_type":"shenzhen_air","source_id":"370976932327723008"}]
+}
+```
+
+`selected_items`非空时导出“选中项与筛选结果的交集”；省略、null或空数组时导出所有筛选结果。接受page/pageSize但导出不受分页截断。空运所有列表筛选参数均可用，提货/派送分别使用各自单位参数。汽运默认日期与GET一致，若需不限制日期，在导出体中显式传`date_start:null,date_end:null`。
+
+返回xlsx二进制，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，`Content-Disposition`携带UTF-8文件名。表头含序号、来源ID（空运另含来源类型）、本模块结算状态和操作人/时间、客户及全部应收字段；空运另含财务状态、实走航班和物流单位。状态导出为未结算/已结算，电话号码保留前导0，用户文本强制Excel文本单元格，防止公式执行。金额按列表字符串导出，不再计算。无匹配数据返回400。
+
+### 错误与验证边界
+
+| 状态码 | 场景 |
+| --- | --- |
+| 401/403 | 无有效登录凭证或账号不可用，沿用现有认证逻辑 |
+| 400 | 开始日期晚于结束日期、单据不属于待确认的物流应收模块、无匹配导出数据 |
+| 404 | 来源不存在、空运来源未通过业务审核、来源类型与ID不对应、将空运托运书用于汽运结算 |
+| 409 | 并发写入冲突，事务回滚，刷新后重试 |
+| 422 | 日期格式、分页、状态、来源枚举、ID或批量数量不合法 |
+| 500 | 汽运已保存动态表单不是合法JSON对象等数据异常；不把损坏数据静默当作零金额 |
+
+本次本地回归使用真实SQLite查询和FastAPI HTTP调用，覆盖25个接口、费用登记台投影一致性、跨模块/应收应付状态隔离、全批回滚、来源审核门槛、手工单据ID、筛选分页、文本安全导出与登录校验。未在生产数据库执行迁移，也未执行真实收付款操作。
+
 ## 应付对账：汽运代理对账（5 个接口）
 
 统一前缀 `/api/v1/reconciliation/road-agent`，均需登录并携带 `Authorization: Bearer <access_token>`，认证规则与现有对账接口一致。该模块读取费用登记台汽运的数据源，列表只读，操作区提供确认结算；另提供取消、批量结算、选中/批量导出。

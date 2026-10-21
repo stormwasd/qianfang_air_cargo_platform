@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, BigInteger, DateTime, Integer, JSON
+from sqlalchemy import Column, String, BigInteger, DateTime, Integer, JSON, Index
 from app.database import Base
 from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
@@ -6,6 +6,12 @@ from app.utils.helpers import get_china_now
 class AirFinancialAuditData(Base):
     """空运财务审核扩展数据表"""
     __tablename__ = "air_financial_audit_data"
+    __table_args__ = (
+        Index("ix_air_recv_airline_status", "receivable_airline_settlement_status"),
+        Index("ix_air_recv_pickup_status", "receivable_pickup_settlement_status"),
+        Index("ix_air_recv_delivery_status", "receivable_delivery_settlement_status"),
+        Index("ix_air_recv_agent_status", "receivable_agent_settlement_status"),
+    )
 
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="主键ID")
     source_type = Column(String(50), nullable=False, index=True, comment="来源类型: shenzhen_air / china_southern_air / peer_air")
@@ -38,6 +44,26 @@ class AirFinancialAuditData(Base):
     agent_settlement_auditor_id = Column(BigInteger, nullable=True, comment="空运代理对账结算操作人ID")
     agent_settlement_auditor_name = Column(String(255), nullable=True, comment="空运代理对账结算操作人")
     agent_settlement_time = Column(DateTime, nullable=True, comment="空运代理对账结算时间")
+
+    receivable_airline_settlement_status = Column(Integer, default=0, comment="应收航司结算状态")
+    receivable_airline_settlement_auditor_id = Column(BigInteger, nullable=True)
+    receivable_airline_settlement_auditor_name = Column(String(255), nullable=True)
+    receivable_airline_settlement_time = Column(DateTime, nullable=True)
+
+    receivable_pickup_settlement_status = Column(Integer, default=0, comment="应收提货单位结算状态")
+    receivable_pickup_settlement_auditor_id = Column(BigInteger, nullable=True)
+    receivable_pickup_settlement_auditor_name = Column(String(255), nullable=True)
+    receivable_pickup_settlement_time = Column(DateTime, nullable=True)
+
+    receivable_delivery_settlement_status = Column(Integer, default=0, comment="应收派送单位结算状态")
+    receivable_delivery_settlement_auditor_id = Column(BigInteger, nullable=True)
+    receivable_delivery_settlement_auditor_name = Column(String(255), nullable=True)
+    receivable_delivery_settlement_time = Column(DateTime, nullable=True)
+
+    receivable_agent_settlement_status = Column(Integer, default=0, comment="应收空运代理结算状态")
+    receivable_agent_settlement_auditor_id = Column(BigInteger, nullable=True)
+    receivable_agent_settlement_auditor_name = Column(String(255), nullable=True)
+    receivable_agent_settlement_time = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=get_china_now, comment="创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="更新时间")

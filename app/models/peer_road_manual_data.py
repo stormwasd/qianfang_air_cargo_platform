@@ -1,10 +1,11 @@
-from sqlalchemy import Column, String, BigInteger, DateTime, Integer
+from sqlalchemy import Column, String, BigInteger, DateTime, Integer, Index
 from app.database import Base
 from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
 
 class PeerRoadDepartureManualData(Base):
     __tablename__ = "peer_road_departure_manual_data"
+    __table_args__ = (Index("ix_road_recv_agent_status", "receivable_agent_settlement_status"),)
 
     id = Column(BigInteger, primary_key=True, index=True, default=generate_id, comment="主键ID")
     consignment_note_id = Column(BigInteger, unique=True, index=True, nullable=False, comment="关联 consignment_notes.id")
@@ -23,6 +24,11 @@ class PeerRoadDepartureManualData(Base):
     agent_settlement_auditor_id = Column(BigInteger, nullable=True, comment="汽运代理结算操作人ID")
     agent_settlement_auditor_name = Column(String(255), nullable=True, comment="汽运代理结算操作人")
     agent_settlement_time = Column(DateTime, nullable=True, comment="汽运代理结算时间")
+
+    receivable_agent_settlement_status = Column(Integer, default=0, comment="应收汽运代理结算状态")
+    receivable_agent_settlement_auditor_id = Column(BigInteger, nullable=True)
+    receivable_agent_settlement_auditor_name = Column(String(255), nullable=True)
+    receivable_agent_settlement_time = Column(DateTime, nullable=True)
     
     created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")

@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.config import settings
 from app.api import reconciliation_agent
 from app.api import reconciliation_road_agent
+from app.api import reconciliation_receivable
 from app.api import auth, users, departments, customers, config, user_center, waybills, bookings, settlements, rpa_tasks, china_southern_air_booking_tasks, notifications, waybill_stocks, robots, companies, agents, pickup_units, delivery_units, weather, consignment_notes, departure_tracking, shenzhen_air_approval, china_southern_air_approval, financial_audit, common, reconciliation_airline, reconciliation_pickup, reconciliation_delivery
 
 api_router = APIRouter(prefix=settings.API_V1_PREFIX)
@@ -39,6 +40,7 @@ api_router.include_router(reconciliation_pickup.router, prefix="/reconciliation/
 api_router.include_router(reconciliation_delivery.router, prefix="/reconciliation/delivery", tags=["应付对账-派送单位对账"])
 api_router.include_router(reconciliation_agent.router, prefix="/reconciliation/air-agent", tags=["应付对账-空运代理对账"])
 api_router.include_router(reconciliation_road_agent.router, prefix="/reconciliation/road-agent", tags=["应付对账-汽运代理对账"])
+api_router.include_router(reconciliation_receivable.router, prefix="/reconciliation/receivable")
 
 __all__ = ["api_router"]
 
