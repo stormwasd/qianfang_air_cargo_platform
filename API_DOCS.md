@@ -1,5 +1,152 @@
 # API 文档
 
+## 应付对账：空运代理对账（5 个接口）
+
+接口前缀为 `/api/v1/reconciliation/air-agent`，均需登录，使用 `Authorization: Bearer <access_token>`，认证规则与航司对账一致。
+
+### 数据来源与部署
+
+列表复用 `GET /api/v1/financial-audit/air`（费用登记台空运）的应收数据构建逻辑，覆盖深航、南航、同行空运及费用登记台手工新增单据。来源单据沿用其他应付对账的准入条件：出港手工数据已通过业务审核（`audit_status=2`），同行托运书还要求 `transport_type="0"`；费用登记台手工新增单据不依赖出港业务审核。
+
+数据流为来源业务数据 → 出港手工录入费用 → 财务应收 JSON 覆盖 → 客户制单费及付款方式 → 应收合计和毛利重算 → 代理对账。应收字段保留费用登记台的最终值；其中 `waybill_number` 未设置财务覆盖值时取来源运单号。列表筛选、导出均使用这份最终应收数据，修改后的航班日期、运单号等可直接用于筛选，不使用未覆盖的原始值。
+
+空运代理结算使用独立的 `agent_settlement_*` 字段，确认/取消/批量结算不会修改航司、提货单位、派送单位结算状态，不会修改应收应付 JSON 或财务审核状态。读取列表和导出不创建财务扩展记录；尚无财务扩展记录的来源单据按未审、未结算处理。
+
+现有数据库需在启动新版应用前执行一次 `sql/migration_add_agent_settlement_fields.sql`，在已有 `air_financial_audit_data` 表新增以下字段及状态索引，不新建业务表：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `agent_settlement_status` | int，默认 0 | 0=未结算，1=已结算 |
+| `agent_settlement_auditor_id` | bigint，可空 | 结算操作人 ID |
+| `agent_settlement_auditor_name` | varchar(255)，可空 | 结算操作人姓名 |
+| `agent_settlement_time` | datetime，可空 | 结算时间，采用北京时间 |
+
+已有数据库只执行新增字段脚本，不要重新执行建表脚本。新建库的 `sql/migration_create_air_financial_audit_data.sql` 已包含这些字段，应用启动的 `create_all` 不会为已有表自动补列。本次不新增 `config.py` 配置。
+
+### 1. 查询列表
+
+`GET /api/v1/reconciliation/air-agent/air`
+
+搜索参数名称与航司对账一致，均为可选；分页在全部筛选完成后执行。
+
+| 参数 | 类型 | 默认值及说明 |
+| --- | --- | --- |
+| `waybill_numbers` | string | 运单号，支持英文逗号分隔多个值，去除各值首尾空格后精确匹配 |
+| `flight_date_start` | date | 航班日期开始，`YYYY-MM-DD`，包含当天 |
+| `flight_date_end` | date | 航班日期结束，`YYYY-MM-DD`，包含当天；两个日期可单独传入 |
+| `airline` | string | 航司精确匹配，如深航、南航；不传或为“全部”时不限 |
+| `financial_audit_status` | int | 财务审核：0=未审，1=暂存，2=已审 |
+| `customer_name` | string | 沿用航司对账按客户原始值包含匹配，通常传客户 ID；公司展示名使用响应 `actual_customer_name` |
+| `settlement_status` | int | **空运代理**结算状态：0=未结算，1=已结算；不限制其他对账的结算状态 |
+| `page` | int | 1，最小 1 |
+| `pageSize` | int | 10，最小 1 |
+
+示例：`GET /api/v1/reconciliation/air-agent/air?flight_date_start=2026-10-21&flight_date_end=2026-10-22&settlement_status=0&page=1&pageSize=20`
+
+返回统一 JSON：`{"code":0,"data":{"items":[...],"total":5,"page":1,"pageSize":20},"msg":"success"}`。按航班日期、运单号、来源 ID 倒序排列。每个 `items` 元素直接平铺应收字段，不嵌套 `receivable`，金额、件数、重量沿用费用登记台的字符串类型（可空）。
+
+| 身份及状态字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `source_type` | string | `shenzhen_air` / `china_southern_air` / `peer_air` |
+| `source_id` | string | 来源主表 ID；**费用登记台手工新增单据返回财务记录自身 ID**，历史 `source_id=0` 记录也返回自身 ID，不向结算接口传 0 |
+| `agent_settlement_status` | int | 0=未结算，1=已结算，供列表“结算状态”列使用 |
+| `agent_settlement_auditor_name` | string/null | 代理结算操作人 |
+| `agent_settlement_time` | string/null | 代理结算时间，北京时间字符串 |
+| `financial_audit_status` | int | 财务审核状态 |
+| `financial_auditor_name` | string/null | 财务审核人 |
+| `actual_customer_name` | string | 客户 ID 对应的公司名称，未匹配时为空字符串 |
+
+应收区字段完整映射如下（所有字段类型均为 `string/null`）：
+
+| 字段 | 说明 | 字段 | 说明 |
+| --- | --- | --- | --- |
+| `waybill_number` | 运单号 | `flight_date` | 航班日期 |
+| `customer_name` | 客户原始值，通常是客户 ID | `consignee_phone` | 收货电话 |
+| `origin` | 始发站 | `airline` | 航空公司 |
+| `flight_number` | 航班号 | `cargo_name` | 货物名称 |
+| `pieces` | 件数 | `chargeable_weight` | 计费重量 |
+| `freight_rate` | 费率 | `document_fee` | 制单费 |
+| `packaging_fee` | 包装费 | `telegram_fee` | 电报费 |
+| `telegram_code` | 电报号 | `other_fee_remark` | 其他费用说明 |
+| `door_pickup_fee` | 上门提货费 | `airport_pickup_fee` | 机场提货费 |
+| `carrier_deduction` | 承运扣款 | `total_amount` | 应收总金额 |
+| `payment_method` | 付款方式 | `consignee` | 收货单位 |
+| `destination` | 目的站 | `pickup_method` | 提货方式 |
+| `weight` | 重量 | `freight` | 运费 |
+| `cca` | CCA | `other_fees` | 其他费用 |
+| `delivery_fee` | 派送费 | `collection_payment` | 代收货款 |
+| `remark` | 备注 | `gross_profit` | 毛利 |
+
+合计和毛利继续使用费用登记台的既有计算口径。客户 ID 匹配成功时，制单费和付款方式取客户配置。
+
+### 2. 确认结算
+
+`POST /api/v1/reconciliation/air-agent/air/{source_type}/{source_id}/settle`
+
+无请求体。路径参数使用列表返回的 `source_type`、`source_id`；ID 必须是 1 至 9223372036854775807 的整数。确认时写入代理结算状态、当前用户及北京时间。重复确认已结算记录直接成功，保留原代理结算人和时间。无财务扩展记录的合法来源单据会创建扩展记录。
+
+返回：`{"code":0,"data":null,"msg":"确认结算成功"}`。
+
+### 3. 取消结算
+
+`POST /api/v1/reconciliation/air-agent/air/{source_type}/{source_id}/cancel-settlement`
+
+无请求体，路径参数同上。仅清除代理结算状态、操作人和时间；合法单据本来就未结算（包括无财务扩展记录）时也成功，不创建新记录。
+
+返回：`{"code":0,"data":null,"msg":"取消结算成功"}`。
+
+### 4. 批量确认结算
+
+`POST /api/v1/reconciliation/air-agent/air/batch-settle`
+
+请求体：
+
+```json
+{
+  "items": [
+    {"source_type": "shenzhen_air", "source_id": "101"},
+    {"source_type": "peer_air", "source_id": "301"}
+  ]
+}
+```
+
+`items` 必填，最多 1000 项，每项类型和 ID 范围同单条结算，JSON 中 `source_id` 传数字字符串。按来源类型和 ID 去重，整个批次先校验所有单据，全部成功后在一个事务中提交；任何一项无效则整个批次不结算。已结算记录不覆盖原操作人和时间。空数组成功处理 0 条。
+
+返回：`{"code":0,"data":null,"msg":"成功批量结算 2 条单据"}`，数量按去重后的单据数计。
+
+### 5. 导出列表（选中下载/批量下载）
+
+`POST /api/v1/reconciliation/air-agent/air/export`
+
+请求体可包含与列表同名的搜索条件，以及 `selected_items`，各筛选字段类型、含义同列表。
+
+```json
+{
+  "flight_date_start": "2026-10-21",
+  "flight_date_end": "2026-10-22",
+  "settlement_status": 0,
+  "selected_items": [
+    {"source_type": "shenzhen_air", "source_id": "101"}
+  ]
+}
+```
+
+`selected_items` 不传、为 `null` 或空数组时导出全部筛选结果；非空时导出筛选结果与选中单据的交集，最多传 1000 项。忽略 `page`、`pageSize` 的分页作用，不截取当前页；两个字段若传入仍须为正整数。`{}` 可导出全部符合业务准入规则的记录。
+
+成功响应为 Excel 二进制流，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，`Content-Disposition` 提供 UTF-8 文件名 `空运代理对账列表_时间戳.xlsx`。导出列包含序号、结算状态（未结算/已结算）、客户公司名称及全部应收字段，顺序与上表对应的费用登记台应收模型一致。输入内容以文本写入，避免被当作 Excel 公式执行。
+
+### 错误处理
+
+沿用项目统一错误响应机制，前端按 HTTP 状态码及 `msg` 处理。五个接口均要求有效登录用户。
+
+| HTTP 状态 | 场景 |
+| --- | --- |
+| 400 | 航班开始日期晚于结束日期；导出无符合条件数据 |
+| 401/403 | 缺少/无效登录凭证、用户不可用等认证失败 |
+| 404 | 结算/取消/批量中单据不存在、来源不匹配或尚未通过业务审核 |
+| 409 | 结算保存发生唯一键等完整性冲突，刷新后重试 |
+| 422 | 日期格式、来源枚举、ID、状态或分页参数不合法，或批量/选中项超过 1000 |
+
 ## 结算单列表查询
 
 `GET /api/v1/settlements` 恢复按航司录单时间范围筛选，使用 `airline_record_time_start` 和 `airline_record_time_end`（`YYYY-MM-DD`）作为起止日期，筛选结算单 `form_data.airline_record_time`，包含边界日期。两个参数可单独传入，也可组合传入；未传入时不限制录单日期。`flight_date_start`、`flight_date_end` 不作为本接口的筛选参数。

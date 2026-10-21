@@ -141,6 +141,17 @@ async def get_air_financial_audits(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
+    return await build_air_financial_audits(query, db, current_user)
+
+
+async def build_air_financial_audits(
+    query: AirFinancialAuditQuery,
+    db: Session,
+    current_user,
+    *,
+    paginate: bool = True,
+):
+    """Build the canonical fee-desk projection for API lists and reconciliation."""
     query_shenzhen = not bool(query.agent_name)
     query_southern = not bool(query.agent_name)
     query_peer = True
@@ -545,7 +556,7 @@ async def get_air_financial_audits(
     total = len(candidate_items)
 
     offset = (query.page - 1) * query.pageSize
-    paged_items = candidate_items[offset : offset + query.pageSize]
+    paged_items = candidate_items[offset : offset + query.pageSize] if paginate else candidate_items
 
     customers = db.query(Customer).all()
     customer_map = {c.company_name: c for c in customers if c.company_name}
@@ -556,6 +567,8 @@ async def get_air_financial_audits(
     csa_waybills = []
 
     for item in paged_items:
+        if item.get("is_manual"):
+            continue
         if item["source_type"] == "shenzhen_air":
             export = item["_main"]
             sz_export_ids.append(export.id)

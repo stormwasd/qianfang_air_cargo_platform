@@ -13,10 +13,16 @@ CREATE TABLE `air_financial_audit_data` (
   `financial_auditor_name` varchar(255) DEFAULT NULL COMMENT '财务审核人',
   `financial_audit_time` datetime DEFAULT NULL COMMENT '财务审核时间',
   
+  `agent_settlement_status` int DEFAULT 0 COMMENT '空运代理对账结算状态: 0=未结算, 1=已结算',
+  `agent_settlement_auditor_id` bigint DEFAULT NULL COMMENT '空运代理对账结算操作人ID',
+  `agent_settlement_auditor_name` varchar(255) DEFAULT NULL COMMENT '空运代理对账结算操作人',
+  `agent_settlement_time` datetime DEFAULT NULL COMMENT '空运代理对账结算时间',
+
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_source` (`source_type`, `source_id`),
   KEY `ix_financial_audit_status` (`financial_audit_status`),
+  KEY `ix_agent_settlement_status` (`agent_settlement_status`),
   KEY `ix_source_id` (`source_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='空运财务审核扩展数据表';
