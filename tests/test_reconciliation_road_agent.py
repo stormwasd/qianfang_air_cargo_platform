@@ -1,0 +1,286 @@
+"""汽运代理对账：数据来源、日期筛选、独立结算、导出与HTTP契约。"""
+import json
+import unittest
+from datetime import date, datetime
+from io import BytesIO
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+from openpyxl import load_workbook
+from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.api.consignment_notes import (
+    audit_consignment_note, financial_audit_consignment_note, get_consignment_notes,
+)
+from app.api.deps import get_current_active_user
+from app.api.reconciliation_road_agent import (
+    batch_confirm_road_agent_settlement, cancel_road_agent_settlement,
+    confirm_road_agent_settlement, export_road_agent_reconciliation_list,
+    get_road_agent_reconciliation_list, router,
+)
+from app.database import get_db
+from app.models.consignment_note import ConsignmentNote
+from app.models.customer import Customer
+from app.models.peer_road_manual_data import PeerRoadDepartureManualData
+from app.schemas.consignment_note import (
+    ConsignmentNoteFinancialAudit, ConsignmentNoteQuery, PeerAirDepartureManualDataUpsert,
+)
+from app.schemas.reconciliation_road_agent import (
+    RoadAgentBatchSettleRequest, RoadAgentReceivableResponse,
+    RoadAgentReconciliationExportRequest, RoadAgentReconciliationQuery,
+)
+
+
+class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        for model in (ConsignmentNote, PeerRoadDepartureManualData, Customer):
+            model.__table__.create(self.engine)
+        self.db = sessionmaker(bind=self.engine)()
+        self.user = SimpleNamespace(id=7, name="测试财务")
+        self.db.add(Customer(id=7, company_name="测试客户", rate=2, contact_person="张三", contact_phone="13800000000"))
+        self.form = {
+            "transport_date": "2026-10-21", "cargo_name": "五金件", "origin_city": "SZX",
+            "origin_address": "始发详细地址", "destination_city": "CGQ", "destination_address": "目的详细地址",
+            "consignee_info": "收货人", "contact_phone": "0013800000000", "quantity": 2,
+            "weight": 100.5, "volume": "0.8", "vehicle_type": "厢式货车", "rate": 2.5,
+            "total_freight": "250.00", "other_fees": "25.00", "total_amount": "300.00",
+        }
+        self.add_note(101, customer="7", form=self.form)
+        self.add_note(102, customer="普通客户", destination="SZX", day=date(2026, 10, 20))
+        self.add_note(103, customer="百分%客户", destination="SZ_", day=date(2026, 10, 19))
+        self.add_note(104, day=date(2026, 9, 20))
+        self.add_note(105, day=date(2026, 10, 22))
+        self.add_note(106, transport_type="0")
+        self.db.add(PeerRoadDepartureManualData(
+            id=202, consignment_note_id=102, audit_status=1, financial_audit_status=2,
+            financial_auditor_name="原审核人", agent_settlement_status=0,
+        ))
+        self.db.commit()
+
+    def add_note(self, source_id, *, customer="原客户", destination="CGQ", day=date(2026, 10, 21), transport_type="1", form=None):
+        self.db.add(ConsignmentNote(
+            id=source_id, transport_type=transport_type, customer_name=customer,
+            consignment_date=day, destination=destination,
+            form_data=json.dumps(form or {}, ensure_ascii=False),
+        ))
+
+    def tearDown(self):
+        self.db.close()
+        self.engine.dispose()
+
+    def listing(self, **kwargs):
+        query = RoadAgentReconciliationQuery(date_start=date(2026, 9, 21), date_end=date(2026, 10, 21), **kwargs)
+        return get_road_agent_reconciliation_list(query, self.db, self.user).data
+
+    def settle(self, source_id=101, user=None):
+        return confirm_road_agent_settlement(source_id, self.db, user or self.user)
+
+    def record(self, source_id):
+        return self.db.query(PeerRoadDepartureManualData).filter_by(consignment_note_id=source_id).first()
+
+    async def test_all_fields_from_fee_desk_without_recalculation_or_audit_gate(self):
+        result = self.listing()
+        self.assertEqual(result["total"], 3)
+        row = result["items"][0]
+        self.assertEqual(row["source_id"], "101")
+        self.assertEqual(row["actual_customer_name"], "测试客户")
+        for field in RoadAgentReceivableResponse.model_fields:
+            expected = "7" if field == "customer_name" else str(self.form[field])
+            self.assertEqual(row[field], expected, field)
+        # This amount is intentionally different from freight + other fees.
+        self.assertEqual(row["total_amount"], "300.00")
+        self.assertEqual(row["agent_settlement_status"], 0)
+        self.assertIsNone(self.record(101))
+        self.assertEqual(self.listing(page=2, pageSize=1)["items"][0]["source_id"], "102")
+
+    async def test_defaults_use_beijing_date_and_30_day_window(self):
+        with patch("app.schemas.reconciliation_road_agent.get_china_now", return_value=datetime(2026, 10, 21, 0, 1)):
+            query = RoadAgentReconciliationQuery()
+        self.assertEqual(query.date_start, date(2026, 9, 21))
+        self.assertEqual(query.date_end, date(2026, 10, 21))
+
+    async def test_search_by_customer_id_name_city_and_literal_wildcards(self):
+        for term in ("7", "测试", "测试客户"):
+            self.assertEqual(self.listing(customer_name=term)["items"][0]["source_id"], "101")
+        self.assertEqual(self.listing(customer_name="普通")["total"], 1)
+        self.assertEqual(self.listing(customer_name="%")["total"], 1)
+        self.assertEqual(self.listing(destination_city="_")["items"][0]["source_id"], "103")
+        self.assertEqual(self.listing(destination_city="CG")["total"], 1)
+        self.assertEqual(self.listing(customer_name="无匹配")["total"], 0)
+
+    async def test_missing_total_is_not_fabricated_and_numbers_preserve_zero(self):
+        note = self.db.get(ConsignmentNote, 101)
+        note.form_data = json.dumps({"quantity": 0, "total_freight": 0, "other_fees": "25"})
+        self.db.commit()
+        row = self.listing()["items"][0]
+        self.assertIsNone(row["total_amount"])
+        self.assertEqual(row["quantity"], "0")
+        self.assertEqual(row["total_freight"], "0")
+        self.assertEqual(row["contact_phone"], None)
+
+    async def test_actual_fee_desk_sample_matches_before_and_after_audits(self):
+        source_id = 371229268321112064
+        form = {
+            "flight_date": "2026-10-21", "transport_date": "2026-10-21",
+            "quantity": 1, "weight": 1, "volume": 1, "cargo_name": "1",
+            "other_fees": 1, "vehicle_type": "1", "total_freight": 1,
+            "origin_city": "北京市-市辖区-西城区", "origin_address": "11 Delamere Street",
+            "destination_city": "河北省-保定市-徐水区", "destination_address": "11 Delamere Street",
+            "consignee_info": "1", "contact_phone": 1380000000,
+        }
+        self.add_note(source_id, customer="Tester", destination=form["destination_city"], form=form)
+        self.db.commit()
+        fee_desk = await get_consignment_notes(ConsignmentNoteQuery(
+            transport_type="1", is_financial=True, customer_name="Tester",
+            date_start="2026-10-21", date_end="2026-10-22",
+        ), self.user, self.db)
+        source = fee_desk.data["items"][0]
+        self.assertEqual(source["form_data"], form)
+        self.assertIsNone(source["manual_data"])
+        for audited in (False, True):
+            if audited:
+                await audit_consignment_note(PeerAirDepartureManualDataUpsert(
+                    consignment_note_id=str(source_id),
+                ), "submit", self.user, self.db)
+                await financial_audit_consignment_note(ConsignmentNoteFinancialAudit(
+                    consignment_note_id=str(source_id),
+                ), "submit", self.user, self.db)
+            row = self.listing(customer_name="Tester")["items"][0]
+            self.assertEqual(row["source_id"], str(source_id))
+            self.assertIsNone(row["rate"])
+            self.assertIsNone(row["total_amount"])
+            for field, value in form.items():
+                if field != "flight_date":
+                    self.assertEqual(row[field], str(value), field)
+        self.assertEqual(json.loads(self.db.get(ConsignmentNote, source_id).form_data), form)
+
+    async def test_idempotent_settlement_and_cancellation_preserve_original_data(self):
+        self.settle()
+        record = self.record(101)
+        timestamp = record.agent_settlement_time
+        self.settle(user=SimpleNamespace(id=8, name="其他财务"))
+        self.assertEqual(record.agent_settlement_auditor_name, "测试财务")
+        self.assertEqual(record.agent_settlement_time, timestamp)
+        self.assertEqual(record.audit_status, 0)
+        self.assertEqual(record.financial_audit_status, 0)
+        self.assertEqual(json.loads(self.db.get(ConsignmentNote, 101).form_data), self.form)
+        cancel_road_agent_settlement(101, self.db, self.user)
+        self.assertEqual(record.agent_settlement_status, 0)
+        self.assertIsNone(record.agent_settlement_auditor_id)
+        self.assertIsNone(record.agent_settlement_time)
+        cancel_road_agent_settlement(103, self.db, self.user)
+        self.assertIsNone(self.record(103))
+
+    async def test_batch_deduplicates_and_rejects_invalid_atomically(self):
+        req = RoadAgentBatchSettleRequest(items=[{"source_id": "101"}, {"source_id": "102"}, {"source_id": "101"}])
+        result = batch_confirm_road_agent_settlement(req, self.db, self.user)
+        self.assertIn("2 条", result.msg)
+        self.assertEqual(self.record(102).financial_audit_status, 2)
+        self.assertEqual(self.record(102).audit_status, 1)
+        for invalid in (106, 999):
+            with self.assertRaises(HTTPException) as error:
+                batch_confirm_road_agent_settlement(RoadAgentBatchSettleRequest(items=[
+                    {"source_id": "103"}, {"source_id": str(invalid)},
+                ]), self.db, self.user)
+            self.assertEqual(error.exception.status_code, 404)
+            self.assertIsNone(self.record(103))
+
+    async def test_commit_failure_rolls_back(self):
+        with patch.object(self.db, "commit", side_effect=IntegrityError("insert", {}, Exception("duplicate"))):
+            with self.assertRaises(HTTPException) as error:
+                self.settle()
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertIsNone(self.record(101))
+
+    async def test_existing_document_and_financial_audits_preserve_settlement(self):
+        self.settle()
+        await audit_consignment_note(PeerAirDepartureManualDataUpsert(consignment_note_id="101"), "submit", self.user, self.db)
+        await financial_audit_consignment_note(ConsignmentNoteFinancialAudit(consignment_note_id="101"), "submit", self.user, self.db)
+        record = self.record(101)
+        self.assertEqual(record.agent_settlement_status, 1)
+        self.assertEqual(record.audit_status, 2)
+        self.assertEqual(record.financial_audit_status, 2)
+
+    async def export(self, **kwargs):
+        response = export_road_agent_reconciliation_list(RoadAgentReconciliationExportRequest(
+            date_start="2026-09-21", date_end="2026-10-21", **kwargs,
+        ), self.db, self.user)
+        data = b"".join([chunk async for chunk in response.body_iterator])
+        return load_workbook(BytesIO(data)).active
+
+    async def test_export_all_selected_intersection_formula_and_phone(self):
+        self.settle()
+        note = self.db.get(ConsignmentNote, 101)
+        form = dict(self.form, cargo_name="=1+1")
+        note.form_data = json.dumps(form)
+        self.db.commit()
+        sheet = await self.export(pageSize=1)
+        self.assertEqual(sheet.max_row, 4)
+        self.assertEqual(sheet.cell(2, 2).value, "已结算")
+        self.assertEqual(sheet.cell(2, 4).value, "测试客户")
+        self.assertEqual(sheet.cell(2, 5).value, "=1+1")
+        self.assertEqual(sheet.cell(2, 5).data_type, "s")
+        self.assertEqual(sheet.cell(2, 11).value, "0013800000000")
+        selected = await self.export(selected_items=[{"source_id": "102"}, {"source_id": "106"}, {"source_id": "105"}])
+        self.assertEqual(selected.max_row, 2)
+        with self.assertRaises(HTTPException) as error:
+            await self.export(customer_name="无匹配")
+        self.assertEqual(error.exception.status_code, 400)
+
+    async def test_export_unpaged_over_200_and_live_values_after_settlement(self):
+        for source_id in range(1000, 1205):
+            self.add_note(source_id)
+        self.db.commit()
+        sheet = await self.export(pageSize=1)
+        self.assertEqual(sheet.max_row, 209)
+        self.settle()
+        self.db.get(ConsignmentNote, 101).form_data = json.dumps({"total_amount": "999"})
+        self.db.commit()
+        row = self.listing(customer_name="7")["items"][0]
+        self.assertEqual(row["total_amount"], "999")
+        self.assertEqual(row["agent_settlement_status"], 1)
+
+    async def test_http_all_five_routes_validation_dates_and_auth(self):
+        app = FastAPI()
+        prefix = "/api/v1/reconciliation/road-agent"
+        app.include_router(router, prefix=prefix)
+        app.dependency_overrides[get_db] = lambda: self.db
+        app.dependency_overrides[get_current_active_user] = lambda: self.user
+        with TestClient(app) as client:
+            schema = client.get("/openapi.json").json()
+            self.assertEqual(sum(len(value) for value in schema["paths"].values()), 5)
+            params = {p["name"] for p in schema["paths"][prefix+"/road"]["get"]["parameters"]}
+            self.assertEqual(params, set(RoadAgentReconciliationQuery.model_fields))
+            response = client.get(prefix+"/road", params={"date_start": "2026-10-19", "date_end": "2026-10-21"})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["data"]["total"], 3)
+            with patch("app.schemas.reconciliation_road_agent.get_china_now", return_value=datetime(2026, 10, 21, 0, 1)):
+                self.assertEqual(client.get(prefix+"/road").json()["data"]["total"], 3)
+            for params in ({"date_start": "bad"}, {"page": 0}, {"pageSize": 201}):
+                self.assertEqual(client.get(prefix+"/road", params=params).status_code, 422)
+            self.assertEqual(client.get(prefix+"/road", params={"date_start": "2026-10-22", "date_end": "2026-10-21"}).status_code, 400)
+            for source_id in ("0", "bad", "9223372036854775808"):
+                self.assertEqual(client.post(prefix+f"/road/{source_id}/settle").status_code, 422)
+            self.assertEqual(client.post(prefix+"/road/106/settle").status_code, 404)
+            self.assertEqual(client.post(prefix+"/road/101/settle").status_code, 200)
+            self.assertEqual(client.post(prefix+"/road/101/cancel-settlement").status_code, 200)
+            self.assertEqual(client.post(prefix+"/road/batch-settle", json={"items": []}).status_code, 200)
+            self.assertEqual(client.post(prefix+"/road/batch-settle", json={"items": [{"source_id": "-1"}]}).status_code, 422)
+            self.assertEqual(client.post(prefix+"/road/export", json={"date_start": None, "date_end": None}).status_code, 200)
+            del app.dependency_overrides[get_current_active_user]
+            for method, path, body in (
+                ("GET", "/road", None), ("POST", "/road/101/settle", None),
+                ("POST", "/road/101/cancel-settlement", None),
+                ("POST", "/road/batch-settle", {"items": []}), ("POST", "/road/export", {}),
+            ):
+                self.assertIn(client.request(method, prefix+path, json=body).status_code, (401, 403))
+
+
+if __name__ == "__main__":
+    unittest.main()

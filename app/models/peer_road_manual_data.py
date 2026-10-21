@@ -18,6 +18,11 @@ class PeerRoadDepartureManualData(Base):
     financial_auditor_id = Column(BigInteger, comment="财务审核人ID")
     financial_auditor_name = Column(String(255), comment="财务审核人")
     financial_audit_time = Column(DateTime, comment="财务审核时间")
+
+    agent_settlement_status = Column(Integer, default=0, index=True, comment="汽运代理结算状态: 0=未结算, 1=已结算")
+    agent_settlement_auditor_id = Column(BigInteger, nullable=True, comment="汽运代理结算操作人ID")
+    agent_settlement_auditor_name = Column(String(255), nullable=True, comment="汽运代理结算操作人")
+    agent_settlement_time = Column(DateTime, nullable=True, comment="汽运代理结算时间")
     
     created_at = Column(DateTime, default=get_china_now, comment="记录创建时间")
     updated_at = Column(DateTime, default=get_china_now, onupdate=get_china_now, comment="记录更新时间")

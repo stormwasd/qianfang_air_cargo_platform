@@ -1,5 +1,124 @@
 # API 文档
 
+## 应付对账：汽运代理对账（5 个接口）
+
+统一前缀 `/api/v1/reconciliation/road-agent`，均需登录并携带 `Authorization: Bearer <access_token>`，认证规则与现有对账接口一致。该模块读取费用登记台汽运的数据源，列表只读，操作区提供确认结算；另提供取消、批量结算、选中/批量导出。
+
+### 数据流与部署
+
+当前汽运费用登记台复用 `GET /api/v1/consignment-notes?transport_type=1&is_financial=true`，业务字段保存于 `consignment_notes` 的标准列和 `form_data`，审核状态位于 `peer_road_departure_manual_data`。本模块直接读取同一份保存数据，不复制账单，不使用空运 `AirFinancialAuditData`，不重算总运费、费率或应收总费用。未保存到后端的前端临时计算值不会自动出现在对账中。
+
+汽运费用登记台当前没有强制“单据已审核”或“财务已审核”的条件，汽运代理对账也不增加该门槛：没有扩展记录、未审、暂存、已审的汽运托运书均可查询、结算；空运托运书不允许混入。此规则与空运代理对账不同。
+
+结算状态、操作人及时间独立保存在现有汽运扩展表的 `agent_settlement_*` 列。读取、导出不创建扩展记录，无扩展记录时按未结算返回；首次确认结算时才按需创建扩展记录。操作不会修改原业务单据、动态表单、单据审核或财务审核状态，结算本身也不产生付款操作。结算后若费用登记台修改数据，对账展示最新保存值，结算状态保持不变，不保存费用快照。
+
+**已有数据库须在新版应用启动前执行一次 `sql/migration_add_road_agent_settlement_fields.sql`**，新增四列及状态索引，不新建业务表：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `agent_settlement_status` | int，默认0 | 0=未结算，1=已结算 |
+| `agent_settlement_auditor_id` | bigint，可空 | 结算操作人ID |
+| `agent_settlement_auditor_name` | varchar(255)，可空 | 结算操作人姓名 |
+| `agent_settlement_time` | datetime，可空 | 结算时间，北京时间 |
+
+新建库的汽运扩展表脚本已同步上述列；已有库不要重建表。历史财务审核字段仍使用原来的 `sql/migration_add_financial_audit_fields.sql` 管理。本次不新增 `config.py` 配置。应用 `create_all` 不会自动为已有表补列。
+
+### 1. 列表查询
+
+`GET /api/v1/reconciliation/road-agent/road`
+
+| 参数 | 类型 | 默认/作用 |
+| --- | --- | --- |
+| `date_start` | date | 北京时间当天往前30天；托运日期起始，包含当天，格式 `YYYY-MM-DD` |
+| `date_end` | date | 北京时间当天；托运日期结束，包含当天，格式 `YYYY-MM-DD` |
+| `customer_name` | string | 可选；传纯数字客户ID时精确匹配；其他值同时模糊匹配托运书客户原值和客户公司名称 |
+| `destination_city` | string | 可选；模糊匹配目的城市，沿用托运书标准列 `destination` |
+| `page` | int | 默认1，必须≥1 |
+| `pageSize` | int | 默认10，范围1～200 |
+
+日期默认值在每次请求时按北京时间生成，不在服务启动时固定。客户及目的城市输入前后空格会去除，`%`、`_` 按普通字符搜索。所有筛选在数据库分页之前执行，排序为托运日期倒序、托运书ID倒序。客户下拉选择可复用现有客户查询接口，目的城市字典由前端沿用现有字典接口，不增加字典接口。
+
+示例：`GET /api/v1/reconciliation/road-agent/road?date_start=2026-10-18&date_end=2026-10-25&customer_name=7&destination_city=SZX&page=1&pageSize=20`。
+
+响应格式：`{"code":0,"data":{"items":[...],"total":3,"page":1,"pageSize":20},"msg":"success"}`。每个列表元素直接平铺以下字段；件数、重量、费率、费用可接受原始数值或字符串，返回时统一为 `string/null`，不丢失零值、手机号前导零和字符串小数位。动态表单中的布尔值、数组、对象不作为数值或文本列返回。
+
+| 字段 | 展示/来源 |
+| --- | --- |
+| `source_id` | 汽运托运书ID，字符串；操作必须传此ID，不是扩展表ID |
+| `agent_settlement_status` | 结算状态，整数：0=未结算，1=已结算 |
+| `agent_settlement_auditor_name` | 结算操作人姓名，可空 |
+| `agent_settlement_time` | 结算时间，北京时间，可空 |
+| `transport_date` | 托运日期，取标准列 `consignment_date` |
+| `customer_name` | 客户名称，托运书客户原值，可为客户ID |
+| `actual_customer_name` | 若客户原值为客户ID则显示对应公司名称，否则显示原值 |
+| `cargo_name` | 货物名称，取 `form_data.cargo_name` |
+| `origin_city` | 始发城市，取 `form_data.origin_city` |
+| `origin_address` | 始发详细地址，取 `form_data.origin_address` |
+| `destination_city` | 目的城市，取标准列 `destination` |
+| `destination_address` | 目的详细地址，取 `form_data.destination_address` |
+| `consignee_info` | 收货人，取 `form_data.consignee_info` |
+| `contact_phone` | 联系电话，取 `form_data.contact_phone` |
+| `quantity` | 件数，取 `form_data.quantity` |
+| `weight` | 重量，取 `form_data.weight` |
+| `volume` | 体积，取 `form_data.volume` |
+| `vehicle_type` | 车型，取 `form_data.vehicle_type` |
+| `rate` | 费率，透传可选的同名已保存键 `form_data.rate`；缺失返回null，不用客户费率或总运费反推 |
+| `total_freight` | 总运费，取 `form_data.total_freight` |
+| `other_fees` | 其他费用，取 `form_data.other_fees` |
+| `total_amount` | 应收总费用，读取 `form_data.total_amount` 原值；未保存则返回null，不在对账中重算 |
+
+实际提供的费用登记台查询样例（`transport_type=1&is_financial=true`）只有 `total_freight`、`other_fees` 等原始业务值，没有 `rate` 或 `total_amount`。现有汽运 `/consignment-notes/audit`、`/consignment-notes/financial/audit` 暂存/审核仅更新审核状态，不会生成这两个金额字段。因此该样例在对账中这两列均返回null，导出留空；不能据此假设应收总费用等于总运费加其他费用。若费用登记台前端另外计算显示这两列，须先核实其实际字段或计算规则，再补齐同源映射；本次不改变原有汽运保存、审核行为。
+
+序号由前端按 `(page-1)*pageSize+行索引+1` 生成。标准列由原有托运书新增/修改接口随表单同步保存。原接口的动态 JSON 原样存储行为保持不变。
+
+### 2. 确认结算
+
+`POST /api/v1/reconciliation/road-agent/road/{source_id}/settle`
+
+无需请求体。将该汽运托运书标记为已结算，保存当前操作人及北京时间；重复确认是幂等操作，不覆盖首次结算操作人和时间。成功：`{"code":0,"data":null,"msg":"确认结算成功"}`。
+
+### 3. 取消结算
+
+`POST /api/v1/reconciliation/road-agent/road/{source_id}/cancel-settlement`
+
+无需请求体。恢复未结算并清空结算操作人及时间；重复取消成功，且不会为尚无扩展记录的单据新建空记录。成功：`{"code":0,"data":null,"msg":"取消结算成功"}`。
+
+### 4. 批量确认结算
+
+`POST /api/v1/reconciliation/road-agent/road/batch-settle`
+
+```json
+{"items":[{"source_id":"370976932327723008"},{"source_id":"370976932327723009"}]}
+```
+
+`items` 必填，最多1000项，ID为正整数的字符串，范围不超过有符号bigint。重复ID会去重，空数组返回成功且不更改数据。全部单据在同一事务内验证并执行；任一ID不存在或属于空运时整体失败，不部分结算。已结算项保留首次操作信息。成功示例：`{"code":0,"data":null,"msg":"成功批量结算 2 条单据"}`。
+
+单条及批量操作先按ID顺序锁定汽运托运书，再锁定扩展记录，避免首次结算时并发创建重复扩展记录。
+
+### 5. 选中/批量导出
+
+`POST /api/v1/reconciliation/road-agent/road/export`
+
+请求体支持与列表同名的全部筛选参数，并增加 `selected_items`（可选，最多1000项）：
+
+```json
+{
+  "date_start":"2026-10-18",
+  "date_end":"2026-10-25",
+  "customer_name":"7",
+  "destination_city":"SZX",
+  "selected_items":[{"source_id":"370976932327723008"}]
+}
+```
+
+未传 `selected_items` 或传空数组时，导出全部符合筛选条件的记录；非空时，导出筛选结果与选中ID的交集。忽略 `page/pageSize` 分页，不受200行限制。日期省略时与列表默认值一致；导出JSON可显式传 `"date_start":null` 或 `"date_end":null` 取消对应边界，例如 `{"date_start":null,"date_end":null}` 导出全部日期。
+
+返回Excel文件，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，UTF-8文件名 `汽运代理对账列表_时间戳.xlsx`。列顺序与产品图片一致：序号、结算状态、托运日期、客户名称、货物名称、始发城市、始发详细地址、目的城市、目的详细地址、收货人、联系电话、件数、重量、体积、车型、费率、总运费、其他费用、应收总费用。客户名称列使用解析后的公司名称，状态转成“已结算/未结算”；字符串明确写为文本单元格，避免Excel公式执行并保留手机号前导零。
+
+### 错误响应
+
+新接口使用HTTP错误状态（框架统一处理时错误正文可能被转换为项目格式）：日期开始晚于结束返回400；导出无匹配数据返回400；操作ID不存在/不是汽运返回404；ID、日期、分页或批量请求格式不合法返回422；并发写入唯一约束冲突回滚并返回409，可刷新后重试。未登录按现有认证规则返回401/403。损坏的动态表单JSON返回500并指出托运书ID，不静默伪造账单数据。
+
 ## 应付对账：空运代理对账（5 个接口）
 
 接口前缀为 `/api/v1/reconciliation/air-agent`，均需登录，使用 `Authorization: Bearer <access_token>`，认证规则与航司对账一致。
