@@ -3,7 +3,7 @@
 """
 from fastapi import APIRouter, Depends, Query, status
 from app.core.exceptions import BadRequestException, NotFoundException, ForbiddenException, ConflictException
-from app.core.response import success_response
+from app.core.response import ResponseModel, success_response
 from app.utils.response_helpers import model_to_dict, convert_model_list
 from sqlalchemy.orm import Session, joinedload
 from typing import Annotated, List, Optional
@@ -13,9 +13,9 @@ from app.models.department import Department
 from app.schemas.user import (
     UserCreate, UserUpdate, UserPasswordUpdate,
     UserResponse, UserListResponse,
-    BatchUserStatusUpdate, BatchUserDelete
+    BatchUserStatusUpdate, BatchUserDelete, SalespersonListResponse
 )
-from app.api.deps import require_admin, get_current_active_user
+from app.api.deps import require_admin, get_current_active_user, require_permission
 from app.core.security import get_password_hash
 from app.core.permissions import validate_permissions
 from app.utils.helpers import format_permissions_to_json, parse_json_permissions, format_datetime_china
@@ -121,6 +121,41 @@ async def get_users(
         data={"total": len(user_list), "items": user_list},
         msg="查询成功"
     )
+
+
+@router.get(
+    "/salespersons",
+    summary="获取费用登记台业务员选项",
+    response_model=ResponseModel[SalespersonListResponse],
+)
+async def get_salespersons(
+    current_user: User = Depends(require_permission("expense_registration")),
+    db: Session = Depends(get_db),
+    name: Annotated[Optional[str], Query(description="业务员姓名（包含匹配，去除首尾空白；不传或空白时不筛选）")] = None,
+):
+    """费用登记台或管理员可访问，仅返回ID、姓名和提成百分比。
+
+    候选账号范围、姓名筛选及创建时间倒序沿用账号列表；不分页。
+    """
+    query = db.query(User.id, User.name, User.commission_percentage)
+    if name:
+        name_keyword = name.strip()
+        if name_keyword:
+            query = query.filter(User.name.contains(name_keyword, autoescape=True))
+    users = query.order_by(User.created_at.desc()).all()
+    items = [
+        {
+            "id": str(user.id),
+            "name": user.name,
+            "commission_percentage": (
+                float(user.commission_percentage)
+                if user.commission_percentage is not None
+                else None
+            ),
+        }
+        for user in users
+    ]
+    return success_response(data={"total": len(items), "items": items}, msg="查询成功")
 
 
 @router.get("/{user_id}", summary="获取账号详情")

@@ -104,6 +104,21 @@ class UserListResponse(BaseModel):
     items: List[UserResponse]
 
 
+class SalespersonOption(BaseModel):
+    """费用登记台业务员选项，仅包含选择业务员所需字段。"""
+    id: str = Field(..., description="账号ID（字符串格式）")
+    name: str = Field(..., description="业务员姓名，保存费用时写入sales_commission.salesperson")
+    commission_percentage: Optional[float] = Field(
+        ..., description="账号当前提成百分比（0-100，最多两位小数），未维护时为null"
+    )
+
+
+class SalespersonListResponse(BaseModel):
+    """业务员选项列表，保持与原账号列表一致的total/items结构。"""
+    total: int = Field(..., description="匹配账号总数")
+    items: List[SalespersonOption]
+
+
 class LoginRequest(BaseModel):
     """登录请求schema"""
     phone: str = Field(..., description="手机号", min_length=11, max_length=11)

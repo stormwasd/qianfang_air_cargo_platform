@@ -1342,7 +1342,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 4. 账号管理（需要管理员权限）
+### 4. 账号管理（除 4.9 业务员选项外，需要管理员权限）
 
 #### 4.0 提成百分比字段规范
 
@@ -1713,6 +1713,81 @@ Authorization: Bearer <access_token>
   "msg": "批量删除成功"
 }
 ```
+
+---
+
+#### 4.9 获取费用登记台业务员选项
+
+**接口地址**: `GET /api/v1/users/salespersons`
+
+**请求头**: `Authorization: Bearer <access_token>`
+
+**权限**: 需要 `expense_registration`（费用登记台）或 `admin`（管理员）权限。兼容历史保存的 `cost_service` 和中文权限名称；仅有客服接单台、组织管理或系统管理权限不可访问。
+
+**用途**: 费用登记台初始化、搜索和展开业务员下拉框时使用。本接口只提供选择业务员所需数据，不授予账号管理权限。
+
+**查询参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | 否 | 按账号姓名包含匹配，去除首尾空白；省略、空字符串或纯空白时不筛选；`%`、`_`、`/` 等字符按字面值匹配 |
+
+**请求示例**: `GET /api/v1/users/salespersons?name=张`（实际请求需 URL 编码）。
+
+**响应示例**:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 2,
+    "items": [
+      {
+        "id": "260819415803760645",
+        "name": "小张",
+        "commission_percentage": null
+      },
+      {
+        "id": "260819415803760644",
+        "name": "张三",
+        "commission_percentage": 12.5
+      }
+    ]
+  },
+  "msg": "查询成功"
+}
+```
+
+**返回规则**:
+
+- `data.items[]` 每项仅含 `id`（字符串）、`name`（字符串）、`commission_percentage`（数值或 `null`）；不返回手机号、密码哈希、部门、权限、启停状态、Token 版本及时间字段。
+- `commission_percentage` 表示账号当前提成百分比，范围 `0-100`，最多两位小数；`0` 为有效数值，未维护时保留 `null`，不转换为 `0`。
+- 与原账号列表保持相同的候选范围：返回全部匹配账号（包括已停用账号），不按部门、权限或是否维护提成比例进行额外筛选；按账号创建时间倒序，不分页，`total` 为匹配总数。`page`、`pageNo`、`pageSize` 不是本接口的分页参数，前端无需传入。
+- 无匹配时仍返回 HTTP 200：`{"code":0,"data":{"total":0,"items":[]},"msg":"查询成功"}`。
+- 接口只读，不修改账号、登录凭证、费用记录或提成金额，无需新增数据库字段或迁移。
+
+**错误响应**:
+
+- HTTP 403：已登录但缺少费用登记台及管理员权限，统一响应为：
+
+  ```json
+  {
+    "code": 403,
+    "data": null,
+    "msg": "需要「expense_registration」权限或管理员权限"
+  }
+  ```
+
+- HTTP 401：Token 无效、过期、版本失效，或当前登录账号已停用；沿用现有认证规则。
+- 未携带 Bearer 凭证时由现有 `HTTPBearer` 拦截，当前返回 HTTP 403。
+
+**前端接入说明**:
+
+1. 仅将费用登记台内加载、搜索业务员选项的调用，从 `GET /api/v1/users` 改为 `GET /api/v1/users/salespersons`（包含页面初始化和下拉框搜索、展开使用的调用）。如果复用账号列表 API 函数，应新增业务员选项 API 函数，不要修改共享账号列表函数的地址。
+2. 保留 `name` 搜索参数，继续读取 `data.items`；使用 `name` 作为选项的展示文本和提交值，`id` 为账号标识。继续将选中的 `name` 写入 `sales_commission.salesperson`，不要改传账号 ID。
+3. `commission_percentage` 可继续用于前端提成金额计算，注意区分 `0` 与 `null`。后端保存费用时仍按现有规则读取账号提成比例并生成快照，不修改提成金额计算逻辑。
+4. 账号管理页面继续使用原 `GET /api/v1/users` 及其他账号管理接口，其管理员限制、输入输出和原行为保持不变。有费用登记台权限的非管理员可以读取业务员选项，仍不能读取完整账号列表或账号详情。
+5. 上线需配合前端替换费用登记台调用；只上线后端不会改变旧前端对 `/api/v1/users` 的请求。权限刚调整的账号仍须按原规则重新登录。
 
 ---
 
@@ -6702,7 +6777,8 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 ## 权限说明
 
 - **管理员权限（admin）**: 可以访问所有接口，包括账号管理、部门管理等
-- **非管理员**: 只能访问用户中心、客户管理等基础功能接口
+- **费用登记台权限（expense_registration）**: 可访问业务员选项 `GET /api/v1/users/salespersons`（详见 4.9），不因此获得完整账号列表、详情或账号管理权限；历史 `cost_service` 权限兼容。
+- **其他非管理员**: 按各接口标注的权限访问；不具备费用登记台权限时，不能读取业务员选项。
 - 需要管理员权限的接口会在接口说明中标注
 - 所有权限相关的输入输出都使用权限代码（如 `admin`, `waybill`, `booking`, `settlement`, `customer`）
 
@@ -9875,7 +9951,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 12. **`sales_commission`（销售提成）提成百分比**：
    - 销售提成对象新增 `commission_percentage` 字段，完整结构为 `salesperson`（业务员）、`commission_percentage`（提成百分比）、`commission_amount`（提成金额）。列表返回路径为 `data.items[].sales_commission.commission_percentage`，其他单条响应返回路径为 `data.sales_commission.commission_percentage`。
    - `commission_percentage` 是后端派生并保存的响应字段，不是费用登记台请求字段。其响应类型为数值或 `null`，取值来源于账号管理中对应用户的提成百分比（账号字段范围为 `0-100`、最多两位小数，`0` 是有效值）。
-   - 前端业务员下拉框的数据来源为账号列表 `GET /api/v1/users`。选择账号后，费用保存请求只需将该账号的 `name` 写入 `sales_commission.salesperson`；保存时后端按 `users.name` 精确匹配账号，将账号当前的 `commission_percentage` 固化为费用记录的提成百分比快照并在响应中返回。账号日后修改提成百分比不会反向改写历史费用数据。
+   - 前端业务员下拉框的数据来源为专用接口 `GET /api/v1/users/salespersons`（详见 4.9，费用登记台或管理员权限可访问），费用页面不再复用管理员专用的完整账号列表 `GET /api/v1/users`。选择账号后，费用保存请求只需将该账号的 `name` 写入 `sales_commission.salesperson`；保存时后端按 `users.name` 精确匹配账号，将账号当前的 `commission_percentage` 固化为费用记录的提成百分比快照并在响应中返回。账号日后修改提成百分比不会反向改写历史费用数据。
    - 提交空字符串业务员时，同时清空费用记录中的提成百分比；提交的非空业务员未匹配到账号时，为兼容历史自由文本业务员，仍保存业务员文本，但提成百分比保存为 `NULL`，不会沿用上一位业务员的旧百分比。修改时未提交 `salesperson`，则业务员及其百分比都保持原值。
    - **提成金额计算边界**：后端不根据利润和提成百分比计算、重算或覆盖 `commission_amount`。`commission_amount` 仍完全按前端提交值保存；“利润 × 提成百分比”的计算由前端完成。即使请求提供了 `operating_info.profit`，且业务员成功匹配出提成百分比，但未提供 `commission_amount`，后端也不会自动生成提成金额。
    - 请求示例：
