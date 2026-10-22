@@ -31,6 +31,7 @@ class RoadAgentReceivableResponse(FinancialAuditRequestModel):
     contact_phone: Optional[str] = Field(None, description="联系电话")
     quantity: Optional[str] = Field(None, description="件数")
     weight: Optional[str] = Field(None, description="重量")
+    chargeable_weight: Optional[str] = Field(None, description="计费重量")
     volume: Optional[str] = Field(None, description="体积")
     vehicle_type: Optional[str] = Field(None, description="车型")
     rate: Optional[str] = Field(None, description="费率")

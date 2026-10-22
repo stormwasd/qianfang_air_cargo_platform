@@ -48,7 +48,7 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
             "transport_date": "2026-10-21", "cargo_name": "五金件", "origin_city": "SZX",
             "origin_address": "始发详细地址", "destination_city": "CGQ", "destination_address": "目的详细地址",
             "consignee_info": "收货人", "contact_phone": "0013800000000", "quantity": 2,
-            "weight": 100.5, "volume": "0.8", "vehicle_type": "厢式货车", "rate": 2.5,
+            "weight": 100.5, "chargeable_weight": "120.00", "volume": "0.8", "vehicle_type": "厢式货车", "rate": 2.5,
             "total_freight": "250.00", "other_fees": "25.00", "total_amount": "300.00",
         }
         self.add_note(101, customer="7", form=self.form)
@@ -123,6 +123,35 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["quantity"], "0")
         self.assertEqual(row["total_freight"], "0")
         self.assertEqual(row["contact_phone"], None)
+
+    async def test_customer_ids_match_exactly_without_numeric_coercion_or_precision_loss(self):
+        customer_id = 371229268321112064
+        self.db.add(Customer(id=customer_id, company_name="大ID客户", rate=2,
+                             contact_person="张三", contact_phone="13800000000"))
+        for source_id, customer in ((107, str(customer_id)), (108, str(customer_id + 1)),
+                                    (109, "7abc"), (110, "007"), (111, "7.0")):
+            self.add_note(source_id, customer=customer)
+        self.db.commit()
+        rows = {row["source_id"]: row for row in self.listing()["items"]}
+        self.assertEqual(rows["107"]["actual_customer_name"], "大ID客户")
+        self.assertEqual(rows["108"]["actual_customer_name"], str(customer_id + 1))
+        for source_id, customer in ((109, "7abc"), (110, "007"), (111, "7.0")):
+            self.assertEqual(rows[str(source_id)]["actual_customer_name"], customer)
+        self.assertEqual(self.listing(customer_name="大ID")["total"], 1)
+
+    async def test_chargeable_weight_preserves_saved_value_without_using_gross_weight(self):
+        note = self.db.get(ConsignmentNote, 101)
+        for value, expected in ((0, "0"), (120.5, "120.5"), ("120.00", "120.00"),
+                                (None, None), (True, None), ({"value": 120}, None)):
+            with self.subTest(value=value):
+                note.form_data = json.dumps({**self.form, "chargeable_weight": value})
+                self.db.commit()
+                self.assertEqual(self.listing()["items"][0]["chargeable_weight"], expected)
+        note.form_data = json.dumps({"weight": 100})
+        self.db.commit()
+        row = self.listing()["items"][0]
+        self.assertEqual(row["weight"], "100")
+        self.assertIsNone(row["chargeable_weight"])
 
     async def test_actual_fee_desk_sample_matches_before_and_after_audits(self):
         source_id = 371229268321112064
@@ -227,6 +256,8 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sheet.cell(2, 5).value, "=1+1")
         self.assertEqual(sheet.cell(2, 5).data_type, "s")
         self.assertEqual(sheet.cell(2, 11).value, "0013800000000")
+        headers = [cell.value for cell in sheet[1]]
+        self.assertEqual(sheet.cell(2, headers.index("计费重量") + 1).value, "120.00")
         selected = await self.export(selected_items=[{"source_id": "102"}, {"source_id": "106"}, {"source_id": "105"}])
         self.assertEqual(selected.max_row, 2)
         with self.assertRaises(HTTPException) as error:

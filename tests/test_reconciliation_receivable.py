@@ -304,6 +304,7 @@ class RoadReceivableTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("agent_settlement_status", row)
         self.assertEqual(row["total_amount"], "300.00")  # Must not recompute as 250+25.
         self.assertEqual(row["rate"], "2.5")
+        self.assertEqual(row["chargeable_weight"], "120.00")
         self.assertEqual(self.client.post(self.url + "/101/settle").status_code, 200)
         self.assertEqual(self.listing(settlement_status=1)["total"], 1)
         self.assertEqual(self.listing(settlement_status=0)["total"], 2)
@@ -329,11 +330,21 @@ class RoadReceivableTests(unittest.IsolatedAsyncioTestCase):
         row = self.listing()["items"][0]
         self.assertIsNone(row["rate"])
         self.assertIsNone(row["total_amount"])
+        self.assertIsNone(row["chargeable_weight"])
         self.assertEqual(row["quantity"], "0")
         self.assertEqual(self.listing(settlement_status=0)["total"], 3)
         self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 1)
         self.assertEqual(self.client.post(self.url + "/101/cancel-settlement").status_code, 200)
         self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 1)
+
+    async def test_frontend_same_day_query_and_empty_results(self):
+        response = self.client.get(self.url, params={"date_start": "2026-10-22", "date_end": "2026-10-22"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"]["total"], 1)
+        self.assertEqual(response.json()["data"]["items"][0]["source_id"], "105")
+        response = self.client.get(self.url, params={"date_start": "2020-01-01", "date_end": "2020-01-01"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"], {"items": [], "total": 0, "page": 1, "pageSize": 10})
 
     async def test_road_batch_atomic_validation_deduplication_and_rollback(self):
         for invalid in ("999", "106"):
@@ -366,6 +377,8 @@ class RoadReceivableTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text[:200])
         workbook = load_workbook(BytesIO(response.content))
         self.assertEqual(workbook.active.max_row, 2)
+        headers = [cell.value for cell in workbook.active[1]]
+        self.assertEqual(workbook.active.cell(2, headers.index("计费重量") + 1).value, "120.00")
         cells = list(workbook.active[2])
         self.assertEqual(next(cell for cell in cells if cell.value == "=1+2").data_type, "s")
         self.assertEqual(next(cell for cell in cells if cell.value == "0013800000000").data_type, "s")

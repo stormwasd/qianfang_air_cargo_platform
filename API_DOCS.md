@@ -1,5 +1,67 @@
 # API 文档
 
+## 2026-10-22 汽运代理对账联调修正
+
+本次涉及以下四个接口，认证、查询入参、日期边界、分页及各自独立的结算状态不变：
+
+| 模块 | 方法 | 路由 |
+| --- | --- | --- |
+| 应收汽运代理 | GET | `/api/v1/reconciliation/receivable/road-agent/road` |
+| 应收汽运代理 | POST | `/api/v1/reconciliation/receivable/road-agent/road/export` |
+| 应付汽运代理 | GET | `/api/v1/reconciliation/road-agent/road` |
+| 应付汽运代理 | POST | `/api/v1/reconciliation/road-agent/road/export` |
+
+### 新增计费重量
+
+两个列表的每条 `data.items` 新增 `chargeable_weight`（`string/null`），直接读取费用登记台同源的 `consignment_notes.form_data.chargeable_weight`。数值转成字符串，保留零值；字符串原样保留小数位。未保存、null、布尔值、对象、数组或非有限数值返回null，不使用 `weight` 代替，不根据体积、费率或总运费反推。原有托运书新增/修改接口可通过动态 `form_data` 保存该键，无需新增业务表字段。两个Excel导出均新增“计费重量”列，位于“重量”之后、“体积”之前；缺失时单元格留空。
+
+例如，已保存 `form_data.weight=81, form_data.chargeable_weight=100` 时，应收列表响应如下（其余字段仍按同源数据返回）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "items": [{
+      "settlement_status": 0,
+      "settlement_auditor_name": null,
+      "settlement_time": null,
+      "transport_date": "2026-10-21",
+      "customer_name": "Tester",
+      "cargo_name": "五金件",
+      "origin_city": "北京市-市辖区-西城区",
+      "origin_address": null,
+      "destination_city": "河北省-保定市-徐水区",
+      "destination_address": null,
+      "consignee_info": null,
+      "contact_phone": null,
+      "quantity": "2",
+      "weight": "81",
+      "chargeable_weight": "100",
+      "volume": null,
+      "vehicle_type": null,
+      "rate": null,
+      "total_freight": null,
+      "other_fees": null,
+      "total_amount": null,
+      "source_id": "371229268321112064",
+      "actual_customer_name": "Tester"
+    }],
+    "total": 1,
+    "page": 1,
+    "pageSize": 10
+  },
+  "msg": "success"
+}
+```
+
+应付列表保留原有 `agent_settlement_status`、`agent_settlement_auditor_name`、`agent_settlement_time`，同样新增 `chargeable_weight`，不改名为应收结算字段。
+
+### 修复 MySQL 排序规则冲突导致的500
+
+`GET /api/v1/reconciliation/receivable/road-agent/road?date_start=2026-10-22&date_end=2026-10-22` 是合法请求。原共享查询通过 `CAST(customers.id AS CHAR) = consignment_notes.customer_name` 关联客户，连接默认排序规则 `utf8mb4_0900_ai_ci` 与托运书列的 `utf8mb4_unicode_ci` 不同，会在统计总数时触发MySQL 1267，空结果日期也可能500。
+
+现改为将客户ID的十进制字符串和托运书客户原值作二进制精确比较，避免字符串排序规则冲突；不把客户名称转换为数字，避免 `7abc`、`007`、`7.0` 错误匹配客户ID `7`，也避免大整数ID的浮点精度问题。修复同时作用于两个模块的列表、筛选与导出。没有匹配客户时仍保留托运书并显示原始客户值；没有匹配单据时列表正常返回 `{"code":0,"data":{"items":[],"total":0,"page":1,"pageSize":10},"msg":"success"}`。前端无需修改上述请求。本次无需新增SQL迁移或 `config.py` 配置；原模块所需的已有迁移仍须完成。
+
 ## 应收对账：五个模块（25 个接口）
 
 本节按产品更正后的口径，**全部读取费用登记台应收数据**。统一前缀 `/api/v1/reconciliation/receivable`，均需 `Authorization: Bearer <access_token>`，认证规则与现有对账接口相同。以下是独立新增接口；原 `/api/v1/reconciliation/airline`、`pickup`、`delivery`、`air-agent`、`road-agent` 应付接口及其结算状态继续使用。
@@ -155,6 +217,7 @@ GET示例：`/api/v1/reconciliation/receivable/pickup/air?flight_date_start=2026
 | `destination_city` / `destination_address` | 目的城市（标准列）/详细地址 |
 | `consignee_info` / `contact_phone` | 收货人/联系电话 |
 | `quantity` / `weight` / `volume` | 件数/重量/体积 |
+| `chargeable_weight` | 计费重量，取 `form_data.chargeable_weight`；缺失返回null，不以重量代替 |
 | `vehicle_type` / `rate` | 车型/费率 |
 | `total_freight` / `other_fees` | 总运费/其他费用 |
 | `total_amount` | 已保存的应收总费用；没有该字段时null |
@@ -269,6 +332,7 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
 | `contact_phone` | 联系电话，取 `form_data.contact_phone` |
 | `quantity` | 件数，取 `form_data.quantity` |
 | `weight` | 重量，取 `form_data.weight` |
+| `chargeable_weight` | 计费重量，取 `form_data.chargeable_weight`，返回string/null；保留零值，缺失不以重量代替 |
 | `volume` | 体积，取 `form_data.volume` |
 | `vehicle_type` | 车型，取 `form_data.vehicle_type` |
 | `rate` | 费率，透传可选的同名已保存键 `form_data.rate`；缺失返回null，不用客户费率或总运费反推 |
@@ -276,7 +340,7 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
 | `other_fees` | 其他费用，取 `form_data.other_fees` |
 | `total_amount` | 应收总费用，读取 `form_data.total_amount` 原值；未保存则返回null，不在对账中重算 |
 
-实际提供的费用登记台查询样例（`transport_type=1&is_financial=true`）只有 `total_freight`、`other_fees` 等原始业务值，没有 `rate` 或 `total_amount`。现有汽运 `/consignment-notes/audit`、`/consignment-notes/financial/audit` 暂存/审核仅更新审核状态，不会生成这两个金额字段。因此该样例在对账中这两列均返回null，导出留空；不能据此假设应收总费用等于总运费加其他费用。若费用登记台前端另外计算显示这两列，须先核实其实际字段或计算规则，再补齐同源映射；本次不改变原有汽运保存、审核行为。
+实际提供的费用登记台查询样例（`transport_type=1&is_financial=true`）只有 `total_freight`、`other_fees` 等原始业务值，没有 `chargeable_weight`、`rate` 或 `total_amount`。现有汽运 `/consignment-notes/audit`、`/consignment-notes/financial/audit` 暂存/审核仅更新审核状态，不会生成这三个字段。因此该样例在对账中这三列均返回null，导出留空；不能据此假设计费重量等于重量、应收总费用等于总运费加其他费用。若费用登记台前端另外计算显示这些列，须先核实其实际字段或计算规则，再补齐同源映射；本次不改变原有汽运保存、审核行为。
 
 序号由前端按 `(page-1)*pageSize+行索引+1` 生成。标准列由原有托运书新增/修改接口随表单同步保存。原接口的动态 JSON 原样存储行为保持不变。
 
@@ -322,7 +386,7 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
 
 未传 `selected_items` 或传空数组时，导出全部符合筛选条件的记录；非空时，导出筛选结果与选中ID的交集。忽略 `page/pageSize` 分页，不受200行限制。日期省略时与列表默认值一致；导出JSON可显式传 `"date_start":null` 或 `"date_end":null` 取消对应边界，例如 `{"date_start":null,"date_end":null}` 导出全部日期。
 
-返回Excel文件，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，UTF-8文件名 `汽运代理对账列表_时间戳.xlsx`。列顺序与产品图片一致：序号、结算状态、托运日期、客户名称、货物名称、始发城市、始发详细地址、目的城市、目的详细地址、收货人、联系电话、件数、重量、体积、车型、费率、总运费、其他费用、应收总费用。客户名称列使用解析后的公司名称，状态转成“已结算/未结算”；字符串明确写为文本单元格，避免Excel公式执行并保留手机号前导零。
+返回Excel文件，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，UTF-8文件名 `汽运代理对账列表_时间戳.xlsx`。列顺序：序号、结算状态、托运日期、客户名称、货物名称、始发城市、始发详细地址、目的城市、目的详细地址、收货人、联系电话、件数、重量、计费重量、体积、车型、费率、总运费、其他费用、应收总费用。客户名称列使用解析后的公司名称，状态转成“已结算/未结算”；字符串明确写为文本单元格，避免Excel公式执行并保留手机号前导零。
 
 ### 错误响应
 

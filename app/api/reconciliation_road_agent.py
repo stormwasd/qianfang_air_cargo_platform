@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
-from sqlalchemy import String, cast, or_
+from sqlalchemy import LargeBinary, String, cast, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -52,7 +52,13 @@ def _query_rows(query, db):
     rows = db.query(ConsignmentNote, PeerRoadDepartureManualData, Customer.company_name).outerjoin(
         PeerRoadDepartureManualData,
         PeerRoadDepartureManualData.consignment_note_id == ConsignmentNote.id,
-    ).outerjoin(Customer, cast(Customer.id, String) == ConsignmentNote.customer_name).filter(
+    ).outerjoin(
+        Customer,
+        # IDs require exact matching. Binary comparison avoids MySQL 1267 when
+        # CAST uses the connection collation and the stored column uses another.
+        # Do not compare as numbers: MySQL would also match values such as '7abc'.
+        cast(cast(Customer.id, String), LargeBinary) == cast(ConsignmentNote.customer_name, LargeBinary),
+    ).filter(
         ConsignmentNote.transport_type == "1",
     )
     if query.date_start:
