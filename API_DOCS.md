@@ -1,5 +1,49 @@
 # API 文档
 
+## 2026-10-23 派送单位联系人及联系电话改为可选
+
+派送单位管理统一前缀 `/api/v1/delivery-units`，继续要求 `Authorization: Bearer <access_token>`。本次放宽联系人与联系电话的输入校验，新增、编辑均可在未填写联系方式时保存。
+
+| 接口 | 方法及路由 | 联系方式处理 |
+| --- | --- | --- |
+| 新增派送单位 | `POST /api/v1/delivery-units` | `contact_person`、`contact_phone` 均可省略、传null或空字符串，未填保存为 `""` |
+| 编辑派送单位 | `PUT /api/v1/delivery-units/{unit_id}` | 省略某字段保留该字段原值；显式传null或 `""` 清空对应字段 |
+| 派送单位详情 | `GET /api/v1/delivery-units/{unit_id}` | 两项继续返回string，未填返回 `""` |
+| 派送单位列表 | `GET /api/v1/delivery-units` | `data.items` 中两项继续返回string，未填返回 `""`；筛选分页不变 |
+
+新增时 `delivery_name`（1～200字符）及 `settlement_method`（整数）继续必填，`delivery_code` 可选，未填写沿用原自动编码逻辑。联系人最长50字符、联系电话最长20字符，填写时仍必须使用字符串；不新增手机号格式限制。两项相互独立，可只填其中一项。编辑只更新请求中明确提供的字段。
+
+新增请求示例（也可显式传 `"contact_person":null,"contact_phone":""`）：
+
+```json
+{"delivery_name":"测试派送单位","settlement_method":1}
+```
+
+新增成功响应示例：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "371229268321112064",
+    "delivery_code": "PSS003",
+    "delivery_name": "测试派送单位",
+    "contact_person": "",
+    "contact_phone": "",
+    "settlement_method": 1,
+    "creator_id": "265357797422665728",
+    "creator_name": "系统管理员",
+    "created_at": "2026-10-23T09:00:00+08:00",
+    "updated_at": "2026-10-23T09:00:00+08:00"
+  },
+  "msg": "派送单位创建成功"
+}
+```
+
+编辑示例：`PUT /api/v1/delivery-units/371229268321112064`，请求 `{"contact_phone":null}` 仅清空电话，联系人和其他未提供字段保留；请求 `{"contact_person":"","contact_phone":""}` 清空两项。成功响应结构同新增，消息为 `派送单位更新成功`；详情和列表消息为 `查询成功`，列表包装仍为 `{"code":0,"data":{"total":1,"items":[...]},"msg":"查询成功"}`。
+
+缺失新增必填字段、名称为空、联系方式超长或非字符串类型继续返回422；无有效登录凭证返回401/403；编辑或查询不存在的单位继续返回404。此次使用空字符串兼容数据库现有NOT NULL列和既有string响应，不需要执行SQL迁移或修改配置；不修改提货单位、客户等其他模块的联系人规则。
+
 ## 2026-10-22 汽运代理对账联调修正
 
 本次涉及以下四个接口，认证、查询入参、日期边界、分页及各自独立的结算状态不变：

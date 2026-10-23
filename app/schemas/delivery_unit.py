@@ -10,8 +10,8 @@ class DeliveryUnitCreate(BaseModel):
     """创建派送单位schema"""
     delivery_code: Optional[str] = Field(None, description="派送单位编码", max_length=50)
     delivery_name: str = Field(..., description="派送单位名称", min_length=1, max_length=200)
-    contact_person: str = Field(..., description="联系人", min_length=1, max_length=50)
-    contact_phone: str = Field(..., description="联系电话", min_length=1, max_length=20)
+    contact_person: Optional[str] = Field(None, description="联系人，可不填；省略、null或空字符串均保存为空字符串", max_length=50)
+    contact_phone: Optional[str] = Field(None, description="联系电话，可不填；省略、null或空字符串均保存为空字符串", max_length=20)
     settlement_method: int = Field(..., description="结算方式")
 
 
@@ -19,8 +19,8 @@ class DeliveryUnitUpdate(BaseModel):
     """更新派送单位schema"""
     delivery_code: Optional[str] = Field(None, description="派送单位编码", max_length=50)
     delivery_name: Optional[str] = Field(None, description="派送单位名称", min_length=1, max_length=200)
-    contact_person: Optional[str] = Field(None, description="联系人", min_length=1, max_length=50)
-    contact_phone: Optional[str] = Field(None, description="联系电话", min_length=1, max_length=20)
+    contact_person: Optional[str] = Field(None, description="联系人，省略保留原值；null或空字符串清空", max_length=50)
+    contact_phone: Optional[str] = Field(None, description="联系电话，省略保留原值；null或空字符串清空", max_length=20)
     settlement_method: Optional[int] = Field(None, description="结算方式")
 
 
