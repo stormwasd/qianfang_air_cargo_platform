@@ -233,7 +233,7 @@ from app.schemas.departure_tracking import CsaDepartureItem, CsaProductInformati
 
 @router.get("/china-southern-air", summary="南航出港列表")
 async def get_china_southern_air_departures(
-    waybill_number: Optional[str] = Query(None, description="运单号，多个用逗号隔开"),
+    waybill_number: Optional[str] = Query(None, description="运单号关键词，支持包含式模糊查询；多个用英文逗号隔开，匹配任意一个即可"),
     flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-06-16"),
     flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-06-20"),
     flight_number: Optional[str] = Query(None, description="航班号"),
@@ -300,9 +300,12 @@ async def get_china_southern_air_departures(
             query = query.filter(func.replace(date_str, '/', '-') <= f"{flight_date_end} 23:59:59")
 
     if waybill_number:
-        waybill_numbers = [wn.strip() for wn in waybill_number.split(",") if wn.strip()]
+        waybill_numbers = list(dict.fromkeys(wn.strip() for wn in waybill_number.split(",") if wn.strip()))
         if waybill_numbers:
-            query = query.filter(ChinaSouthernAirApprovalData.waybill_number.in_(waybill_numbers))
+            query = query.filter(or_(
+                *(ChinaSouthernAirApprovalData.waybill_number.contains(wn, autoescape=True)
+                  for wn in waybill_numbers)
+            ))
 
     if origin:
         query = query.filter(ChinaSouthernAirApprovalData.flight_info.like(f"%{origin} -%"))

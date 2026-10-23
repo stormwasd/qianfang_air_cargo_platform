@@ -1,5 +1,68 @@
 # API 文档
 
+## 2026-10-23 南航出港跟踪支持多个运单号关键词模糊查询
+
+接口：`GET /api/v1/departure-tracking/china-southern-air`（智能跟单 → 出港跟踪 → 南方航空）。认证仍为 `Authorization: Bearer <access_token>`。
+
+### 运单号查询规则
+
+`waybill_number` 保持可选string，现从“多个完整单号精确匹配”调整为“多个关键词包含式模糊匹配”：
+
+| 入参示例 | 查询含义 |
+| --- | --- |
+| `784-22007775` | 匹配运单号中包含 `784-22007775` 的记录，完整单号仍可查询 |
+| `22007775` 或 `7775` | 匹配运单号任意位置包含该片段的记录 |
+| `7775,7776` | 包含 `7775` **或** `7776`，任意一个命中即可 |
+| `784-22007775,7776` | 完整单号与部分单号可混合使用 |
+| ` 7775, ,7776,7775 ` | 去掉各关键词首尾空白，忽略空项并去重；同一记录不会因命中多个关键词而重复返回 |
+
+未传、空字符串、纯空白或仅逗号/空白时，不增加运单号限制，沿用原行为。`%`、`_` 等字符按普通文本匹配，不开放SQL通配符语法；通过查询参数编码传递特殊字符，例如字面量 `%` 应编码为 `%25`。有有效关键词时，运单号为null的记录不命中。
+
+多个关键词先以“或”组合，再与日期、航班、审核状态等其他条件以“且”组合。数据库筛选完成后再统计 `total`、排序和分页，不在当前页内过滤。
+
+### 查询入参
+
+| 参数 | 类型/默认值 | 说明 |
+| --- | --- | --- |
+| `waybill_number` | 可选string | 运单号关键词，多个用英文逗号分隔，按上述规则模糊查询 |
+| `flight_date_start`、`flight_date_end` | 可选string | 航班日期开始、结束，格式 `YYYY-MM-DD`，沿用原日期区间逻辑 |
+| `flight_number` | 可选string | 航班号 |
+| `audit_status` | 可选integer | 0未审、1暂存、2已审 |
+| `origin`、`destination` | 可选string | 始发站、目的站 |
+| `customer_name` | 可选string | 客户名称 |
+| `waybill_status` | 可选string | 例如UU、KK，对应 `booking_no` 中的标识 |
+| `is_suspected_abnormal` | 可选boolean | 疑似异常，沿用原筛选规则 |
+| `page` | integer，默认1 | 大于等于1 |
+| `pageSize` | integer，默认10 | 1～500 |
+
+请求示例：
+
+```http
+GET /api/v1/departure-tracking/china-southern-air?waybill_number=7775,7776&flight_date_start=2026-10-23&flight_date_end=2026-10-23&page=1&pageSize=20
+Authorization: Bearer <access_token>
+```
+
+成功响应示例（只列出每条记录的部分字段，其余原有字段仍返回）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 2,
+    "items": [
+      {"id": "2", "waybill_number": "784-22007776", "flight_info": "CZ1234 / 2026-10-23 / SZX - PEK", "product_information": [], "lalamove_information": [], "manual_data": null},
+      {"id": "1", "waybill_number": "784-22007775", "flight_info": "CZ1234 / 2026-10-23 / SZX - PEK", "product_information": [], "lalamove_information": [], "manual_data": null}
+    ],
+    "data_update_time": null
+  },
+  "msg": "查询成功"
+}
+```
+
+无匹配时 `total=0`、`items=[]`；翻页超出范围时 `items=[]`，`total` 仍为所有筛选条件下的总数。`data_update_time` 保持原成功执行时间口径，有成功记录时仍返回已有时间。分页值不合法等原参数验证仍返回422。
+
+本次仅调整该南航出港列表的运单号筛选及参数说明，响应结构、关联明细、排序、审核与采集逻辑不变；其他列表（包括深航出港、南航订舱批复、费用登记台）不调整。无需新增配置或执行SQL迁移。
+
 ## 2026-10-23 南航费用登记台开单件数、开单重量映射修正
 
 `GET /api/v1/financial-audit/air`（空运费用登记台列表）保持现有认证、查询参数、分页及响应结构。本次仅修正关联南航源运单（`source_type=china_southern_air`）的开单件数、重量取值：唐翼表头“订舱件数、重量”即开单件数、重量，应读取与 `GET /api/v1/departure-tracking/china-southern-air` 同源的两个字段，不再拆分 `billing_qty` 获取开单数据。
