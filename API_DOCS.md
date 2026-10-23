@@ -1,5 +1,51 @@
 # API 文档
 
+## 2026-10-23 南航费用登记台开单件数、开单重量映射修正
+
+`GET /api/v1/financial-audit/air`（空运费用登记台列表）保持现有认证、查询参数、分页及响应结构。本次仅修正关联南航源运单（`source_type=china_southern_air`）的开单件数、重量取值：唐翼表头“订舱件数、重量”即开单件数、重量，应读取与 `GET /api/v1/departure-tracking/china-southern-air` 同源的两个字段，不再拆分 `billing_qty` 获取开单数据。
+
+| 南航源字段 | 列表 `data.items[]` 字段 | 应付信息字段 | 返回类型 |
+| --- | --- | --- | --- |
+| `booking_pieces` | `billing_quantity` | `payable.billing_pieces` | string |
+| `booking_weight` | `billing_weight` | `payable.billing_weight` | string |
+
+请求示例（日期、状态等原有筛选仍可使用）：
+
+```http
+GET /api/v1/financial-audit/air?airline_type=china_southern_air&page=1&pageSize=20
+Authorization: Bearer <access_token>
+```
+
+例如，源数据 `booking_pieces="30"`、`booking_weight="300"`、`billing_qty="0 / 0 / 0 (30 / 300 / 1.80)"`，响应对应部分如下（省略其他字段）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [{
+      "source_type": "china_southern_air",
+      "source_id": "201",
+      "billing_quantity": "30",
+      "billing_weight": "300",
+      "payable": {
+        "billing_pieces": "30",
+        "billing_weight": "300"
+      }
+    }]
+  },
+  "msg": "success"
+}
+```
+
+两个值独立读取，保留 `"0"` 和字符串小数位；源字段为null或空字符串时返回 `""`，不使用 `billing_qty`、计费重量或其他字段代替。
+
+关联南航源运单的这两个应付展示字段始终以源数据为准，包括已暂存或已审核记录。`POST /api/v1/financial-audit/air/audit?action=save` 或 `action=submit` 的请求契约保持兼容，但随后查询时，保存的 `payable.billing_pieces`、`payable.billing_weight` 不覆盖源字段，避免旧页面/历史暂存的零值遮盖修正。其他人工保存字段和审核状态仍按原规则处理；查询不会改写数据库中保存的JSON。源数据后续更新时，两项展示值随之更新。
+
+手工新增的南航财务单据没有关联源运单，继续使用人工填写的件数、重量。深航、同行空运的映射和暂存覆盖规则不变；南航应收区 `receivable.pieces` 仍沿用原 `billing_qty` 拆分及人工覆盖规则，应收重量、计费重量、过机件数和费用计算规则不变。复用费用登记台构建逻辑的下游对账接口继续按原规则读取应收数据，各模块的结算状态规则不变。出港跟单接口的字段名、源数据采集和告警逻辑不变。
+
+本次无需SQL迁移、新表或新增配置。
+
 ## 2026-10-23 派送单位联系人及联系电话改为可选
 
 派送单位管理统一前缀 `/api/v1/delivery-units`，继续要求 `Authorization: Bearer <access_token>`。本次放宽联系人与联系电话的输入校验，新增、编辑均可在未填写联系方式时保存。

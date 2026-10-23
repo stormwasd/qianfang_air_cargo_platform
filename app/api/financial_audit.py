@@ -351,8 +351,6 @@ async def build_air_financial_audits(
             if query.flight_date_end and fl_date > str(query.flight_date_end):
                 continue
                 
-            pieces, weight = parse_csa_qty_weight(approval.billing_qty)
-
             candidate_items.append({
                 "source_type": "china_southern_air",
                 "source_id": str(approval.id),
@@ -367,8 +365,9 @@ async def build_air_financial_audits(
                 "agent_name": get_canonical_agent_name("china_southern_air"),
                 "airline": "南航",
                 "cargo_name": safe_str(approval.goods_name),
-                "billing_quantity": pieces,
-                "billing_weight": weight,
+                # Tangyi's booking quantities are the waybill's billed quantities.
+                "billing_quantity": safe_str(approval.booking_pieces),
+                "billing_weight": safe_str(approval.booking_weight),
                 "creator": "",
                 "creation_time": safe_str(approval.booking_time),
                 "_main": approval,
@@ -839,6 +838,8 @@ async def build_air_financial_audits(
 
         elif source_type == "china_southern_air":
             approval = item["_main"]
+            # Keep the existing receivable pieces mapping independent of payable billing.
+            receivable_pieces, _ = parse_csa_qty_weight(approval.billing_qty)
             related_lms = csa_lalamoves_map.get(approval.id, [])
             
             gate_pieces_val = sum(safe_int(l.pieces) for l in related_lms)
@@ -932,7 +933,7 @@ async def build_air_financial_audits(
                 airline=item["airline"],
                 flight_number=item["flight_number"],
                 cargo_name=item["cargo_name"],
-                pieces=item["billing_quantity"],
+                pieces=receivable_pieces,
                 chargeable_weight=safe_str(approval.chargeable_weight),
                 freight_rate=safe_str(approval.ref_rate),
                 document_fee="",
@@ -1072,6 +1073,11 @@ async def build_air_financial_audits(
                     p_override = {}
             if isinstance(p_override, dict):
                 payable_dict.update({k: str(v) for k, v in p_override.items() if v is not None})
+
+        if source_type == "china_southern_air":
+            # Source-owned display fields must not revert to stale saved billing_qty values.
+            payable_dict["billing_pieces"] = item["billing_quantity"]
+            payable_dict["billing_weight"] = item["billing_weight"]
 
         # Agent names are owned by the consignment note. This also suppresses
         # stale RPA values that may already exist in historical override JSON.
