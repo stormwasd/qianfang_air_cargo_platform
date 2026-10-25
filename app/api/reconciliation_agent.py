@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_user
-from app.api.financial_audit import build_air_financial_audits
+from app.api.financial_audit import build_air_financial_audits, parse_form_data, safe_str
 from app.core.response import ResponseModel, success_response
 from app.database import get_db
 from app.models.air_financial_audit_data import AirFinancialAuditData
@@ -32,6 +32,38 @@ from app.schemas.reconciliation_agent import (
 from app.utils.helpers import format_datetime_china, get_china_now
 
 router = APIRouter()
+
+
+def _load_actual_flights(
+    db: Session, source_keys: set[tuple[str, int]],
+) -> dict[tuple[str, str], str]:
+    """Read source-owned flights in bounded batches, excluding fee-desk manual rows."""
+    flights = {}
+    for kind, model in (
+        ("shenzhen_air", ShenzhenAirBookingExport),
+        ("china_southern_air", ChinaSouthernAirApprovalData),
+        ("peer_air", ConsignmentNote),
+    ):
+        ids = sorted(source_id for source_type, source_id in source_keys if source_type == kind)
+        if kind == "peer_air":
+            columns = [model.id, model.form_data]
+        elif kind == "shenzhen_air":
+            columns = [model.id, model.actual_flight, model.billing_flight]
+        else:
+            columns = [model.id, model.actual_flight]
+        for start in range(0, len(ids), 500):
+            query = db.query(*columns).filter(model.id.in_(ids[start:start + 500]))
+            if kind == "peer_air":
+                query = query.filter(model.transport_type == "0")
+            for record in query.all():
+                if kind == "peer_air":
+                    value = parse_form_data(record[1]).get("actual_flight")
+                    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+                        value = ""
+                else:
+                    value = record[1] or (record[2] if kind == "shenzhen_air" else "")
+                flights[(kind, str(record[0]))] = safe_str(value)
+    return flights
 
 
 def _get_list_query(
@@ -73,6 +105,13 @@ async def _collect_items(query, db, current_user):
         (fa.source_type, str(fa.id if fa.source_id in (0, fa.id) else fa.source_id)): fa
         for fa in records
     }
+    source_keys = set()
+    for row in result.data["items"]:
+        fa = fa_map.get((row["source_type"], row["source_id"]))
+        # Manual fee-desk IDs must never resolve to unrelated source-table IDs.
+        if fa is None or fa.source_id not in (0, fa.id):
+            source_keys.add((row["source_type"], int(row["source_id"])))
+    actual_flights = _load_actual_flights(db, source_keys)
     waybills = {w.strip() for w in (query.waybill_numbers or "").split(",") if w.strip()}
     items = []
     for row in result.data["items"]:
@@ -107,6 +146,12 @@ async def _collect_items(query, db, current_user):
             financial_audit_status=row["financial_audit_status"],
             financial_auditor_name=row["financial_auditor_name"],
             actual_customer_name=row["actual_customer_name"],
+            actual_flight_number=(
+                actual_flights.get((row["source_type"], row["source_id"]))
+                or safe_str(receivable.get("flight_number"))
+            ),
+            actual_pieces=safe_str(row["payable"].get("gate_pieces")),
+            actual_weight=safe_str(row["payable"].get("transit_weight")),
         ).model_dump())
     items.sort(key=lambda item: (item["flight_date"] or "", item["waybill_number"] or "", int(item["source_id"])), reverse=True)
     return items
@@ -254,6 +299,11 @@ async def export_agent_reconciliation_list(
 
     columns = [("agent_settlement_status", "结算状态"), ("actual_customer_name", "客户公司名称")]
     columns.extend((name, field.description or name) for name, field in ReceivableResponse.model_fields.items())
+    columns.extend([
+        ("actual_flight_number", "实走航班号"),
+        ("actual_pieces", "实走件数"),
+        ("actual_weight", "实走重量"),
+    ])
     workbook = Workbook(write_only=True)
     sheet = workbook.create_sheet("空运代理对账记录")
     sheet.append(["序号"] + [label for _, label in columns])

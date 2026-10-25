@@ -26,6 +26,9 @@ class AgentReconciliationItemResponse(ReceivableResponse):
     financial_audit_status: int = 0
     financial_auditor_name: Optional[str] = None
     actual_customer_name: str = Field("", description="客户ID对应的公司名称，原客户值保留在customer_name")
+    actual_flight_number: str = Field("", description="实走航班号；来源走货航班优先，缺失时回退开单航班")
+    actual_pieces: str = Field("", description="实走件数，取费用登记台最终payable.gate_pieces，不以开单件数替代")
+    actual_weight: str = Field("", description="实走重量，取费用登记台最终payable.transit_weight，不以计费重量替代")
 
 
 class AgentReconciliationListResponse(BaseModel):

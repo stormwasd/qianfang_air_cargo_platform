@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_current_active_user
 from app.api.financial_audit import build_air_financial_audits, get_air_financial_audits
 from app.api.reconciliation_agent import (
+    _load_actual_flights,
     batch_confirm_agent_settlement, cancel_agent_settlement,
     confirm_agent_settlement, export_agent_reconciliation_list,
     get_agent_reconciliation_list, router,
@@ -125,11 +126,88 @@ class AgentReconciliationTests(unittest.IsolatedAsyncioTestCase):
         for row in result["items"]:
             self.assertTrue(set(ReceivableResponse.model_fields).issubset(row))
             self.assertEqual(row["agent_settlement_status"], 0)
+            for name in ("actual_flight_number", "actual_pieces", "actual_weight"):
+                self.assertIsInstance(row[name], str)
         by_id = {row["source_id"]: row for row in result["items"]}
         self.assertEqual(by_id["101"]["waybill_number"], "479-62200552")
         self.assertEqual(by_id["201"]["waybill_number"], "784-12345678")
         self.assertEqual(by_id["301"]["waybill_number"], "999-12345678")
         self.assertEqual(by_id["101"]["actual_customer_name"], "测试客户")
+
+    async def test_actual_transport_values_use_source_flights_and_final_payable(self):
+        self.db.get(ShenzhenAirBookingExport, 101).actual_flight = "ZH9637"
+        self.db.get(ChinaSouthernAirApprovalData, 201).actual_flight = "CZ5678"
+        note = self.db.get(ConsignmentNote, 301)
+        note.form_data = json.dumps({"quantity": "99", "actual_flight": "CA3456"})
+        self.db.add_all([
+            ShenzhenAirBillingTimeContainer(id=601, booking_export_id=101, quantity="2", weight="20.5"),
+            ShenzhenAirBillingTimeContainer(id=602, booking_export_id=101, quantity="3", weight="30.25"),
+            CsaLalamoveInformation(id=603, approval_data_id=201, pieces="4", weight="40.5"),
+            CsaLalamoveInformation(id=604, approval_data_id=201, pieces="1", weight="10"),
+            AirFinancialAuditData(id=501, source_type="peer_air", source_id=301,
+                                  payable_data={"gate_pieces": "6", "transit_weight": "60.75"}),
+        ])
+        self.db.commit()
+        rows = {row["source_id"]: row for row in (await self.listing())["items"]}
+        for source_id, expected in (
+            ("101", ("ZH9637", "5", "50.75")),
+            ("201", ("CZ5678", "5", "50.50")),
+            ("301", ("CA3456", "6", "60.75")),
+        ):
+            with self.subTest(source_id=source_id):
+                row = rows[source_id]
+                self.assertEqual(tuple(row[k] for k in (
+                    "actual_flight_number", "actual_pieces", "actual_weight",
+                )), expected)
+
+        self.db.add(AirFinancialAuditData(
+            id=502, source_type="shenzhen_air", source_id=101,
+            payable_data={"gate_pieces": 0, "transit_weight": 0},
+            receivable_data={"pieces": "999", "chargeable_weight": "999", "flight_number": "ZH9999"},
+        ))
+        self.db.commit()
+        row = (await self.listing(waybill_numbers="479-62200552"))["items"][0]
+        self.assertEqual((row["actual_flight_number"], row["actual_pieces"], row["actual_weight"]),
+                         ("ZH9637", "0", "0"))
+        self.assertEqual((row["pieces"], row["chargeable_weight"], row["flight_number"]),
+                         ("999", "999", "ZH9999"))
+
+    async def test_actual_flight_fallbacks_and_missing_peer_values(self):
+        self.db.get(ShenzhenAirBookingExport, 101).billing_flight = "ZH1111"
+        note = self.db.get(ConsignmentNote, 301)
+        note.flight_number = "CA2222"
+        manual = self.db.get(AirFinancialAuditData, 401)
+        manual.receivable_data = dict(manual.receivable_data, flight_number="MANUAL-FLIGHT")
+        manual.payable_data = dict(manual.payable_data, gate_pieces="7", transit_weight="70")
+        # A coincident source ID must not overwrite the manual bill's own flight.
+        self.db.add(ShenzhenAirBookingExport(id=401, actual_flight="UNRELATED-FLIGHT"))
+        self.db.commit()
+        rows = {row["source_id"]: row for row in (await self.listing())["items"]}
+        self.assertEqual(rows["101"]["actual_flight_number"], "ZH1111")
+        self.assertEqual(rows["201"]["actual_flight_number"], "CZ1234")
+        self.assertEqual(rows["301"]["actual_flight_number"], "CA2222")
+        self.assertEqual((rows["301"]["actual_pieces"], rows["301"]["actual_weight"]), ("", ""))
+        self.assertEqual(tuple(rows["401"][k] for k in (
+            "actual_flight_number", "actual_pieces", "actual_weight",
+        )), ("MANUAL-FLIGHT", "7", "70"))
+        self.assertEqual(tuple(rows["402"][k] for k in (
+            "actual_flight_number", "actual_pieces", "actual_weight",
+        )), ("", "", ""))
+
+    async def test_actual_flights_are_batched_and_handle_invalid_peer_forms(self):
+        forms = ["invalid-json", "[]", '{"actual_flight": {}}', '{"actual_flight": true}']
+        self.db.add_all([ConsignmentNote(
+            id=1000+i, transport_type="0", company_name="批量代理",
+            form_data=forms[i] if i < len(forms) else json.dumps({"actual_flight": f"CA{i}"}),
+        ) for i in range(501)])
+        self.db.commit()
+        with patch.object(self.db, "query", wraps=self.db.query) as queries:
+            flights = _load_actual_flights(self.db, {("peer_air", 1000+i) for i in range(501)})
+        self.assertEqual(queries.call_count, 2)  # 500 IDs per batch, never one query per row.
+        self.assertEqual(len(flights), 501)
+        for i in range(len(forms)):
+            self.assertEqual(flights[("peer_air", str(1000+i))], "")
+        self.assertEqual(flights[("peer_air", "1500")], "CA500")
 
     async def test_final_receivable_matches_fee_desk_overrides_and_totals(self):
         self.db.add(AirFinancialAuditData(
@@ -242,7 +320,11 @@ class AgentReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(peer_item["payable"]["billing_weight"], "20")
         self.assertEqual(peer_item["receivable"]["pieces"], "2")
         self.assertEqual(peer_item["receivable"]["chargeable_weight"], "")
-        self.assertEqual((await self.listing(waybill_numbers="999-12340001"))["total"], 1)
+        listing = await self.listing(waybill_numbers="999-12340001")
+        self.assertEqual(listing["total"], 1)
+        self.assertEqual(tuple(listing["items"][0][k] for k in (
+            "actual_flight_number", "actual_pieces", "actual_weight",
+        )), ("CA1234", "", ""))
 
         for query, list_function, status_field in (
             (AirlineReconciliationQuery, get_airline_reconciliation_list, "airline_settlement_status"),
@@ -311,8 +393,28 @@ class AgentReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(rows), 6)
         self.assertEqual(rows[0], tuple(["序号", "结算状态", "客户公司名称"] + [
             f.description for f in ReceivableResponse.model_fields.values()
-        ]))
+        ] + ["实走航班号", "实走件数", "实走重量"]))
         self.assertTrue(all(row[1] == "未结算" for row in rows[1:]))
+
+    async def test_export_actual_columns_match_list_and_preserve_zero(self):
+        self.db.get(ShenzhenAirBookingExport, 101).actual_flight = "=SOURCE-FLIGHT"
+        self.db.add(AirFinancialAuditData(
+            id=501, source_type="shenzhen_air", source_id=101,
+            payable_data={"gate_pieces": "0", "transit_weight": "0"},
+        ))
+        self.db.commit()
+        item = (await self.listing(waybill_numbers="479-62200552"))["items"][0]
+        rows = await self.export_rows(selected_items=[{"source_type": "shenzhen_air", "source_id": "101"}])
+        for name, label in (("actual_flight_number", "实走航班号"),
+                            ("actual_pieces", "实走件数"), ("actual_weight", "实走重量")):
+            self.assertEqual(rows[1][rows[0].index(label)], item[name])
+        response = await export_agent_reconciliation_list(
+            AgentReconciliationExportRequest(waybill_numbers="479-62200552"), self.db, self.user,
+        )
+        body = b"".join([chunk async for chunk in response.body_iterator])
+        workbook = load_workbook(BytesIO(body), read_only=True, data_only=False)
+        self.assertTrue(all(cell.data_type != "f" for row in workbook.active.rows for cell in row))
+        workbook.close()
 
     async def test_export_selection_filters_and_formula_protection(self):
         fa = self.db.get(AirFinancialAuditData, 401)
@@ -359,6 +461,9 @@ class AgentReconciliationTests(unittest.IsolatedAsyncioTestCase):
             response = client.get(prefix+"/air", params={"waybill_numbers": "479-62200552"})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["data"]["total"], 1)
+            for name in ("actual_flight_number", "actual_pieces", "actual_weight"):
+                self.assertIn(name, schema["components"]["schemas"]["AgentReconciliationItemResponse"]["properties"])
+                self.assertIsInstance(response.json()["data"]["items"][0][name], str)
             for params in ({"flight_date_start": "bad"}, {"settlement_status": 3}, {"page": 0}):
                 self.assertEqual(client.get(prefix+"/air", params=params).status_code, 422)
             self.assertEqual(client.get(prefix+"/air", params={

@@ -601,6 +601,44 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
 | `financial_auditor_name` | string/null | 财务审核人 |
 | `actual_customer_name` | string | 客户 ID 对应的公司名称，未匹配时为空字符串 |
 
+实走信息为每个 `items` 元素的平铺字段，与应收字段并列，不嵌套在 `payable` 或 `receivable` 中：
+
+| 字段 | 类型 | 取值口径 |
+| --- | --- | --- |
+| `actual_flight_number` | string | 实走航班号。深航优先取来源 `actual_flight`，为空时取来源开单航班 `billing_flight`；南航优先取来源 `actual_flight`；同行空运优先取托运书 `form_data.actual_flight`。上述取值为空时，回退费用登记台最终应收 `flight_number`。手工新增财务单据只使用自身应收 `flight_number`，不关联同 ID 的来源单据；均无值时返回 `""` |
+| `actual_pieces` | string | 实走件数，取费用登记台最终 `payable.gate_pieces`，包含财务暂存/审核后的覆盖值。深航基础值为计飞/集装器明细件数合计，南航基础值为货拉明细件数合计 |
+| `actual_weight` | string | 实走重量，取费用登记台最终 `payable.transit_weight`，包含财务暂存/审核后的覆盖值。深航基础值为计飞/集装器明细重量合计，南航基础值为货拉明细重量合计 |
+
+实走件数、重量不使用应收 `pieces`、`weight` 或 `chargeable_weight` 替代，也不改写这些原有字段。同行空运没有实走件数、重量时返回 `""`；手工新增单据读取自身已保存的应付对应字段，未填写时返回 `""`；深航、南航没有明细时沿用费用登记台的 `"0"`、`"0.00"` 默认值。有效零值保持为数字字符串，不转换为空值。实走航班号延续既有对账的开单航班回退口径，不代表已确认实际起飞。
+
+响应示例（仅展示身份及本次新增字段，原有完整应收字段仍全部返回）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "items": [
+      {
+        "source_type": "shenzhen_air",
+        "source_id": "101",
+        "waybill_number": "479-62200552",
+        "flight_number": "ZH9637",
+        "actual_flight_number": "ZH9637",
+        "actual_pieces": "5",
+        "actual_weight": "50.75",
+        "agent_settlement_status": 0
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "pageSize": 20
+  },
+  "msg": "success"
+}
+```
+
+此次为兼容性新增响应字段：查询参数、路由、分页、来源审核规则、金额计算及结算状态不变，不新增实走字段筛选参数，不需要数据库迁移。前端三列分别绑定 `actual_flight_number`、`actual_pieces`、`actual_weight`，保留 `"0"` 的展示，不再从开单或计费字段推算实走值。
+
 应收区字段完整映射如下（所有字段类型均为 `string/null`）：
 
 | 字段 | 说明 | 字段 | 说明 |
@@ -679,6 +717,8 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
 `selected_items` 不传、为 `null` 或空数组时导出全部筛选结果；非空时导出筛选结果与选中单据的交集，最多传 1000 项。忽略 `page`、`pageSize` 的分页作用，不截取当前页；两个字段若传入仍须为正整数。`{}` 可导出全部符合业务准入规则的记录。
 
 成功响应为 Excel 二进制流，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，`Content-Disposition` 提供 UTF-8 文件名 `空运代理对账列表_时间戳.xlsx`。导出列包含序号、结算状态（未结算/已结算）、客户公司名称及全部应收字段，顺序与上表对应的费用登记台应收模型一致。输入内容以文本写入，避免被当作 Excel 公式执行。
+
+导出在全部原有列末尾追加“实走航班号”“实走件数”“实走重量”三列，取值分别与列表的 `actual_flight_number`、`actual_pieces`、`actual_weight` 一致；原有列的顺序不变，选中下载与批量下载均适用，零值和公式文本保护规则继续保留。
 
 ### 错误处理
 
