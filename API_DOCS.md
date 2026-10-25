@@ -458,12 +458,17 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
 | `date_end` | date | 北京时间当天；托运日期结束，包含当天，格式 `YYYY-MM-DD` |
 | `customer_name` | string | 可选；传纯数字客户ID时精确匹配；其他值同时模糊匹配托运书客户原值和客户公司名称 |
 | `destination_city` | string | 可选；模糊匹配目的城市，沿用托运书标准列 `destination` |
+| `settlement_status` | int，可选 | 本汽运代理对账的结算状态：0=未结算、1=已结算；不传不限 |
 | `page` | int | 默认1，必须≥1 |
 | `pageSize` | int | 默认10，范围1～200 |
 
 日期默认值在每次请求时按北京时间生成，不在服务启动时固定。客户及目的城市输入前后空格会去除，`%`、`_` 按普通字符搜索。所有筛选在数据库分页之前执行，排序为托运日期倒序、托运书ID倒序。客户下拉选择可复用现有客户查询接口，目的城市字典由前端沿用现有字典接口，不增加字典接口。
 
-示例：`GET /api/v1/reconciliation/road-agent/road?date_start=2026-10-18&date_end=2026-10-25&customer_name=7&destination_city=SZX&page=1&pageSize=20`。
+结算状态筛选参数为 `settlement_status`，响应展示字段仍为 `agent_settlement_status`，两者名称不同。前端下拉“未结算”传0，“已结算”传1，“全部”不传该参数（不要传空字符串或“全部”）。筛选依据为汽运扩展表的 `agent_settlement_status`，无扩展记录或该列为NULL时按0参与查询；不会创建或修改扩展记录。结算状态条件与日期、客户、目的城市条件取交集，并在统计 `total` 和分页之前执行。
+
+该筛选只作用于本应付汽运代理模块，不使用 `receivable_agent_settlement_status`，也不会改变 `/api/v1/reconciliation/receivable/road-agent/road` 的独立应收结算筛选。此次只新增可选查询参数，响应字段、原有默认查询行为、排序和结算操作不变，不需要额外数据库迁移。
+
+未结算示例：`GET /api/v1/reconciliation/road-agent/road?date_start=2026-10-18&date_end=2026-10-25&customer_name=7&destination_city=SZX&settlement_status=0&page=1&pageSize=20`。查询已结算将 `settlement_status` 改为1；查询全部结算状态时移除该参数。
 
 响应格式：`{"code":0,"data":{"items":[...],"total":3,"page":1,"pageSize":20},"msg":"success"}`。每个列表元素直接平铺以下字段；件数、重量、费率、费用可接受原始数值或字符串，返回时统一为 `string/null`，不丢失零值、手机号前导零和字符串小数位。动态表单中的布尔值、数组、对象不作为数值或文本列返回。
 
@@ -525,7 +530,7 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
 
 `POST /api/v1/reconciliation/road-agent/road/export`
 
-请求体支持与列表同名的全部筛选参数，并增加 `selected_items`（可选，最多1000项）：
+请求体支持与列表同名的全部筛选参数，包括新增的 `settlement_status`（可选，0=未结算、1=已结算，省略或传null不限制），并增加 `selected_items`（可选，最多1000项）：
 
 ```json
 {
@@ -533,17 +538,20 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
   "date_end":"2026-10-25",
   "customer_name":"7",
   "destination_city":"SZX",
+  "settlement_status":0,
   "selected_items":[{"source_id":"370976932327723008"}]
 }
 ```
 
 未传 `selected_items` 或传空数组时，导出全部符合筛选条件的记录；非空时，导出筛选结果与选中ID的交集。忽略 `page/pageSize` 分页，不受200行限制。日期省略时与列表默认值一致；导出JSON可显式传 `"date_start":null` 或 `"date_end":null` 取消对应边界，例如 `{"date_start":null,"date_end":null}` 导出全部日期。
 
+结算状态取值及无扩展记录/NULL按未结算的规则与列表一致。选中ID不绕过结算筛选，例如传 `settlement_status=0` 时，已结算的选中记录不会导出；筛选交集为空时仍返回400。导出列和响应文件格式不变。
+
 返回Excel文件，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，UTF-8文件名 `汽运代理对账列表_时间戳.xlsx`。列顺序：序号、结算状态、托运日期、客户名称、货物名称、始发城市、始发详细地址、目的城市、目的详细地址、收货人、联系电话、件数、重量、计费重量、体积、车型、费率、总运费、其他费用、应收总费用。客户名称列使用解析后的公司名称，状态转成“已结算/未结算”；字符串明确写为文本单元格，避免Excel公式执行并保留手机号前导零。
 
 ### 错误响应
 
-新接口使用HTTP错误状态（框架统一处理时错误正文可能被转换为项目格式）：日期开始晚于结束返回400；导出无匹配数据返回400；操作ID不存在/不是汽运返回404；ID、日期、分页或批量请求格式不合法返回422；并发写入唯一约束冲突回滚并返回409，可刷新后重试。未登录按现有认证规则返回401/403。损坏的动态表单JSON返回500并指出托运书ID，不静默伪造账单数据。
+新接口使用HTTP错误状态（框架统一处理时错误正文可能被转换为项目格式）：日期开始晚于结束返回400；导出无匹配数据返回400；操作ID不存在/不是汽运返回404；ID、日期、分页或批量请求格式不合法返回422；列表与导出的 `settlement_status` 只接受0、1（导出还允许null），传-1、2或非数字文本返回422；并发写入唯一约束冲突回滚并返回409，可刷新后重试。未登录按现有认证规则返回401/403。损坏的动态表单JSON返回500并指出托运书ID，不静默伪造账单数据。
 
 ## 应付对账：空运代理对账（5 个接口）
 

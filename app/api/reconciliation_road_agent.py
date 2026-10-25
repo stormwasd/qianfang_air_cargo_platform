@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
-from sqlalchemy import LargeBinary, String, cast, or_
+from sqlalchemy import LargeBinary, String, cast, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,13 +35,14 @@ def _get_list_query(
     date_end: Optional[date] = Query(None, description="托运日期结束，默认北京时间当天"),
     customer_name: Optional[str] = Query(None, description="客户ID精确匹配或客户名称模糊搜索"),
     destination_city: Optional[str] = Query(None, description="目的城市模糊搜索"),
+    settlement_status: Optional[int] = Query(None, ge=0, le=1, description="汽运代理结算状态：0=未结算，1=已结算；不传不限"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(10, ge=1, le=200),
 ):
     dates = {key: value for key, value in (("date_start", date_start), ("date_end", date_end)) if value is not None}
     return RoadAgentReconciliationQuery(
         **dates, customer_name=customer_name, destination_city=destination_city,
-        page=page, pageSize=pageSize,
+        settlement_status=settlement_status, page=page, pageSize=pageSize,
     )
 
 
@@ -77,6 +78,18 @@ def _query_rows(query, db):
     destination = (query.destination_city or "").strip()
     if destination:
         rows = rows.filter(ConsignmentNote.destination.contains(destination, autoescape=True))
+    return rows
+
+
+def _query_agent_rows(query, db):
+    # The base query is also used by receivable reconciliation, whose settlement
+    # state is independent. Apply this module's filter only in its own endpoints.
+    rows = _query_rows(query, db)
+    if query.settlement_status is not None:
+        rows = rows.filter(
+            func.coalesce(PeerRoadDepartureManualData.agent_settlement_status, 0)
+            == query.settlement_status,
+        )
     return rows
 
 
@@ -117,7 +130,7 @@ def get_road_agent_reconciliation_list(
     query: RoadAgentReconciliationQuery = Depends(_get_list_query),
     db: Session = Depends(get_db), current_user=Depends(get_current_active_user),
 ):
-    rows = _query_rows(query, db)
+    rows = _query_agent_rows(query, db)
     total = rows.count()
     rows = rows.order_by(ConsignmentNote.consignment_date.desc(), ConsignmentNote.id.desc()).offset(
         (query.page - 1) * query.pageSize,
@@ -199,7 +212,7 @@ def export_road_agent_reconciliation_list(
     req: RoadAgentReconciliationExportRequest,
     db: Session = Depends(get_db), current_user=Depends(get_current_active_user),
 ):
-    rows = _query_rows(req, db)
+    rows = _query_agent_rows(req, db)
     if req.selected_items:
         rows = rows.filter(ConsignmentNote.id.in_({int(item.source_id) for item in req.selected_items}))
     rows = rows.order_by(ConsignmentNote.consignment_date.desc(), ConsignmentNote.id.desc())

@@ -114,6 +114,31 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.listing(destination_city="CG")["total"], 1)
         self.assertEqual(self.listing(customer_name="无匹配")["total"], 0)
 
+    async def test_settlement_filter_handles_missing_null_and_pagination(self):
+        record = self.record(102)
+        record.agent_settlement_status = None
+        record.receivable_agent_settlement_status = 1
+        self.db.commit()
+        self.settle(101)
+
+        self.assertEqual(self.listing()["total"], 3)
+        settled = self.listing(settlement_status=1)
+        self.assertEqual(settled["total"], 1)
+        self.assertEqual(settled["items"][0]["source_id"], "101")
+        for page, source_id in ((1, "102"), (2, "103")):
+            result = self.listing(settlement_status=0, page=page, pageSize=1)
+            self.assertEqual(result["total"], 2)
+            self.assertEqual(result["items"][0]["source_id"], source_id)
+            self.assertEqual(result["items"][0]["agent_settlement_status"], 0)
+        self.assertEqual(self.listing(settlement_status=0, customer_name="7")["total"], 0)
+        self.assertEqual(self.listing(settlement_status=1, destination_city="CG")["total"], 1)
+        self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 2)
+        self.assertIsNone(self.record(103))
+
+        cancel_road_agent_settlement(101, self.db, self.user)
+        self.assertEqual(self.listing(settlement_status=1)["total"], 0)
+        self.assertEqual(self.listing(settlement_status=0)["total"], 3)
+
     async def test_missing_total_is_not_fabricated_and_numbers_preserve_zero(self):
         note = self.db.get(ConsignmentNote, 101)
         note.form_data = json.dumps({"quantity": 0, "total_freight": 0, "other_fees": "25"})
@@ -277,6 +302,22 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["total_amount"], "999")
         self.assertEqual(row["agent_settlement_status"], 1)
 
+    async def test_export_settlement_filter_matches_list_and_selected_intersection(self):
+        self.settle(101)
+        for status, expected_rows, expected_label in ((0, 3, "未结算"), (1, 2, "已结算")):
+            sheet = await self.export(settlement_status=status, pageSize=1)
+            self.assertEqual(sheet.max_row, expected_rows)
+            self.assertEqual(sheet.max_row - 1, self.listing(settlement_status=status)["total"])
+            self.assertTrue(all(row[1].value == expected_label for row in list(sheet.rows)[1:]))
+        selected = await self.export(
+            settlement_status=0, selected_items=[{"source_id": "101"}, {"source_id": "102"}],
+        )
+        self.assertEqual(selected.max_row, 2)
+        self.assertEqual(selected.cell(2, 4).value, "普通客户")
+        with self.assertRaises(HTTPException) as error:
+            await self.export(settlement_status=0, selected_items=[{"source_id": "101"}])
+        self.assertEqual(error.exception.status_code, 400)
+
     async def test_http_all_five_routes_validation_dates_and_auth(self):
         app = FastAPI()
         prefix = "/api/v1/reconciliation/road-agent"
@@ -293,17 +334,25 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.json()["data"]["total"], 3)
             with patch("app.schemas.reconciliation_road_agent.get_china_now", return_value=datetime(2026, 10, 21, 0, 1)):
                 self.assertEqual(client.get(prefix+"/road").json()["data"]["total"], 3)
-            for params in ({"date_start": "bad"}, {"page": 0}, {"pageSize": 201}):
+            for params in ({"date_start": "bad"}, {"page": 0}, {"pageSize": 201},
+                           {"settlement_status": -1}, {"settlement_status": 2}, {"settlement_status": "bad"}):
                 self.assertEqual(client.get(prefix+"/road", params=params).status_code, 422)
+            for value in (-1, 2, "bad"):
+                self.assertEqual(client.post(prefix+"/road/export", json={"settlement_status": value}).status_code, 422)
             self.assertEqual(client.get(prefix+"/road", params={"date_start": "2026-10-22", "date_end": "2026-10-21"}).status_code, 400)
             for source_id in ("0", "bad", "9223372036854775808"):
                 self.assertEqual(client.post(prefix+f"/road/{source_id}/settle").status_code, 422)
             self.assertEqual(client.post(prefix+"/road/106/settle").status_code, 404)
             self.assertEqual(client.post(prefix+"/road/101/settle").status_code, 200)
+            dates = {"date_start": "2026-10-19", "date_end": "2026-10-21"}
+            self.assertEqual(client.get(prefix+"/road", params={**dates, "settlement_status": 1}).json()["data"]["total"], 1)
+            self.assertEqual(client.get(prefix+"/road", params={**dates, "settlement_status": 0}).json()["data"]["total"], 2)
             self.assertEqual(client.post(prefix+"/road/101/cancel-settlement").status_code, 200)
             self.assertEqual(client.post(prefix+"/road/batch-settle", json={"items": []}).status_code, 200)
             self.assertEqual(client.post(prefix+"/road/batch-settle", json={"items": [{"source_id": "-1"}]}).status_code, 422)
-            self.assertEqual(client.post(prefix+"/road/export", json={"date_start": None, "date_end": None}).status_code, 200)
+            self.assertEqual(client.post(prefix+"/road/export", json={
+                "date_start": None, "date_end": None, "settlement_status": None,
+            }).status_code, 200)
             del app.dependency_overrides[get_current_active_user]
             for method, path, body in (
                 ("GET", "/road", None), ("POST", "/road/101/settle", None),

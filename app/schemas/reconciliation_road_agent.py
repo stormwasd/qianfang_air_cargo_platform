@@ -15,6 +15,7 @@ class RoadAgentReconciliationQuery(BaseModel):
     date_end: Optional[date] = Field(default_factory=lambda: get_china_now().date(), description="托运日期结束，默认北京时间当天；null不限")
     customer_name: Optional[str] = Field(None, description="客户ID精确匹配，或客户名称模糊搜索")
     destination_city: Optional[str] = Field(None, description="目的城市模糊搜索")
+    settlement_status: Optional[int] = Field(None, ge=0, le=1, description="汽运代理结算状态：0=未结算，1=已结算；不传不限")
     page: int = Field(1, ge=1, description="页码")
     pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 

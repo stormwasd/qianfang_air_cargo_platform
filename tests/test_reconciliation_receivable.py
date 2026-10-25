@@ -337,6 +337,28 @@ class RoadReceivableTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.post(self.url + "/101/cancel-settlement").status_code, 200)
         self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 1)
 
+    async def test_road_receivable_filters_do_not_apply_payable_settlement(self):
+        self.db.add(PeerRoadDepartureManualData(
+            id=201, consignment_note_id=101, agent_settlement_status=1,
+            receivable_agent_settlement_status=0,
+        ))
+        self.db.get(PeerRoadDepartureManualData, 202).receivable_agent_settlement_status = 1
+        self.db.commit()
+        self.assertEqual([row["source_id"] for row in self.listing(settlement_status=1)["items"]], ["102"])
+        self.assertEqual([row["source_id"] for row in self.listing(settlement_status=0)["items"]], ["101", "103"])
+        response = self.client.post(self.url + "/export", json={
+            "date_start": "2026-09-21", "date_end": "2026-10-21", "settlement_status": 1,
+            "selected_items": [{"source_id": "101"}, {"source_id": "102"}],
+        })
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.content))
+        self.assertEqual(workbook.active.max_row, 2)
+        headers = [cell.value for cell in workbook.active[1]]
+        self.assertEqual(workbook.active.cell(2, headers.index("来源ID") + 1).value, "102")
+        self.assertEqual(workbook.active.cell(2, headers.index("结算状态") + 1).value, "已结算")
+        self.assertEqual(workbook.active.cell(2, headers.index("客户公司名称") + 1).value, "普通客户")
+        workbook.close()
+
     async def test_frontend_same_day_query_and_empty_results(self):
         response = self.client.get(self.url, params={"date_start": "2026-10-22", "date_end": "2026-10-22"})
         self.assertEqual(response.status_code, 200, response.text)
