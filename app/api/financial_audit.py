@@ -71,6 +71,32 @@ def safe_str(val: Any) -> str:
     return str(val) if val is not None else ""
 
 
+def parse_form_data(value: Any) -> Dict[str, Any]:
+    """Decode a consignment note's dynamic form without leaking malformed JSON."""
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def get_peer_value(manual_data: Any, form_data: Dict[str, Any], name: str, *aliases: str) -> Any:
+    """Read fee-desk overrides first, then the original peer-air consignment form."""
+    if manual_data is not None:
+        value = getattr(manual_data, name, None)
+        if value not in (None, ""):
+            return value
+    for key in (name, *aliases):
+        value = form_data.get(key)
+        if value not in (None, ""):
+            return value
+    return ""
+
+
 def get_canonical_agent_name(
     source_type: str,
     consignment_note: Optional[ConsignmentNote] = None,
@@ -141,7 +167,15 @@ async def get_air_financial_audits(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    return await build_air_financial_audits(query, db, current_user)
+    # Peer-air consignment notes enter the fee desk directly.  Shenzhen Air
+    # and China Southern Air continue to require a passed departure audit in
+    # their respective branches below.
+    return await build_air_financial_audits(
+        query,
+        db,
+        current_user,
+        allow_peer_without_departure_audit=True,
+    )
 
 
 async def build_air_financial_audits(
@@ -150,6 +184,7 @@ async def build_air_financial_audits(
     current_user,
     *,
     paginate: bool = True,
+    allow_peer_without_departure_audit: bool = False,
 ):
     """Build the canonical fee-desk projection for API lists and reconciliation."""
     query_shenzhen = not bool(query.agent_name)
@@ -394,7 +429,10 @@ async def build_air_financial_audits(
         )
 
         if waybill_list:
-            peer_q = peer_q.filter(PeerAirDepartureManualData.waybill_number.in_(waybill_list))
+            # The extension is optional for peer air.  Apply this filter in Python
+            # as the canonical waybill may live in form_data when no extension exists.
+            if not allow_peer_without_departure_audit:
+                peer_q = peer_q.filter(PeerAirDepartureManualData.waybill_number.in_(waybill_list))
 
         if query.flight_date_start:
             peer_q = peer_q.filter(ConsignmentNote.consignment_date >= query.flight_date_start)
@@ -404,16 +442,16 @@ async def build_air_financial_audits(
         if query.agent_name:
             peer_q = peer_q.filter(ConsignmentNote.company_name.like(f"%{query.agent_name}%"))
 
-        if query.destination:
+        if query.destination and not allow_peer_without_departure_audit:
             peer_q = peer_q.filter(ConsignmentNote.destination.like(f"%{query.destination}%"))
 
-        if query.flight_number:
+        if query.flight_number and not allow_peer_without_departure_audit:
             peer_q = peer_q.filter(ConsignmentNote.flight_number.like(f"%{query.flight_number}%"))
 
         if query.audit_status is not None:
             if query.audit_status == 0:
                 peer_q = peer_q.filter(or_(PeerAirDepartureManualData.audit_status == 0, PeerAirDepartureManualData.audit_status.is_(None)))
-            else:
+            elif not allow_peer_without_departure_audit:
                 peer_q = peer_q.filter(PeerAirDepartureManualData.audit_status == query.audit_status)
 
         if query.financial_audit_status is not None:
@@ -422,7 +460,7 @@ async def build_air_financial_audits(
             else:
                 peer_q = peer_q.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
 
-        if query.telegram_status:
+        if query.telegram_status and not allow_peer_without_departure_audit:
             if query.telegram_status == "有电报":
                 peer_q = peer_q.filter(
                     or_(
@@ -438,7 +476,7 @@ async def build_air_financial_audits(
                     )
                 )
 
-        if query.cca_status:
+        if query.cca_status and not allow_peer_without_departure_audit:
             if query.cca_status == "有CCA":
                 peer_q = peer_q.filter(and_(PeerAirDepartureManualData.cca != None, PeerAirDepartureManualData.cca != ""))
             elif query.cca_status == "无CCA":
@@ -447,24 +485,48 @@ async def build_air_financial_audits(
         for note, md, fa in peer_q.all():
             f_date = note.consignment_date.isoformat() if note.consignment_date else ""
             
-            form_dict = {}
-            if note.form_data:
-                try:
-                    form_dict = json.loads(note.form_data)
-                except Exception:
-                    pass
+            form_dict = parse_form_data(note.form_data)
 
+            peer_waybill = safe_str(get_peer_value(md, form_dict, "waybill_number"))
+            peer_customer = safe_str(
+                md.customer_name if md and md.customer_name not in (None, "")
+                else note.customer_name if note.customer_name not in (None, "")
+                else form_dict.get("customer_name", "")
+            )
+            if waybill_list and not any(w in peer_waybill for w in waybill_list):
+                continue
+            peer_origin = safe_str(form_dict.get("origin_station") or form_dict.get("origin", ""))
+            peer_destination = safe_str(
+                note.destination or form_dict.get("destination_station") or form_dict.get("destination", "")
+            )
+            peer_flight_number = safe_str(note.flight_number or form_dict.get("flight_number", ""))
+            peer_telegram_fee = get_peer_value(md, form_dict, "telegram_fee", "telegraph_fee")
+            peer_telegram_code = get_peer_value(md, form_dict, "telegram_code")
+            peer_cca = get_peer_value(md, form_dict, "cca")
+            if allow_peer_without_departure_audit:
+                if query.destination and query.destination not in peer_destination:
+                    continue
+                if query.flight_number and query.flight_number not in peer_flight_number:
+                    continue
+                if query.telegram_status == "有电报" and not (peer_telegram_fee or peer_telegram_code):
+                    continue
+                if query.telegram_status == "无电报" and (peer_telegram_fee or peer_telegram_code):
+                    continue
+                if query.cca_status == "有CCA" and peer_cca in (None, ""):
+                    continue
+                if query.cca_status == "无CCA" and peer_cca not in (None, ""):
+                    continue
             candidate_items.append({
                 "source_type": "peer_air",
                 "source_id": str(note.id),
                 "flight_date": f_date,
-                "waybill_number": md.waybill_number if md else "",
-                "origin": form_dict.get("origin_station", ""),
-                "destination": note.destination or "",
-                "flight_number": safe_str(note.flight_number),
+                "waybill_number": peer_waybill,
+                "origin": peer_origin,
+                "destination": peer_destination,
+                "flight_number": peer_flight_number,
                 "audit_status": md.audit_status if md else 0,
                 "financial_audit_status": fa.financial_audit_status if fa else 0,
-                "customer_name": md.customer_name if md else "",
+                "customer_name": peer_customer,
                 "agent_name": get_canonical_agent_name("peer_air", note),
                 "airline": note.airline or "",
                 "cargo_name": form_dict.get("cargo_name", ""),
@@ -966,14 +1028,14 @@ async def build_air_financial_audits(
             gate_pieces_val = ""
             transit_fee_val = 0.0
 
-            telegraph_cost_val = md.telegram_fee if md else ""
+            telegraph_cost_val = get_peer_value(md, form_dict, "telegram_fee", "telegraph_fee")
 
-            cca_cost = safe_float(md.cca if md else 0.0)
-            pack_fee = safe_float(md.packaging_fee if md else 0.0)
-            oth_fee = safe_float(md.other_fees if md else 0.0)
-            door_fee = safe_float(md.door_pickup_fee if md else 0.0)
-            airport_fee = safe_float(md.airport_pickup_fee if md else 0.0)
-            delivery_cost = safe_float(md.delivery_fee if md else 0.0)
+            cca_cost = safe_float(get_peer_value(md, form_dict, "cca"))
+            pack_fee = safe_float(get_peer_value(md, form_dict, "packaging_fee"))
+            oth_fee = safe_float(get_peer_value(md, form_dict, "other_fees"))
+            door_fee = safe_float(get_peer_value(md, form_dict, "door_pickup_fee"))
+            airport_fee = safe_float(get_peer_value(md, form_dict, "airport_pickup_fee"))
+            delivery_cost = safe_float(get_peer_value(md, form_dict, "delivery_fee", "delivery_cost"))
 
             penalty_fee = 0.0
 
@@ -990,7 +1052,7 @@ async def build_air_financial_audits(
 
             payable_data = PayableResponse(
                 agent_name=note.company_name,
-                cargo_type=md.cargo_type if md else "",
+                cargo_type=get_peer_value(md, form_dict, "cargo_type"),
                 billing_pieces=safe_str(form_dict.get("quantity", "")),
                 billing_weight=safe_str(form_dict.get("weight", "")),
                 gate_pieces="",
@@ -1000,16 +1062,16 @@ async def build_air_financial_audits(
                 fuel_surcharge="",
                 transit_weight="",
                 transit_fee="",
-                cca_cost=safe_str(md.cca if md else ""),
+                cca_cost=safe_str(get_peer_value(md, form_dict, "cca")),
                 telegraph_cost=safe_str(telegraph_cost_val),
                 penalty_fee="",
-                packaging_fee=safe_str(md.packaging_fee if md else ""),
-                other_fees=safe_str(md.other_fees if md else ""),
+                packaging_fee=safe_str(get_peer_value(md, form_dict, "packaging_fee")),
+                other_fees=safe_str(get_peer_value(md, form_dict, "other_fees")),
                 other_fee_remark="",
-                door_pickup_company=safe_str(md.door_pickup_company if md else ""),
-                door_pickup_fee=safe_str(md.door_pickup_fee if md else ""),
-                delivery_company=safe_str(md.delivery_company if md else ""),
-                airport_pickup_fee=safe_str(md.airport_pickup_fee if md else ""),
+                door_pickup_company=safe_str(get_peer_value(md, form_dict, "door_pickup_company")),
+                door_pickup_fee=safe_str(get_peer_value(md, form_dict, "door_pickup_fee")),
+                delivery_company=safe_str(get_peer_value(md, form_dict, "delivery_company")),
+                airport_pickup_fee=safe_str(get_peer_value(md, form_dict, "airport_pickup_fee")),
                 delivery_cost=format_decimal(delivery_cost),
                 total_cost=format_decimal(total_cost_val)
             )
@@ -1017,14 +1079,14 @@ async def build_air_financial_audits(
             receivable_freight = safe_float(form_dict.get("chargeable_weight", 0.0)) * safe_float(form_dict.get("rate", 0.0))
 
             total_amount_val = (
-                safe_float(md.telegram_fee if md else 0.0) +
-                safe_float(md.airport_pickup_fee if md else 0.0) +
-                safe_float(md.packaging_fee if md else 0.0) +
-                safe_float(md.door_pickup_fee if md else 0.0) +
+                safe_float(get_peer_value(md, form_dict, "telegram_fee", "telegraph_fee")) +
+                safe_float(get_peer_value(md, form_dict, "airport_pickup_fee")) +
+                safe_float(get_peer_value(md, form_dict, "packaging_fee")) +
+                safe_float(get_peer_value(md, form_dict, "door_pickup_fee")) +
                 receivable_freight +
-                safe_float(md.cca if md else 0.0) +
-                safe_float(md.other_fees if md else 0.0) +
-                safe_float(md.airport_pickup_fee if md else 0.0)
+                safe_float(get_peer_value(md, form_dict, "cca")) +
+                safe_float(get_peer_value(md, form_dict, "other_fees")) +
+                safe_float(get_peer_value(md, form_dict, "airport_pickup_fee"))
             )
 
             gross_profit_val = total_amount_val - total_cost_val
@@ -1041,13 +1103,13 @@ async def build_air_financial_audits(
                 chargeable_weight=safe_str(form_dict.get("chargeable_weight", "")),
                 freight_rate=safe_str(form_dict.get("rate", "")),
                 document_fee="",
-                packaging_fee=safe_str(md.packaging_fee if md else ""),
-                telegram_fee=safe_str(md.telegram_fee if md else ""),
-                telegram_code=safe_str(md.telegram_code if md else ""),
+                packaging_fee=safe_str(get_peer_value(md, form_dict, "packaging_fee")),
+                telegram_fee=safe_str(get_peer_value(md, form_dict, "telegram_fee", "telegraph_fee")),
+                telegram_code=safe_str(get_peer_value(md, form_dict, "telegram_code")),
                 other_fee_remark="",
-                door_pickup_fee=safe_str(md.door_pickup_fee if md else ""),
-                airport_pickup_fee=safe_str(md.airport_pickup_fee if md else ""),
-                carrier_deduction=safe_str(md.carrier_deduction if md else ""),
+                door_pickup_fee=safe_str(get_peer_value(md, form_dict, "door_pickup_fee")),
+                airport_pickup_fee=safe_str(get_peer_value(md, form_dict, "airport_pickup_fee")),
+                carrier_deduction=safe_str(get_peer_value(md, form_dict, "carrier_deduction")),
                 total_amount=format_decimal(total_amount_val),
                 payment_method="",
                 consignee="",
@@ -1055,9 +1117,9 @@ async def build_air_financial_audits(
                 pickup_method="",
                 weight=safe_str(form_dict.get("chargeable_weight", "")),
                 freight=format_decimal(receivable_freight),
-                cca=safe_str(md.cca if md else ""),
-                other_fees=safe_str(md.other_fees if md else ""),
-                delivery_fee=safe_str(md.delivery_fee if md else ""),
+                cca=safe_str(get_peer_value(md, form_dict, "cca")),
+                other_fees=safe_str(get_peer_value(md, form_dict, "other_fees")),
+                delivery_fee=safe_str(get_peer_value(md, form_dict, "delivery_fee", "delivery_cost")),
                 collection_payment="",
                 remark="",
                 gross_profit=format_decimal(gross_profit_val)

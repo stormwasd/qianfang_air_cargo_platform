@@ -152,7 +152,7 @@ async def collect_air_items(module, query, db, user):
         raise HTTPException(status_code=400, detail="航班日期开始不能晚于结束")
     result = await build_air_financial_audits(
         AirFinancialAuditQuery(audit_status=2, financial_audit_status=query.financial_audit_status),
-        db, user, paginate=False,
+        db, user, paginate=False, allow_peer_without_departure_audit=True,
     )
     columns = [AirFinancialAuditData.id, AirFinancialAuditData.source_type, AirFinancialAuditData.source_id]
     columns += [getattr(AirFinancialAuditData, module.state + suffix)

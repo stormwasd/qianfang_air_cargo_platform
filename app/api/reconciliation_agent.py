@@ -62,7 +62,7 @@ async def _collect_items(query, db, current_user):
     # also keeps overrides, customer fees and total/profit calculations in sync.
     result = await build_air_financial_audits(
         AirFinancialAuditQuery(audit_status=2, financial_audit_status=query.financial_audit_status),
-        db, current_user, paginate=False,
+        db, current_user, paginate=False, allow_peer_without_departure_audit=True,
     )
     records = db.query(
         AirFinancialAuditData.id, AirFinancialAuditData.source_type, AirFinancialAuditData.source_id,
@@ -138,11 +138,16 @@ def _load_settlement_records(db, keys):
         ids = sorted(source_id for kind, source_id in keys if kind == source_type)
         if not ids:
             continue
-        query = db.query(main.id).join(manual, main.id == getattr(manual, relation)).filter(
-            main.id.in_(ids), manual.audit_status == 2,
-        )
         if source_type == "peer_air":
-            query = query.filter(ConsignmentNote.transport_type == "0")
+            # Peer-air consignment notes enter the fee desk directly; the
+            # departure extension is optional and is not a settlement gate.
+            query = db.query(main.id).outerjoin(manual, main.id == getattr(manual, relation)).filter(
+                main.id.in_(ids), main.transport_type == "0",
+            )
+        else:
+            query = db.query(main.id).join(manual, main.id == getattr(manual, relation)).filter(
+                main.id.in_(ids), manual.audit_status == 2,
+            )
         valid_keys.update((source_type, row[0]) for row in query.order_by(main.id).with_for_update().all())
 
     predicates = []

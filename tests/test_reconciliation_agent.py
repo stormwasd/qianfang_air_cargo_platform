@@ -15,15 +15,21 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_current_active_user
-from app.api.financial_audit import build_air_financial_audits
+from app.api.financial_audit import build_air_financial_audits, get_air_financial_audits
 from app.api.reconciliation_agent import (
     batch_confirm_agent_settlement, cancel_agent_settlement,
     confirm_agent_settlement, export_agent_reconciliation_list,
     get_agent_reconciliation_list, router,
 )
-from app.api.reconciliation_airline import confirm_airline_settlement, cancel_airline_settlement
-from app.api.reconciliation_delivery import confirm_delivery_settlement, cancel_delivery_settlement
-from app.api.reconciliation_pickup import confirm_pickup_settlement, cancel_pickup_settlement
+from app.api.reconciliation_airline import (
+    cancel_airline_settlement, confirm_airline_settlement, get_airline_reconciliation_list,
+)
+from app.api.reconciliation_delivery import (
+    cancel_delivery_settlement, confirm_delivery_settlement, get_delivery_reconciliation_list,
+)
+from app.api.reconciliation_pickup import (
+    cancel_pickup_settlement, confirm_pickup_settlement, get_pickup_reconciliation_list,
+)
 from app.database import get_db
 from app.models.air_financial_audit_data import AirFinancialAuditData
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
@@ -41,6 +47,8 @@ from app.schemas.reconciliation_agent import (
     AgentBatchSettleRequest, AgentReconciliationExportRequest, AgentReconciliationQuery,
 )
 from app.schemas.reconciliation_airline import AirlineReconciliationQuery
+from app.schemas.reconciliation_delivery import DeliveryReconciliationQuery
+from app.schemas.reconciliation_pickup import PickupReconciliationQuery
 
 
 class AgentReconciliationTests(unittest.IsolatedAsyncioTestCase):
@@ -211,6 +219,47 @@ class AgentReconciliationTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancel_without_financial_extension_is_noop(self):
         cancel_agent_settlement("shenzhen_air", 101, self.db, self.user)
         self.assertEqual(self.db.query(AirFinancialAuditData).count(), 2)
+
+    async def test_peer_without_departure_extension_is_visible_with_zero_status_filters(self):
+        note = ConsignmentNote(
+            id=303, transport_type="0", company_name="同行代理", customer_name="7",
+            consignment_date=date(2026, 10, 25), destination="HFE", flight_number="CA1234",
+            airline="国航",
+            form_data=json.dumps({
+                "waybill_number": "999-12340001", "origin_station": "SZX", "quantity": "2",
+                "weight": "20", "door_pickup_company": "同行提货", "door_pickup_fee": "15",
+                "delivery_company": "同行派送", "delivery_fee": "25", "airport_pickup_fee": "5",
+            }),
+        )
+        self.db.add(note)
+        self.db.commit()
+
+        financial = await get_air_financial_audits(
+            AirFinancialAuditQuery(airline_type="peer_air", pageSize=200), self.db, self.user,
+        )
+        peer_item = next(item for item in financial.data["items"] if item["source_id"] == "303")
+        self.assertEqual(peer_item["payable"]["billing_pieces"], "2")
+        self.assertEqual(peer_item["payable"]["billing_weight"], "20")
+        self.assertEqual(peer_item["receivable"]["pieces"], "2")
+        self.assertEqual(peer_item["receivable"]["chargeable_weight"], "")
+        self.assertEqual((await self.listing(waybill_numbers="999-12340001"))["total"], 1)
+
+        for query, list_function, status_field in (
+            (AirlineReconciliationQuery, get_airline_reconciliation_list, "airline_settlement_status"),
+            (PickupReconciliationQuery, get_pickup_reconciliation_list, "pickup_settlement_status"),
+            (DeliveryReconciliationQuery, get_delivery_reconciliation_list, "delivery_settlement_status"),
+        ):
+            with self.subTest(status_field=status_field):
+                for filters in ({}, {"financial_audit_status": 0, "settlement_status": 0}):
+                    response = list_function(query(**filters), self.db, self.user)
+                    rows = response.data["items"]
+                    row = next(item for item in rows if item["source_id"] == "303")
+                    self.assertEqual(row["financial_audit_status"], 0)
+                    self.assertEqual(row[status_field], 0)
+
+        self.settle("peer_air", 303)
+        self.assertEqual((await self.listing(waybill_numbers="999-12340001", settlement_status=1))["total"], 1)
+        self.assertIsNone(self.db.query(PeerAirDepartureManualData).filter_by(consignment_note_id=303).first())
 
     async def test_commit_failure_rolls_back_batch_and_keeps_financial_data(self):
         with patch.object(self.db, "commit", side_effect=IntegrityError("insert", {}, Exception("conflict"))):

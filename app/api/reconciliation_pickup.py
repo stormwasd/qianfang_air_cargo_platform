@@ -12,7 +12,10 @@ from urllib.parse import quote
 from app.api.deps import get_db, get_current_active_user
 from app.core.response import success_response
 from app.utils.helpers import get_china_now
-from app.api.financial_audit import format_decimal, safe_float, safe_int, safe_str, parse_csa_flight_info
+from app.api.financial_audit import (
+    format_decimal, get_peer_value, parse_csa_flight_info, parse_form_data,
+    safe_float, safe_int, safe_str,
+)
 
 from app.models.air_financial_audit_data import AirFinancialAuditData
 from app.models.transit_loading import ShenzhenAirBookingExport
@@ -204,12 +207,10 @@ def get_pickup_reconciliation_list(
             "_fa": fa
         })
 
-    peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).join(
+    peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).outerjoin(
         PeerAirDepartureManualData, ConsignmentNote.id == PeerAirDepartureManualData.consignment_note_id
     ).filter(
-        ConsignmentNote.transport_type == "0",
-        PeerAirDepartureManualData.audit_status == 2,
-        and_(PeerAirDepartureManualData.door_pickup_company != None, PeerAirDepartureManualData.door_pickup_company != "")
+        ConsignmentNote.transport_type == "0"
     )
     
     if query.flight_date_start:
@@ -217,28 +218,46 @@ def get_pickup_reconciliation_list(
     if query.flight_date_end:
         peer_query = peer_query.filter(ConsignmentNote.consignment_date <= query.flight_date_end)
         
-    if query.waybill_numbers:
-        wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
-        if wbs:
-            peer_query = peer_query.filter(PeerAirDepartureManualData.waybill_number.in_(wbs))
-            
-    if query.pickup_company:
-        peer_query = peer_query.filter(PeerAirDepartureManualData.door_pickup_company.like(f"%{query.pickup_company}%"))
-        
     peer_records = peer_query.all()
     for note, md in peer_records:
         fa = fa_map.get("peer_air", {}).get(note.id)
-        if fa_status_filter_active and not fa:
+        financial_audit_status = fa.financial_audit_status if fa else 0
+        settlement_status = fa.pickup_settlement_status if fa else 0
+        if query.financial_audit_status is not None and financial_audit_status != query.financial_audit_status:
+            continue
+        if query.settlement_status is not None and settlement_status != query.settlement_status:
             continue
             
-        c_name = str(md.customer_name) if md and md.customer_name else ""
+        form_dict = parse_form_data(note.form_data)
+        wb_no = safe_str(get_peer_value(md, form_dict, "waybill_number"))
+        pickup_company = safe_str(get_peer_value(md, form_dict, "door_pickup_company"))
+        pickup_fee = safe_str(get_peer_value(md, form_dict, "door_pickup_fee"))
+        c_name = safe_str(
+            md.customer_name if md and md.customer_name not in (None, "")
+            else note.customer_name if note.customer_name not in (None, "")
+            else form_dict.get("customer_name", "")
+        )
+        pay_override = {}
+        if fa and fa.payable_data:
+            pay_override = fa.payable_data
+            if isinstance(pay_override, str):
+                try:
+                    pay_override = json.loads(pay_override)
+                except (TypeError, ValueError):
+                    pay_override = {}
+        if isinstance(pay_override, dict):
+            pickup_company = safe_str(pay_override.get("door_pickup_company", pickup_company))
+            pickup_fee = safe_str(pay_override.get("door_pickup_fee", pickup_fee))
+        if not pickup_company:
+            continue
         if query.customer_name and query.customer_name not in c_name:
             continue
-
-        try:
-            form_dict = json.loads(note.form_data) if note.form_data else {}
-        except Exception:
-            form_dict = {}
+        if query.pickup_company and query.pickup_company not in pickup_company:
+            continue
+        if query.waybill_numbers:
+            wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
+            if wbs and wb_no not in wbs:
+                continue
 
         act_flight = str(form_dict.get("actual_flight") or note.flight_number or "")
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
@@ -259,7 +278,7 @@ def get_pickup_reconciliation_list(
             "source_type": "peer_air",
             "source_id": note.id,
             "flight_date": str(note.consignment_date) if note.consignment_date else "",
-            "waybill_number": md.waybill_number if md else "",
+            "waybill_number": wb_no,
             "destination": note.destination or "",
             "actual_flight_number": act_flight,
             "actual_pieces": gate_pieces,
@@ -267,7 +286,8 @@ def get_pickup_reconciliation_list(
             "customer_name": c_name,
             "_main": note,
             "_md": md,
-            "_fa": fa
+            "_fa": fa,
+            "_form_dict": form_dict,
         })
 
     candidate_items.sort(key=lambda x: str(x.get("flight_date", "")), reverse=True)
@@ -290,8 +310,19 @@ def get_pickup_reconciliation_list(
         financial_audit_status = fa.financial_audit_status if fa else 0
         pickup_settlement_status = fa.pickup_settlement_status if fa else 0
         
-        pickup_company = str(md.door_pickup_company or "")
-        pickup_fee = str(md.door_pickup_fee or "")
+        form_dict = item.get("_form_dict", {})
+        pickup_company = safe_str(get_peer_value(md, form_dict, "door_pickup_company"))
+        pickup_fee = safe_str(get_peer_value(md, form_dict, "door_pickup_fee"))
+        if fa and fa.payable_data:
+            pay_override = fa.payable_data
+            if isinstance(pay_override, str):
+                try:
+                    pay_override = json.loads(pay_override)
+                except (TypeError, ValueError):
+                    pay_override = {}
+            if isinstance(pay_override, dict):
+                pickup_company = safe_str(pay_override.get("door_pickup_company", pickup_company))
+                pickup_fee = safe_str(pay_override.get("door_pickup_fee", pickup_fee))
 
         c_name = str(item.get("customer_name") or "").strip()
         actual_customer_name = customer_id_map[c_name].company_name if c_name in customer_id_map else ""
