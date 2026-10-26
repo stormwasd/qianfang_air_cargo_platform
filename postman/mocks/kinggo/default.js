@@ -1,5 +1,7 @@
 // Sanitized examples from the supplied KingGo contract. Local verification only.
 const http = require("http");
+const fs = require("fs");
+const pathModule = require("path");
 http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const path = url.pathname;
@@ -14,6 +16,19 @@ http.createServer(async (req, res) => {
   }
   const fields = new URLSearchParams(body);
   if (!url.searchParams.has("oOr6SIhu")) return send(400, { error: "missing signature" });
+  if (path === "/awb/query/export/119") {
+    const day = fields.get("flightDateBeginQ");
+    if (req.method !== "POST" || !/^\d{4}-\d{2}-\d{2}$/.test(day || "") ||
+        fields.get("flightDateEndQ") !== day || fields.get("operDateBeginQ") !== day ||
+        fields.get("operDateEndQ") !== day || fields.get("flightDateCheck") !== "true" ||
+        fields.get("internationalFlag") !== "1") {
+      return send(400, { error: "transit-loading export contract" });
+    }
+    // A synthetic workbook with one row, so the real file watcher can import it.
+    const workbook = fs.readFileSync(pathModule.join(__dirname, "transit-loading.xlsx.base64"), "utf8");
+    res.writeHead(200, { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    return res.end(Buffer.from(workbook.trim(), "base64"));
+  }
   if (path === "/flight_info/index/92") {
     const day = fields.get("flightDateStart");
     const page = fields.get("pageNum");

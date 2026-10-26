@@ -13,7 +13,7 @@ from app.schemas.departure_tracking import ShenzhenAirDepartureListResponse, She
 from app.models.rpa_task import RPATaskType
 from app.services.rpa_task_service import rpa_task_service
 from app.services.tracking_execution_time import (
-    DIRECT_BILLING_SUCCESS_TYPE, RPA_EXECUTION_SUCCESS_TYPES, format_success_time,
+    DIRECT_TRANSIT_LOADING_SUCCESS_TYPE, RPA_EXECUTION_SUCCESS_TYPES, format_success_time,
 )
 
 router = APIRouter()
@@ -36,8 +36,8 @@ async def get_shenzhen_air_departures(
 ):
     """
     查询深航出港列表，主表为 shenzhen_air_booking_exports，附带 shenzhen_air_billing_time_containers 数据。
-    data_update_time 为计飞集装器接口/RPA 最后成功请求/运行时间（北京时间），
-    与后续数据入库状态独立；无成功记录时为 null。
+    data_update_time 为过机装机主表最后成功直连下载/RPA 运行时间（北京时间），
+    按主表获取模式选择，与计飞集装器子任务及后续入库状态独立；无成功记录时为 null。
     """
     query = db.query(ShenzhenAirBookingExport)
 
@@ -148,10 +148,10 @@ async def get_shenzhen_air_departures(
         
         items.append(item_schema.model_dump(mode="json"))
 
-    if settings.SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE == "direct":
-        success_type = DIRECT_BILLING_SUCCESS_TYPE
+    if settings.SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE == "direct":
+        success_type = DIRECT_TRANSIT_LOADING_SUCCESS_TYPE
     else:
-        success_type = RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value]
+        success_type = RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.SHENZHEN_AIR_TRANSIT_LOADING.value]
     data_update_time = format_success_time(rpa_task_service.get_last_success_time(db, success_type))
 
     return success_response(

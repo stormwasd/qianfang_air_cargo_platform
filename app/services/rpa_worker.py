@@ -2936,6 +2936,7 @@ class RPAWorker:
                     status = status_info.get("status")
                     if status == 5:
                         print(f"{self._log_prefix} 下载表格任务 {task.id} 成功")
+                        record_rpa_execution_success(task.task_type, status_info)
                         rpa_task_service.complete_task(db, task.id, True)
                         return
                     elif status == 3:

@@ -15,6 +15,7 @@ from app.api.shenzhen_air_approval import get_shenzhen_air_approvals
 from app.config import settings
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
+from app.models.config import BusinessConfig
 from app.models.csa_departure_manual_data import CsaDepartureManualData
 from app.models.csa_departure_tracking import CsaProductInformation, CsaLalamoveInformation
 from app.models.departure_manual_data import ShenzhenAirDepartureManualData
@@ -31,7 +32,7 @@ class TrackingExecutionTimeTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.temp_dir.cleanup)
         self.engine = create_engine("sqlite:///" + str(Path(self.temp_dir.name) / "tracking.sqlite"))
         for model in (
-            RPATask, RPATaskLastSuccess, ChinaSouthernAirApprovalData,
+            RPATask, RPATaskLastSuccess, BusinessConfig, ChinaSouthernAirApprovalData,
             CsaProductInformation, CsaLalamoveInformation, CsaDepartureManualData,
             ShenzhenAirBookingExport, ShenzhenAirBillingTimeContainer,
             ShenzhenAirDepartureManualData, ShenzhenAirApprovalData, ShenzhenAirApprovalWideBodyData,
@@ -165,6 +166,64 @@ class TrackingExecutionTimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.db.get(ShenzhenAirBookingExport, 99).departure_tracking_completed, "1")
         self.assertEqual(self.db.query(ShenzhenAirBillingTimeContainer).filter_by(booking_export_id=99).count(), 1)
 
+    async def _download_transit_export(self, *, signed=True):
+        from app.services.transit_loading_manager import TransitLoadingManager
+        from app.services.shenzhen_air_direct_transit_loading import ShenzhenAirDirectTransitLoadingService
+
+        origin = os.environ["RPA_DEPARTURE_SIMULATION_URL"].rsplit("/rpa", 1)[0] + "/kinggo"
+        client = ShenzhenAirDirectTransitLoadingService(origin=origin, output_dir=self.temp_dir.name)
+        manager = TransitLoadingManager()
+        manager.watch_dir = self.temp_dir.name
+        signed_url = client.ORIGIN + client.EXPORT_PATH + ("?oOr6SIhu=local-test" if signed else "")
+        with (
+            patch.object(client, "_auth", AsyncMock(return_value=(signed_url, {"Cookie": "local-test"}))),
+            patch("app.services.shenzhen_air_direct_transit_loading.shenzhen_air_direct_transit_loading_service", client),
+            patch("app.services.shenzhen_air_direct_transit_loading.get_china_now", return_value=self.now),
+            patch.object(settings, "SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE", "direct"),
+        ):
+            await manager._scan_and_enqueue_transit_loading()
+        return manager
+
+    @unittest.skipUnless(os.environ.get("RPA_DEPARTURE_SIMULATION_URL"), "Local acquisition simulation required")
+    async def test_direct_main_export_download_import_and_list_use_its_success_time(self):
+        old = datetime(2026, 10, 19, 15, 4)
+        self.assertTrue(timestamps.record_success_time(timestamps.DIRECT_BILLING_SUCCESS_TYPE, old))
+        manager = await self._download_transit_export()
+        self.assertEqual(len(list(Path(self.temp_dir.name).glob("AwbQueryExport*.xlsx"))), 1)
+        # Exercise the existing Excel reader and database mapping without invoking detail requests.
+        with patch("app.services.transit_loading_manager.SessionLocal", self.factory), \
+             patch.object(settings, "SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE", "direct"):
+            await manager._check_for_new_files()
+        self.db.expire_all()
+        record = self.db.query(ShenzhenAirBookingExport).one()
+        self.assertEqual(record.waybill_number, "62000001")
+        self.assertEqual(record.creation_time, "2026-10-19 15:04:00")
+        self.assertEqual(record.departure_tracking_completed, "0")
+        self.assertEqual(self.db.query(ShenzhenAirBillingTimeContainer).count(), 0)
+        self.assertEqual(len(list(Path(self.temp_dir.name).glob("*.xlsx.processed"))), 1)
+        with patch.object(settings, "SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE", "direct"):
+            response = await self._list("sz_departure")
+        self.assertEqual(response.data["total"], 1)
+        self.assertEqual(response.data["data_update_time"], "2026-10-20 18:09")
+        self.assertEqual(self.db.get(RPATaskLastSuccess, timestamps.DIRECT_BILLING_SUCCESS_TYPE).last_success_at, old)
+
+    @unittest.skipUnless(os.environ.get("RPA_DEPARTURE_SIMULATION_URL"), "Local acquisition simulation required")
+    async def test_failed_direct_main_export_keeps_previous_success_time(self):
+        key = timestamps.DIRECT_TRANSIT_LOADING_SUCCESS_TYPE
+        old = datetime(2026, 10, 19, 15, 4)
+        self.assertTrue(timestamps.record_success_time(key, old))
+        await self._download_transit_export(signed=False)
+        self.assertEqual(list(Path(self.temp_dir.name).glob("*.xlsx")), [])
+        self.db.expire_all()
+        self.assertEqual(self.db.get(RPATaskLastSuccess, key).last_success_at, old)
+
+    @unittest.skipUnless(os.environ.get("RPA_DEPARTURE_SIMULATION_URL"), "Local acquisition simulation required")
+    async def test_main_export_timestamp_failure_does_not_abort_download(self):
+        with patch.object(timestamps, "SessionLocal", side_effect=RuntimeError("timestamp store offline")):
+            await self._download_transit_export()
+        self.assertEqual(len(list(Path(self.temp_dir.name).glob("AwbQueryExport*.xlsx"))), 1)
+        self.assertIsNone(self.db.get(RPATaskLastSuccess, timestamps.DIRECT_TRANSIT_LOADING_SUCCESS_TYPE))
+
     async def _list(self, name):
         common = dict(flight_date_start=None, flight_date_end=None, flight_number=None,
                       page=1, pageSize=10, current_user=None, db=self.db)
@@ -181,12 +240,12 @@ class TrackingExecutionTimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_lists_expose_success_even_when_empty(self):
         keys = {
             "sz_approval": timestamps.DIRECT_APPROVAL_SUCCESS_TYPES[0],
-            "sz_departure": timestamps.DIRECT_BILLING_SUCCESS_TYPE,
+            "sz_departure": timestamps.DIRECT_TRANSIT_LOADING_SUCCESS_TYPE,
             "csa_approval": timestamps.RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.CHINA_SOUTHERN_AIR_APPROVAL_DATA.value],
             "csa_departure": timestamps.RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING.value],
         }
         with patch.object(settings, "SHENZHEN_AIR_APPROVAL_EXECUTION_MODE", "direct"), \
-             patch.object(settings, "SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE", "direct"):
+             patch.object(settings, "SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE", "direct"):
             for name, key in keys.items():
                 with self.subTest(page=name):
                     self.assertTrue(timestamps.record_success_time(key, self.now))
@@ -205,21 +264,45 @@ class TrackingExecutionTimeTests(unittest.IsolatedAsyncioTestCase):
         for task_type in timestamps.RPA_EXECUTION_SUCCESS_TYPES:
             self.db.add(RPATaskLastSuccess(task_type=task_type, last_success_at=self.now))
         self.db.commit()
+        self.assertTrue(timestamps.record_success_time(timestamps.DIRECT_BILLING_SUCCESS_TYPE))
+        self.assertTrue(timestamps.record_success_time(
+            timestamps.RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value]))
         for mode in ("direct", "rpa"):
             with patch.object(settings, "SHENZHEN_AIR_APPROVAL_EXECUTION_MODE", mode), \
-                 patch.object(settings, "SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE", mode):
+                 patch.object(settings, "SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE", mode):
                 for name in ("sz_approval", "sz_departure", "csa_approval", "csa_departure"):
                     with self.subTest(mode=mode, page=name):
                         response = await self._list(name)
                         self.assertEqual(response.data["total"], 1)
                         self.assertIsNone(response.data["data_update_time"])
 
+    async def test_shenzhen_departure_time_uses_main_export_mode_not_billing_mode(self):
+        direct_key = timestamps.DIRECT_TRANSIT_LOADING_SUCCESS_TYPE
+        rpa_key = timestamps.RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.SHENZHEN_AIR_TRANSIT_LOADING.value]
+        direct_time = datetime(2026, 10, 27, 2, 1, 21)
+        rpa_time = datetime(2026, 10, 27, 2, 5, 0)
+        self.assertTrue(timestamps.record_success_time(direct_key, direct_time))
+        self.assertTrue(timestamps.record_success_time(rpa_key, rpa_time))
+        # A later detail request must not change the main export's time either.
+        for key in (
+            timestamps.DIRECT_BILLING_SUCCESS_TYPE,
+            timestamps.RPA_EXECUTION_SUCCESS_TYPES[RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value],
+        ):
+            self.assertTrue(timestamps.record_success_time(key, datetime(2026, 10, 27, 3)))
+        for mode, expected in (("direct", "2026-10-27 02:01"), ("rpa", "2026-10-27 02:05")):
+            for detail_mode in ("direct", "rpa"):
+                with self.subTest(mode=mode, detail_mode=detail_mode), \
+                     patch.object(settings, "SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE", mode), \
+                     patch.object(settings, "SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE", detail_mode):
+                    response = await self._list("sz_departure")
+                    self.assertEqual(response.data["data_update_time"], expected)
+
     async def test_rpa_modes_and_cabins_use_only_their_own_keys(self):
         for index, (task_type, key) in enumerate(timestamps.RPA_EXECUTION_SUCCESS_TYPES.items()):
             self.assertTrue(timestamps.record_success_time(key, self.now.replace(minute=index)))
         with patch.object(settings, "SHENZHEN_AIR_APPROVAL_EXECUTION_MODE", "rpa"), \
-             patch.object(settings, "SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE", "rpa"):
-            for name, minute in (("sz_approval", 0), ("sz_departure", 2), ("csa_approval", 3), ("csa_departure", 4)):
+             patch.object(settings, "SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE", "rpa"):
+            for name, minute in (("sz_approval", 0), ("sz_departure", 5), ("csa_approval", 3), ("csa_departure", 4)):
                 response = await self._list(name)
                 self.assertEqual(response.data["data_update_time"], f"2026-10-20 18:{minute:02d}")
             response = await get_shenzhen_air_approvals(

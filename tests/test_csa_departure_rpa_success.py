@@ -147,11 +147,12 @@ class CsaDepartureRPASuccessTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.db.get(RPATask, 1))
         self.assertEqual(self.db.get(ChinaSouthernAirApprovalData, 10).departure_tracking_completed, "1")
 
-    async def test_approval_pollers_record_their_own_rpa_end_time(self):
+    async def test_acquisition_pollers_record_their_own_rpa_end_time(self):
         for task_type, poller in (
             (RPATaskType.SHENZHEN_AIR_APPROVAL_DATA, self.worker._poll_shenzhen_air_approval_data_status),
             (RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY, self.worker._poll_shenzhen_air_approval_data_status),
             (RPATaskType.CHINA_SOUTHERN_AIR_APPROVAL_DATA, self.worker._poll_china_southern_air_approval_data_status),
+            (RPATaskType.SHENZHEN_AIR_TRANSIT_LOADING, self.worker._poll_shenzhen_air_transit_loading_status),
         ):
             with self.subTest(task_type=task_type):
                 task = RPATask(id=2, target_id=1, target_type="approval",
@@ -169,6 +170,30 @@ class CsaDepartureRPASuccessTests(unittest.IsolatedAsyncioTestCase):
                 self.db.expire_all()
                 self.assertIsNone(self.db.get(RPATask, 2))
                 self.assertEqual(self.db.get(RPATaskLastSuccess, RPA_EXECUTION_SUCCESS_TYPES[task_type.value]).last_success_at, self.rpa_end)
+
+    async def test_failed_or_unmatched_transit_rpa_run_keeps_previous_success_time(self):
+        task_type = RPATaskType.SHENZHEN_AIR_TRANSIT_LOADING.value
+        key = RPA_EXECUTION_SUCCESS_TYPES[task_type]
+        self.db.add(RPATaskLastSuccess(task_type=key, last_success_at=self.old_time))
+        self.db.commit()
+        for job_uuid, work_uuid in (("failed-job", "test-work"), ("success-job", "another-work")):
+            with self.subTest(job_uuid=job_uuid, work_uuid=work_uuid):
+                task = RPATask(id=2, target_id=1, target_type="transit_loading",
+                               task_type=task_type, job_uuid=job_uuid, params="{}", status="running")
+                self.db.add(task)
+                self.db.commit()
+                with (
+                    patch.object(rpa_service, "base_url", os.environ["RPA_DEPARTURE_SIMULATION_URL"]),
+                    patch.object(rpa_service, "app_key", "local-test"),
+                    patch.object(rpa_service, "app_secret", "local-test"),
+                    patch.object(rpa_service, "cookie", ""),
+                    patch("app.services.tracking_execution_time.SessionLocal", sessionmaker(bind=self.engine)),
+                    patch("app.services.rpa_worker.settings.RPA_POLL_MAX_COUNT", 1),
+                    patch("app.services.rpa_worker.settings.RPA_POLL_INTERVAL", 0),
+                ):
+                    await self.worker._poll_shenzhen_air_transit_loading_status(self.db, task, work_uuid)
+                self.db.expire_all()
+                self.assertEqual(self.db.get(RPATaskLastSuccess, key).last_success_at, self.old_time)
 
     async def test_shenzhen_billing_rpa_records_success_before_empty_queue_retry(self):
         task_type = RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value

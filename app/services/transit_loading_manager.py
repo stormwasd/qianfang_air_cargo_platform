@@ -119,12 +119,17 @@ class TransitLoadingManager:
                 ShenzhenAirDirectTransitLoadingError,
                 shenzhen_air_direct_transit_loading_service,
             )
+            from app.services.tracking_execution_time import (
+                DIRECT_TRANSIT_LOADING_SUCCESS_TYPE,
+                record_success_time,
+            )
 
             try:
                 export_path = await shenzhen_air_direct_transit_loading_service.download_export()
             except ShenzhenAirDirectTransitLoadingError as exc:
                 print(f"[TransitLoadingManager] KingGo过机装机表直连下载失败: {exc}")
                 return
+            record_success_time(DIRECT_TRANSIT_LOADING_SUCCESS_TYPE)
             print(
                 "[TransitLoadingManager] KingGo过机装机表直连下载完成: "
                 f"{export_path.name}"
