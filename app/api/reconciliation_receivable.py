@@ -55,7 +55,7 @@ def _common_query(
     waybill_numbers: Optional[str] = Query(None),
     flight_date_start: Optional[date] = Query(None),
     flight_date_end: Optional[date] = Query(None),
-    financial_audit_status: Optional[int] = Query(None, ge=0, le=2),
+    financial_audit_status: Optional[int] = Query(None, ge=0, le=2, description="仅查询财务已审2；不传或传2返回已审，传0/1返回空列表"),
     customer_name: Optional[str] = Query(None),
     settlement_status: Optional[int] = Query(None, ge=0, le=1),
     page: int = Query(1, ge=1), pageSize: int = Query(10, ge=1, le=200),
@@ -151,7 +151,7 @@ async def collect_air_items(module, query, db, user):
     if query.flight_date_start and query.flight_date_end and query.flight_date_start > query.flight_date_end:
         raise HTTPException(status_code=400, detail="航班日期开始不能晚于结束")
     result = await build_air_financial_audits(
-        AirFinancialAuditQuery(audit_status=2, financial_audit_status=query.financial_audit_status),
+        AirFinancialAuditQuery(financial_audit_status=2),
         db, user, paginate=False, allow_peer_without_departure_audit=True,
     )
     columns = [AirFinancialAuditData.id, AirFinancialAuditData.source_type, AirFinancialAuditData.source_id]
@@ -165,6 +165,8 @@ async def collect_air_items(module, query, db, user):
     waybills = {value.strip() for value in (query.waybill_numbers or "").split(",") if value.strip()}
     items = []
     for row in rows:
+        if query.financial_audit_status is not None and row["financial_audit_status"] != query.financial_audit_status:
+            continue
         if not _belongs_to_module(module, row):
             continue
         receivable = dict(row["receivable"])
@@ -219,7 +221,7 @@ async def set_air_settlement(module, keys, db, user, settled):
     if not keys:
         return
     try:
-        records = _load_settlement_records(db, keys)
+        records = _load_settlement_records(db, keys, require_financial_audit=settled)
         if settled and module.path in ("pickup", "delivery"):
             # Validate module membership against the same final projection as the list.
             eligible = {(row["source_type"], int(row["source_id"])) for row in await collect_air_items(
@@ -231,10 +233,7 @@ async def set_air_settlement(module, keys, db, user, settled):
         for kind, source_id in sorted(keys):
             record = records.get((kind, source_id))
             if record is None:
-                if not settled:
-                    continue
-                record = AirFinancialAuditData(source_type=kind, source_id=source_id)
-                db.add(record)
+                continue  # Cancellation never creates an empty extension.
             _update_settlement(record, module.state, user, settled, now)
         db.commit()
     except IntegrityError as exc:
@@ -377,14 +376,15 @@ def set_road_settlement(ids, db, user, settled):
             PeerRoadDepartureManualData.consignment_note_id.in_(ids),
         ).order_by(PeerRoadDepartureManualData.consignment_note_id).populate_existing().with_for_update().all()
         by_note = {record.consignment_note_id: record for record in records}
+        if settled and any(
+            source_id not in by_note or by_note[source_id].financial_audit_status != 2 for source_id in ids
+        ):
+            raise HTTPException(status_code=400, detail="单据尚未通过财务审核，不能确认结算")
         now = get_china_now()
         for source_id in sorted(ids):
             record = by_note.get(source_id)
             if record is None:
-                if not settled:
-                    continue
-                record = PeerRoadDepartureManualData(consignment_note_id=source_id)
-                db.add(record)
+                continue  # Confirmation already validated every financial record.
             _update_settlement(record, "receivable_agent_settlement", user, settled, now)
         db.commit()
     except IntegrityError as exc:

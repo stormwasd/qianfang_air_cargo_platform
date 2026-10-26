@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from app.api.deps import get_db, get_current_active_user
 from app.core.response import success_response
-from app.utils.helpers import get_china_now
+from app.api.reconciliation_agent import _settle_payable
 from app.api.financial_audit import (
     format_decimal, get_peer_value, parse_csa_flight_info, parse_form_data,
     safe_float, safe_int, safe_str,
@@ -44,7 +44,7 @@ def get_pickup_reconciliation_list(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    fa_base_query = db.query(AirFinancialAuditData)
+    fa_base_query = db.query(AirFinancialAuditData).filter(AirFinancialAuditData.financial_audit_status == 2)
     if query.financial_audit_status is not None:
         fa_base_query = fa_base_query.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
     if query.settlement_status is not None:
@@ -57,15 +57,11 @@ def get_pickup_reconciliation_list(
             fa_map[fa.source_type] = {}
         fa_map[fa.source_type][fa.source_id] = fa
         
-    fa_status_filter_active = query.financial_audit_status is not None or query.settlement_status is not None
 
     candidate_items = []
     
-    sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).join(
+    sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).outerjoin(
         ShenzhenAirDepartureManualData, ShenzhenAirBookingExport.id == ShenzhenAirDepartureManualData.booking_export_id
-    ).filter(
-        ShenzhenAirDepartureManualData.audit_status == 2,
-        and_(ShenzhenAirDepartureManualData.door_pickup_company != None, ShenzhenAirDepartureManualData.door_pickup_company != "")
     )
     
     if query.waybill_numbers:
@@ -81,17 +77,19 @@ def get_pickup_reconciliation_list(
             sz_query = sz_query.filter(or_(*or_filters))
             
     if query.flight_date_start:
-        sz_query = sz_query.filter(ShenzhenAirBookingExport.flight_date >= query.flight_date_start.replace("-", "/"))
+        sz_query = sz_query.filter(
+            func.replace(ShenzhenAirBookingExport.flight_date, "/", "-") >= query.flight_date_start
+        )
     if query.flight_date_end:
-        sz_query = sz_query.filter(ShenzhenAirBookingExport.flight_date <= query.flight_date_end.replace("-", "/"))
+        sz_query = sz_query.filter(
+            func.replace(ShenzhenAirBookingExport.flight_date, "/", "-") <= query.flight_date_end
+        )
     
-    if query.pickup_company:
-        sz_query = sz_query.filter(ShenzhenAirDepartureManualData.door_pickup_company.like(f"%{query.pickup_company}%"))
         
     sz_records = sz_query.all()
     for export, md in sz_records:
         fa = fa_map.get("shenzhen_air", {}).get(export.id)
-        if fa_status_filter_active and not fa:
+        if not fa:
             continue
             
         c_name = str(md.customer_name) if md and md.customer_name else ""
@@ -135,11 +133,8 @@ def get_pickup_reconciliation_list(
             "_fa": fa
         })
 
-    csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).join(
+    csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).outerjoin(
         CsaDepartureManualData, ChinaSouthernAirApprovalData.id == CsaDepartureManualData.approval_data_id
-    ).filter(
-        CsaDepartureManualData.audit_status == 2,
-        and_(CsaDepartureManualData.door_pickup_company != None, CsaDepartureManualData.door_pickup_company != "")
     )
     
     if query.waybill_numbers:
@@ -156,8 +151,6 @@ def get_pickup_reconciliation_list(
             
 
         
-    if query.pickup_company:
-        csa_query = csa_query.filter(CsaDepartureManualData.door_pickup_company.like(f"%{query.pickup_company}%"))
         
     csa_records = csa_query.all()
     
@@ -169,7 +162,7 @@ def get_pickup_reconciliation_list(
 
     for approval, md in csa_records:
         fa = fa_map.get("china_southern_air", {}).get(approval.id)
-        if fa_status_filter_active and not fa:
+        if not fa:
             continue
             
         c_name = str(md.customer_name) if md and md.customer_name else ""
@@ -221,6 +214,8 @@ def get_pickup_reconciliation_list(
     peer_records = peer_query.all()
     for note, md in peer_records:
         fa = fa_map.get("peer_air", {}).get(note.id)
+        if not fa:
+            continue
         financial_audit_status = fa.financial_audit_status if fa else 0
         settlement_status = fa.pickup_settlement_status if fa else 0
         if query.financial_audit_status is not None and financial_audit_status != query.financial_audit_status:
@@ -290,6 +285,17 @@ def get_pickup_reconciliation_list(
             "_form_dict": form_dict,
         })
 
+    # Apply membership and unit search to the effective fee-desk value before
+    # pagination, including rows that have no departure extension.
+    eligible_items = []
+    for item in candidate_items:
+        overrides = parse_form_data(item["_fa"].payable_data)
+        company = safe_str(overrides.get("door_pickup_company", get_peer_value(
+            item["_md"], item.get("_form_dict", {}), "door_pickup_company",
+        )))
+        if company.strip() and (not query.pickup_company or query.pickup_company in company):
+            eligible_items.append(item)
+    candidate_items = eligible_items
     candidate_items.sort(key=lambda x: str(x.get("flight_date", "")), reverse=True)
     
     total_count = len(candidate_items)
@@ -358,31 +364,8 @@ def confirm_pickup_settlement(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    fa = db.query(AirFinancialAuditData).filter(
-        AirFinancialAuditData.source_type == source_type,
-        or_(
-            AirFinancialAuditData.source_id == source_id,
-            AirFinancialAuditData.id == source_id
-        )
-    ).first()
-    
-    if not fa:
-        fa = AirFinancialAuditData(
-            source_type=source_type,
-            source_id=source_id
-        )
-        db.add(fa)
-        
-    if fa.pickup_settlement_status == 1:
-        return success_response(msg="该单据已经结算过了")
-        
-    fa.pickup_settlement_status = 1
-    fa.pickup_settlement_auditor_id = current_user.id
-    fa.pickup_settlement_auditor_name = current_user.name
-    fa.pickup_settlement_time = get_china_now()
-    
-    db.commit()
-    return success_response(msg="结算确认成功")
+    _settle_payable(db, {(source_type, safe_int(source_id))}, current_user, "pickup_settlement")
+    return success_response(msg="确认结算成功")
 
 @router.post("/{source_type}/{source_id}/cancel-settlement", summary="取消结算提货对账")
 def cancel_pickup_settlement(
@@ -416,35 +399,10 @@ def batch_confirm_pickup_settlement(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    if not req.items:
-        return success_response(msg="没有需要结算的单据")
-
-    now = get_china_now()
-    
-    for item in req.items:
-        source_id_int = safe_int(item.source_id)
-        fa = db.query(AirFinancialAuditData).filter(
-            AirFinancialAuditData.source_type == item.source_type,
-            or_(
-                AirFinancialAuditData.source_id == source_id_int,
-                AirFinancialAuditData.id == source_id_int
-            )
-        ).first()
-        
-        if not fa:
-            fa = AirFinancialAuditData(
-                source_type=item.source_type,
-                source_id=source_id_int
-            )
-            db.add(fa)
-            
-        fa.pickup_settlement_status = 1
-        fa.pickup_settlement_auditor_id = current_user.id
-        fa.pickup_settlement_auditor_name = current_user.name
-        fa.pickup_settlement_time = now
-        
-    db.commit()
-    return success_response(msg=f"成功批量结算 {len(req.items)} 条单据")
+    keys = {(item.source_type, safe_int(item.source_id)) for item in req.items}
+    if keys:
+        _settle_payable(db, keys, current_user, "pickup_settlement")
+    return success_response(msg=f"成功批量结算 {len(keys)} 条单据")
 
 @router.post("/export", summary="导出提货单位对账列表 (选中/批量)")
 def export_pickup_reconciliation_list(

@@ -15,7 +15,7 @@ class AirReceivableQuery(BaseModel):
     waybill_numbers: Optional[str] = Field(None, description="完整运单号，多个用英文逗号分隔")
     flight_date_start: Optional[date] = Field(None, description="航班日期开始，包含当天")
     flight_date_end: Optional[date] = Field(None, description="航班日期结束，包含当天")
-    financial_audit_status: Optional[int] = Field(None, ge=0, le=2)
+    financial_audit_status: Optional[int] = Field(None, ge=0, le=2, description="仅查询财务已审2；不传或传2返回已审，传0/1返回空列表")
     customer_name: Optional[str] = Field(None, description="应收客户原值包含匹配，通常传客户ID")
     settlement_status: Optional[int] = Field(None, ge=0, le=1, description="本模块应收结算状态")
     page: int = Field(1, ge=1)

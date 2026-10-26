@@ -49,7 +49,7 @@ def _get_list_query(
 def _query_rows(query, db):
     if query.date_start and query.date_end and query.date_start > query.date_end:
         raise HTTPException(status_code=400, detail="托运日期开始不能晚于结束")
-    # The existing road fee desk has no mandatory document/financial audit gate.
+    # Reconciliation starts after fee-desk financial approval; business audit is retired.
     rows = db.query(ConsignmentNote, PeerRoadDepartureManualData, Customer.company_name).outerjoin(
         PeerRoadDepartureManualData,
         PeerRoadDepartureManualData.consignment_note_id == ConsignmentNote.id,
@@ -61,6 +61,7 @@ def _query_rows(query, db):
         cast(cast(Customer.id, String), LargeBinary) == cast(ConsignmentNote.customer_name, LargeBinary),
     ).filter(
         ConsignmentNote.transport_type == "1",
+        PeerRoadDepartureManualData.financial_audit_status == 2,
     )
     if query.date_start:
         rows = rows.filter(ConsignmentNote.consignment_date >= query.date_start)
@@ -145,8 +146,7 @@ def _set_settlement(db, source_ids, user, settled):
     if not source_ids:
         return
     try:
-        # Serialize creation of an extension by locking its source first. Lock
-        # sources in the same order for all batch/single operations.
+        # Lock sources before extensions in the same order for all operations.
         notes = db.query(ConsignmentNote.id).filter(
             ConsignmentNote.id.in_(source_ids), ConsignmentNote.transport_type == "1",
         ).order_by(ConsignmentNote.id).with_for_update().all()
@@ -156,14 +156,15 @@ def _set_settlement(db, source_ids, user, settled):
             PeerRoadDepartureManualData.consignment_note_id.in_(source_ids),
         ).order_by(PeerRoadDepartureManualData.consignment_note_id).populate_existing().with_for_update().all()
         by_note = {record.consignment_note_id: record for record in records}
+        if settled and any(
+            source_id not in by_note or by_note[source_id].financial_audit_status != 2 for source_id in source_ids
+        ):
+            raise HTTPException(status_code=400, detail="单据尚未通过财务审核，不能确认结算")
         now = get_china_now()
         for source_id in sorted(source_ids):
             record = by_note.get(source_id)
             if not record:
-                if not settled:
-                    continue
-                record = PeerRoadDepartureManualData(consignment_note_id=source_id)
-                db.add(record)
+                continue  # Cancellation never creates an empty extension.
             if (record.agent_settlement_status or 0) == int(settled):
                 continue
             record.agent_settlement_status = int(settled)

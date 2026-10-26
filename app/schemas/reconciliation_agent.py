@@ -13,7 +13,7 @@ MAX_SOURCE_ID = 2**63 - 1
 class AgentReconciliationQuery(AirlineReconciliationQuery):
     flight_date_start: Optional[date] = Field(None, description="航班日期起始（YYYY-MM-DD，包含当天）")
     flight_date_end: Optional[date] = Field(None, description="航班日期结束（YYYY-MM-DD，包含当天）")
-    financial_audit_status: Optional[int] = Field(None, ge=0, le=2, description="财务审核：0=未审, 1=暂存, 2=已审")
+    financial_audit_status: Optional[int] = Field(None, ge=0, le=2, description="仅查询财务已审2；不传或传2返回已审，传0/1返回空列表")
     settlement_status: Optional[int] = Field(None, ge=0, le=1, description="空运代理结算：0=未结算, 1=已结算")
 
 

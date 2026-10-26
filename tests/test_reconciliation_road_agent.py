@@ -52,7 +52,7 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
             "total_freight": "250.00", "other_fees": "25.00", "total_amount": "300.00",
         }
         self.add_note(101, customer="7", form=self.form)
-        self.add_note(102, customer="普通客户", destination="SZX", day=date(2026, 10, 20))
+        self.add_note(102, customer="普通客户", destination="SZX", day=date(2026, 10, 20), approved=False)
         self.add_note(103, customer="百分%客户", destination="SZ_", day=date(2026, 10, 19))
         self.add_note(104, day=date(2026, 9, 20))
         self.add_note(105, day=date(2026, 10, 22))
@@ -63,12 +63,16 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
         ))
         self.db.commit()
 
-    def add_note(self, source_id, *, customer="原客户", destination="CGQ", day=date(2026, 10, 21), transport_type="1", form=None):
+    def add_note(self, source_id, *, customer="原客户", destination="CGQ", day=date(2026, 10, 21), transport_type="1", form=None, approved=True):
         self.db.add(ConsignmentNote(
             id=source_id, transport_type=transport_type, customer_name=customer,
             consignment_date=day, destination=destination,
             form_data=json.dumps(form or {}, ensure_ascii=False),
         ))
+        if approved and transport_type == "1":
+            self.db.add(PeerRoadDepartureManualData(
+                id=10000 + source_id, consignment_note_id=source_id, financial_audit_status=2,
+            ))
 
     def tearDown(self):
         self.db.close()
@@ -84,7 +88,7 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
     def record(self, source_id):
         return self.db.query(PeerRoadDepartureManualData).filter_by(consignment_note_id=source_id).first()
 
-    async def test_all_fields_from_fee_desk_without_recalculation_or_audit_gate(self):
+    async def test_approved_fields_from_fee_desk_without_recalculation_or_business_gate(self):
         result = self.listing()
         self.assertEqual(result["total"], 3)
         row = result["items"][0]
@@ -96,7 +100,7 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
         # This amount is intentionally different from freight + other fees.
         self.assertEqual(row["total_amount"], "300.00")
         self.assertEqual(row["agent_settlement_status"], 0)
-        self.assertIsNone(self.record(101))
+        self.assertEqual(self.record(101).audit_status, 0)
         self.assertEqual(self.listing(page=2, pageSize=1)["items"][0]["source_id"], "102")
 
     async def test_defaults_use_beijing_date_and_30_day_window(self):
@@ -132,8 +136,8 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["items"][0]["agent_settlement_status"], 0)
         self.assertEqual(self.listing(settlement_status=0, customer_name="7")["total"], 0)
         self.assertEqual(self.listing(settlement_status=1, destination_city="CG")["total"], 1)
-        self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 2)
-        self.assertIsNone(self.record(103))
+        self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 5)
+        self.assertEqual(self.record(103).agent_settlement_status, 0)
 
         cancel_road_agent_settlement(101, self.db, self.user)
         self.assertEqual(self.listing(settlement_status=1)["total"], 0)
@@ -188,7 +192,7 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
             "destination_city": "河北省-保定市-徐水区", "destination_address": "11 Delamere Street",
             "consignee_info": "1", "contact_phone": 1380000000,
         }
-        self.add_note(source_id, customer="Tester", destination=form["destination_city"], form=form)
+        self.add_note(source_id, customer="Tester", destination=form["destination_city"], form=form, approved=False)
         self.db.commit()
         fee_desk = await get_consignment_notes(ConsignmentNoteQuery(
             transport_type="1", is_financial=True, customer_name="Tester",
@@ -197,14 +201,14 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
         source = fee_desk.data["items"][0]
         self.assertEqual(source["form_data"], form)
         self.assertIsNone(source["manual_data"])
-        for audited in (False, True):
-            if audited:
-                await audit_consignment_note(PeerAirDepartureManualDataUpsert(
-                    consignment_note_id=str(source_id),
-                ), "submit", self.user, self.db)
-                await financial_audit_consignment_note(ConsignmentNoteFinancialAudit(
-                    consignment_note_id=str(source_id),
-                ), "submit", self.user, self.db)
+        self.assertEqual(self.listing(customer_name="Tester")["total"], 0)
+        for action in ("save", "submit"):
+            await financial_audit_consignment_note(ConsignmentNoteFinancialAudit(
+                consignment_note_id=str(source_id),
+            ), action, self.user, self.db)
+            if action == "save":
+                self.assertEqual(self.listing(customer_name="Tester")["total"], 0)
+                continue
             row = self.listing(customer_name="Tester")["items"][0]
             self.assertEqual(row["source_id"], str(source_id))
             self.assertIsNone(row["rate"])
@@ -222,14 +226,14 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record.agent_settlement_auditor_name, "测试财务")
         self.assertEqual(record.agent_settlement_time, timestamp)
         self.assertEqual(record.audit_status, 0)
-        self.assertEqual(record.financial_audit_status, 0)
+        self.assertEqual(record.financial_audit_status, 2)
         self.assertEqual(json.loads(self.db.get(ConsignmentNote, 101).form_data), self.form)
         cancel_road_agent_settlement(101, self.db, self.user)
         self.assertEqual(record.agent_settlement_status, 0)
         self.assertIsNone(record.agent_settlement_auditor_id)
         self.assertIsNone(record.agent_settlement_time)
         cancel_road_agent_settlement(103, self.db, self.user)
-        self.assertIsNone(self.record(103))
+        self.assertEqual(self.record(103).agent_settlement_status, 0)
 
     async def test_batch_deduplicates_and_rejects_invalid_atomically(self):
         req = RoadAgentBatchSettleRequest(items=[{"source_id": "101"}, {"source_id": "102"}, {"source_id": "101"}])
@@ -243,14 +247,14 @@ class RoadAgentTests(unittest.IsolatedAsyncioTestCase):
                     {"source_id": "103"}, {"source_id": str(invalid)},
                 ]), self.db, self.user)
             self.assertEqual(error.exception.status_code, 404)
-            self.assertIsNone(self.record(103))
+            self.assertEqual(self.record(103).agent_settlement_status, 0)
 
     async def test_commit_failure_rolls_back(self):
         with patch.object(self.db, "commit", side_effect=IntegrityError("insert", {}, Exception("duplicate"))):
             with self.assertRaises(HTTPException) as error:
                 self.settle()
         self.assertEqual(error.exception.status_code, 409)
-        self.assertIsNone(self.record(101))
+        self.assertEqual(self.record(101).agent_settlement_status, 0)
 
     async def test_existing_document_and_financial_audits_preserve_settlement(self):
         self.settle()

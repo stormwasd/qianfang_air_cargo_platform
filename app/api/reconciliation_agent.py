@@ -19,9 +19,6 @@ from app.database import get_db
 from app.models.air_financial_audit_data import AirFinancialAuditData
 from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.consignment_note import ConsignmentNote
-from app.models.csa_departure_manual_data import CsaDepartureManualData
-from app.models.departure_manual_data import ShenzhenAirDepartureManualData
-from app.models.peer_air_manual_data import PeerAirDepartureManualData
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.schemas.financial_audit import AirFinancialAuditQuery, ReceivableResponse
 from app.schemas.reconciliation_agent import (
@@ -71,7 +68,7 @@ def _get_list_query(
     flight_date_start: Optional[date] = Query(None, description="航班日期起始，包含当天"),
     flight_date_end: Optional[date] = Query(None, description="航班日期结束，包含当天"),
     airline: Optional[str] = Query(None, description="航司，如深航、南航；全部表示不限制"),
-    financial_audit_status: Optional[int] = Query(None, ge=0, le=2, description="财务审核：0=未审，1=暂存，2=已审"),
+    financial_audit_status: Optional[int] = Query(None, ge=0, le=2, description="仅查询财务已审2；不传或传2返回已审，传0/1返回空列表"),
     customer_name: Optional[str] = Query(None, description="客户名称，通常传客户ID"),
     settlement_status: Optional[int] = Query(None, ge=0, le=1, description="空运代理结算：0=未结算，1=已结算"),
     page: int = Query(1, ge=1, description="页码"),
@@ -93,7 +90,7 @@ async def _collect_items(query, db, current_user):
     # Do not page before applying agent-specific filters. One canonical projection
     # also keeps overrides, customer fees and total/profit calculations in sync.
     result = await build_air_financial_audits(
-        AirFinancialAuditQuery(audit_status=2, financial_audit_status=query.financial_audit_status),
+        AirFinancialAuditQuery(financial_audit_status=2),
         db, current_user, paginate=False, allow_peer_without_departure_audit=True,
     )
     records = db.query(
@@ -115,6 +112,8 @@ async def _collect_items(query, db, current_user):
     waybills = {w.strip() for w in (query.waybill_numbers or "").split(",") if w.strip()}
     items = []
     for row in result.data["items"]:
+        if query.financial_audit_status is not None and row["financial_audit_status"] != query.financial_audit_status:
+            continue
         receivable = dict(row["receivable"])
         # Source-backed fee-desk rows expose the default waybill at the top level;
         # preserve a financial override when one has been supplied.
@@ -171,28 +170,21 @@ async def get_agent_reconciliation_list(
     })
 
 
-def _load_settlement_records(db, keys):
+def _load_settlement_records(db, keys, *, require_financial_audit=False):
     """Lock sources before extensions to serialize first settlement, then validate all."""
     valid_keys = set()
     sources = (
-        ("shenzhen_air", ShenzhenAirBookingExport, ShenzhenAirDepartureManualData, "booking_export_id"),
-        ("china_southern_air", ChinaSouthernAirApprovalData, CsaDepartureManualData, "approval_data_id"),
-        ("peer_air", ConsignmentNote, PeerAirDepartureManualData, "consignment_note_id"),
+        ("shenzhen_air", ShenzhenAirBookingExport),
+        ("china_southern_air", ChinaSouthernAirApprovalData),
+        ("peer_air", ConsignmentNote),
     )
-    for source_type, main, manual, relation in sources:
+    for source_type, main in sources:
         ids = sorted(source_id for kind, source_id in keys if kind == source_type)
         if not ids:
             continue
+        query = db.query(main.id).filter(main.id.in_(ids))
         if source_type == "peer_air":
-            # Peer-air consignment notes enter the fee desk directly; the
-            # departure extension is optional and is not a settlement gate.
-            query = db.query(main.id).outerjoin(manual, main.id == getattr(manual, relation)).filter(
-                main.id.in_(ids), main.transport_type == "0",
-            )
-        else:
-            query = db.query(main.id).join(manual, main.id == getattr(manual, relation)).filter(
-                main.id.in_(ids), manual.audit_status == 2,
-            )
+            query = query.filter(main.transport_type == "0")
         valid_keys.update((source_type, row[0]) for row in query.order_by(main.id).with_for_update().all())
 
     predicates = []
@@ -215,25 +207,48 @@ def _load_settlement_records(db, keys):
             if manual:
                 valid_keys.add(key)
     if keys - valid_keys:
-        raise HTTPException(status_code=404, detail="单据不存在或尚未通过业务审核")
+        raise HTTPException(status_code=404, detail="单据不存在或来源不匹配")
+    if require_financial_audit and any(
+        key not in existing or existing[key].financial_audit_status != 2 for key in keys
+    ):
+        raise HTTPException(status_code=400, detail="单据尚未通过财务审核，不能确认结算")
     return existing
 
 
 def _settle(db, keys, current_user):
     try:
-        records = _load_settlement_records(db, keys)
+        records = _load_settlement_records(db, keys, require_financial_audit=True)
         now = get_china_now()
         for source_type, source_id in sorted(keys):
-            fa = records.get((source_type, source_id))
-            if fa is None:
-                fa = AirFinancialAuditData(source_type=source_type, source_id=source_id)
-                db.add(fa)
+            fa = records[(source_type, source_id)]
             if fa.agent_settlement_status == 1:
                 continue
             fa.agent_settlement_status = 1
             fa.agent_settlement_auditor_id = current_user.id
             fa.agent_settlement_auditor_name = current_user.name
             fa.agent_settlement_time = now
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="单据正在被其他操作更新，请刷新后重试") from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _settle_payable(db, keys, user, state):
+    """Apply the same financial gate to the three legacy payable modules."""
+    try:
+        records = _load_settlement_records(db, keys, require_financial_audit=True)
+        now = get_china_now()
+        for key in sorted(keys):
+            record = records[key]
+            if getattr(record, state + "_status") == 1:
+                continue
+            setattr(record, state + "_status", 1)
+            setattr(record, state + "_auditor_id", user.id)
+            setattr(record, state + "_auditor_name", user.name)
+            setattr(record, state + "_time", now)
         db.commit()
     except IntegrityError as exc:
         db.rollback()

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, func
 from typing import List
 from datetime import datetime
 import json
@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from app.api.deps import get_db, get_current_active_user
 from app.core.response import success_response
-from app.utils.helpers import get_china_now
+from app.api.reconciliation_agent import _settle_payable
 from app.api.financial_audit import (
     format_decimal, get_peer_value, parse_csa_flight_info, parse_form_data,
     safe_float, safe_int, safe_str,
@@ -49,7 +49,7 @@ def get_airline_reconciliation_list(
     与财务审核列表同源，追加了实走航班号，并支持按航司对账结算状态过滤。
     """
     
-    fa_base_query = db.query(AirFinancialAuditData)
+    fa_base_query = db.query(AirFinancialAuditData).filter(AirFinancialAuditData.financial_audit_status == 2)
     
     if query.financial_audit_status is not None:
         fa_base_query = fa_base_query.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
@@ -63,28 +63,31 @@ def get_airline_reconciliation_list(
     for fa in fa_records:
         fa_map.setdefault(fa.source_type, {})[fa.source_id] = fa
 
-    fa_status_filter_active = (query.financial_audit_status is not None) or (query.settlement_status is not None)
 
     candidate_items = []
     
-    sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).join(
+    sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).outerjoin(
         ShenzhenAirDepartureManualData, ShenzhenAirBookingExport.id == ShenzhenAirDepartureManualData.booking_export_id
-    ).filter(ShenzhenAirDepartureManualData.audit_status == 2)
+    )
     if query.waybill_numbers:
         wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
         if wbs:
             sz_query = sz_query.filter(ShenzhenAirBookingExport.waybill_number.in_(wbs))
     if query.flight_date_start:
-        sz_query = sz_query.filter(ShenzhenAirBookingExport.flight_date >= query.flight_date_start)
+        sz_query = sz_query.filter(
+            func.replace(ShenzhenAirBookingExport.flight_date, "/", "-") >= query.flight_date_start
+        )
     if query.flight_date_end:
-        sz_query = sz_query.filter(ShenzhenAirBookingExport.flight_date <= query.flight_date_end)
+        sz_query = sz_query.filter(
+            func.replace(ShenzhenAirBookingExport.flight_date, "/", "-") <= query.flight_date_end
+        )
     if query.airline and query.airline != "全部":
         sz_query = sz_query.filter(ShenzhenAirBookingExport.carrier == query.airline)
 
     sz_records = sz_query.all()
     for export, md in sz_records:
         fa = fa_map.get("shenzhen_air", {}).get(export.id)
-        if fa_status_filter_active and not fa:
+        if not fa:
             continue
         
         c_name = str(md.customer_name) if md and md.customer_name else ""
@@ -115,9 +118,9 @@ def get_airline_reconciliation_list(
             "_fa": fa
         })
 
-    csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).join(
+    csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).outerjoin(
         CsaDepartureManualData, ChinaSouthernAirApprovalData.id == CsaDepartureManualData.approval_data_id
-    ).filter(CsaDepartureManualData.audit_status == 2)
+    )
     if query.waybill_numbers:
         wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
         if wbs:
@@ -132,7 +135,7 @@ def get_airline_reconciliation_list(
         
     for approval, md in csa_records:
         fa = fa_map.get("china_southern_air", {}).get(approval.id)
-        if fa_status_filter_active and not fa:
+        if not fa:
             continue
             
         c_name = str(md.customer_name) if md and md.customer_name else ""
@@ -186,6 +189,8 @@ def get_airline_reconciliation_list(
     peer_records = peer_query.all()
     for note, md in peer_records:
         fa = fa_map.get("peer_air", {}).get(note.id)
+        if not fa:
+            continue
         financial_audit_status = fa.financial_audit_status if fa else 0
         settlement_status = fa.airline_settlement_status if fa else 0
         if query.financial_audit_status is not None and financial_audit_status != query.financial_audit_status:
@@ -457,28 +462,7 @@ def confirm_airline_settlement(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    source_id_int = safe_int(source_id)
-    fa = db.query(AirFinancialAuditData).filter(
-        AirFinancialAuditData.source_type == source_type,
-        or_(
-            AirFinancialAuditData.source_id == source_id_int,
-            AirFinancialAuditData.id == source_id_int
-        )
-    ).first()
-    
-    if not fa:
-        fa = AirFinancialAuditData(
-            source_type=source_type,
-            source_id=source_id_int
-        )
-        db.add(fa)
-        
-    fa.airline_settlement_status = 1
-    fa.airline_settlement_auditor_id = current_user.id
-    fa.airline_settlement_auditor_name = current_user.name
-    fa.airline_settlement_time = datetime.now()
-    
-    db.commit()
+    _settle_payable(db, {(source_type, safe_int(source_id))}, current_user, "airline_settlement")
     return success_response(msg="确认结算成功")
 
 
@@ -515,35 +499,10 @@ def batch_confirm_airline_settlement(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    if not req.items:
-        return success_response(msg="没有需要结算的单据")
-
-    now = get_china_now()
-    
-    for item in req.items:
-        source_id_int = safe_int(item.source_id)
-        fa = db.query(AirFinancialAuditData).filter(
-            AirFinancialAuditData.source_type == item.source_type,
-            or_(
-                AirFinancialAuditData.source_id == source_id_int,
-                AirFinancialAuditData.id == source_id_int
-            )
-        ).first()
-        
-        if not fa:
-            fa = AirFinancialAuditData(
-                source_type=item.source_type,
-                source_id=source_id_int
-            )
-            db.add(fa)
-            
-        fa.airline_settlement_status = 1
-        fa.airline_settlement_auditor_id = current_user.id
-        fa.airline_settlement_auditor_name = current_user.name
-        fa.airline_settlement_time = now
-        
-    db.commit()
-    return success_response(msg=f"成功批量结算 {len(req.items)} 条单据")
+    keys = {(item.source_type, safe_int(item.source_id)) for item in req.items}
+    if keys:
+        _settle_payable(db, keys, current_user, "airline_settlement")
+    return success_response(msg=f"成功批量结算 {len(keys)} 条单据")
 
 @router.post("/air/export", summary="导出航司对账列表 (选中/批量)")
 def export_airline_reconciliation_list(

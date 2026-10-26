@@ -167,9 +167,7 @@ async def get_air_financial_audits(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    # Peer-air consignment notes enter the fee desk directly.  Shenzhen Air
-    # and China Southern Air continue to require a passed departure audit in
-    # their respective branches below.
+    # All sources enter the fee desk directly, without a business-audit gate.
     return await build_air_financial_audits(
         query,
         db,
@@ -187,6 +185,8 @@ async def build_air_financial_audits(
     allow_peer_without_departure_audit: bool = False,
 ):
     """Build the canonical fee-desk projection for API lists and reconciliation."""
+    # audit_status remains accepted for compatibility, but business approval
+    # no longer filters the fee desk. Historical response values are preserved.
     query_shenzhen = not bool(query.agent_name)
     query_southern = not bool(query.agent_name)
     query_peer = True
@@ -250,12 +250,6 @@ async def build_air_financial_audits(
 
         if query.flight_number:
             sz_q = sz_q.filter(ShenzhenAirBookingExport.billing_flight.like(f"%{query.flight_number}%"))
-
-        if query.audit_status is not None:
-            if query.audit_status == 0:
-                sz_q = sz_q.filter(or_(ShenzhenAirDepartureManualData.audit_status == 0, ShenzhenAirDepartureManualData.audit_status.is_(None)))
-            else:
-                sz_q = sz_q.filter(ShenzhenAirDepartureManualData.audit_status == query.audit_status)
 
         if query.financial_audit_status is not None:
             if query.financial_audit_status == 0:
@@ -343,12 +337,6 @@ async def build_air_financial_audits(
 
         if query.flight_number:
             csa_q = csa_q.filter(ChinaSouthernAirApprovalData.flight_info.like(f"%{query.flight_number}%"))
-
-        if query.audit_status is not None:
-            if query.audit_status == 0:
-                csa_q = csa_q.filter(or_(CsaDepartureManualData.audit_status == 0, CsaDepartureManualData.audit_status.is_(None)))
-            else:
-                csa_q = csa_q.filter(CsaDepartureManualData.audit_status == query.audit_status)
 
         if query.financial_audit_status is not None:
             if query.financial_audit_status == 0:
@@ -447,12 +435,6 @@ async def build_air_financial_audits(
 
         if query.flight_number and not allow_peer_without_departure_audit:
             peer_q = peer_q.filter(ConsignmentNote.flight_number.like(f"%{query.flight_number}%"))
-
-        if query.audit_status is not None:
-            if query.audit_status == 0:
-                peer_q = peer_q.filter(or_(PeerAirDepartureManualData.audit_status == 0, PeerAirDepartureManualData.audit_status.is_(None)))
-            elif not allow_peer_without_departure_audit:
-                peer_q = peer_q.filter(PeerAirDepartureManualData.audit_status == query.audit_status)
 
         if query.financial_audit_status is not None:
             if query.financial_audit_status == 0:

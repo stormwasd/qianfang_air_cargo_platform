@@ -103,15 +103,16 @@ class AirReceivableTests(unittest.IsolatedAsyncioTestCase):
             result = self.listing(module, **params)
             self.assertEqual(result["total"], 1)
             self.assertEqual(result["items"][0]["source_id"], "101")
-            self.assertEqual(self.listing(module, flight_date_end="2026-10-24", financial_audit_status=2)["total"], 0)
+            expected = 2 if module.path in ("airline", "air-agent") else 0
+            self.assertEqual(self.listing(module, flight_date_end="2026-10-24", financial_audit_status=2)["total"], expected)
         self.assertEqual(self.listing(AIR_MODULES[1], pickup_company="旧提货单位")["total"], 0)
         self.assertEqual(self.listing(AIR_MODULES[1])["total"], 1)
         self.assertEqual(self.listing(AIR_MODULES[2])["total"], 1)
-        self.assertEqual(self.listing(AIR_MODULES[0])["total"], 5)
+        self.assertEqual(self.listing(AIR_MODULES[0])["total"], 3)
 
     async def test_missing_date_is_excluded_by_either_date_boundary(self):
         self.db.add(AirFinancialAuditData(
-            id=503, source_type="peer_air", source_id=503,
+            id=503, source_type="peer_air", source_id=503, financial_audit_status=2,
             payable_data={"door_pickup_company": "提货单位", "delivery_company": "派送单位"},
             receivable_data={"waybill_number": "999-UNDATED", "flight_date": None},
         ))
@@ -158,13 +159,14 @@ class AirReceivableTests(unittest.IsolatedAsyncioTestCase):
                     {"source_type": "shenzhen_air", "source_id": "101"},
                     {"source_type": kind, "source_id": source_id},
                 ]})
-                self.assertEqual(response.status_code, 404, response.text)
+                self.assertEqual(response.status_code, 400 if source_id == "102" else 404, response.text)
                 self.db.expire_all()
                 self.assertEqual(getattr(self.db.get(AirFinancialAuditData, 501), module.state + "_status"), 0)
             self.assertEqual(self.client.post(self.url(module, "/batch-settle"), json={"items": []}).status_code, 200)
         self.assertEqual(self.db.query(AirFinancialAuditData).count(), 3)
 
     async def test_multi_source_and_manual_identity_batch_deduplicates(self):
+        air_fixture.AgentReconciliationTests.approve_sources(self)
         for module in (AIR_MODULES[0], AIR_MODULES[3]):
             items = [{"source_type": kind, "source_id": str(source_id)} for kind, source_id in (
                 ("shenzhen_air", 101), ("china_southern_air", 201), ("peer_air", 301),
@@ -228,7 +230,7 @@ class AirReceivableTests(unittest.IsolatedAsyncioTestCase):
     async def test_export_is_not_limited_to_page_size(self):
         for i in range(1000, 1205):
             self.db.add(AirFinancialAuditData(
-                id=i, source_type="peer_air", source_id=i,
+                id=i, source_type="peer_air", source_id=i, financial_audit_status=2,
                 payable_data={"door_pickup_company": "提货单位", "delivery_company": "派送单位"},
                 receivable_data={"waybill_number": f"999-{i}", "flight_date": "2026-10-21"},
             ))
@@ -243,7 +245,7 @@ class AirReceivableTests(unittest.IsolatedAsyncioTestCase):
     async def test_peer_actual_flight_uses_form_and_missing_metadata_falls_back(self):
         note = self.db.get(ConsignmentNote, 301)
         note.form_data = json.dumps({"actual_flight": "CA-ACTUAL"})
-        self.db.add(AirFinancialAuditData(id=502, source_type="peer_air", source_id=301,
+        self.db.add(AirFinancialAuditData(id=502, source_type="peer_air", source_id=301, financial_audit_status=2,
                                         payable_data={"door_pickup_company": "同行提货"}))
         self.db.commit()
         rows = self.listing(AIR_MODULES[1], actual_flight_number="CA-ACTUAL")["items"]
@@ -293,9 +295,9 @@ class RoadReceivableTests(unittest.IsolatedAsyncioTestCase):
         return response.json()["data"]
 
     async def test_road_receivable_matches_fee_desk_and_original_state_is_independent(self):
-        self.db.add(PeerRoadDepartureManualData(
-            id=201, consignment_note_id=101, agent_settlement_status=1, audit_status=1, financial_audit_status=2,
-        ))
+        record = self.db.query(PeerRoadDepartureManualData).filter_by(consignment_note_id=101).one()
+        record.agent_settlement_status = 1
+        record.audit_status = 1
         self.db.commit()
         rows = self.listing()["items"]
         self.assertEqual(len(rows), 3)
@@ -308,7 +310,6 @@ class RoadReceivableTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.post(self.url + "/101/settle").status_code, 200)
         self.assertEqual(self.listing(settlement_status=1)["total"], 1)
         self.assertEqual(self.listing(settlement_status=0)["total"], 2)
-        record = self.db.get(PeerRoadDepartureManualData, 201)
         self.db.refresh(record)
         timestamp = record.receivable_agent_settlement_time
         self.user = SimpleNamespace(id=8, name="别的财务")
@@ -323,7 +324,7 @@ class RoadReceivableTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(record.receivable_agent_settlement_time)
         self.assertEqual(json.loads(self.db.get(ConsignmentNote, 101).form_data), self.form)
 
-    async def test_missing_rate_total_and_unreviewed_road_remain_readable(self):
+    async def test_missing_rate_total_and_business_unreviewed_road_remain_readable(self):
         note = self.db.get(ConsignmentNote, 101)
         note.form_data = json.dumps({"quantity": 0, "total_freight": 1, "other_fees": 1})
         self.db.commit()
@@ -333,15 +334,14 @@ class RoadReceivableTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(row["chargeable_weight"])
         self.assertEqual(row["quantity"], "0")
         self.assertEqual(self.listing(settlement_status=0)["total"], 3)
-        self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 1)
+        self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 5)
         self.assertEqual(self.client.post(self.url + "/101/cancel-settlement").status_code, 200)
-        self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 1)
+        self.assertEqual(self.db.query(PeerRoadDepartureManualData).count(), 5)
 
     async def test_road_receivable_filters_do_not_apply_payable_settlement(self):
-        self.db.add(PeerRoadDepartureManualData(
-            id=201, consignment_note_id=101, agent_settlement_status=1,
-            receivable_agent_settlement_status=0,
-        ))
+        record = self.db.query(PeerRoadDepartureManualData).filter_by(consignment_note_id=101).one()
+        record.agent_settlement_status = 1
+        record.receivable_agent_settlement_status = 0
         self.db.get(PeerRoadDepartureManualData, 202).receivable_agent_settlement_status = 1
         self.db.commit()
         self.assertEqual([row["source_id"] for row in self.listing(settlement_status=1)["items"]], ["102"])

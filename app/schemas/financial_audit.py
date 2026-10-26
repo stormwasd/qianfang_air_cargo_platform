@@ -12,7 +12,7 @@ class AirFinancialAuditQuery(BaseModel):
     agent_name: Optional[str] = Field(None, description="代理名称（仅对同行空运过滤）")
     destination: Optional[str] = Field(None, description="目的站（模糊搜索）")
     flight_number: Optional[str] = Field(None, description="航班号")
-    audit_status: Optional[int] = Field(None, description="业务审核状态：0=未审, 1=暂存, 2=已审")
+    audit_status: Optional[int] = Field(None, description="已废弃的业务审核筛选，兼容接收但不参与费用登记台筛选")
     financial_audit_status: Optional[int] = Field(None, description="财务审核状态：0=未审, 1=暂存, 2=已审")
     telegram_status: Optional[str] = Field(None, description="电报状态：有电报/无电报/全部")
     cca_status: Optional[str] = Field(None, description="CCA状态：有CCA/无CCA/全部")
