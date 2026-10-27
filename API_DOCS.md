@@ -848,6 +848,9 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
 内部时间约定：`planned_time` 为计飞/计划起飞，优先取 KingGo“起飞”；`actual_time` 为实飞，
 优先取“实际起飞”；`ready_time` 为预飞/预计起飞，仅携程能补齐，KingGo不提供该字段。
 查询按航班号、日期和起降站匹配，中文站名只能在匹配唯一航段时命中。
+调用携程兜底前，将中文起降站转换为机场三字码（如 `SZX-西安` 转为 `SZX-XIY`），
+并规范化航班号和日期。城市存在多个候选机场时优先沿用 KingGo 唯一匹配航段；
+仍无法确定或无法识别机场时记录原因，不发送中文站名或猜测机场。
 KingGo只有HHMM：按航班日期组合北京时间，实飞取距离计飞最近的一天；
 实飞钟点比计飞早超过12小时按次日处理，晚超过12小时按前一日处理（兼容凌晨航班提前起飞）。
 超过12小时的延误与跨日提前无法仅凭HHMM准确区分。无效时间留空。携程仅补缺失值，不覆盖已有KingGo时间；
@@ -857,6 +860,16 @@ KingGo只有HHMM：按航班日期组合北京时间，实飞取距离计飞最�
 展示预飞时仅使用真实 `ready_time`，缺失展示 `/`；出港状态判断无预飞时可用计飞作为触发基准，
 但不把该值写成预飞。实飞补偿继续保留原延迟、次数和重试策略。关闭携程兜底后，
 依赖缺失时间的处理等待后续同步；已有正常数据照常使用。现有深航RPA和直连处理均走此来源规则。
+
+`config.py` 的 `SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED` 默认 `True`，可通过环境变量覆盖：
+
+```env
+# True：KingGo缺失时允许携程API兜底；False：仅使用KingGo，不发起深航携程时间查询
+SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED=True
+```
+
+该开关统一覆盖主表**开单航班**的调度计飞时间、走货明细各自航班的计飞/实飞入库和后台补查；
+不控制南航，也不等同于 `CTRIP_PROXY_ENABLED`（是否通过代理访问携程）。
 
 ## 深航订舱-过机-装机数据获取（KingGo直连下载）
 
@@ -898,7 +911,8 @@ Cookie 和 `oOr6SIhu` 签名。文件名分别以 `订舱查询导出`、`宽体
 
 ## 深航订舱-计飞时间-集装器数据获取
 
-文件扫描器从 `AwbQueryExport*.xlsx` 读取单号、航程和航班日期后，优先以 KingGo 计飞
+文件扫描器从 `AwbQueryExport*.xlsx` 读取单号、开单航班、航程和航班日期后，使用
+**开单航班 `billing_flight`** 查询调度所需的时间，不依赖可能为空的走货航班 `actual_flight`。优先以 KingGo 计飞
 （缺失时按配置使用携程计飞，最后使用携程预飞）减105分钟调度处理。直连模式由定时管理器直接调用 KingGo GET
 `/awb/query/getaway` 获取 HTML 表格，不创建 `rpa_tasks` 记录；RPA 执行器和队列消费
 逻辑完整保留，可通过配置切换：
@@ -911,7 +925,8 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 `oOr6SIhu`，并发送 `awbPrefix=479`、Excel 单号、Excel 航程、Excel 航班日期、
 `nti=119` 和 `historyCheck=false`。返回页面只解析 `#getWay` 下九列表格数据，
 跳过表头和“合计”行，字段按原 RPA 映射写入
-`shenzhen_air_billing_time_containers`，其中 `planned_time` 按上述来源规则补充计飞时间。空数据、登录页、
+`shenzhen_air_billing_time_containers`，其中 `planned_time` 按上述来源规则补充计飞时间。
+该明细 GET 接口不传航班号；开单航班用于前述调度，不能与明细行里的航班号混用。空数据、登录页、
 网络或上游错误不标记 Excel 明细完成，由下一次定时扫描重试；成功后标记 Excel 明细完成。
 直连失败不会调用 RPA。设置为 `rpa` 后才创建
 `SHENZHEN_AIR_BILLING_TIME_CONTAINER` 队列任务，并沿用原队列、机器人权限、轮询和消费逻辑。
@@ -926,6 +941,19 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 
 上游返回的九列依次映射为 `sequence`、`flight_number`、`flight_date`、
 `billing_time`、`origin`、`destination`、`quantity`、`weight`、`container`。
+每条明细使用自己的 `flight_number`、`flight_date`、`origin`、`destination` 查询并存储
+`actual_time`，不使用主表的开单航班或走货航班代替。同一航班、日期和航段的集装器行复用查询结果。
+后台补查也在同一轮内复用相同航班、日期和航段的查询结果，各明细行分别保存查询次数和下次查询时间。
+直连与 RPA 均在入库时保存已取得的实飞时间，优先使用 `shenzhen_air_flight_info.actual_departure_time`，
+缺失时按既有配置使用携程兜底；尚未公布时保留为空，由后台继续补查。
+后台每分钟轮转检查一批最多 200 条缺少实飞时间的深航明细，从本地动态航班表补齐；
+该本地补齐不受外部接口首次查询延迟、下次查询时间或重试上限影响，不额外发起网络请求。
+同号航班的日期与起降机场必须匹配，城市名称按机场映射匹配，存在多个匹配航段时不猜测。
+后台实飞补齐使用带空值条件的原子更新，查询期间其他进程已写入的计飞/实飞时间不会被旧结果覆盖；
+成功写入日志在事务提交后输出。
+重复导入明细时保留同一航班、日期和航段已取得的实飞时间，避免上游临时失败导致时间丢失。
+`GET /api/v1/departure-tracking/shenzhen-air` 在 `items[].billing_time_containers[].actual_time`
+返回对应明细的实飞时间（北京时间 `YYYY-MM-DD HH:mm:ss` 或 `null`），前端走货信息的实飞时间列可直接使用该字段。
 直连模式不新增任务表，也不改变 Excel 解析入库流程；RPA 模式继续使用现有 `rpa_tasks`。
 切换到直连后，管理器会清理遗留的待执行计飞集装器 RPA 任务；正在执行的旧任务会先完成，
 避免与直连请求并发处理同一条 Excel 明细。

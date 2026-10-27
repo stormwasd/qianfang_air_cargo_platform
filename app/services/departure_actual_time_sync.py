@@ -62,6 +62,7 @@ class DepartureActualTimeSync:
     def __init__(self):
         self._stop = threading.Event()
         self._thread = None
+        self._shenzhen_local_cursor = 0
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -262,9 +263,72 @@ class DepartureActualTimeSync:
         db.commit()
         return claimed == 1
 
+    @staticmethod
+    def _fill_shenzhen_actual_time(db, row_id, result):
+        """Fill missing times using current database values, not stale ORM state."""
+        return db.query(ShenzhenAirBillingTimeContainer).filter(
+            ShenzhenAirBillingTimeContainer.id == row_id,
+            ShenzhenAirBillingTimeContainer.actual_time.is_(None),
+        ).update({
+            ShenzhenAirBillingTimeContainer.actual_time: result["actual_time"],
+            ShenzhenAirBillingTimeContainer.planned_time: case(
+                (or_(
+                    ShenzhenAirBillingTimeContainer.planned_time.is_(None),
+                    ShenzhenAirBillingTimeContainer.planned_time == "",
+                ), result.get("planned_time")),
+                else_=ShenzhenAirBillingTimeContainer.planned_time,
+            ),
+            ShenzhenAirBillingTimeContainer.next_actual_time_query_at: None,
+        }, synchronize_session=False)
+
+    def _backfill_shenzhen_stored_actual_times(self, db):
+        """Rotate over missing times, including rows with exhausted HTTP retries.
+
+        This bounded local scan is independent of the external query schedule;
+        publishing a KingGo actual departure must still fill old detail rows.
+        """
+        if not settings.SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED:
+            return
+        query = db.query(ShenzhenAirBillingTimeContainer).filter(
+            ShenzhenAirBillingTimeContainer.actual_time.is_(None),
+            ShenzhenAirBillingTimeContainer.flight_number.isnot(None),
+            func.trim(ShenzhenAirBillingTimeContainer.flight_number) != "",
+        )
+        rows = query.filter(
+            ShenzhenAirBillingTimeContainer.id > self._shenzhen_local_cursor
+        ).order_by(ShenzhenAirBillingTimeContainer.id).limit(self.BATCH_SIZE).all()
+        if not rows and self._shenzhen_local_cursor:
+            rows = query.order_by(ShenzhenAirBillingTimeContainer.id).limit(self.BATCH_SIZE).all()
+        times = shenzhen_air_flight_times.get_stored_times_for_details(db, rows)
+        written = []
+        for row in rows:
+            result = times.get(row.id) or {}
+            if result.get("actual_time"):
+                # Another sync may have filled a time after the batch read.
+                # Test the current database value in the same UPDATE that
+                # writes it; stale ORM objects must not overwrite that result.
+                updated = self._fill_shenzhen_actual_time(db, row.id, result)
+                if updated:
+                    written.append(
+                        "[DepartureActualTimeSync] 深航实飞时间已写入: "
+                        f"source=KingGo航班表, waybill={row.waybill_number_8}, id={row.id}, "
+                        f"flight={row.flight_number}, date={row.flight_date}, "
+                        f"routing={row.origin}-{row.destination}, actual_time={result['actual_time']}"
+                    )
+        next_cursor = rows[-1].id if len(rows) == self.BATCH_SIZE else 0
+        db.commit()
+        self._shenzhen_local_cursor = next_cursor
+        for message in written:
+            print(message)
+
     async def _sync_shenzhen(self):
         db = SessionLocal()
         try:
+            try:
+                self._backfill_shenzhen_stored_actual_times(db)
+            except Exception as exc:
+                db.rollback()
+                print(f"[DepartureActualTimeSync] 深航本地航班表实飞时间补偿异常: {exc}")
             now = get_china_now().replace(tzinfo=None)
             max_attempts = settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_MAX_ATTEMPTS
             rows = db.query(ShenzhenAirBillingTimeContainer).filter(
@@ -293,21 +357,35 @@ class DepartureActualTimeSync:
                 ShenzhenAirBillingTimeContainer.created_at.asc(),
                 ShenzhenAirBillingTimeContainer.id.asc(),
             ).limit(self.BATCH_SIZE).all()
+            planned_times_by_flight = {}
+            actual_times_by_flight = {}
             for row in rows:
                 row_id = row.id
                 flight_label = row.flight_number
+                flight_key = (row.flight_number, row.flight_date, row.origin, row.destination)
                 try:
                     current_time = get_china_now().replace(tzinfo=None)
                     if not row.planned_time:
-                        result = await shenzhen_air_flight_times.get_flight_times(
-                            row.flight_number,
-                            row.flight_date,
-                            f"{row.origin}-{row.destination}",
-                            required_times=("planned_time",),
-                        )
+                        if flight_key not in planned_times_by_flight:
+                            planned_times_by_flight[flight_key] = await shenzhen_air_flight_times.get_flight_times(
+                                row.flight_number,
+                                row.flight_date,
+                                f"{row.origin}-{row.destination}",
+                                required_times=("planned_time",),
+                            )
+                        result = planned_times_by_flight[flight_key]
                         planned_time = (
                             (result or {}).get("planned_time") if result else None
                         )
+                        if result and result.get("actual_time"):
+                            updated = self._fill_shenzhen_actual_time(db, row_id, result)
+                            db.commit()
+                            if updated:
+                                print(
+                                    "[DepartureActualTimeSync] 深航实飞时间已写入: "
+                                    f"id={row_id}, flight={flight_label}, actual_time={result['actual_time']}"
+                                )
+                            continue
                         if not planned_time:
                             row.next_actual_time_query_at = current_time + timedelta(
                                 seconds=settings.RPA_SHENZHEN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS
@@ -359,20 +437,24 @@ class DepartureActualTimeSync:
                         f"id={row_id}, flight={flight_label}, "
                         f"attempt={_parse_attempt_count(row.actual_time_attempts)}"
                     )
-                    result = await shenzhen_air_flight_times.get_flight_times(
-                        row.flight_number,
-                        row.flight_date,
-                        f"{row.origin}-{row.destination}",
-                        force_refresh=True,
-                        required_times=("actual_time",),
-                    )
-                    if result and result.get("actual_time"):
-                        row.actual_time = str(result["actual_time"])
-                        row.next_actual_time_query_at = None
-                        print(
-                            "[DepartureActualTimeSync] 深航实飞时间已写入: "
-                            f"id={row_id}, actual_time={row.actual_time}"
+                    if flight_key not in actual_times_by_flight:
+                        actual_times_by_flight[flight_key] = await shenzhen_air_flight_times.get_flight_times(
+                            row.flight_number,
+                            row.flight_date,
+                            f"{row.origin}-{row.destination}",
+                            force_refresh=True,
+                            required_times=("actual_time",),
                         )
+                    result = actual_times_by_flight[flight_key]
+                    if result and result.get("actual_time"):
+                        updated = self._fill_shenzhen_actual_time(db, row_id, result)
+                        db.commit()
+                        if updated:
+                            print(
+                                "[DepartureActualTimeSync] 深航实飞时间已写入: "
+                                f"id={row_id}, flight={flight_label}, actual_time={result['actual_time']}"
+                            )
+                        continue
                     else:
                         if _parse_attempt_count(row.actual_time_attempts) >= max_attempts:
                             row.next_actual_time_query_at = None

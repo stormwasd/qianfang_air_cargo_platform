@@ -521,6 +521,11 @@ class TransitLoadingManager:
                     )
                     ready_time = (ctrip_times or {}).get("planned_time") or (ctrip_times or {}).get("ready_time")
                     if not ready_time:
+                        print(
+                            "[TransitLoadingManager] 深航走货明细暂缓: reason=missing_flight_time, "
+                            f"waybill={record.waybill_number}, billing_flight={flight_no}, "
+                            f"date={flight_date}, routing={routing}"
+                        )
                         continue
                     scheduled_at = datetime.fromisoformat(
                         str(ready_time).replace("Z", "+00:00")
@@ -530,8 +535,18 @@ class TransitLoadingManager:
                     else:
                         scheduled_at = scheduled_at.replace(tzinfo=get_china_now().tzinfo)
                     if scheduled_at > get_china_now():
+                        print(
+                            "[TransitLoadingManager] 深航走货明细暂缓: reason=not_due, "
+                            f"waybill={record.waybill_number}, billing_flight={flight_no}, "
+                            f"planned_time={ready_time}, scheduled_at={scheduled_at}"
+                        )
                         continue
 
+                    print(
+                        "[TransitLoadingManager] 开始查询深航走货明细: "
+                        f"waybill={record.waybill_number}, billing_flight={flight_no}, "
+                        f"date={flight_date}, routing={routing}, export_id={record.id}"
+                    )
                     rows = await shenzhen_air_direct_billing_time_container_service.fetch_rows(
                         record.waybill_number, routing, flight_date
                     )

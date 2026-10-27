@@ -153,6 +153,49 @@ class FlightDatabaseTests(unittest.IsolatedAsyncioTestCase):
             db.assert_not_called()
             fallback.assert_awaited_once()
 
+    async def test_actual_time_fallback_normalizes_chinese_airports_and_keeps_kinggo_plan(self):
+        rows, _, _ = parse_flight_page(page_html(route="SZX-XIY", actual=""))
+        with self.Session() as db:
+            save_changed_flights(db, DAY, rows)
+            db.commit()
+        fallback = AsyncMock(return_value={"planned_time": "2026-10-19 10:00:00",
+                                           "actual_time": "2026-10-19 10:10:00"})
+        with patch.object(settings, "SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED", True), \
+             patch("app.services.shenzhen_air_flight_times.SessionLocal", self.Session), \
+             patch("app.services.shenzhen_air_flight_times.shenzhen_air_flight_info_sync.ensure_fresh", AsyncMock()), \
+             patch("app.services.shenzhen_air_flight_times.ctrip_client.get_flight_times", fallback):
+            result = await ShenzhenAirFlightTimes().get_flight_times(
+                " zh9883 ", "2026/10/19 00:00:00", "深圳-西安", required_times=("actual_time",))
+        fallback.assert_awaited_once_with("ZH9883", "2026-10-19", "SZX-XIY", force_refresh=False)
+        self.assertEqual(result["planned_time"], "2026-10-19 09:30:00")
+        self.assertEqual(result["actual_time"], "2026-10-19 10:10:00")
+
+    async def test_ambiguous_or_unknown_city_never_guesses_ctrip_airport(self):
+        with patch.object(settings, "SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED", False), \
+             patch.object(settings, "SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED", True), \
+             patch.dict("app.services.shenzhen_air_flight_times.AIRPORT_CODE_TO_CITY",
+                        {"AAA": "同名城市", "BBB": "同名城市"}), \
+             patch("app.services.shenzhen_air_flight_times.ctrip_client.get_flight_times", AsyncMock()) as fallback:
+            for routing in ("SZX-同名城市", "SZX-未知机场"):
+                self.assertIsNone(await ShenzhenAirFlightTimes().get_flight_times("ZH9883", DAY, routing))
+            fallback.assert_not_awaited()
+
+    async def test_unique_kinggo_segment_disambiguates_city_for_actual_time_fallback(self):
+        rows, _, _ = parse_flight_page(page_html(route="SZX-AAA", actual=""))
+        with self.Session() as db:
+            save_changed_flights(db, DAY, rows)
+            db.commit()
+        with patch.object(settings, "SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED", True), \
+             patch.dict("app.services.shenzhen_air_flight_times.AIRPORT_CODE_TO_CITY",
+                        {"AAA": "同名城市", "BBB": "同名城市"}), \
+             patch("app.services.shenzhen_air_flight_times.SessionLocal", self.Session), \
+             patch("app.services.shenzhen_air_flight_times.shenzhen_air_flight_info_sync.ensure_fresh", AsyncMock()), \
+             patch("app.services.shenzhen_air_flight_times.ctrip_client.get_flight_times",
+                   AsyncMock(return_value={"actual_time": "2026-10-19 10:10:00"})) as fallback:
+            result = await ShenzhenAirFlightTimes().get_flight_times("ZH9883", DAY, "SZX-同名城市")
+        fallback.assert_awaited_once_with("ZH9883", "2026-10-19", "SZX-AAA", force_refresh=False)
+        self.assertEqual(result["actual_time"], "2026-10-19 10:10:00")
+
 
 class FlightPageTests(unittest.IsolatedAsyncioTestCase):
     def test_parser_rejects_login_and_preserves_empty_times(self):

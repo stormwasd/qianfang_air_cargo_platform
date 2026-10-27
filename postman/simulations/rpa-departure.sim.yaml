@@ -5,3 +5,5 @@ mocks:
     path: ../mocks/rpa-departure/config.yaml
   - routeKey: kinggo
     path: ../mocks/kinggo/config.yaml
+  - routeKey: ctrip
+    path: ../mocks/ctrip-times/config.yaml

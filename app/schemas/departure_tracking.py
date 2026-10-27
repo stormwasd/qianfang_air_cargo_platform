@@ -10,8 +10,8 @@ class ShenzhenAirBillingTimeContainerDTO(BaseModel):
     flight_number: Optional[str] = Field(None, description="航班号")
     flight_date: Optional[str] = Field(None, description="航班日期")
     billing_time: Optional[str] = Field(None, description="计飞时间")
-    planned_time: Optional[str] = Field(None, description="预飞时间（携程）")
-    actual_time: Optional[str] = Field(None, description="实飞时间（携程）")
+    planned_time: Optional[str] = Field(None, description="计划起飞时间（KingGo优先，携程兜底）")
+    actual_time: Optional[str] = Field(None, description="本条走货明细航班的实际起飞时间，KingGo优先，携程兜底；未公布时为空")
     next_actual_time_query_at: Optional[datetime] = None
     origin: Optional[str] = Field(None, description="起飞站")
     destination: Optional[str] = Field(None, description="目的站")

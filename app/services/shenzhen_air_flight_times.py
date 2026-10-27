@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 import logging
 import re
 
+from sqlalchemy import and_, or_
+
 from app.config import settings
 from app.database import SessionLocal
 from app.models.shenzhen_air_flight_info import ShenzhenAirFlightInfo
@@ -48,6 +50,49 @@ def times_from_record(record):
 
 
 class ShenzhenAirFlightTimes:
+    @staticmethod
+    def get_stored_times_for_details(db, details):
+        """Batch local lookups, without a network call or consuming retry attempts.
+
+        Match the detail's own flight/date/segment, never its parent's flight.
+        Ambiguous city names must not select an arbitrary airport segment.
+        """
+        if not settings.SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED:
+            return {}
+        keys = {}
+        for row in details:
+            flight = str(row.flight_number or "").strip().upper()
+            if not re.fullmatch(r"[A-Z0-9]{2}\d{1,4}[A-Z]?", flight):
+                continue
+            try:
+                day = normalize_date(row.flight_date)
+            except (TypeError, ValueError):
+                continue
+            origins = _airport_candidates(str(row.origin or ""))
+            destinations = _airport_candidates(str(row.destination or ""))
+            if origins and destinations:
+                keys[row.id] = (day, flight, origins, destinations)
+        if not keys:
+            return {}
+        flights_by_day = {}
+        for day, flight, _, _ in keys.values():
+            flights_by_day.setdefault(day, set()).add(flight)
+        records = db.query(ShenzhenAirFlightInfo).filter(or_(*[
+            and_(ShenzhenAirFlightInfo.flight_date == day,
+                 ShenzhenAirFlightInfo.flight_number.in_(flights))
+            for day, flights in flights_by_day.items()
+        ])).all()
+        segments = {}
+        for record in records:
+            segments.setdefault((record.flight_date, record.flight_number), []).append(record)
+        result = {}
+        for row_id, (day, flight, origins, destinations) in keys.items():
+            matches = [record for record in segments.get((day, flight), [])
+                       if record.origin in origins and record.destination in destinations]
+            if len(matches) == 1:
+                result[row_id] = times_from_record(matches[0])
+        return result
+
     async def get_flight_times(
         self, flight_no, flight_date, routing, force_refresh=False,
         *, required_times=("planned_time", "actual_time"),
@@ -63,6 +108,12 @@ class ShenzhenAirFlightTimes:
         if len(route) != 2:
             return None
         flight = str(flight_no).strip().upper()
+        origins = _airport_candidates(route[0])
+        destinations = _airport_candidates(route[1])
+        fallback_routing = (
+            f"{origins[0]}-{destinations[0]}"
+            if len(origins) == len(destinations) == 1 else None
+        )
         if settings.SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED:
             # Startup seeds today's table before consumers start. Dates not
             # seeded (tomorrow/history) are synchronized on demand, throttled
@@ -73,11 +124,12 @@ class ShenzhenAirFlightTimes:
                 records = db.query(ShenzhenAirFlightInfo).filter(
                     ShenzhenAirFlightInfo.flight_date == day,
                     ShenzhenAirFlightInfo.flight_number == flight,
-                    ShenzhenAirFlightInfo.origin.in_(_airport_candidates(route[0])),
-                    ShenzhenAirFlightInfo.destination.in_(_airport_candidates(route[1])),
+                    ShenzhenAirFlightInfo.origin.in_(origins),
+                    ShenzhenAirFlightInfo.destination.in_(destinations),
                 ).limit(2).all()
                 if len(records) == 1:
                     result = times_from_record(records[0])
+                    fallback_routing = f"{records[0].origin}-{records[0].destination}"
             except Exception as exc:
                 logger.warning("深航KingGo航班表查询失败 error_type=%s", type(exc).__name__)
             finally:
@@ -86,9 +138,17 @@ class ShenzhenAirFlightTimes:
         if settings.SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED and any(
             not result.get(key) for key in required_times
         ):
+            if not fallback_routing:
+                # Ctrip requires airport codes. Do not send Chinese labels or
+                # choose an arbitrary airport when a city has several matches.
+                logger.warning(
+                    "深航携程兜底跳过 reason=ambiguous_or_unknown_airports flight=%s date=%s routing=%s",
+                    flight, day, routing,
+                )
+                return result if any(result.values()) else None
             try:
                 fallback = await ctrip_client.get_flight_times(
-                    flight_no, flight_date, routing, force_refresh=force_refresh
+                    flight, day.isoformat(), fallback_routing, force_refresh=force_refresh
                 )
             except Exception as exc:
                 logger.warning("深航携程兜底失败 error_type=%s；保留KingGo时间", type(exc).__name__)

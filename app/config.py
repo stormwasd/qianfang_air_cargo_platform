@@ -220,7 +220,8 @@ class Settings(BaseSettings):
         default=60, ge=10, le=3600, description="深航KingGo航班表同步失败重试间隔（秒）"
     )
     SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED: bool = Field(
-        default=True, description="深航缺失计飞/实飞或需要预飞时间时是否允许调用原携程客户端"
+        default=True,
+        description="深航计飞/实飞缺失时启用携程API兜底：覆盖开单航班调度、每条走货明细入库及后台补查；关闭后不请求携程，不影响南航",
     )
 
     # 携程航班接口代理。默认关闭以保持非 Docker/既有部署的原行为；

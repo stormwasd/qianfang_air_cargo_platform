@@ -3133,76 +3133,13 @@ class RPAWorker:
                         waybill_number_8 = params.get("waybill_number_8", "")
                         booking_export_id = task.target_id
                         
-                        if booking_export_id:
-                            db.query(ShenzhenAirBillingTimeContainer).filter(
-                                ShenzhenAirBillingTimeContainer.booking_export_id == booking_export_id
-                            ).delete()
-                        elif waybill_number_8:
-                            db.query(ShenzhenAirBillingTimeContainer).filter(
-                                ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_number_8
-                            ).delete()
-                        
-                        records_to_insert = []
-                        has_invalid_flight = False
-                        from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
-                        for row in billing_data:
-                            if not row or not isinstance(row, list) or len(row) < 9:
-                                continue
-                            
-                            seq = str(row[0]).strip()
-                            if seq == "序号" or seq == "" or "合计" in str(row[1]):
-                                continue
-                                
-                            flight_number = str(row[1]).strip() if row[1] else ""
-                            if not flight_number:
-                                has_invalid_flight = True
-                            planned_time = None
-                            try:
-                                if flight_number:
-                                    print(
-                                        f"{self._log_prefix} 查询深航航班时间（KingGo优先）: "
-                                        f"flight={flight_number}, date={str(row[2]).strip()}, "
-                                        f"routing={str(row[4]).strip()}-{str(row[5]).strip()}"
-                                    )
-                                    ctrip_times = await shenzhen_air_flight_times.get_flight_times(
-                                        flight_number, str(row[2]).strip(),
-                                        f"{str(row[4]).strip()}-{str(row[5]).strip()}",
-                                        required_times=("planned_time",),
-                                    )
-                                    planned_time = (ctrip_times or {}).get("planned_time")
-                                    print(
-                                        f"{self._log_prefix} 深航航班时间返回: "
-                                        f"flight={flight_number}, planned_time={planned_time}, "
-                                        f"ready_time={(ctrip_times or {}).get('ready_time') if ctrip_times else None}"
-                                    )
-                            except Exception as exc:
-                                print(f"{self._log_prefix} 获取深航计飞时间失败: {exc}")
-                            record = ShenzhenAirBillingTimeContainer(
-                                booking_export_id=booking_export_id,
-                                waybill_number_8=waybill_number_8,
-                                sequence=seq,
-                                flight_number=flight_number or None,
-                                flight_date=str(row[2]).strip(),
-                                billing_time=str(row[3]).strip(),
-                                origin=str(row[4]).strip(),
-                                destination=str(row[5]).strip(),
-                                quantity=str(row[6]).strip(),
-                                weight=str(row[7]).strip(),
-                                container=str(row[8]).strip(),
-                                planned_time=planned_time,
-                                actual_time=None,
-                                actual_time_attempts="0"
-                            )
-                            records_to_insert.append(record)
-                            
-                        if records_to_insert:
-                            db.add_all(records_to_insert)
-                            db.commit()
-                            print(f"{self._log_prefix} 成功将 {len(records_to_insert)} 条计飞时间数据入库！")
-                        else:
-                            print(f"{self._log_prefix} 未解析到有效的计飞时间数据行")
-
-                        if has_invalid_flight or not records_to_insert:
+                        from app.services.shenzhen_air_billing_time_container_processor import (
+                            persist_shenzhen_air_billing_rows,
+                        )
+                        result = await persist_shenzhen_air_billing_rows(
+                            db, billing_data, waybill_number_8, booking_export_id
+                        )
+                        if result.has_invalid_flight or not result.inserted_count:
                             rpa_task_service.requeue_task(
                                 db, task.id,
                                 settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,

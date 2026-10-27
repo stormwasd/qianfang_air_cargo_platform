@@ -12,6 +12,7 @@ from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.csa_departure_tracking import CsaLalamoveInformation
 from app.models.rpa_task import RPATask, RPATaskStatus
 from app.models.transit_loading import ShenzhenAirBookingExport
+from app.models.shenzhen_air_flight_info import ShenzhenAirFlightInfo
 from app.services.departure_actual_time_sync import (
     DepartureActualTimeSync,
     _parse_planned,
@@ -27,6 +28,7 @@ class DepartureActualTimeSyncTests(unittest.IsolatedAsyncioTestCase):
         self.engine = create_engine("sqlite:///:memory:")
         ShenzhenAirBookingExport.__table__.create(self.engine)
         ShenzhenAirBillingTimeContainer.__table__.create(self.engine)
+        ShenzhenAirFlightInfo.__table__.create(self.engine)
         ChinaSouthernAirApprovalData.__table__.create(self.engine)
         CsaLalamoveInformation.__table__.create(self.engine)
         RPATask.__table__.create(self.engine)
