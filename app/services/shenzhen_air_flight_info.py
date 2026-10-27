@@ -16,14 +16,41 @@ import httpx
 from app.config import settings
 from app.database import SessionLocal
 from app.models.shenzhen_air_flight_info import ShenzhenAirFlightInfo
-from app.services.shenzhen_air_direct_approval import shenzhen_air_direct_approval_service
+from app.services.shenzhen_air_direct_approval import (
+    ShenzhenAirDirectApprovalError, shenzhen_air_direct_approval_service,
+)
 from app.utils.helpers import get_china_now
 
 logger = logging.getLogger(__name__)
 
 
 class FlightInfoError(RuntimeError):
-    """An invalid or incomplete KingGo flight table; preserve existing data."""
+    """A flight-table failure with safe, structured diagnostic information."""
+
+    REASONS = {
+        "invalid_pagination": "KingGo航班表分页信息无效",
+        "invalid_headers": "KingGo未返回有效航班表（可能登录失效或列结构改变）",
+        "missing_pagination": "KingGo航班表缺少有效分页信息",
+        "invalid_columns": "KingGo航班表列数改变，已停止同步",
+        "invalid_flight_or_route": "KingGo航班表航班号或航程无效",
+        "invalid_date": "KingGo航班表日期无效",
+        "request_failed": "KingGo航班表请求失败",
+        "total_changed": "KingGo翻页期间总数发生变化，下轮重试",
+        "date_mismatch": "KingGo航班表返回日期与查询日期不匹配，下轮重试",
+        "duplicate_segment": "KingGo分页出现重复航段，下轮重试",
+        "incomplete_pages": "KingGo航班表分页不完整，已保留旧数据",
+        "empty_page": "KingGo航班表分页提前结束",
+        "page_limit": "KingGo航班表超过分页上限，已保留旧数据",
+        "save_date_mismatch": "航班同步日期不匹配",
+    }
+
+    def __init__(self, reason: str, **context):
+        # Keep legacy exception messages usable, but never log an arbitrary
+        # message that may contain a signed URL, Cookie or response content.
+        self.reason_code = reason if reason in self.REASONS else "unknown"
+        self.safe_reason = self.REASONS.get(reason, "KingGo航班表请求或校验失败")
+        self.context = context
+        super().__init__(self.REASONS.get(reason, reason))
 
 
 def normalize_date(value) -> date:
@@ -58,7 +85,7 @@ class _FlightTableParser(HTMLParser):
                 self.total = int(attrs["totalcount"])
                 self.page_size = int(attrs["numperpage"])
             except (KeyError, ValueError):
-                raise FlightInfoError("KingGo航班表分页信息无效")
+                raise FlightInfoError("invalid_pagination")
         if tag == "tr" and attrs.get("target") == "flight_info_id":
             self._row = {"kinggo_id": attrs.get("rel"), "cells": []}
         elif tag == "td" and self._row is not None:
@@ -101,24 +128,38 @@ def parse_flight_page(html: str):
         "飞机号", "机型", "宽/窄", "状态", "总重量", "总体积", "控制重量", "控制体积", "开放重量", "货机", "详情",
     ]
     if parser.headers != expected_headers:
-        raise FlightInfoError("KingGo未返回有效航班表（可能登录失效或列结构改变）")
+        mismatch = next((index for index, (expected, actual) in enumerate(
+            zip(expected_headers, parser.headers), start=1
+        ) if expected != actual), min(len(expected_headers), len(parser.headers)) + 1)
+        raise FlightInfoError(
+            "invalid_headers", expected_columns=len(expected_headers),
+            actual_columns=len(parser.headers), header_mismatch_column=mismatch,
+        )
     if parser.total is None or parser.total < 0 or not parser.page_size or parser.page_size < 1:
-        raise FlightInfoError("KingGo航班表缺少有效分页信息")
+        raise FlightInfoError("missing_pagination", actual_total=parser.total, page_size=parser.page_size)
     rows = []
-    for entry in parser.rows:
+    for row_index, entry in enumerate(parser.rows, start=1):
         cells = entry["cells"]
         if len(cells) != 20:
-            raise FlightInfoError("KingGo航班表列数改变，已停止同步")
+            raise FlightInfoError("invalid_columns", row_index=row_index,
+                                  expected_columns=20, actual_columns=len(cells))
         route = cells[3].strip().upper().split("-")
         flight = cells[2].strip().upper()
-        if not re.fullmatch(r"[A-Z0-9]{2}\d{1,4}[A-Z]?", flight) or len(route) != 2 or any(
-            not re.fullmatch(r"[A-Z]{3}", port) for port in route
-        ):
-            raise FlightInfoError("KingGo航班表航班号或航程无效")
+        valid_flight = re.fullmatch(r"[A-Z0-9]{2}\d{1,4}[A-Z]?", flight)
+        valid_route = len(route) == 2 and all(
+            re.fullmatch(r"[A-Z]{3}", port) for port in route
+        )
+        if not valid_flight or not valid_route:
+            raise FlightInfoError(
+                "invalid_flight_or_route", row_index=row_index,
+                invalid_fields=",".join(field for field, valid in (
+                    ("flight_number", valid_flight), ("routing", valid_route)
+                ) if not valid),
+            )
         try:
             flight_date = normalize_date(cells[1])
         except ValueError as exc:
-            raise FlightInfoError("KingGo航班表日期无效") from exc
+            raise FlightInfoError("invalid_date", row_index=row_index, flight_number=flight) from exc
         row = dict(zip(VALUE_COLUMNS, (v or None for v in cells[4:19])))
         row.update(flight_date=flight_date, flight_number=flight,
                    origin=route[0], destination=route[1], kinggo_id=entry["kinggo_id"])
@@ -161,23 +202,39 @@ class KingGoFlightInfoClient:
                                                  headers=headers, content=body)
                     response.raise_for_status()
                 except httpx.HTTPError as exc:
-                    raise FlightInfoError("KingGo航班表请求失败（%s）" % type(exc).__name__) from exc
-                rows, count, size = parse_flight_page(response.text)
+                    context = {"page": page, "request_error_type": type(exc).__name__}
+                    if isinstance(exc, httpx.HTTPStatusError):
+                        context["http_status"] = exc.response.status_code
+                    raise FlightInfoError("request_failed", **context) from exc
+                try:
+                    rows, count, size = parse_flight_page(response.text)
+                except FlightInfoError as exc:
+                    exc.context.update(page=page, http_status=response.status_code)
+                    raise
                 if total is not None and count != total:
-                    raise FlightInfoError("KingGo翻页期间总数发生变化，下轮重试")
+                    raise FlightInfoError("total_changed", page=page, expected_total=total,
+                                          actual_total=count, collected_count=len(all_rows), page_rows=len(rows))
                 total = count
-                for row in rows:
-                    if row["flight_date"] != flight_date or segment_key(row) in all_rows:
-                        raise FlightInfoError("KingGo分页出现重复航段或日期不匹配，下轮重试")
+                for row_index, row in enumerate(rows, start=1):
+                    if row["flight_date"] != flight_date:
+                        raise FlightInfoError("date_mismatch", page=page, row_index=row_index,
+                                              flight_number=row["flight_number"], returned_date=row["flight_date"].isoformat())
+                    if segment_key(row) in all_rows:
+                        raise FlightInfoError("duplicate_segment", page=page, row_index=row_index,
+                                              flight_number=row["flight_number"], origin=row["origin"],
+                                              destination=row["destination"], collected_count=len(all_rows))
                     all_rows[segment_key(row)] = row
                 if page >= max(1, math.ceil(total / size)):
                     if len(all_rows) != total:
-                        raise FlightInfoError("KingGo航班表分页不完整，已保留旧数据")
+                        raise FlightInfoError("incomplete_pages", page=page, page_size=size,
+                                              expected_total=total, collected_count=len(all_rows), page_rows=len(rows))
                     return list(all_rows.values())
                 if not rows:
-                    raise FlightInfoError("KingGo航班表分页提前结束")
+                    raise FlightInfoError("empty_page", page=page, page_size=size,
+                                          expected_total=total, collected_count=len(all_rows), page_rows=0)
                 page += 1
-        raise FlightInfoError("KingGo航班表超过分页上限，已保留旧数据")
+        raise FlightInfoError("page_limit", page=self.MAX_PAGES, max_pages=self.MAX_PAGES,
+                              expected_total=total, collected_count=len(all_rows))
 
 
 def save_changed_flights(db, flight_date: date, rows: list[dict]) -> tuple[int, int]:
@@ -188,9 +245,9 @@ def save_changed_flights(db, flight_date: date, rows: list[dict]) -> tuple[int, 
     }
     inserted = updated = 0
     now = get_china_now()
-    for values in rows:
+    for row_index, values in enumerate(rows, start=1):
         if values["flight_date"] != flight_date:
-            raise FlightInfoError("航班同步日期不匹配")
+            raise FlightInfoError("save_date_mismatch", row_index=row_index)
         key = segment_key(values)
         record = existing.get(key)
         if record is None:
@@ -230,9 +287,11 @@ class ShenzhenAirFlightInfoSync:
             if now - self._attempt.get(flight_date, -float("inf")) < settings.SHENZHEN_AIR_FLIGHT_INFO_SYNC_RETRY_SECONDS:
                 return False
             self._attempt[flight_date] = now
+            stage = "fetch"
             try:
                 # Bound the whole paginated fetch, especially during startup.
                 rows = await asyncio.wait_for(self.client.fetch(flight_date), timeout=120)
+                stage = "persist"
                 db = SessionLocal()
                 try:
                     inserted, updated = save_changed_flights(db, flight_date, rows)
@@ -248,9 +307,28 @@ class ShenzhenAirFlightInfoSync:
                 return True
             except Exception as exc:
                 self._attempt[flight_date] = time.monotonic()
-                # HAR exceptions can contain Cookie data in their causes.
-                logger.warning("深航KingGo航班同步失败 date=%s error_type=%s；保留旧数据",
-                               flight_date, type(exc).__name__)
+                # Log only our fixed reasons and validated diagnostic fields.
+                # Raw exception strings/tracebacks may expose HAR credentials,
+                # signed URLs, HTML bodies or database connection details.
+                if isinstance(exc, FlightInfoError):
+                    reason = exc.safe_reason
+                    details = {"reason_code": exc.reason_code, **exc.context}
+                elif isinstance(exc, ShenzhenAirDirectApprovalError):
+                    reason = "KingGo HAR签名或Cookie准备失败"
+                    details = {"reason_code": "auth_failed"}
+                elif stage == "fetch" and isinstance(exc, TimeoutError):
+                    reason = "KingGo航班表整轮同步超时"
+                    details = {"reason_code": "sync_timeout", "timeout_seconds": 120}
+                else:
+                    reason = "KingGo航班表入库失败" if stage == "persist" else "KingGo航班表获取失败"
+                    details = {"reason_code": "persist_failed" if stage == "persist" else "fetch_failed"}
+                if exc.__cause__ is not None:
+                    details["cause_type"] = type(exc.__cause__).__name__
+                logger.warning(
+                    "深航KingGo航班同步失败 date=%s error_type=%s stage=%s reason=%s %s；保留旧数据",
+                    flight_date, type(exc).__name__, stage, reason,
+                    " ".join(f"{key}={value}" for key, value in details.items()),
+                )
                 return False
         finally:
             self._lock.release()

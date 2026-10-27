@@ -838,6 +838,18 @@ POST `/export`请求体使用对应列表的筛选字段，另接受可选 `sele
 启动同步失败不会阻止应用启动，后台按重试间隔重试；消费者查询明天或历史日期时也会按需同步该日。
 同一进程跨线程共享同步互斥及日期级限频，避免每个运单重复下载全部航班；多进程通过数据库唯一键防重复。
 
+同步失败日志保留 `date`、`error_type`，增加中文 `reason`、固定的 `reason_code` 和阶段
+`stage=fetch|persist`。请求异常记录 `page`、`request_error_type`，HTTP错误额外记录
+`http_status`；分页校验按原因记录期望总数 `expected_total`、本页返回总数 `actual_total`、
+累计已收集条数 `collected_count`、本页条数 `page_rows` 和 `page_size`。
+数据行错误记录当前页内从1开始的 `row_index`，以及错误字段名或列数；表头错误记录
+`header_mismatch_column`（从1开始的首个不匹配或缺失/多余列位置）。
+重复航段和日期不匹配分别记录 `reason_code=duplicate_segment|date_mismatch`，
+附上已校验的航班号、机场码或返回日期，便于定位。HAR签名/Cookie准备失败记录
+`auth_failed`，整轮120秒超时记录 `sync_timeout`，入库异常记录 `persist_failed`。
+底层异常仅记录类型 `cause_type`，不打印异常全文、请求头、Cookie、签名URL或响应正文。
+这些诊断字段不改变失败整轮回滚、保留旧数据和原有重试限频规则。
+
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED` | `True` | 启用KingGo同步及深航时间优先查询；关闭后仅按兜底开关调用携程 |

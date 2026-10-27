@@ -12,7 +12,7 @@ client's JSON contract and regression tests.
 
 Run `postman simulation run postman/simulations/rpa-departure.sim.yaml --port 4912 --output ndjson --no-history`.
 Wait for `listening`, set `RPA_DEPARTURE_SIMULATION_URL=http://127.0.0.1:4912/rpa`,
-then run `python -m unittest tests.test_shenzhen_air_detail_actual_times tests.test_departure_tracking_schedule tests.test_shenzhen_air_flight_info tests.test_shenzhen_air_direct_billing_time_container tests.test_ctrip_client tests.test_csa_departure_rpa_success tests.test_tracking_execution_time tests.test_shenzhen_air_direct_transit_loading tests.test_shenzhen_air_direct_approval -q`.
+then run `python -m unittest tests.test_shenzhen_air_flight_info_logging tests.test_shenzhen_air_detail_actual_times tests.test_departure_tracking_schedule tests.test_shenzhen_air_flight_info tests.test_shenzhen_air_direct_billing_time_container tests.test_ctrip_client tests.test_csa_departure_rpa_success tests.test_tracking_execution_time tests.test_shenzhen_air_direct_transit_loading tests.test_shenzhen_air_direct_approval -q`.
 Inspect the simulation's request events, then stop it with Ctrl+C.
 
 ## Assumptions
@@ -32,6 +32,13 @@ Inspect the simulation's request events, then stop it with Ctrl+C.
 ## Observations
 
 <!-- begin:observations -->
+2026-10-27 diagnostics: All 109 selected tests passed; all three members served
+requests. The real KingGo client logged the intentional HTTP 400 with its page
+and status, and a one-page test limit logged the expected/collected totals.
+Failure-log tests also checked HTML, pagination, transport, auth and persistence
+errors, retained stored rows/retry throttling, and omitted synthetic secrets
+from raw cells, responses, signed URLs and exception causes.
+
 2026-10-27 review: All 102 selected tests passed; KingGo, RPA and Ctrip members
 all served requests. Three added database interleaving tests (four scenarios)
 first reproduced stale local/HTTP results overwriting another session's saved
