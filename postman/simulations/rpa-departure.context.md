@@ -32,6 +32,13 @@ Inspect the simulation's request events, then stop it with Ctrl+C.
 ## Observations
 
 <!-- begin:observations -->
+2026-10-27 mixed identifiers: All 113 selected tests passed; KingGo, Ctrip and
+RPA members all served requests. Three HTTP pages containing ZH9883, ZHT2F8 and
+ZH30CU synchronized together; complete identifiers remained queryable, blank
+actual departures stayed blank, and local detail backfill matched the full
+identifier/date/segment. Before the fix, the added cases reproduced both the
+parser rejection and the skipped local backfill. Live upstream was not called.
+
 2026-10-27 diagnostics: All 109 selected tests passed; all three members served
 requests. The real KingGo client logged the intentional HTTP 400 with its page
 and status, and a one-page test limit logged the expected/collected totals.
@@ -55,8 +62,4 @@ previously saved actual time. Missing export IDs were rejected without changing
 existing details. These observations establish local contract/persistence
 behavior, not availability or authentication of the live providers.
 
-2026-10-27: All 91 selected tests passed. Both KingGo and RPA members served
-requests. The detail actual-time integration fetched both flight-table pages
-and the getaway HTML over HTTP, saved the flight's actual time on its cargo
-detail, and verified local backfill after external retries were exhausted.
 <!-- end:observations -->

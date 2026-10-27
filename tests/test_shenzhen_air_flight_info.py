@@ -1,3 +1,4 @@
+import os
 import unittest
 from datetime import date, datetime
 from unittest.mock import AsyncMock, patch
@@ -36,6 +37,37 @@ class FlightDatabaseTests(unittest.IsolatedAsyncioTestCase):
         ShenzhenAirFlightInfo.__table__.create(self.engine)
         self.Session = sessionmaker(bind=self.engine)
         self.addCleanup(self.engine.dispose)
+
+    @unittest.skipUnless(os.environ.get("RPA_DEPARTURE_SIMULATION_URL"), "Local KingGo simulation required")
+    async def test_http_sync_keeps_mixed_identifiers_and_normal_flights_queryable(self):
+        day = date(2026, 10, 27)
+        origin = os.environ["RPA_DEPARTURE_SIMULATION_URL"].rsplit("/rpa", 1)[0] + "/kinggo"
+        signed_url = "https://www.kinggo.com" + KingGoFlightInfoClient.PATH + "&oOr6SIhu=local"
+        sync = ShenzhenAirFlightInfoSync()
+        with patch.object(settings, "SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED", True), \
+             patch.object(settings, "SHENZHEN_AIR_KINGGO_API_ORIGIN", origin), \
+             patch("app.services.shenzhen_air_flight_info.SessionLocal", self.Session), \
+             patch("app.services.shenzhen_air_flight_info.shenzhen_air_direct_approval_service._auth",
+                   AsyncMock(return_value=(signed_url, {"Cookie": "local"}))):
+            self.assertTrue(await sync.ensure_fresh(day))
+        with self.Session() as db:
+            records = db.query(ShenzhenAirFlightInfo).all()
+            self.assertEqual({r.flight_number for r in records}, {"ZH9883", "ZHT2F8", "ZH30CU"})
+            self.assertTrue(all(r.actual_departure_time is None for r in records if r.flight_number != "ZH9883"))
+        with patch.object(settings, "SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED", True), \
+             patch.object(settings, "SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED", True), \
+             patch("app.services.shenzhen_air_flight_times.SessionLocal", self.Session), \
+             patch("app.services.shenzhen_air_flight_times.shenzhen_air_flight_info_sync.ensure_fresh", AsyncMock()), \
+             patch("app.services.shenzhen_air_flight_times.ctrip_client.get_flight_times", AsyncMock()) as fallback:
+            client = ShenzhenAirFlightTimes()
+            for flight in ("ZHT2F8", "ZH30CU"):
+                times = await client.get_flight_times(
+                    flight.lower(), day, "SZX-SZX", required_times=("planned_time",))
+                self.assertEqual(times["planned_time"], "2026-10-27 00:00:00")
+                self.assertIsNone(times["actual_time"])
+            normal = await client.get_flight_times("ZH9883", day, "SZX-HGH")
+            self.assertEqual(normal["actual_time"], "2026-10-27 09:45:00")
+            fallback.assert_not_awaited()
 
     def test_unique_identity_and_only_changed_rows_are_updated(self):
         rows, _, _ = parse_flight_page(page_html())
@@ -198,6 +230,24 @@ class FlightDatabaseTests(unittest.IsolatedAsyncioTestCase):
 
 
 class FlightPageTests(unittest.IsolatedAsyncioTestCase):
+    def test_parser_preserves_mixed_identifiers_and_existing_flight_formats(self):
+        for flight in ("ZHT2F8", "ZH30CU", "ZH9883", "ZH1234A", "3U1", "8L9999"):
+            with self.subTest(flight=flight):
+                rows, count, _ = parse_flight_page(page_html(flight=flight.lower(), route="SZX-SZX", actual=""))
+                self.assertEqual(count, 1)
+                self.assertEqual(rows[0]["flight_number"], flight)
+                self.assertEqual((rows[0]["origin"], rows[0]["destination"]), ("SZX", "SZX"))
+                self.assertIsNone(rows[0]["actual_departure_time"])
+
+    def test_parser_still_rejects_malformed_identifiers_and_routes(self):
+        for flight in ("", "ZH", "ZH123456", "ZH 123", "ZH-123", "ZH12/3", "深航123", "ZH１２３"):
+            with self.subTest(flight=flight), self.assertRaises(FlightInfoError) as error:
+                parse_flight_page(page_html(flight=flight))
+            self.assertEqual(error.exception.context["invalid_fields"], "flight_number")
+        with self.assertRaises(FlightInfoError) as error:
+            parse_flight_page(page_html(flight="ZHT2F8", route="SZX-"))
+        self.assertEqual(error.exception.context["invalid_fields"], "routing")
+
     def test_parser_rejects_login_and_preserves_empty_times(self):
         with self.assertRaises(FlightInfoError):
             parse_flight_page("<html>Login</html>")

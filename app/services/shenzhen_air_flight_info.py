@@ -65,6 +65,16 @@ def segment_key(row):
     return (row["flight_date"], row["flight_number"], row["origin"], row["destination"])
 
 
+def is_valid_kinggo_flight_number(flight: str) -> bool:
+    """Validate a trimmed, uppercase KingGo identifier without rewriting it.
+
+    Keep the existing 2-character carrier + 1..5-character suffix length limit,
+    but allow mixed ASCII letters/digits such as ZHT2F8 and ZH30CU. KingGo's
+    identifiers are not limited to conventional numeric flight suffixes.
+    """
+    return re.fullmatch(r"[A-Z0-9]{3,7}", flight) is not None
+
+
 class _FlightTableParser(HTMLParser):
     """Read text only; never execute the scripts in KingGo's HTML response."""
 
@@ -145,7 +155,7 @@ def parse_flight_page(html: str):
                                   expected_columns=20, actual_columns=len(cells))
         route = cells[3].strip().upper().split("-")
         flight = cells[2].strip().upper()
-        valid_flight = re.fullmatch(r"[A-Z0-9]{2}\d{1,4}[A-Z]?", flight)
+        valid_flight = is_valid_kinggo_flight_number(flight)
         valid_route = len(route) == 2 and all(
             re.fullmatch(r"[A-Z]{3}", port) for port in route
         )

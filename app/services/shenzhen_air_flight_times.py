@@ -8,7 +8,9 @@ from sqlalchemy import and_, or_
 from app.config import settings
 from app.database import SessionLocal
 from app.models.shenzhen_air_flight_info import ShenzhenAirFlightInfo
-from app.services.shenzhen_air_flight_info import normalize_date, shenzhen_air_flight_info_sync
+from app.services.shenzhen_air_flight_info import (
+    is_valid_kinggo_flight_number, normalize_date, shenzhen_air_flight_info_sync,
+)
 from app.utils.airport_code_mapper import AIRPORT_CODE_TO_CITY
 from app.utils.ctrip_client import ctrip_client
 
@@ -62,7 +64,7 @@ class ShenzhenAirFlightTimes:
         keys = {}
         for row in details:
             flight = str(row.flight_number or "").strip().upper()
-            if not re.fullmatch(r"[A-Z0-9]{2}\d{1,4}[A-Z]?", flight):
+            if not is_valid_kinggo_flight_number(flight):
                 continue
             try:
                 day = normalize_date(row.flight_date)

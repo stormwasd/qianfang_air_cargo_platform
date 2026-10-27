@@ -97,6 +97,30 @@ class DetailActualTimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(row.next_actual_time_query_at)
         network.assert_not_awaited()
 
+    async def test_mixed_identifier_details_receive_local_actuals_without_cross_matching(self):
+        self.add_flight("ZHT2F8", destination="SZX", actual="0950")
+        self.add_flight("ZH30CU", destination="SZX", actual="1010")
+        # Retaining the full identifier prevents collisions with ordinary flights.
+        self.add_flight("ZH30", destination="SZX", actual="1100")
+        for row_id, flight, day, destination in (
+            (1, " zht2f8 ", DAY.isoformat(), "SZX"),
+            (2, "ZH30CU", DAY.isoformat(), "SZX"),
+            (3, "ZH30", DAY.isoformat(), "SZX"),
+            (4, "ZHT2F8", "2026-10-20", "SZX"),
+            (5, "ZH30CU", DAY.isoformat(), "HGH"),
+        ):
+            self.db.add(Detail(id=row_id, booking_export_id=10, flight_number=flight,
+                               flight_date=day, origin="SZX", destination=destination,
+                               actual_time_attempts="100"))
+        self.db.commit()
+        with patch.object(shenzhen_air_flight_times, "get_flight_times", AsyncMock()) as network:
+            await DepartureActualTimeSync()._sync_shenzhen()
+        self.db.expire_all()
+        self.assertEqual([self.db.get(Detail, i).actual_time for i in range(1, 6)], [
+            "2026-10-19 09:50:00", "2026-10-19 10:10:00", "2026-10-19 11:00:00", None, None,
+        ])
+        network.assert_not_awaited()
+
     async def test_local_lookup_requires_matching_day_and_segment(self):
         self.add_flight()
         for row_id, day, destination in [(1, "2026-10-19", "杭州"), (2, "2026-10-20", "杭州"),
