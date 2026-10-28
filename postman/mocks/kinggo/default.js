@@ -89,7 +89,7 @@ http.createServer(async (req, res) => {
       aliasCode: "GEN", formerRate: "5.3", aviationFee: "50", totalFee: "51",
       deliveryFee: "0", oldCabinType: "C", cabinType: "F", cabinTypeName: "F舱",
       carrierCode: "ZH", transNote: "配件", goodsName: "配件", tlicellCellinfos: "[]",
-      pieces: "1", chargeWeight: "3", firstAddFee: "", awbType: "",
+      pieces: "1", chargeWeight: fields.get("shpInfo") === "BUSINESS_REJECT" ? "45" : "3", firstAddFee: "", awbType: "",
     })) {
       if (fields.get(key) !== expected) return send(400, { error: `contract mismatch: ${key}` });
     }
@@ -97,6 +97,11 @@ http.createServer(async (req, res) => {
     if (path.endsWith("submit_awb") && fields.get("shpInfo") === "FAIL_SUBMIT") {
       res.writeHead(500, { "Content-Type": "text/html" });
       return res.end("<html>Upstream gateway error</html>");
+    }
+    if (path.endsWith("submit_awb") && fields.get("shpInfo") === "BUSINESS_REJECT") {
+      if (fields.get("weight") !== "35") return send(400, { error: "weight contract" });
+      // Synthetic failure, not an assertion about KingGo's real weight rules.
+      return send(200, { retCode: "501", msg: "计费重量校验失败，请核对计费重量与费用", result: { message: "重量35，计费重量45；费用不匹配" } });
     }
     if (path.endsWith("submit_awb")) {
       const scenario = fields.get("shpInfo");

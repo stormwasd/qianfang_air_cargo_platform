@@ -1,6 +1,7 @@
 """Persistent worker for KingGo direct Shenzhen Airlines waybill tasks."""
 import asyncio
 import json
+import logging
 import threading
 import time
 import traceback
@@ -19,6 +20,8 @@ from app.services.shenzhen_air_direct_waybill import (
     ShenzhenAirDirectWaybillError, shenzhen_air_direct_waybill_service,
 )
 from app.utils.helpers import get_china_now
+
+logger = logging.getLogger(__name__)
 
 
 class ShenzhenAirDirectWaybillWorker:
@@ -94,6 +97,7 @@ class ShenzhenAirDirectWaybillWorker:
         if task_id is None:
             return False
         db = SessionLocal()
+        values = {}
         try:
             task = db.query(ShenzhenAirDirectWaybillTask).filter(ShenzhenAirDirectWaybillTask.id == task_id).first()
             waybill = db.query(Waybill).filter(Waybill.id == task.waybill_id).with_for_update().first()
@@ -147,15 +151,25 @@ class ShenzhenAirDirectWaybillWorker:
                 return True
             unknown = bool(getattr(exc, "outcome_unknown", False)) or bool(task and task.stage == "submitting")
             message = str(exc) if isinstance(exc, ShenzhenAirDirectWaybillError) else f"深航直连开单异常（{type(exc).__name__}）"
+            diagnostic = {
+                "task_id": str(task_id), "waybill_id": str(task.waybill_id) if task else None,
+                "task_stage": task.stage if task else None,
+                "outcome_unknown": unknown, "error_type": type(exc).__name__,
+                **shenzhen_air_direct_waybill_service.diagnostic_values(values),
+                **(exc.details if isinstance(exc, ShenzhenAirDirectWaybillError) else {}),
+            }
+            diagnostic_json = json.dumps(diagnostic, ensure_ascii=False)
             if task:
                 task.status = Status.UNKNOWN if unknown else Status.FAILED
-                task.error_message = ("提交结果未知，请核查KingGo运单后再决定是否重试：" if unknown else "") + message
+                task.error_message = (("提交结果未知，请核查KingGo运单后再决定是否重试：" if unknown else "")
+                                      + message + "；诊断=" + diagnostic_json)
                 task.finished_at = get_china_now()
             if waybill:
                 if waybill.airline_record_status == "1":
                     waybill.airline_record_status = "2"
             db.commit()
-            print(f"[Shenzhen Direct Waybill {self.index}] task={task_id} failed: {message}")
+            logger.warning("[Shenzhen Direct Waybill %s] task=%s failed: %s；诊断=%s",
+                           self.index, task_id, message, diagnostic_json)
             return True
         finally:
             db.close()

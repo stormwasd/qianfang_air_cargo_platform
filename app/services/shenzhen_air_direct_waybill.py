@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import time
 from typing import Any, Callable
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, quote_plus, urlencode, urlsplit
 
 import httpx
 
@@ -16,9 +16,38 @@ from app.utils.helpers import get_china_today
 
 
 class ShenzhenAirDirectWaybillError(RuntimeError):
-    def __init__(self, message: str, *, outcome_unknown: bool = False):
+    def __init__(self, message: str, *, outcome_unknown: bool = False, details: dict | None = None):
         super().__init__(message)
         self.outcome_unknown = outcome_unknown
+        self.details = dict(details or {})
+
+
+def _safe_upstream_text(value: Any, sensitive_values=(), limit: int = 512) -> str | None:
+    """Keep bounded business messages, never dump objects, HTML or credentials."""
+    if not isinstance(value, (str, int, float, bool)):
+        return None
+    text = str(value)
+    if len(text) > 8192:
+        return "[上游提示过长，已省略]"
+    if re.search(r"<\s*(?:!doctype|html|body|script)\b", text, re.I):
+        return "[HTML内容已省略]"
+    # Upstream messages can echo submitted contacts or a signed URL. Redact
+    # before truncation so a cut-off secret cannot evade replacement.
+    for secret in sorted({str(v) for v in sensitive_values if v}, key=len, reverse=True):
+        for representation in {secret, quote(secret, safe=""), quote_plus(secret)}:
+            text = text.replace(representation, "[已隐藏]")
+    text = re.sub(r"https?://[^\s<>\"']+", "[URL已隐藏]", text, flags=re.I)
+    text = re.sub(
+        r"(?<![A-Za-z0-9_])(?:cookie|set-cookie|authorization)\b\s*[\"']?\s*[:=][^\r\n]*",
+        "[认证信息已隐藏]", text, flags=re.I,
+    )
+    text = re.sub(
+        r"(?<![A-Za-z0-9_])(?:password|passwd|token|access_token|signature|oOr6SIhu)\b[\"']?\s*[:=]\s*[\"']?[^\s,;\"'&}]+",
+        "[凭据已隐藏]", text, flags=re.I,
+    )
+    text = re.sub(r"(?<![0-9])1[3-9][0-9]{9}(?![0-9])|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[联系方式已隐藏]", text)
+    text = " ".join("".join(ch if ch.isprintable() else " " for ch in text).split())
+    return text[:limit] + ("…" if len(text) > limit else "") if text else None
 
 
 class ShenzhenAirDirectWaybillService:
@@ -45,6 +74,20 @@ class ShenzhenAirDirectWaybillService:
 
     def __init__(self, origin: str | None = None):
         self.origin = (origin or settings.SHENZHEN_AIR_KINGGO_API_ORIGIN or self.ORIGIN).rstrip("/")
+
+    @staticmethod
+    def diagnostic_values(values: dict) -> dict:
+        """Whitelist identifiers and numbers from the immutable task snapshot."""
+        result = {}
+        if not isinstance(values, dict):
+            return result
+        for key in ("flight_number", "flight_date", "origin_station", "destination", "quantity",
+                    "weight", "chargeable_weight", "freight_code", "cargo_code"):
+            value = str(values.get(key, ""))
+            pattern = r"[0-9]+(?:\.[0-9]+)?" if key in {"quantity", "weight", "chargeable_weight"} else r"[A-Za-z0-9_.-]+"
+            if len(value) <= 32 and re.fullmatch(pattern, value):
+                result[key] = value
+        return result
 
     @staticmethod
     def _text(value: Any, name: str, *, required: bool = True) -> str:
@@ -137,6 +180,15 @@ class ShenzhenAirDirectWaybillService:
                        before_send: Callable[[], None] | None = None) -> Any:
         path = self.ENDPOINTS[name]
         method = "GET" if name == "number" else "POST"
+        started = time.monotonic()
+        details = {"stage": name, "endpoint": path.split("?", 1)[0], "method": method}
+
+        def failure(message, reason):
+            return ShenzhenAirDirectWaybillError(
+                message, outcome_unknown=name == "submit",
+                details={**details, "reason_code": reason,
+                         "elapsed_ms": round((time.monotonic() - started) * 1000)},
+            )
         if name == "number":
             separator = "&" if "?" in path else "?"
             path += separator + urlencode({
@@ -146,7 +198,12 @@ class ShenzhenAirDirectWaybillService:
             body = None
         else:
             body = urlencode([(key, "" if value is None else str(value)) for key, value in (fields or {}).items()])
-        signed_url, auth_headers = await self._auth(path, method, body)
+        try:
+            signed_url, auth_headers = await self._auth(path, method, body)
+        except ShenzhenAirDirectWaybillError as exc:
+            exc.details.update(details, reason_code="auth_failed",
+                               elapsed_ms=round((time.monotonic() - started) * 1000))
+            raise
         headers = {
             "Accept": "application/json, text/javascript, */*; q=0.01",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -163,24 +220,67 @@ class ShenzhenAirDirectWaybillService:
                     before_send()
                 response = await client.request(method, request_url, headers=headers, content=body if method == "POST" else None)
         except httpx.HTTPError as exc:
-            raise ShenzhenAirDirectWaybillError(
-                f"KingGo {name} 请求网络异常：{type(exc).__name__}", outcome_unknown=name == "submit"
+            details["request_error_type"] = type(exc).__name__
+            raise failure(
+                f"KingGo {name} 请求网络异常：{type(exc).__name__}", "network_error"
             ) from exc
-        if not 200 <= response.status_code < 300:
-            raise ShenzhenAirDirectWaybillError(
-                f"KingGo {name} 请求失败（HTTP {response.status_code}）",
-                outcome_unknown=name == "submit",
-            )
+        details["http_status"] = response.status_code
         try:
             result = response.json()
-        except ValueError as exc:
-            raise ShenzhenAirDirectWaybillError(
-                f"KingGo {name} 返回非JSON响应", outcome_unknown=name == "submit"
-            ) from exc
-        if isinstance(result, dict) and "retCode" in result and str(result.get("retCode")) != "100":
-            raise ShenzhenAirDirectWaybillError(
-                f"KingGo {name} 业务失败，请核查上游业务参数或登录状态",
-                outcome_unknown=name == "submit",
+            details["response_type"] = type(result).__name__
+        except ValueError:
+            result = None
+            details["response_type"] = "non_json"
+        business_rejected = isinstance(result, dict) and "retCode" in result and str(result.get("retCode")) != "100"
+        if 200 <= response.status_code < 300 and details["response_type"] != "non_json" and not business_rejected:
+            return result  # Successful calls need no diagnostic text processing.
+        # These are the only free-form response fields retained. Never save the
+        # raw response, result object, signed URL, headers or complete form.
+        sensitive = [str(v) for k, v in (fields or {}).items()
+                     if k in {"shpInfo", "cneInfo", "shpTelNo", "cneTelNo", "remindPhone",
+                              "pickTelNo", "agentSname", "newAgentSname", "cneAddr"} and v]
+        sensitive.extend(str(v) for k, v in (fields or {}).items()
+                         if k in {"agentId", "agentCode", "operId", "shpCustNo", "cneCustNo"}
+                         and v and len(str(v)) >= 3)
+        for value in auth_headers.values():
+            sensitive.append(value)
+            sensitive.extend(part.split("=", 1)[1].strip() for part in value.split(";")
+                             if "=" in part and len(part.split("=", 1)[1].strip()) >= 3)
+        request_summary = {}
+        for key in ("pieces", "weight", "chargeWeight", "aviationRate", "aviationFee", "totalFee"):
+            value = str((fields or {}).get(key, ""))
+            if len(value) <= 32 and re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", value):
+                request_summary[key] = value
+        if request_summary:
+            details["request_summary"] = request_summary
+        def retain_message(payload, prefix):
+            if isinstance(payload, dict):
+                for key in ("msg", "message", "errorMsg", "retMsg"):
+                    message = _safe_upstream_text(payload.get(key), sensitive)
+                    if message:
+                        details[prefix] = message
+                        details[prefix + "_field"] = key
+                        break
+            else:
+                message = _safe_upstream_text(payload, sensitive)
+                if message:
+                    details[prefix] = message
+
+        if isinstance(result, dict):
+            code = _safe_upstream_text(result.get("retCode"), sensitive, limit=64)
+            if code is not None:
+                details["upstream_ret_code"] = code
+            retain_message(result, "upstream_message")
+            retain_message(result.get("result"), "upstream_result_message")
+        if not 200 <= response.status_code < 300:
+            raise failure(
+                f"KingGo {name} 请求失败（HTTP {response.status_code}）", "http_error"
+            )
+        if details["response_type"] == "non_json":
+            raise failure(f"KingGo {name} 返回非JSON响应", "invalid_json")
+        if business_rejected:
+            raise failure(
+                f"KingGo {name} 业务失败，请核查上游业务参数或登录状态", "business_rejected"
             )
         return result
 
@@ -188,7 +288,8 @@ class ShenzhenAirDirectWaybillService:
     def _bill_result(response: Any) -> dict:
         result = response.get("result") if isinstance(response, dict) and str(response.get("retCode")) == "100" else None
         if not isinstance(result, dict):
-            raise ShenzhenAirDirectWaybillError("KingGo运单信息接口返回格式异常")
+            raise ShenzhenAirDirectWaybillError("KingGo运单信息接口返回格式异常",
+                                               details={"stage": "bill", "reason_code": "invalid_result"})
         return result
 
     @staticmethod
@@ -217,7 +318,8 @@ class ShenzhenAirDirectWaybillService:
         suffix = number_result.get("result") if isinstance(number_result, dict) else None
         if (not isinstance(number_result, dict) or str(number_result.get("retCode")) != "100"
                 or not re.fullmatch(r"\d{8}", str(suffix))):
-            raise ShenzhenAirDirectWaybillError("KingGo未返回有效运单号")
+            raise ShenzhenAirDirectWaybillError("KingGo未返回有效运单号",
+                                               details={"stage": "number", "reason_code": "invalid_result"})
         awb_number = str(suffix)
 
         lookup = {
@@ -229,25 +331,29 @@ class ShenzhenAirDirectWaybillService:
         bill = self._bill_result(await self._request("bill", lookup))
         for field in self.BILL_FIELDS:
             if field not in bill:
-                raise ShenzhenAirDirectWaybillError(f"KingGo运单信息缺少字段：{field}")
+                raise ShenzhenAirDirectWaybillError(f"KingGo运单信息缺少字段：{field}",
+                                                   details={"stage": "bill", "reason_code": "missing_field", "field": field})
 
         flight_rows = await self._request("flight", {
             "depCode": values["origin_station"], "destCode": values["destination"],
             "flightDate": values["flight_date"],
         })
         if not isinstance(flight_rows, list):
-            raise ShenzhenAirDirectWaybillError("KingGo航班列表返回格式异常")
+            raise ShenzhenAirDirectWaybillError("KingGo航班列表返回格式异常",
+                                               details={"stage": "flight", "reason_code": "invalid_result"})
         matched = [row for row in flight_rows if isinstance(row, dict)
                    and str(row.get("flightNo", "")).upper() == values["flight_number"]
                    and str(row.get("flightDate", values["flight_date"]))[:10] == values["flight_date"]
                    and str(row.get("depCode", values["origin_station"])).upper() == values["origin_station"]
                    and str(row.get("destCode", values["destination"])).upper() == values["destination"]]
         if len(matched) != 1:
-            raise ShenzhenAirDirectWaybillError("KingGo航班列表中未找到唯一匹配的航班")
+            raise ShenzhenAirDirectWaybillError("KingGo航班列表中未找到唯一匹配的航班",
+                                               details={"stage": "flight", "reason_code": "flight_match_failed", "match_count": len(matched)})
         takeoff = matched[0].get("takeoffTime")
         carrier = self._text(matched[0].get("carrierCode"), "航班承运人代码")
         if not re.fullmatch(r"\d{4}", str(takeoff)):
-            raise ShenzhenAirDirectWaybillError("匹配航班缺少有效起飞时间")
+            raise ShenzhenAirDirectWaybillError("匹配航班缺少有效起飞时间",
+                                               details={"stage": "flight", "reason_code": "invalid_takeoff_time"})
 
         cost_response = await self._request("costs", {
             "awbType": bill["awbType"], "depCode": values["origin_station"],
@@ -258,11 +364,13 @@ class ShenzhenAirDirectWaybillService:
             "transCity": "", "feeModel": bill["feeModel"],
         })
         if not isinstance(cost_response, dict):
-            raise ShenzhenAirDirectWaybillError("KingGo费用接口返回格式异常")
+            raise ShenzhenAirDirectWaybillError("KingGo费用接口返回格式异常",
+                                               details={"stage": "costs", "reason_code": "invalid_result"})
         costs = cost_response
         for field in ("aviationFee", "aviationRate", *self.COST_FIELDS):
             if field not in costs:
-                raise ShenzhenAirDirectWaybillError(f"KingGo费用接口缺少字段：{field}")
+                raise ShenzhenAirDirectWaybillError(f"KingGo费用接口缺少字段：{field}",
+                                                   details={"stage": "costs", "reason_code": "missing_field", "field": field})
             self._decimal(costs[field], field)
 
         cabin_code = settings.SHENZHEN_AIR_KINGGO_CABIN_TYPE or str(bill["cabinType"])
@@ -309,13 +417,17 @@ class ShenzhenAirDirectWaybillService:
         }
         checked = await self._request("check", fields)
         if not isinstance(checked, dict) or str(checked.get("retCode")) != "100":
-            raise ShenzhenAirDirectWaybillError("KingGo运单检查未成功")
+            raise ShenzhenAirDirectWaybillError("KingGo运单检查未成功",
+                                               details={"stage": "check", "reason_code": "invalid_result"})
         submitted = await self._request("submit", fields, before_send=lambda: before_submit(f"{self.PREFIX}-{awb_number}"))
         result = submitted.get("result") if isinstance(submitted, dict) else None
         submitted_number = result.get("awbNo") if isinstance(result, dict) else None
         if (not isinstance(result, dict) or str(submitted.get("retCode")) != "100"
                 or str(submitted_number) != awb_number or not result.get("awbId")):
-            raise ShenzhenAirDirectWaybillError("KingGo提交结果未确认，请核查运单后再操作", outcome_unknown=True)
+            raise ShenzhenAirDirectWaybillError(
+                "KingGo提交结果未确认，请核查运单后再操作", outcome_unknown=True,
+                details={"stage": "submit", "reason_code": "unconfirmed_result"},
+            )
         return {
             "waybill_number": f"{self.PREFIX}-{submitted_number}",
             "awb_id": str(result.get("awbId") or ""),
