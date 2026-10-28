@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func
+from sqlalchemy import LargeBinary, String, cast, or_, func, select
 from typing import Optional, List
 from app.config import settings
 from app.database import get_db
@@ -8,6 +8,7 @@ from app.api.deps import get_current_active_user
 from app.core.response import success_response
 from app.models.transit_loading import ShenzhenAirBookingExport
 from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
+from app.models.customer import Customer
 from app.schemas.departure_tracking import ShenzhenAirDepartureListResponse, ShenzhenAirDepartureItem, ShenzhenAirBillingTimeContainerDTO
 
 from app.models.rpa_task import RPATaskType
@@ -18,16 +19,53 @@ from app.services.tracking_execution_time import (
 
 router = APIRouter()
 
+
+def _filter_departure_customer(query, customer_column, keyword):
+    """客户 ID 精确查询，名称兼容客户表及历史直接保存的名称。"""
+    keyword = (keyword or "").strip()
+    if not keyword:
+        return query
+    if keyword.isdecimal():
+        return query.filter(customer_column == keyword)
+
+    # 两侧按字符串精确关联，避免 MySQL 大整数隐式转浮点及字符集排序规则冲突。
+    matching_customer_ids = select(cast(cast(Customer.id, String), LargeBinary)).where(
+        Customer.company_name.contains(keyword, autoescape=True),
+    )
+    return query.filter(or_(
+        customer_column.contains(keyword, autoescape=True),
+        cast(customer_column, LargeBinary).in_(matching_customer_ids),
+    ))
+
+
+def _departure_customer_names(db, manual_datas):
+    """每页批量解析客户名称，保留原始 ID，避免逐行查询客户表。"""
+    raw_names = {str(md.customer_name or "").strip() for md in manual_datas}
+    customer_ids = {
+        int(value) for value in raw_names
+        if value.isascii() and value.isdecimal() and len(value) <= 19
+        and 0 < int(value) <= 9223372036854775807
+    }
+    customers = db.query(Customer.id, Customer.company_name).filter(
+        Customer.id.in_(customer_ids)
+    ).all() if customer_ids else []
+    names_by_id = {str(customer_id): name or "" for customer_id, name in customers}
+    return {
+        raw: names_by_id.get(raw, "") if raw.isdecimal() else raw
+        for raw in raw_names
+    }
+
+
 @router.get("/shenzhen-air", summary="深航出港列表")
 async def get_shenzhen_air_departures(
     waybill_number: Optional[str] = Query(None, description="运单号，多个用逗号隔开"),
     flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-03-10"),
     flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-03-15"),
     flight_number: Optional[str] = Query(None, description="航班号"),
-    audit_status: Optional[int] = Query(None, description="审核状态(0:未审, 1:暂存, 2:已审)"),
+    audit_status: Optional[int] = Query(None, description="出港人工信息状态(0:未提交, 1:暂存, 2:已提交)，不代表财务审核状态"),
     origin: Optional[str] = Query(None, description="始发站"),
     destination: Optional[str] = Query(None, description="目的站"),
-    customer_name: Optional[str] = Query(None, description="客户名称"),
+    customer_name: Optional[str] = Query(None, description="客户ID精确匹配或客户公司名称包含式模糊搜索；空白忽略，%和_按普通字符匹配"),
     is_suspected_abnormal: Optional[bool] = Query(None, description="疑似异常"),
     page: int = Query(1, description="页码", ge=1),
     pageSize: int = Query(10, description="每页数量", ge=1, le=500),
@@ -36,6 +74,8 @@ async def get_shenzhen_air_departures(
 ):
     """
     查询深航出港列表，主表为 shenzhen_air_booking_exports，附带 shenzhen_air_billing_time_containers 数据。
+    列表项顶层 actual_customer_name 为解析后的客户名称，manual_data.customer_name 保留客户原始值。
+    列表状态使用 manual_data.audit_status，2 展示已提交；无人工数据或 NULL/0/1 展示为空。
     data_update_time 为过机装机主表最后成功直连下载/RPA 运行时间（北京时间），
     按主表获取模式选择，与计飞集装器子任务及后续入库状态独立；无成功记录时为 null。
     """
@@ -59,8 +99,7 @@ async def get_shenzhen_air_departures(
             else:
                 query = query.filter(ShenzhenAirDepartureManualData.audit_status == audit_status)
                 
-        if customer_name:
-            query = query.filter(ShenzhenAirDepartureManualData.customer_name.like(f"%{customer_name}%"))
+        query = _filter_departure_customer(query, ShenzhenAirDepartureManualData.customer_name, customer_name)
 
     if flight_number:
         query = query.filter(ShenzhenAirBookingExport.billing_flight.like(f"%{flight_number}%"))
@@ -117,6 +156,7 @@ async def get_shenzhen_air_departures(
 
     containers_by_export_id = {export.id: [] for export in exports}
     manual_data_by_export_id = {md.booking_export_id: md for md in manual_datas}
+    customer_names = _departure_customer_names(db, manual_datas)
     
     for container in containers:
         if container.booking_export_id in containers_by_export_id:
@@ -145,6 +185,7 @@ async def get_shenzhen_air_departures(
             md_dict["id"] = str(md.id)
             md_dict["booking_export_id"] = str(md.booking_export_id)
             item_schema.manual_data = ShenzhenAirDepartureManualDataDTO(**md_dict)
+            item_schema.actual_customer_name = customer_names.get(str(md.customer_name or "").strip(), "")
         
         items.append(item_schema.model_dump(mode="json"))
 
@@ -237,11 +278,11 @@ async def get_china_southern_air_departures(
     flight_date_start: Optional[str] = Query(None, description="航班日期开始，如2026-06-16"),
     flight_date_end: Optional[str] = Query(None, description="航班日期结束，如2026-06-20"),
     flight_number: Optional[str] = Query(None, description="航班号"),
-    audit_status: Optional[int] = Query(None, description="审核状态(0:未审, 1:暂存, 2:已审)"),
+    audit_status: Optional[int] = Query(None, description="出港人工信息状态(0:未提交, 1:暂存, 2:已提交)，不代表财务审核状态"),
     origin: Optional[str] = Query(None, description="始发站"),
     destination: Optional[str] = Query(None, description="目的站"),
-    customer_name: Optional[str] = Query(None, description="客户名称"),
-    waybill_status: Optional[str] = Query(None, description="运单状态(例如 UU, KK), 对应 booking_no 中的标识"),
+    customer_name: Optional[str] = Query(None, description="客户ID精确匹配或客户公司名称包含式模糊搜索；空白忽略，%和_按普通字符匹配"),
+    waybill_status: Optional[str] = Query(None, description="订舱状态，仅支持KK、UU；多选用英文逗号分隔，匹配订舱号末尾括号内标识；不传或为空不筛选，页面默认选KK时传KK"),
     is_suspected_abnormal: Optional[bool] = Query(None, description="疑似异常"),
     page: int = Query(1, description="页码", ge=1),
     pageSize: int = Query(10, description="每页数量", ge=1, le=500),
@@ -251,6 +292,9 @@ async def get_china_southern_air_departures(
     """
     查询南航出港列表，主表为 china_southern_air_approval_data，
     附带 csa_product_information、csa_lalamove_information 和 csa_departure_manual_data 数据。
+    列表项顶层 actual_customer_name 为解析后的客户名称，manual_data.customer_name 保留客户原始值。
+    列表状态使用 manual_data.audit_status，2 展示已提交；无人工数据或 NULL/0/1 展示为空。
+    waybill_status 支持 KK、UU 或 KK,UU，按订舱号末尾括号中的标识精确筛选，筛选先于统计和分页。
     data_update_time 返回本站货物+货拉 RPA 最后一次成功运行的 endTime（北京时间），
     RPA 未返回有效 endTime 时才使用后台确认时间。无成功记录时为 null，
     空列表仍返回已有成功时间；明细是否采集完成仍由数据校验结果决定。
@@ -258,7 +302,6 @@ async def get_china_southern_air_departures(
     from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
     from app.models.csa_departure_tracking import CsaProductInformation, CsaLalamoveInformation
     from app.models.csa_departure_manual_data import CsaDepartureManualData
-    import re as _re
 
     query = db.query(ChinaSouthernAirApprovalData)
 
@@ -279,8 +322,7 @@ async def get_china_southern_air_departures(
             else:
                 query = query.filter(CsaDepartureManualData.audit_status == audit_status)
                 
-        if customer_name:
-            query = query.filter(CsaDepartureManualData.customer_name.like(f"%{customer_name}%"))
+        query = _filter_departure_customer(query, CsaDepartureManualData.customer_name, customer_name)
 
     if flight_number:
         query = query.filter(
@@ -288,9 +330,17 @@ async def get_china_southern_air_departures(
         )
         
     if waybill_status:
-        query = query.filter(
-            ChinaSouthernAirApprovalData.booking_no.like(f"%{waybill_status}%")
-        )
+        statuses = list(dict.fromkeys(
+            value.strip().upper() for value in waybill_status.split(",") if value.strip()
+        ))
+        if any(status not in {"KK", "UU"} for status in statuses):
+            raise HTTPException(status_code=422, detail="订舱状态仅支持KK、UU，多选请用英文逗号分隔")
+        if statuses:
+            # 只匹配最后一组括号，避免把订舱号前缀、KKX 或其他备注当成状态。
+            booking_no = func.upper(ChinaSouthernAirApprovalData.booking_no)
+            booking_no = func.replace(func.replace(booking_no, "（", "("), "）", ")")
+            pattern = r"\([ \t\r\n]*(" + "|".join(statuses) + r")[ \t\r\n]*\)[ \t\r\n]*$"
+            query = query.filter(booking_no.regexp_match(pattern))
     
     if flight_date_start or flight_date_end:
         date_str = func.trim(func.substring_index(func.substring_index(ChinaSouthernAirApprovalData.flight_info, ' / ', 2), ' / ', -1))
@@ -355,6 +405,7 @@ async def get_china_southern_air_departures(
         lalamove_by_id.setdefault(l.approval_data_id, []).append(l)
 
     manual_data_by_id = {md.approval_data_id: md for md in manual_datas}
+    customer_names = _departure_customer_names(db, manual_datas)
 
     items = []
     for record in records:
@@ -381,6 +432,7 @@ async def get_china_southern_air_departures(
             md_dict["id"] = str(md.id)
             md_dict["approval_data_id"] = str(md.approval_data_id)
             item_schema.manual_data = CsaDepartureManualDataDTO(**md_dict)
+            item_schema.actual_customer_name = customer_names.get(str(md.customer_name or "").strip(), "")
 
         items.append(item_schema.model_dump(mode="json"))
 

@@ -28,7 +28,7 @@ class ShenzhenAirBillingTimeContainerDTO(BaseModel):
 class ShenzhenAirDepartureManualDataDTO(BaseModel):
     id: str
     booking_export_id: str = Field(..., description="关联深航主表ID")
-    customer_name: Optional[str] = Field(None, description="客户名称")
+    customer_name: Optional[str] = Field(None, description="客户原始值，通常为客户ID字符串；列表展示使用顶层actual_customer_name")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")
     telegram_fee: Optional[str] = Field(None, description="电报费")
@@ -57,7 +57,7 @@ class ShenzhenAirDepartureManualDataDTO(BaseModel):
 
 class ShenzhenAirDepartureManualDataUpsert(BaseModel):
     booking_export_id: str = Field(..., description="关联深航主表ID")
-    customer_name: Optional[str] = Field(None, description="客户名称")
+    customer_name: Optional[str] = Field(None, description="客户ID字符串，兼容历史直接保存的客户名称；支持null或空字符串清空")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")
     telegram_fee: Optional[str] = Field(None, description="电报费")
@@ -81,6 +81,7 @@ class ShenzhenAirDepartureAuditRequest(ShenzhenAirDepartureManualDataUpsert):
 
 class ShenzhenAirDepartureItem(BaseModel):
     id: str
+    actual_customer_name: str = Field("", description="客户ID对应的公司名称；历史名称原样展示，无客户或ID失效时为空字符串")
     prefix: Optional[str] = Field(None, description="前缀")
     waybill_number: Optional[str] = Field(None, description="单号")
     waybill_status: Optional[str] = Field(None, description="运单状态")
@@ -172,7 +173,7 @@ class CsaLalamoveInformationDTO(BaseModel):
 class CsaDepartureManualDataDTO(BaseModel):
     id: str
     approval_data_id: Optional[str] = Field(None, description="关联批复数据ID")
-    customer_name: Optional[str] = Field(None, description="客户名称")
+    customer_name: Optional[str] = Field(None, description="客户原始值，通常为客户ID字符串；列表展示使用顶层actual_customer_name")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")
     telegram_fee: Optional[str] = Field(None, description="电报费")
@@ -201,7 +202,7 @@ class CsaDepartureManualDataDTO(BaseModel):
 
 class CsaDepartureManualDataUpsert(BaseModel):
     approval_data_id: str = Field(..., description="关联批复数据ID（china_southern_air_approval_data.id）")
-    customer_name: Optional[str] = Field(None, description="客户名称")
+    customer_name: Optional[str] = Field(None, description="客户ID字符串，兼容历史直接保存的客户名称；支持null或空字符串清空")
     cargo_type: Optional[str] = Field(None, description="货物类型")
     packaging_fee: Optional[str] = Field(None, description="包装费")
     telegram_fee: Optional[str] = Field(None, description="电报费")
@@ -225,6 +226,7 @@ class CsaDepartureAuditRequest(CsaDepartureManualDataUpsert):
 
 class CsaDepartureItem(BaseModel):
     id: str
+    actual_customer_name: str = Field("", description="客户ID对应的公司名称；历史名称原样展示，无客户或ID失效时为空字符串")
     flight_info: Optional[str] = Field(None, description="订舱航班")
     aircraft_type: Optional[str] = Field(None, description="机型")
     aircraft_no: Optional[str] = Field(None, description="飞机号")

@@ -1,5 +1,143 @@
 # API 文档
 
+## 2026-10-29 南航出港订舱状态 KK/UU 多选筛选
+
+仅适用 `GET /api/v1/departure-tracking/china-southern-air`，认证仍为 `Authorization: Bearer <access_token>`。复用已有查询参数 **`waybill_status`**，从整段订舱号模糊匹配改为按 `booking_no` **末尾括号中的完整标识**筛选，并支持多选。深航出港接口不增加此参数。
+
+### 前端复选框与请求参数
+
+南航搜索区新增复选框 KK、UU；**首次进入和点击重置时默认选中 KK，并明确传 `waybill_status=KK`**。复选框可独立切换，两项都选时匹配任意一种。搜索条件改变后将 `page` 重置为1；搜索、翻页、刷新请求均携带当前选项。
+
+| 复选框状态 | 查询参数 | 含义 |
+| --- | --- | --- |
+| 仅 KK（页面默认/重置） | `waybill_status=KK` | 只匹配末尾状态 KK，例如 `65294402 ( KK )` |
+| 仅 UU | `waybill_status=UU` | 只匹配末尾状态 UU，例如 `65294350 ( UU )` |
+| KK、UU 同时选中 | `waybill_status=KK,UU` | KK **或** UU，逗号为英文逗号；不能把整个字符串当作一个状态 |
+| 全部取消 | 不传或 `waybill_status=` | 不限制订舱状态，包含无订舱号、无识别标识的记录 |
+
+参数类型仍为可选 string，不新增必填参数。为兼容现有调用，**接口本身不传参数仍查询全部，页面默认选中 KK 由前端显式传参实现**。不要用 `audit_status` 代替本参数：前者是人工暂存/提交状态，KK/UU 是航司订舱状态，两者独立。
+
+### 匹配、校验及分页规则
+
+- 输入按英文逗号拆分，去掉首尾空白、忽略空项、统一大写并去重；例如 ` kk,KK, ,uu ` 等价于 `KK,UU`，`UU,KK` 也可使用。未传、空串、纯空白或只有逗号/空白时不增加状态限制。
+- 有效状态仅为 KK、UU。非法值如 `XX`、`KK,XX`、`KK UU`、`KK，UU`（中文逗号）、`%` 返回 HTTP 422，不静默忽略非法项或扩大查询范围。
+- 匹配订舱号末尾括号内的完整标识，兼容括号内空格/制表符/换行、末尾空白、中英文括号和大小写。例如 `65294402(KK)`、`65294402 ( KK )`、`65294402（KK）` 均匹配 KK。原始 `booking_no` 展示值不变。
+- `KK65294350 (UU)` 只匹配 UU；`65294402 (KKX)`、`65294402 KK`、`65294402 (KK)备注` 不匹配 KK。有多组括号时以最后一组为准，例如 `65294402 (KK) (UU)` 只匹配 UU。
+- 启用筛选时，空订舱号、无标识或其他标识的记录不命中；同时勾选 KK/UU 仍只匹配这两种状态，与“全部取消、不限制”有所不同。
+- 多个状态先以“或”组合，再与日期、航班、运单号、客户、人工状态、始发/目的站等筛选以“且”组合。先在数据库筛选，再统计 `total`、排序和分页，不在前端当前页过滤。
+
+请求示例：
+
+```http
+GET /api/v1/departure-tracking/china-southern-air?waybill_status=KK&flight_date_start=2026-10-28&flight_date_end=2026-10-28&page=1&pageSize=20
+Authorization: Bearer <access_token>
+```
+
+两项都勾选时，将上述参数换成 `waybill_status=KK,UU`（URL 编码为 `KK%2CUU` 亦可）。成功响应沿用 `{"code":0,"data":{"total":0,"items":[],"data_update_time":null},"msg":"查询成功"}` 的原有结构；这里示例为无匹配记录，有匹配时返回原有完整列表项，包括客户名称、人工状态、本站货物及货拉明细。
+
+应用统一异常处理下，非法状态响应示例（HTTP 422）：
+
+```json
+{"code":422,"data":null,"msg":"订舱状态仅支持KK、UU，多选请用英文逗号分隔"}
+```
+
+无需修改数据库、配置或历史数据。此筛选只读取已采集订舱号，不触发抓取、修改状态或影响财务/对账。本仓库没有前端页面源码，复选框和默认选项需前端按上述约定对接。
+
+## 2026-10-28 深航、南航出港列表客户名称及暂存/提交对接
+
+适用页面为智能跟单中的深航、南航出港列表。两家列表统一新增 **`data.items[].actual_customer_name`**，作为列表“客户名称”列的展示值；不改名或覆盖原 `manual_data.customer_name`。客户搜索支持客户公司名称，原有暂存、提交和状态机制继续复用。无需建表、改表、执行数据迁移或新增配置。
+
+### 列表和搜索接口
+
+| 航司 | 列表接口 | 编辑区关联 ID |
+| --- | --- | --- |
+| 深航 | `GET /api/v1/departure-tracking/shenzhen-air` | 列表项 `id` → 请求体 `booking_export_id` |
+| 南航 | `GET /api/v1/departure-tracking/china-southern-air` | 列表项 `id` → 请求体 `approval_data_id` |
+
+认证仍为 `Authorization: Bearer <access_token>`。日期、航班、运单号、始发/目的站、疑似异常、分页等原参数及原有明细返回字段继续保留。
+
+| 参数/返回字段 | 类型 | 含义及前端用法 |
+| --- | --- | --- |
+| 查询参数 `customer_name` | 可选 string | 搜索区“客户名称”。首尾空白忽略；未传、空串或纯空白不限制客户。纯数字按客户 ID **精确匹配**，不按 ID 片段模糊搜索；其他文本按 `customers.company_name` 包含式模糊搜索，同时兼容历史直接存为名称的记录。`%`、`_` 按普通字符匹配，不作为通配符。使用 URL 编码传递特殊字符 |
+| 查询参数 `audit_status` | 可选 integer | 原有状态筛选：0 未提交（含无人工记录或状态 NULL），1 暂存，2 已提交。可与客户等其他筛选组合 |
+| `data.items[].actual_customer_name` | string，始终返回 | **新增，位于列表项顶层，与 `manual_data` 同级**。保存的是客户 ID 时，以该 ID 查 `customers.company_name`；历史直接保存的名称兼容返回名称文本；无客户、客户未选、客户 ID 不存在/客户已删除时返回 `""`，不会把 ID 当名称展示 |
+| `data.items[].manual_data.customer_name` | string 或 null | 继续返回原始客户值，通常为客户 ID 字符串，供下拉框回填及保存使用；请勿把 `actual_customer_name` 写回该字段来替换 ID |
+| `data.items[].manual_data.audit_status` | integer 或 null | 继续使用既有字段，2 对应列表“已提交”。没有 `manual_data`、状态为 NULL/0/1 时，按本次产品要求，“状态”列显示为空，不标为“已提交”；如需分辨暂存，仍可读取1 |
+
+客户匹配先在数据库中筛选，再统计 `total`、排序和分页；不是只过滤当前页。显示名称按当前页批量解析，不逐行查询客户表。数字 ID 始终按字符串传给前端，前端不可转换成 JavaScript `Number`，以免雪花 ID 丢失精度。客户改名后列表展示客户表中的最新名称；缺失客户仍保留原 ID 供排查，不自动修改人工数据。
+
+请求示例（两家使用同样的客户查询参数）：
+
+```http
+GET /api/v1/departure-tracking/shenzhen-air?customer_name=%E6%99%A8%E5%BE%B7&flight_date_start=2026-10-28&flight_date_end=2026-10-28&page=1&pageSize=20
+Authorization: Bearer <access_token>
+```
+
+响应示例（仅列出与本次对接相关的字段，其余原有字段继续返回）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [
+      {
+        "id": "373826986889580544",
+        "actual_customer_name": "晨德通",
+        "manual_data": {
+          "id": "373826986889580545",
+          "booking_export_id": "373826986889580544",
+          "customer_name": "373379437934284801",
+          "audit_status": 2,
+          "auditor_name": "操作员"
+        }
+      }
+    ],
+    "data_update_time": "2026-10-28 21:37"
+  },
+  "msg": "查询成功"
+}
+```
+
+南航同样在列表项顶层返回 `actual_customer_name`，`manual_data` 中关联字段为 `approval_data_id`。无人工数据时，`manual_data` 仍为 `null`，`actual_customer_name` 为 `""`，不创建空的人工记录。
+
+### 暂存/提交按钮和状态展示
+
+操作区【暂存】与【提交】调用同一个既有接口，使用请求体中的 `action` 区分，**不是查询参数**：
+
+| 航司 | 操作接口 | 必填关联字段 |
+| --- | --- | --- |
+| 深航 | `POST /api/v1/departure-tracking/shenzhen-air/audit` | `booking_export_id`（列表主表 ID 的字符串） |
+| 南航 | `POST /api/v1/departure-tracking/china-southern-air/audit` | `approval_data_id`（列表主表 ID 的字符串） |
+
+深航暂存请求示例：
+
+```json
+{
+  "booking_export_id": "373826986889580544",
+  "action": "draft",
+  "customer_name": "373379437934284801",
+  "cargo_type": "普货",
+  "packaging_fee": "2",
+  "remark": "待确认其他费用"
+}
+```
+
+南航将关联字段换成 `approval_data_id`；提交时将 `action` 换成 `"submit"`。其余可保存字段两家一致：`customer_name`、`cargo_type`、`packaging_fee`、`telegram_fee`、`telegram_code`、`cca`、`door_pickup_fee`、`door_pickup_company`、`airport_pickup_fee`、`airport_pickup_company`、`delivery_fee`、`delivery_company`、`carrier_deduction`、`other_fees`、`manual_total_amount`、`remark`，均为可选 string/null。操作时传入当前编辑区需要保存的内容。
+
+| 操作 | 保存和状态规则 | 成功响应 |
+| --- | --- | --- |
+| 暂存 `action="draft"` | 保存本次输入，`audit_status=1`，不执行提交、不写入新的审核人或审核时间。首次暂存后列表状态仍显示为空；客户名称可以显示 | `{"code":0,"data":null,"msg":"暂存成功"}` |
+| 提交 `action="submit"` | 同时保存输入，`audit_status=2`，写入当前操作人的 ID/名称及本次审核时间，列表状态展示“已提交” | `{"code":0,"data":null,"msg":"审核成功"}`（兼容已有响应文案，界面按钮仍叫“提交”） |
+
+两家均保留已有更新规则：已有记录只更新请求中传入的字段，省略字段保留原值；显式传 `customer_name=null` 或 `""` 可清空客户。**已提交记录再次点击暂存会回到 `audit_status=1`**；已有审核人/时间保留为历史信息，不表示当前仍已提交，当前状态以 `audit_status` 为准。非法 `action` 或缺少必填关联 ID 返回 HTTP 422，请求不会保存。
+
+【暂存】成功后不要继续调用 `action="submit"`。两种操作成功后刷新当前列表和编辑区，列表客户列绑定 `actual_customer_name`，客户下拉框绑定 `manual_data.customer_name`，状态列按上述规则展示。已有 `POST/PUT /api/v1/departure-tracking/{shenzhen-air|china-southern-air}/manual-data` 仍仅保存人工字段，不主动改变审核状态；需要明确标记暂存时请使用 `/audit` 的 `draft`，不要混用两次保存请求。
+
+这里的提交仅是出港人工信息状态，保留历史接口中的“审核”命名；不代表财务审核通过、不触发航司开单或再次执行抓取。费用登记台和对账仍遵循下文的独立财务审核流程，不新增业务提交门槛。`data_update_time` 仍代表采集成功时间，不会因人工暂存/提交而刷新。
+
+本仓库不包含前端页面源码；以上列、按钮和搜索控件需由前端按此约定对接。本次后端改动仅新增名称响应及完善客户搜索，暂存/提交状态复用既有实现。
+
 ## 2026-10-27 深航出港列表更新时间对应过机装机主表
 
 `GET /api/v1/departure-tracking/shenzhen-air` 的 `data.data_update_time` 对应页面“过机数据列表”的最后成功获取时间：按 `SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE` 选择来源，direct 为 `AwbQueryExport` 主表成功下载的时间，RPA 为对应过机装机任务成功运行的 `endTime`。计飞时间/集装器子任务的执行模式、成功时间不再影响该字段。
@@ -92,7 +230,7 @@
 | `audit_status` | 可选integer | 0未审、1暂存、2已审 |
 | `origin`、`destination` | 可选string | 始发站、目的站 |
 | `customer_name` | 可选string | 客户名称 |
-| `waybill_status` | 可选string | 例如UU、KK，对应 `booking_no` 中的标识 |
+| `waybill_status` | 可选string | 订舱状态：KK、UU 或英文逗号分隔的 KK,UU，精确匹配 `booking_no` 末尾括号内标识；详见2026-10-29多选筛选说明 |
 | `is_suspected_abnormal` | 可选boolean | 疑似异常，沿用原筛选规则 |
 | `page` | integer，默认1 | 大于等于1 |
 | `pageSize` | integer，默认10 | 1～500 |
