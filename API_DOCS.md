@@ -1,5 +1,106 @@
 # API 文档
 
+## 2026-10-29 深航开单失败后的重新执行与待核查状态
+
+适用 `POST /api/v1/waybills/{waybill_id}/execute`，以及共用深航任务拦截逻辑的 `PUT /api/v1/waybills/{waybill_id}`。接口路径、请求字段和成功响应均不变，仍通过 `GET /api/v1/rpa-tasks/{task_id}` 读取开单任务结果；无需修改表或配置。
+
+运单 `airline_record_status="2"` 是兼容的航司录单失败状态，既可能对应任务 `failed`，也可能对应 `unknown`。因此前端不能仅凭运单红色“失败”状态判断可以重开，应同时查询本次任务的 `status`、`stage`、`candidate_waybill_number`、`error_message`：
+
+| 任务状态 | 含义 | 重新执行/修改表单 |
+| --- | --- | --- |
+| `pending` | 已入队等待处理 | 保持拦截，提示“正在排队等待执行”及任务 ID |
+| `running` | 正在处理 | 保持拦截，提示“正在执行”及任务 ID |
+| `failed` | 未发送提交，或明确确认提交被舱位询问拒绝 | 可修改原表单；用户再次执行时新建任务，旧任务保留用于追溯，不自动重新入队 |
+| `unknown` | 发出过提交且无法确认最终结果 | 保持拦截，需按候选单号核查 KingGo；不要引导用户直接重复执行或切到 RPA 绕过 |
+| `success` | 已确认开单 | 仍禁止重复开单 |
+
+### 已确认的舱位拒绝不再误标为待核查
+
+只有下节定义的明确舱位询问响应（HTTP 200、`retCode=400`、完整匹配的舱位变更提示，且没有已创建运单标识）被视为本次提交明确被拒绝。它与网络超时、网关错误、非JSON、返回单号/ID缺失，以及其他业务码/业务文案区分处理：后者仍采用原有保守保护，不直接认定失败可重开。
+
+- 自动调整一次后再次明确被舱位拒绝，或提示舱位与当前名称/代码均相同，任务标记 `failed`，允许用户处理后重新执行。
+- 已收到明确拒绝、但调整后的检查或签名失败，且没有发送第二次提交时，同样标记 `failed`。诊断 JSON 增加 `submission_rejected=true`，表明此前提交已明确被拒绝；最终检查/签名错误仍保留为实际失败原因。
+- 第二次提交一旦发出，第一次已被拒绝的结论不再代表第二次请求。第二次超时、HTTP错误、非JSON、结果不完整或不一致等仍标记 `unknown`；只有第二次也明确被拒绝，才可以标记 `failed`。
+- 保留 `stage=submitting` 和原候选单号作为历史记录：`failed + submitting` 表示曾发出但已明确被拒绝；是否允许重试以任务 `status` 为准，不能仅按阶段判断。
+- Worker中断、最终落库异常等无法确证上游结果的情况，继续沿用待核查保护；不会通过删除旧任务或强制改状态的方式放开重开。
+
+### 拦截提示及历史任务
+
+已有拦截仍返回 HTTP 400，使用应用统一响应 `code/data/msg`，本次将笼统的三种状态提示拆分。`unknown` 响应示例：
+
+```json
+{
+  "code": 400,
+  "data": null,
+  "msg": "上次深航提交结果待核查，暂不能修改或重新执行。请先按候选运单号 479-62046633 核查KingGo，避免重复开单；任务ID: 373706152686522368"
+}
+```
+
+没有记录候选单号时提示“未记录”。前端可使用任务状态将 `failed` 展示为失败、`unknown` 展示为“提交结果待核查”，分别提供后续指引。旧页面如果仍统一展示失败，后端也会通过上述提示继续保护待核查任务。
+
+历史已经保存为 `unknown` 的记录不因升级自动改为 `failed`。旧日志可能没有原始业务响应，无法只凭“submit业务失败”判定航司端未开单；需先取得任务错误及候选单号并核查 KingGo。当前没有新增通用强制重试或自动解除待核查的接口。本次代码修正适用于更新后执行的任务，不会自动重发历史任务。
+
+## 2026-10-29 深航 direct 开单按明确舱位提示调整一次
+
+适用 `POST /api/v1/waybills/{waybill_id}/execute` 的深航 `direct` 模式。入参、入队响应、任务查询路径及原字段保持兼容，不新增前端必填项、配置、表或迁移 SQL；深航 RPA、作废及其他航司流程不受此规则影响。
+
+### 触发条件与上游请求参数
+
+正常开单仍依次获取候选单号、运单元数据、航班、费用，再检查并提交。仅当 KingGo 的检查 `POST /awb/inland/check_awb?nti=90` 或提交 `POST /awb/inland/submit_awb?nti=90` 返回以下**明确的舱位变更询问**时，自动接受一次调整：
+
+```json
+{"retCode":"400","msg":"舱位等级不足，是否变更为Z舱？","result":""}
+```
+
+必须同时满足 HTTP 200、`retCode` 为400，以及 `msg` 整体匹配“舱位等级不足，是否变更为X舱？”（X 为单个大写英文字母，兼容中英文逗号/问号及字母周围空白）。响应 `result` 中如已包含非空 `awbId`、`awbNo` 或 `awbStatus`，不自动重试，避免在存在开单结果线索时重复提交。
+
+| 上游询问 | 调整后的请求字段 | 保持的字段 |
+| --- | --- | --- |
+| `舱位等级不足，是否变更为Z舱？` | `cabinTypeName=Z`、`cabinType=Z` | `oldCabinType` 保持原值 |
+| `舱位等级不足，是否变更为A舱？` | `cabinTypeName=A`、`cabinType=A` | 同上 |
+
+注意：按本次业务要求，**发往 KingGo 的入参 `cabinTypeName` 和 `cabinType` 同步修改**，两者均为提示中的舱位字母，`cabinTypeName` 不附加“舱”。检查、提交两步均使用这两个调整后的值；`oldCabinType` 继续保留运单元数据查询返回的原始舱位。不是改写上游返回值，也不修改本地原始表单或全局固定舱位配置。重量、计费重量及费用等其余请求字段保持原值；不重新领取单号或创建另一条任务，不重复请求元数据、航班和费用接口。
+
+### 重试上限和任务状态保护
+
+- 同一任务最多接受一次上述调整。先以同步更新后的 `cabinTypeName`、`cabinType` 重新调用检查接口，检查通过后再提交；每个实际请求都根据最新编码表单重新提取认证并生成签名，不复用旧请求体签名。
+- 若首次检查即返回提示，则调整后重新检查，再首次提交；若首次提交返回提示，则复用同一候选单号重新检查、再次提交。单任务最多发送两次提交请求。
+- 提示目标与当前 `cabinTypeName`（比较时兼容当前名称带“舱”后缀）及 `cabinType` 均相同，不重复发送无变化请求；若名称已相同但代码不同，仍同步修正两者。第二次仍提示变更，即使提示另一个舱位，也终止本次任务，不无限切换。
+- 其他业务码/业务文案、网络超时、非2xx、非JSON、签名失败、未确认成功或返回单号不符，均不触发此调整。重试检查失败时不发送第二次提交。
+- 首次提交发出前仍先将任务 `stage=submitting` 和候选单号持久化；一次任务只跨越一次该持久化边界。调整期间保持原任务和候选单号。已发出过提交、但最终既未确认成功也未确认被拒绝时，继续保留 `unknown`，禁止重新执行、切换RPA重开或修改关联表单，待人工按候选单号核查。明确的舱位拒绝，以及其后未再次提交前的检查/签名失败，标记 `failed`，允许用户重新执行。未发出过提交的检查失败仍为 `failed`。
+- 最终成功仍校验 `retCode=100`、返回 `awbNo` 与候选单号一致且有 `awbId`，才写入运单号、成功状态，并执行一次既有开单后处理。
+
+这是原“直连不自动重发”规则的唯一例外，仅针对明确的舱位询问；不会把普通业务失败改为通用重试。历史已进入 `unknown` 的任务不会因部署新代码自动恢复或重发，必须先核查上游。
+
+### 日志和任务查询结果
+
+发生调整时新增一条告警日志，记录候选单号、原/新舱位名称及代码、触发阶段和一次调整计数，不输出联系人、Cookie、签名或完整请求体。失败诊断的 `request_summary` 增加合法舱位字段 `cabinTypeName`、`cabinType`、`oldCabinType`（若存在），便于核对实际发送参数。
+
+已有 `GET /api/v1/rpa-tasks/{task_id}` 在调整成功时，其 `data.result` 除原有运单号和费用字段外，可选新增 `cabin_adjustment`：
+
+```json
+{
+  "waybill_number": "479-62046633",
+  "awb_id": "7220434",
+  "aviation_rate": 6.0,
+  "aviation_fee": 270.0,
+  "delivery_fee": 0,
+  "cabin_adjustment": {
+    "from_cabin_type_name": "F舱",
+    "to_cabin_type_name": "Z",
+    "from_cabin_type": "F",
+    "to_cabin_type": "Z",
+    "trigger_stage": "submit",
+    "upstream_ret_code": "400",
+    "retry_count": 1
+  }
+}
+```
+
+`from_cabin_type_name` / `to_cabin_type_name` 为调整前后的 `cabinTypeName`；`from_cabin_type` / `to_cabin_type` 为调整前后的 `cabinType`。`trigger_stage` 为 `check` 或 `submit`；未发生调整的成功结果不增加该字段。调整后失败时，仍使用原 `error_message` 字符串，其诊断 JSON 包含同样的 `cabin_adjustment` 和最终错误原因。`retry_count=1` 表示采用了一次调整方案，不代表第二次提交一定发出；应结合最终 `stage/reason_code` 判断检查、认证或提交在哪一步失败。
+
+本地模拟可验证请求字段变化、调用次数、持久化和失败保护；不能替代真实 KingGo 对同步修改 `cabinTypeName`、`cabinType` 后开单结果的验收。真实接口若继续拒绝，将保留新的具体失败原因供排查。
+
 ## 2026-10-29 南航出港订舱状态 KK/UU 多选筛选
 
 仅适用 `GET /api/v1/departure-tracking/china-southern-air`，认证仍为 `Authorization: Bearer <access_token>`。复用已有查询参数 **`waybill_status`**，从整段订舱号模糊匹配改为按 `booking_no` **末尾括号中的完整标识**筛选，并支持多选。深航出港接口不增加此参数。
@@ -1252,7 +1353,7 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 {"execution_mode":"direct","task_id":"369409067778707456","airline_record_status":"1","direct_task_status":"pending","direct_task_error":null}
 ```
 
-任务详情的 `result` 成功时包含 `waybill_number`、`awb_id`、`aviation_rate`、`aviation_fee`、`delivery_fee`；费用值保留上游的数字或数字字符串类型。失败时读取 `error_message`；`unknown` 必须结合 `candidate_waybill_number` 人工核查。任务ID、运单ID均以字符串返回。
+任务详情的 `result` 成功时包含 `waybill_number`、`awb_id`、`aviation_rate`、`aviation_fee`、`delivery_fee`；费用值保留上游的数字或数字字符串类型。发生明确舱位调整时可选增加 `cabin_adjustment`，详见2026-10-29舱位提示调整说明。失败时读取 `error_message`；`unknown` 必须结合 `candidate_waybill_number` 人工核查。任务ID、运单ID均以字符串返回。
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -1304,9 +1405,9 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 
 该配置仅影响深航作废，不影响深航开单配置 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE`，修改 `.env` 后需重启服务。
 
-提交请求发出前失败会标记 `failed`，可重新执行。提交发出前先独立提交数据库事务，将 `stage=submitting` 和候选单号持久化；数据库写入失败则不发送提交请求。之后的网络异常、非2xx、业务拒绝、无效响应、返回单号不一致或本地结果落库异常均保守标记 `unknown`，禁止自动重试或自动降级RPA。切换到RPA模式也不能绕过 `pending/running/unknown` 直连任务。`PUT /api/v1/waybills/{id}` 修改运单时同样阻止这些任务关联的运单被修改。单任务上限20分钟，每分钟检查超过30分钟的遗留running任务；未跨过提交边界的任务置failed，已跨过的任务置unknown。人工必须先按候选单号核查KingGo并确认/修复本地运单、任务状态；未确认上游结果前不能将unknown直接改为failed重试。
+提交请求发出前失败会标记 `failed`，可重新执行。提交发出前先独立提交数据库事务，将 `stage=submitting` 和候选单号持久化；数据库写入失败则不发送提交请求。除上文明确舱位询问允许同任务调整一次、明确被拒绝时标记failed外，之后的网络异常、非2xx、其他业务拒绝、无效响应、返回单号不一致或本地结果落库异常均保守标记 `unknown`，禁止自动重试或自动降级RPA。舱位调整后仍无法确认成功或被拒绝，同样保留unknown。切换到RPA模式也不能绕过 `pending/running/unknown` 直连任务。`PUT /api/v1/waybills/{id}` 修改运单时同样阻止这些任务关联的运单被修改。单任务上限20分钟，每分钟检查超过30分钟的遗留running任务；未跨过提交边界的任务置failed，已跨过的任务置unknown。人工必须先按候选单号核查KingGo并确认/修复本地运单、任务状态；未确认上游结果前不能将unknown直接改为failed重试。
 
-确认成功时校验返回的八位运单号与候选号一致且包含 `awbId`，原子持久化运单号和任务成功状态。后续结算/制单/打印异常不会导致再次开单；后处理抛出异常时在任务 `result.post_processing_error` 中提示人工检查。直连模式不自动重发任何上游请求。
+确认成功时校验返回的八位运单号与候选号一致且包含 `awbId`，原子持久化运单号和任务成功状态。后续结算/制单/打印异常不会导致再次开单；后处理抛出异常时在任务 `result.post_processing_error` 中提示人工检查。除明确舱位询问的一次调整外，直连模式不自动重发上游请求。
 
 共享 KingGo 账号的领取过程通过 `shenzhen_air_direct_waybill_queue_lock` 单行锁协调：同一时刻只允许一个直连开单任务处于 running，多线程、多进程使用同一数据库时也遵循此限制，避免获取候选单号后尚未提交就被另一任务重复领取。互斥行仅在领取事务中加锁，HAR提取和HTTP请求期间不持有数据库连接。候选单号是否预占尚未得到上游契约确认，因此采用串行策略。
 

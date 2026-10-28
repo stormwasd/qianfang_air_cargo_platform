@@ -377,7 +377,7 @@ async def update_waybill(
     """
     修改运单信息接口
 
-    - 仅当运单处于「未开单」（airline_record_status="0"）或「开单失败」（airline_record_status="2"）时允许修改，修改后可重新开单
+    - 仅当运单处于「未开单」（airline_record_status="0"）或「开单失败」（airline_record_status="2"），且没有排队、执行中或提交结果待核查的深航直连任务时允许修改
     - 可更新 form_data（整体替换）与可选的 booking_date
     - waybill_number、departure_time、各执行状态等由系统/RPA 维护，不可通过本接口修改
     """
@@ -1268,7 +1268,13 @@ def _ensure_no_active_shenzhen_direct_task(db: Session, waybill_id: int) -> None
         ShenzhenAirDirectWaybillTask.status.in_(["pending", "running", "unknown"]),
     ).first()
     if task:
-        raise BadRequestException(f"该运单已有待执行、执行中或待核查的深航直连任务，任务ID: {task.id}")
+        if task.status == "unknown":
+            raise BadRequestException(
+                f"上次深航提交结果待核查，暂不能修改或重新执行。请先按候选运单号"
+                f" {task.candidate_waybill_number or '未记录'} 核查KingGo，避免重复开单；任务ID: {task.id}"
+            )
+        label = "正在执行" if task.status == "running" else "正在排队等待执行"
+        raise BadRequestException(f"该运单的深航直连开单任务{label}，暂不能修改或重新执行；任务ID: {task.id}")
 
 
 @router.post("/{waybill_id}/execute", summary="确认并执行运单")

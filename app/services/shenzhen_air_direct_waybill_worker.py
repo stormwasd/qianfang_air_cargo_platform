@@ -145,11 +145,14 @@ class ShenzhenAirDirectWaybillWorker:
             db.rollback()
             task = db.query(ShenzhenAirDirectWaybillTask).filter(ShenzhenAirDirectWaybillTask.id == task_id).first()
             waybill = db.query(Waybill).filter(Waybill.id == task.waybill_id).first() if task else None
-            # Once the durable send boundary was crossed, even a local DB error
-            # after upstream success must remain blocked for reconciliation.
+            # A local error after a potential submission remains unknown unless
+            # the client has positively identified an explicit cabin rejection.
             if task and task.status == Status.SUCCESS:
                 return True
-            unknown = bool(getattr(exc, "outcome_unknown", False)) or bool(task and task.stage == "submitting")
+            rejected = isinstance(exc, ShenzhenAirDirectWaybillError) and exc.submission_rejected
+            unknown = not rejected and (
+                bool(getattr(exc, "outcome_unknown", False)) or bool(task and task.stage == "submitting")
+            )
             message = str(exc) if isinstance(exc, ShenzhenAirDirectWaybillError) else f"深航直连开单异常（{type(exc).__name__}）"
             diagnostic = {
                 "task_id": str(task_id), "waybill_id": str(task.waybill_id) if task else None,

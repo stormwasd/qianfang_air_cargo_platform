@@ -84,16 +84,57 @@ http.createServer(async (req, res) => {
   }
   if ((path.endsWith("get_awb_no") ? "GET" : "POST") !== req.method) return send(400, { error: "method" });
   if (path.endsWith("check_awb") || path.endsWith("submit_awb")) {
+    const scenario = fields.get("shpInfo") || "";
+    const cabinScenario = scenario.startsWith("CABIN_");
+    const targetCabin = scenario === "CABIN_A" ? "A" : "Z";
+    const adjusted = cabinScenario && fields.get("cabinTypeName") === targetCabin && fields.get("cabinType") === targetCabin;
     for (const [key, expected] of Object.entries({
       awbNo: "62046633", takeOffTime: "1525", awbPrefix: "479", billCode: "A1",
       aliasCode: "GEN", formerRate: "5.3", aviationFee: "50", totalFee: "51",
-      deliveryFee: "0", oldCabinType: "C", cabinType: "F", cabinTypeName: "F舱",
+      deliveryFee: "0", oldCabinType: "C", cabinType: adjusted ? targetCabin : "F",
+      cabinTypeName: adjusted ? targetCabin : scenario === "CABIN_CODE_MISMATCH" ? "Z" : "F舱",
       carrierCode: "ZH", transNote: "配件", goodsName: "配件", tlicellCellinfos: "[]",
-      pieces: "1", chargeWeight: fields.get("shpInfo") === "BUSINESS_REJECT" ? "45" : "3", firstAddFee: "", awbType: "",
+      pieces: "1", chargeWeight: cabinScenario || scenario === "BUSINESS_REJECT" ? "45" : "3", firstAddFee: "", awbType: "",
     })) {
       if (fields.get(key) !== expected) return send(400, { error: `contract mismatch: ${key}` });
     }
     if (!fields.has("agentSname") || !fields.has("operId")) return send(400, { error: "identity" });
+    if (cabinScenario) {
+      if (fields.get("weight") !== "35") return send(400, { error: "weight contract" });
+      const check = path.endsWith("check_awb");
+      if (scenario === "CABIN_CHECK_Z" && check && !adjusted) {
+        return send(200, { retCode: "400", msg: "舱位等级不足，是否变更为Z舱？", result: "" });
+      }
+      if (scenario === "CABIN_CHECK_FAIL" && check && adjusted) {
+        return send(200, { retCode: "501", msg: "调整后检查未通过" });
+      }
+      if (!check) {
+        if (!adjusted) {
+          const message = scenario === "CABIN_OTHER_MESSAGE" ? "舱位等级不足，请联系客服" :
+            scenario === "CABIN_BAD_TARGET" ? "舱位等级不足，是否变更为ZZ舱？" :
+            `舱位等级不足，是否变更为${scenario === "CABIN_SAME" ? "F" : targetCabin}舱？`;
+          return send(200, { retCode: scenario === "CABIN_OTHER_CODE" ? "501" : "400", msg: message,
+            result: scenario === "CABIN_CREATED" ? { awbId: "7220434" } : "" });
+        }
+        if (scenario === "CABIN_REPEAT") {
+          return send(200, { retCode: "400", msg: "舱位等级不足，是否变更为A舱？" });
+        }
+        if (scenario === "CABIN_WRONG_NUMBER" || scenario === "CABIN_MISSING_ID") {
+          return send(200, { retCode: "100", result: {
+            awbNo: scenario === "CABIN_WRONG_NUMBER" ? "00000000" : "62046633",
+            awbId: scenario === "CABIN_MISSING_ID" ? "" : "7220434",
+          } });
+        }
+        if (scenario === "CABIN_RETRY_HTTP_ERROR" || scenario === "CABIN_RETRY_INVALID_JSON") {
+          res.writeHead(scenario === "CABIN_RETRY_HTTP_ERROR" ? 503 : 200, { "Content-Type": "text/html" });
+          return res.end("<html>Synthetic gateway failure</html>");
+        }
+        if (scenario === "CABIN_RETRY_TIMEOUT") {
+          setTimeout(() => send(200, { retCode: "100", result: { awbNo: "62046633", awbId: "7220434" } }), 1000);
+          return;
+        }
+      }
+    }
     if (path.endsWith("submit_awb") && fields.get("shpInfo") === "FAIL_SUBMIT") {
       res.writeHead(500, { "Content-Type": "text/html" });
       return res.end("<html>Upstream gateway error</html>");

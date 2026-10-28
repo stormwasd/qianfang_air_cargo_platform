@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import re
+import logging
 import time
 from typing import Any, Callable
 from urllib.parse import quote, quote_plus, urlencode, urlsplit
@@ -14,11 +15,15 @@ import httpx
 from app.config import settings
 from app.utils.helpers import get_china_today
 
+logger = logging.getLogger(__name__)
+
 
 class ShenzhenAirDirectWaybillError(RuntimeError):
-    def __init__(self, message: str, *, outcome_unknown: bool = False, details: dict | None = None):
+    def __init__(self, message: str, *, outcome_unknown: bool = False,
+                 submission_rejected: bool = False, details: dict | None = None):
         super().__init__(message)
         self.outcome_unknown = outcome_unknown
+        self.submission_rejected = submission_rejected
         self.details = dict(details or {})
 
 
@@ -184,8 +189,10 @@ class ShenzhenAirDirectWaybillService:
         details = {"stage": name, "endpoint": path.split("?", 1)[0], "method": method}
 
         def failure(message, reason):
+            rejected = details.get("submission_rejected", False)
             return ShenzhenAirDirectWaybillError(
-                message, outcome_unknown=name == "submit",
+                message, outcome_unknown=name == "submit" and not rejected,
+                submission_rejected=rejected,
                 details={**details, "reason_code": reason,
                          "elapsed_ms": round((time.monotonic() - started) * 1000)},
             )
@@ -253,6 +260,10 @@ class ShenzhenAirDirectWaybillService:
                 request_summary[key] = value
         if request_summary:
             details["request_summary"] = request_summary
+        for key in ("cabinTypeName", "cabinType", "oldCabinType"):
+            value = str((fields or {}).get(key, ""))
+            if re.fullmatch(r"[A-Z](?:舱)?", value):
+                details.setdefault("request_summary", {})[key] = value
         def retain_message(payload, prefix):
             if isinstance(payload, dict):
                 for key in ("msg", "message", "errorMsg", "retMsg"):
@@ -272,6 +283,22 @@ class ShenzhenAirDirectWaybillService:
                 details["upstream_ret_code"] = code
             retain_message(result, "upstream_message")
             retain_message(result.get("result"), "upstream_result_message")
+            # Only this explicit rejection permits an in-task cabin correction.
+            # Parse the original message before redaction, retaining just A-Z.
+            if (name in {"check", "submit"} and response.status_code == 200
+                    and str(result.get("retCode")) == "400"):
+                message = result.get("msg")
+                match = None
+                if isinstance(message, str):
+                    match = re.fullmatch(r"\s*舱位等级不足[，,]\s*是否变更为\s*([A-Z])\s*舱[？?]\s*", message)
+                payload = result.get("result")
+                has_created_waybill = isinstance(payload, dict) and any(
+                    payload.get(key) for key in ("awbId", "awbNo", "awbStatus")
+                )
+                if match and not has_created_waybill:
+                    details["suggested_cabin_type_name"] = match.group(1)
+                    if name == "submit":
+                        details["submission_rejected"] = True
         if not 200 <= response.status_code < 300:
             raise failure(
                 f"KingGo {name} 请求失败（HTTP {response.status_code}）", "http_error"
@@ -415,18 +442,73 @@ class ShenzhenAirDirectWaybillService:
             "pickTelNo": settings.SHENZHEN_AIR_KINGGO_PICK_TEL_NO,
             "tlicellCellinfos": "[]",
         }
-        checked = await self._request("check", fields)
-        if not isinstance(checked, dict) or str(checked.get("retCode")) != "100":
-            raise ShenzhenAirDirectWaybillError("KingGo运单检查未成功",
-                                               details={"stage": "check", "reason_code": "invalid_result"})
-        submitted = await self._request("submit", fields, before_send=lambda: before_submit(f"{self.PREFIX}-{awb_number}"))
+        adjustment = None
+        submit_marked = False
+        last_submit_rejected = False
+
+        def mark_submitting():
+            nonlocal submit_marked, last_submit_rejected
+            if not submit_marked:
+                before_submit(f"{self.PREFIX}-{awb_number}")
+                submit_marked = True
+            # Every new send invalidates knowledge about the previous rejection.
+            last_submit_rejected = False
+
+        for attempt in range(2):
+            try:
+                checked = await self._request("check", fields)
+                if not isinstance(checked, dict) or str(checked.get("retCode")) != "100":
+                    raise ShenzhenAirDirectWaybillError("KingGo运单检查未成功",
+                                                       details={"stage": "check", "reason_code": "invalid_result"})
+                submitted = await self._request("submit", fields, before_send=mark_submitting)
+                break
+            except ShenzhenAirDirectWaybillError as exc:
+                if exc.submission_rejected:
+                    last_submit_rejected = True
+                suggested = exc.details.get("suggested_cabin_type_name")
+                if (attempt == 0 and exc.details.get("reason_code") == "business_rejected"
+                        and exc.details.get("stage") in {"check", "submit"}
+                        and exc.details.get("http_status") == 200
+                        and exc.details.get("upstream_ret_code") == "400"
+                        and isinstance(suggested, str) and re.fullmatch(r"[A-Z]", suggested)
+                        and (suggested != str(fields["cabinTypeName"]).strip().removesuffix("舱")
+                             or suggested != str(fields["cabinType"]).strip())):
+                    adjustment = {
+                        "from_cabin_type_name": _safe_upstream_text(fields["cabinTypeName"]),
+                        "to_cabin_type_name": suggested,
+                        "from_cabin_type": _safe_upstream_text(fields["cabinType"]),
+                        "to_cabin_type": suggested,
+                        "trigger_stage": exc.details["stage"],
+                        "upstream_ret_code": "400", "retry_count": 1,
+                    }
+                    # Keep the requested name/code aligned; oldCabinType remains
+                    # the original metadata returned by the bill lookup.
+                    fields["cabinTypeName"] = suggested
+                    fields["cabinType"] = suggested
+                    logger.warning(
+                        "[Shenzhen Direct Waybill] candidate=%s-%s 舱位等级不足，按上游提示同步调整cabinTypeName和cabinType并重新检查提交一次：%s",
+                        self.PREFIX, awb_number, adjustment,
+                    )
+                    continue
+                if last_submit_rejected:
+                    # A failed recheck/auth after an explicit rejection has not
+                    # sent another submission. It is safe to execute a new task.
+                    exc.submission_rejected = True
+                    exc.outcome_unknown = False
+                    exc.details["submission_rejected"] = True
+                elif submit_marked:
+                    exc.outcome_unknown = True
+                if adjustment:
+                    exc.details["cabin_adjustment"] = adjustment
+                raise
         result = submitted.get("result") if isinstance(submitted, dict) else None
         submitted_number = result.get("awbNo") if isinstance(result, dict) else None
         if (not isinstance(result, dict) or str(submitted.get("retCode")) != "100"
                 or str(submitted_number) != awb_number or not result.get("awbId")):
             raise ShenzhenAirDirectWaybillError(
                 "KingGo提交结果未确认，请核查运单后再操作", outcome_unknown=True,
-                details={"stage": "submit", "reason_code": "unconfirmed_result"},
+                details={"stage": "submit", "reason_code": "unconfirmed_result",
+                         **({"cabin_adjustment": adjustment} if adjustment else {})},
             )
         return {
             "waybill_number": f"{self.PREFIX}-{submitted_number}",
@@ -434,6 +516,7 @@ class ShenzhenAirDirectWaybillService:
             "aviation_rate": costs["aviationRate"],
             "aviation_fee": costs["aviationFee"],
             "delivery_fee": costs["deliveryFee"],
+            **({"cabin_adjustment": adjustment} if adjustment else {}),
         }
 
 

@@ -221,6 +221,25 @@ class PersistentTaskTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(BadRequestException):
             await update_waybill("101", WaybillUpdate(form_data=FORM), SimpleNamespace(id=1), self.db)
 
+    def test_blocking_message_identifies_pending_running_and_unknown_states(self):
+        from app.api.waybills import _ensure_no_active_shenzhen_direct_task
+        task = self.enqueue()
+        task.candidate_waybill_number = RESULT["waybill_number"]
+        for state, label in (("pending", "正在排队"), ("running", "正在执行"), ("unknown", "提交结果待核查")):
+            with self.subTest(state=state):
+                task.status = state
+                self.db.commit()
+                with self.assertRaises(BadRequestException) as caught:
+                    _ensure_no_active_shenzhen_direct_task(self.db, 101)
+                self.assertEqual(caught.exception.status_code, 400)
+                self.assertIn(label, caught.exception.detail)
+                self.assertIn(str(task.id), caught.exception.detail)
+                if state == "unknown":
+                    self.assertIn(RESULT["waybill_number"], caught.exception.detail)
+        task.status = "failed"
+        self.db.commit()
+        _ensure_no_active_shenzhen_direct_task(self.db, 101)
+
     async def test_existing_rpa_blocks_direct_enqueue(self):
         from app.api.waybills import execute_waybill
         self.db.add(RPATask(id=301, task_type="SHENZHEN_AIR_WAYBILL_EXECUTE", target_type="waybill",
