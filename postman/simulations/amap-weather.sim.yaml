@@ -1,0 +1,5 @@
+simulation: amap-weather
+routing: path
+mocks:
+  - routeKey: amap
+    path: ../mocks/amap-weather/config.yaml

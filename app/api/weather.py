@@ -36,6 +36,16 @@ AMAP_WEATHER_CITY_MAPPING = {
     "花土沟": "茫崖市",  
     "果洛": "果洛藏族自治州",
     "建三江": "佳木斯",  
+    # 天气查询使用机场所在地的高德 adcode，避免将未覆盖的 IATA 代码传给高德。
+    # 独立于业务机场映射，遵义茅台机场对应仁怀市，不能与 ZYI（遵义新舟）混用。
+    "WMT": "520382",
+    "遵义茅台": "520382",
+    "遵义茅台机场": "520382",
+    "仁怀": "520382",
+    "仁怀市": "520382",
+    "LYI": "371300",
+    "临沂": "371300",
+    "临沂市": "371300",
 }
 
 @router.get("", summary="获取机场指定日期天气", response_model=ResponseModel[Any])
@@ -46,8 +56,8 @@ async def get_weather(
     """
     根据机场三字码和指定日期获取高德天气预报
     """
-    raw_city = get_city_name_by_code(query.airport_code)
-    city_name = AMAP_WEATHER_CITY_MAPPING.get(raw_city.strip() if raw_city else "", raw_city)
+    raw_city = get_city_name_by_code(query.airport_code.strip())
+    city_name = AMAP_WEATHER_CITY_MAPPING.get(raw_city.upper(), raw_city)
     
     url = f"{AMAP_WEATHER_API}?key={AMAP_KEY}&city={urllib.parse.quote(city_name)}&extensions=all"
     
