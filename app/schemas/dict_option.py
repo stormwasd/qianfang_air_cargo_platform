@@ -35,6 +35,8 @@ class DictOptionResponse(BaseModel):
     color_type: Optional[str] = None  
     created_at: datetime
     updated_at: datetime
+    cargo_type: Optional[str] = Field(None, description="仅南航货物类型返回：名称，与label一致")
+    cargo_type_code: Optional[str] = Field(None, description="仅南航货物类型返回：代码，与value一致，允许不同名称共用代码")
     
     class Config:
         from_attributes = True

@@ -21,6 +21,24 @@ from app.services.csa_cargo_type_defaults import normalize_config_cargo_type
 router = APIRouter()
 
 
+def _dict_option_response(option: DictOption, dict_type: str) -> dict:
+    """统一字典选项响应，南航货物类型直接提供业务表单所需的名称/代码。"""
+    result = {
+        "id": str(option.id),
+        "dict_type_id": str(option.dict_type_id),
+        "dict_type": dict_type,
+        "label": option.label,
+        "value": option.value,
+        "status": option.status,
+        "color_type": option.color_type,
+        "created_at": format_datetime_china(option.created_at),
+        "updated_at": format_datetime_china(option.updated_at),
+    }
+    if dict_type == "nanfang_air_cargo_type":
+        result.update(cargo_type=option.label, cargo_type_code=option.value)
+    return result
+
+
 
 @router.put("", summary="保存业务参数配置")
 async def save_config(
@@ -360,17 +378,7 @@ async def create_dict_option(
     db.commit()
     db.refresh(new_option)
     
-    result_data = {
-        "id": str(new_option.id),
-        "dict_type_id": str(new_option.dict_type_id),
-        "dict_type": dict_type.type,
-        "label": new_option.label,
-        "value": new_option.value,
-        "status": new_option.status,
-        "color_type": new_option.color_type,
-        "created_at": format_datetime_china(new_option.created_at),
-        "updated_at": format_datetime_china(new_option.updated_at)
-    }
+    result_data = _dict_option_response(new_option, dict_type.type)
     
     return success_response(data=result_data, msg="字典选项创建成功")
 
@@ -389,6 +397,7 @@ async def get_dict_options(
     - **page**: 页码（可选，不传则不分页，返回全部）
     - **pageSize**: 每页数量（可选，不传则不分页，返回全部）
     - **order**: 排序方式（可选，asc=从小到大，desc=从大到小），仅当所有选项的value全为数字时生效，不传则默认从小到大排序
+    - 南航货物类型 nanfang_air_cargo_type 的每项额外返回 cargo_type（名称）、cargo_type_code（代码）；已有同步记录直接适用
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
@@ -436,19 +445,7 @@ async def get_dict_options(
         offset = (query.page - 1) * query.pageSize
         dict_options = dict_options[offset:offset + query.pageSize]
     
-    items = []
-    for do in dict_options:
-        items.append({
-            "id": str(do.id),
-            "dict_type_id": str(do.dict_type_id),
-            "dict_type": do.dict_type.type,
-            "label": do.label,
-            "value": do.value,
-            "status": do.status,
-            "color_type": do.color_type,
-            "created_at": format_datetime_china(do.created_at),
-            "updated_at": format_datetime_china(do.updated_at)
-        })
+    items = [_dict_option_response(option, option.dict_type.type) for option in dict_options]
     
     return success_response(
         data={"total": total, "items": items},
@@ -542,17 +539,7 @@ async def get_dict_option_detail(
     if not dict_option:
         raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    result_data = {
-        "id": str(dict_option.id),
-        "dict_type_id": str(dict_option.dict_type_id),
-        "dict_type": dict_option.dict_type.type,
-        "label": dict_option.label,
-        "value": dict_option.value,
-        "status": dict_option.status,
-        "color_type": dict_option.color_type,
-        "created_at": format_datetime_china(dict_option.created_at),
-        "updated_at": format_datetime_china(dict_option.updated_at)
-    }
+    result_data = _dict_option_response(dict_option, dict_option.dict_type.type)
     
     return success_response(data=result_data, msg="查询成功")
 
@@ -606,17 +593,7 @@ async def update_dict_option(
     db.commit()
     db.refresh(dict_option)
     
-    result_data = {
-        "id": str(dict_option.id),
-        "dict_type_id": str(dict_option.dict_type_id),
-        "dict_type": dict_option.dict_type.type,
-        "label": dict_option.label,
-        "value": dict_option.value,
-        "status": dict_option.status,
-        "color_type": dict_option.color_type,
-        "created_at": format_datetime_china(dict_option.created_at),
-        "updated_at": format_datetime_china(dict_option.updated_at)
-    }
+    result_data = _dict_option_response(dict_option, dict_option.dict_type.type)
     
     return success_response(data=result_data, msg="字典选项更新成功")
 

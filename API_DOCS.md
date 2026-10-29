@@ -1,5 +1,79 @@
 # API 文档
 
+## 2026-10-29 南航货物类型字典选项直接返回名称与代码
+
+参数配置页下拉列表的数据源为 `GET /api/v1/config/dict-options?dict_type=nanfang_air_cargo_type`，与 `GET /api/v1/config` 返回的“已选默认配置”是两个接口。本次补齐字典选项响应：**既有记录、定期同步产生的记录立即按新格式返回，无需手动新增、编辑、重新保存配置或等待下一轮同步。** 仅在部署更新后重新请求即可；不需要改表、迁移 SQL 或修改南航同步入库格式。
+
+### 适用接口与新增字段
+
+| 接口 | 新字段所在位置 |
+| --- | --- |
+| `GET /api/v1/config/dict-options` | `data.items[]`，包括按南航类型筛选、混合类型列表及分页结果中的南航货物类型项 |
+| `GET /api/v1/config/dict-options/{option_id}` | `data` |
+| `POST /api/v1/config/dict-options` | 创建成功的 `data` |
+| `PUT /api/v1/config/dict-options/{option_id}` | 更新成功的 `data`，以更新后的字典类型为准 |
+
+只对 `dict_type="nanfang_air_cargo_type"` 的选项增加两个字符串：
+
+| 新字段 | 内容 | 原字段 |
+| --- | --- | --- |
+| `cargo_type` | 原始货物类型名称 | `label` |
+| `cargo_type_code` | 原始南航代码，允许多个名称共用 | `value` |
+
+原有字段、字符串类型及含义保持兼容：`id`、`dict_type_id`、`dict_type`、`label`、`value`、`status`、`color_type`、`created_at`、`updated_at` 仍全部返回。其他字典不增加上述两个业务字段。HTTP 状态、认证、统一响应 `code/data/msg`、排序、状态筛选、总数和分页规则不变。
+
+列表项示例（原有时间等字段省略）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 2,
+    "items": [
+      {
+        "id": "示例字典行ID1",
+        "dict_type_id": "示例字典类型ID",
+        "dict_type": "nanfang_air_cargo_type",
+        "label": "贵重物品",
+        "value": "3001",
+        "cargo_type": "贵重物品",
+        "cargo_type_code": "3001",
+        "status": 1
+      },
+      {
+        "id": "示例字典行ID2",
+        "dict_type_id": "示例字典类型ID",
+        "dict_type": "nanfang_air_cargo_type",
+        "label": "活体动物",
+        "value": "3001",
+        "cargo_type": "活体动物",
+        "cargo_type_code": "3001",
+        "status": 1
+      }
+    ]
+  },
+  "msg": "查询成功"
+}
+```
+
+这两个字段由接口读取数据库现有 `label/value` 时生成，不是数据库新增列，也不依赖记录的创建来源。新增/编辑字典请求仍使用原 `label/value`，不改成提交 `cargo_type/cargo_type_code`；南航自动同步继续以名称、代码写入这两列。
+
+### 参数配置页接入
+
+直接请求原字典选项接口（可加 `status=1` 获取启用项），用返回的 `cargo_type` 展示并绑定选中名称，将同一项的 `cargo_type_code` 作为业务代码保留。控件适配示例：
+
+```js
+const options = items.map(item => ({
+  label: item.cargo_type,
+  value: item.cargo_type, // 控件的选中值使用名称，不能使用重复代码
+  cargo_type_code: item.cargo_type_code
+}));
+```
+
+选择一项后，参数配置的 `business_default` 同时保存该项 `cargo_type`、`cargo_type_code` 两个字符串，保存接口及路径见下节。无需点击下拉框中的“添加”；该按钮属于手工管理字典选项，不是启用新响应格式的前置步骤。
+
+新增字段不会使仍绑定旧 `value=3001` 的控件自动消除歧义，前端须同步采用按名称选择/回显的逻辑。字典 `value` 不改成对象、名称或拼接串，避免破坏其他消费方；`GET /dict-options/value-by-key` 遇到共享代码仍返回 HTTP 409，不用于该下拉框回显。
+
 ## 2026-10-29 南航默认货物类型同时保存名称与代码
 
 适用系统管理 → 参数配置 → 南方航空 → 开单的默认货物类型。数据字典 `nanfang_air_cargo_type` 的格式和自动同步规则不变；同码不同名是合法数据，不能按代码去重或反查唯一名称。本次无需修改表、执行 SQL 或调整 `app/config.py`。
