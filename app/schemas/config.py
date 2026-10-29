@@ -16,6 +16,9 @@ class BusinessConfigCreate(BaseModel):
     第二层：业务类型（如："booking"、"document"、"print"、"booking_and_create"）
     第三层：参数组代码（如："shenzhen_air_login"、"business_default"等）
     第四层：参数项（键值对，值为字符串，特殊说明：printer_config 是数组类型，支持配置多个打印机；address 是对象类型，包含region和detail字段）
+    南航 booking_and_create.business_default 中 cargo_type 保存货物类型名称，
+    cargo_type_code 保存对应代码，两个字段均为字符串；不同名称允许使用相同代码。
+    旧配置仅提供可识别名称时补齐代码，新提交的非空代码必须与启用字典中的名称匹配。
     
     示例结构：
     {
@@ -95,6 +98,7 @@ class BusinessConfigCreate(BaseModel):
             "booking_remark_narrow": "",
             "cargo_code": "",
             "cargo_type": "",
+            "cargo_type_code": "",
             "package": "",
             "special_cargo_code": "",
             "agent_checker_name": "",

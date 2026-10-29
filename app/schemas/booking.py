@@ -59,7 +59,7 @@ class BookingCreate(BaseModel):
     - 最终体积确定后，执行阶段按航班、货物类型、重量、体积及有效产品名称查询南航运价舱位；返回的 `spaceClass` 用于 `bookGrade`、`spaceClass`，`subSpaceClass` 用于同名字段
     - `outbound_cargo_and_mail_handling_fee_options` 可选；填写时只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活易腐、鲜活容腐、普货、急件快件。为空时执行阶段直接透传南航费用查询返回的完整选项列表，不再按名称定位或补勾
     - 批量Excel使用 `POST /api/v1/bookings/china-southern-air/import-excel` 上传；后端按 `nanfang_air_cargo_type` 数据字典的 `label` 匹配货物类型，并把对应 `value` 写入 `cargo_type_code`
-    - 为兼容仍由前端解析Excel后调用 `POST /api/v1/bookings` 的流程，南航新增/修改接口也会在 `cargo_type_code` 缺失时按同一数据字典自动补齐；已传入非空值时保持原值
+    - 南航新增/修改接口在名称、代码均为空时使用 business_default 默认类型；只有名称时按同名默认代码或启用字典补码，已传入非空代码时保持原值
     - 执行订舱时由服务端查询航班机型，按系统参数中的宽窄体规则选择对应备注
     - bookings 是数组类型，支持批量提交多条订舱信息
     - 不同航司的字段结构可能不同，前端需要根据 airline 字段来展示对应的表单字段

@@ -1,0 +1,5 @@
+simulation: csa-cargo-defaults
+routing: path
+mocks:
+  - routeKey: csa
+    path: ../mocks/csa-cargo-defaults/config.yaml

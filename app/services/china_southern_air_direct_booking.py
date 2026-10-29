@@ -7,6 +7,7 @@ import httpx
 
 from app.services.china_southern_air_direct_order import china_southern_air_direct_order_service
 from app.services.china_southern_air_field_utils import normalize_special_cargo_code
+from app.services.csa_cargo_type_defaults import apply_item_defaults
 from app.services.china_southern_air_service_client import ChinaSouthernAirService
 
 
@@ -90,7 +91,8 @@ class ChinaSouthernAirDirectBookingService:
         bookings = form_data.get("bookings")
         if not isinstance(bookings, list) or not bookings or not isinstance(bookings[0], dict):
             raise ChinaSouthernAirDirectBookingError("南航订舱 form_data.bookings 必须包含一条订舱数据")
-        item = bookings[0]
+        item = deepcopy(bookings[0])
+        apply_item_defaults(item, business_config)
         defaults = cls._business_default(business_config)
 
         product_name = item.get("product_name")

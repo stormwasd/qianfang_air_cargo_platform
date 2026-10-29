@@ -16,6 +16,7 @@ from app.schemas.dict_option import DictOptionCreate, DictOptionUpdate, DictOpti
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.utils.helpers import format_datetime_china
+from app.services.csa_cargo_type_defaults import normalize_config_cargo_type
 
 router = APIRouter()
 
@@ -37,10 +38,13 @@ async def save_config(
     - 如果已有配置，则更新现有配置
     - 这是一个 upsert 操作（update or insert）
     - 只有管理员可以操作此接口（通过菜单权限控制）
+    - 南航 business_default 支持 cargo_type（名称）、cargo_type_code（代码）两个字符串；
+      新提交的非空代码须与启用字典中的名称匹配，旧配置只有可识别名称时自动补码
     """
     existing_config = db.query(BusinessConfig).first()
     
-    config_json = json.dumps(config_data.config_data, ensure_ascii=False)
+    normalized_config = normalize_config_cargo_type(config_data.config_data, db, validate=True)
+    config_json = json.dumps(normalized_config, ensure_ascii=False)
     
     if existing_config:
         existing_config.config_data = config_json
@@ -78,13 +82,14 @@ async def get_current_config(
     
     如果尚未配置，返回 code=0，data=null（这是正常情况，不是错误）
     只有管理员可以操作此接口（通过菜单权限控制）
+    南航历史配置只有可识别的货物类型名称时，响应补齐 cargo_type_code，不修改数据库。
     """
     config = db.query(BusinessConfig).first()
     
     if not config:
         return success_response(data=None, msg="暂无配置信息")
     
-    response_data = json.loads(config.config_data)
+    response_data = normalize_config_cargo_type(json.loads(config.config_data), db)
     config_data = {
         "id": str(config.id),
         "config_data": response_data,

@@ -10,6 +10,7 @@ from app.services.china_southern_air_service_client import (
     china_southern_air_service,
 )
 from app.services.china_southern_air_field_utils import normalize_special_cargo_code
+from app.services.csa_cargo_type_defaults import apply_item_defaults
 
 
 class ChinaSouthernAirDirectOrderError(Exception):
@@ -209,6 +210,11 @@ class ChinaSouthernAirDirectOrderService:
         business_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """解析并校验南航运单表单，供费用选项查询与请求构建复用。"""
+        if business_config is not None:
+            form_data = deepcopy(form_data)
+            cargo = form_data.get("cargo_info")
+            if isinstance(cargo, dict):
+                apply_item_defaults(cargo, business_config)
         values = cls._get_form_values(form_data)
         if business_config is not None:
             config = cls._direct_order_config(business_config)
@@ -335,7 +341,7 @@ class ChinaSouthernAirDirectOrderService:
         values = (
             form_values
             if form_values is not None
-            else cls._get_form_values(form_data)
+            else cls.get_form_values(form_data, business_config)
         )
         config = cls._direct_order_config(business_config)
         if service_charges is None:
@@ -452,7 +458,7 @@ class ChinaSouthernAirDirectOrderService:
         values = (
             form_values
             if form_values is not None
-            else cls._get_form_values(form_data)
+            else cls.get_form_values(form_data, business_config)
         )
         config = cls._direct_order_config(business_config)
         calculated_fees = calculation_result.get("extServiceCharges")

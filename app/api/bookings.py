@@ -26,6 +26,9 @@ from app.schemas.booking import (
 )
 from app.api.deps import get_current_active_user
 from app.utils.helpers import format_datetime_china, get_china_now
+from app.services.csa_cargo_type_defaults import (
+    fill_form_cargo_type_defaults, normalize_config_cargo_type,
+)
 from app.services.rpa_service import rpa_service
 from app.services.china_southern_air_direct_booking import (
     ChinaSouthernAirDirectBookingError,
@@ -194,7 +197,7 @@ def _get_business_config(db: Session) -> dict:
     config = db.query(BusinessConfig).first()
     if not config:
         return {}
-    return json.loads(config.config_data)
+    return normalize_config_cargo_type(json.loads(config.config_data), db)
 
 
 def _get_china_southern_air_cargo_type_codes(db: Session) -> dict:
@@ -255,19 +258,15 @@ def _fill_missing_china_southern_air_cargo_type_codes(
     if not isinstance(bookings, list):
         return False
 
-    missing_items = []
-    for index, booking_item in enumerate(bookings):
-        if not isinstance(booking_item, dict):
-            continue
-        cargo_type_code = str(booking_item.get("cargo_type_code") or "").strip()
-        if cargo_type_code:
-            continue
-        cargo_type = str(booking_item.get("cargo_type") or "").strip()
-        if cargo_type:
-            missing_items.append((index, booking_item, cargo_type))
-
+    defaults_filled = fill_form_cargo_type_defaults(form_data, db, resolve_codes=False)
+    missing_items = [
+        (index, item, str(item.get("cargo_type") or "").strip())
+        for index, item in enumerate(bookings)
+        if isinstance(item, dict) and str(item.get("cargo_type") or "").strip()
+        and not str(item.get("cargo_type_code") or "").strip()
+    ]
     if not missing_items:
-        return False
+        return defaults_filled
 
     cargo_type_codes = _get_china_southern_air_cargo_type_codes(db)
     for index, booking_item, cargo_type in missing_items:

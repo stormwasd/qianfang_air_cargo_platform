@@ -3,6 +3,7 @@
 """
 import asyncio
 import json
+from copy import deepcopy
 from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
@@ -39,6 +40,9 @@ from app.services.waybill_stock_service import (
     reserve_available_stock_item,
 )
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
+from app.services.csa_cargo_type_defaults import (
+    fill_form_cargo_type_defaults, normalize_config_cargo_type,
+)
 from app.utils.airport_code_mapper import search_airport_codes_by_keyword
 
 router = APIRouter()
@@ -57,9 +61,12 @@ async def create_waybill(
     - 自动设置booking_date为当前日期（中国时间）
     - 所有执行状态默认为"未执行"
     - waybill_number和departure_time初始为null，由RPA后续写入
+    - 南航缺少货物类型时使用默认名称/代码；已有名称缺代码时按同名默认值或字典补齐，不覆盖用户已填代码
     """
     
-    form_data_json = json.dumps(waybill.form_data, ensure_ascii=False)
+    form_data = deepcopy(waybill.form_data)
+    fill_form_cargo_type_defaults(form_data, db)
+    form_data_json = json.dumps(form_data, ensure_ascii=False)
     
     booking_date = get_china_today()
     
@@ -380,6 +387,7 @@ async def update_waybill(
     - 仅当运单处于「未开单」（airline_record_status="0"）或「开单失败」（airline_record_status="2"），且没有排队、执行中或提交结果待核查的深航直连任务时允许修改
     - 可更新 form_data（整体替换）与可选的 booking_date
     - waybill_number、departure_time、各执行状态等由系统/RPA 维护，不可通过本接口修改
+    - 南航货物类型名称/代码采用与新增运单一致的默认值及缺码补齐规则
     """
     waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).with_for_update().first()
     if not waybill:
@@ -391,7 +399,9 @@ async def update_waybill(
             "仅未开单或开单失败状态的运单可修改；当前运单正在开单中或已开单成功，无法修改"
         )
 
-    form_data_json = json.dumps(payload.form_data, ensure_ascii=False)
+    form_data = deepcopy(payload.form_data)
+    fill_form_cargo_type_defaults(form_data, db)
+    form_data_json = json.dumps(form_data, ensure_ascii=False)
     waybill.form_data = form_data_json
     if payload.booking_date is not None:
         waybill.booking_date = payload.booking_date
@@ -762,7 +772,7 @@ def _get_business_config(db: Session) -> dict:
     config = db.query(BusinessConfig).first()
     if not config:
         return {}
-    return json.loads(config.config_data)
+    return normalize_config_cargo_type(json.loads(config.config_data), db)
 
 
 def _sync_waybill_void_settlements(db: Session, waybill: Waybill) -> None:
