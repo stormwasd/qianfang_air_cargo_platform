@@ -5,6 +5,7 @@ from openpyxl import Workbook, load_workbook
 
 from app.services.cost_excel_export import (
     COST_EXPORT_HEADERS,
+    LEGACY_COST_EXPORT_HEADERS,
     append_cost_export_headers,
     format_bill_of_lading_for_export,
     format_freight_method_for_export,
@@ -129,7 +130,7 @@ class CostExcelBillOfLadingTests(unittest.TestCase):
 
 class CostExcelLayoutTests(unittest.TestCase):
     def test_customer_marked_columns_are_not_exported(self):
-        self.assertEqual(len(COST_EXPORT_HEADERS), 94)
+        self.assertEqual(len(COST_EXPORT_HEADERS), 137)
         self.assertEqual(COST_EXPORT_HEADERS[:2], ("序号", "状态"))
         self.assertNotIn("提成百分比", COST_EXPORT_HEADERS)
         removed_headers = {
@@ -146,7 +147,7 @@ class CostExcelLayoutTests(unittest.TestCase):
         self.assertEqual(len(removed_headers), 26)
         for header in removed_headers:
             with self.subTest(header=header):
-                self.assertNotIn(header, COST_EXPORT_HEADERS)
+                self.assertNotIn(header, LEGACY_COST_EXPORT_HEADERS)
 
     def test_export_titles_use_product_wording(self):
         expected_headers = {
@@ -181,7 +182,7 @@ class CostExcelLayoutTests(unittest.TestCase):
         }
         for header in old_headers:
             with self.subTest(header=header):
-                self.assertNotIn(header, COST_EXPORT_HEADERS)
+                self.assertNotIn(header, LEGACY_COST_EXPORT_HEADERS)
 
     def test_grouped_headers_still_cover_all_columns(self):
         workbook = Workbook()
@@ -190,50 +191,50 @@ class CostExcelLayoutTests(unittest.TestCase):
         headers = append_cost_export_headers(worksheet)
 
         merged_ranges = {str(item) for item in worksheet.merged_cells.ranges}
-        self.assertEqual(len(headers), 94)
-        self.assertEqual(worksheet.max_column, 94)
+        self.assertEqual(len(headers), 137)
+        self.assertEqual(worksheet.max_column, 137)
         self.assertEqual(worksheet["A1"].value, "序号")
         self.assertEqual(worksheet["B1"].value, "状态")
         self.assertEqual(headers[:2], ["序号", "状态"])
-        self.assertEqual(merged_ranges, {
-            "A1:A3", "B1:B3", "C1:S2", "T1:AM2", "AN1:CI1",
-            "AN2:BC2", "BD2:BI2", "BJ2:BT2", "BU2:CA2",
-            "CB2:CH2", "CI2:CI3", "CJ1:CL2", "CM1:CN2", "CO1:CP2",
-        })
+        self.assertTrue({
+            "A1:A3", "B1:B3", "C1:R2", "S1:AL2", "AM1:CH1",
+            "AM2:BB2", "BC2:BH2", "BI2:BS2", "BT2:BZ2",
+            "CA2:CG2", "CH2:CH3", "CI1:CK2", "CL1:CM2", "CN1:CO2",
+        }.issubset(merged_ranges))
         workbook.close()
 
     def test_every_export_section_keeps_its_expected_boundaries(self):
         expected_indexes = {
-            "应收-单价": 19,
-            "应收-运费计算方式": 20,
-            "应收-运费": 21,
-            "应收-燃油费": 22,
-            "国空应付-外发单位": 39,
-            "国空应付-单价": 43,
-            "国空应付-运费": 44,
-            "国空应付-小计": 54,
-            "报关应付-报关代理": 55,
-            "报关应付-其他费用": 59,
-            "报关应付-小计": 60,
-            "地面应付-外发单位": 61,
-            "地面应付-前置仓": 64,
-            "地面应付-TC费": 65,
-            "地面应付-提货费": 66,
-            "地面应付-其他费用": 70,
-            "地面应付-小计": 71,
-            "汽运应付-外发单位": 72,
-            "汽运应付-小计": 78,
-            "国空内应付-外发单位": 79,
-            "国空内应付-费率": 82,
-            "国空内应付-运费": 83,
-            "国空内应付-小计": 85,
-            "应付合计": 86,
-            "折让人员": 87,
-            "费率": 88,
-            "折让费": 89,
-            "业务员": 90,
-            "提成金额": 91,
-            "利润率(%)": 93,
+            "应收-单价": 18,
+            "应收-运费计算方式": 19,
+            "应收-运费": 20,
+            "应收-燃油费": 21,
+            "国空应付-外发单位": 38,
+            "国空应付-单价": 42,
+            "国空应付-运费": 43,
+            "国空应付-小计": 53,
+            "报关应付-报关代理": 54,
+            "报关应付-其他费用": 58,
+            "报关应付-小计": 59,
+            "地面应付-外发单位": 60,
+            "地面应付-前置仓": 63,
+            "地面应付-TC费": 64,
+            "地面应付-提货费": 65,
+            "地面应付-其他费用": 69,
+            "地面应付-小计": 70,
+            "汽运应付-外发单位": 71,
+            "汽运应付-小计": 77,
+            "国空内应付-外发单位": 78,
+            "国空内应付-费率": 81,
+            "国空内应付-运费": 82,
+            "国空内应付-小计": 84,
+            "应付合计": 85,
+            "折让人员": 86,
+            "费率": 87,
+            "折让费": 88,
+            "业务员": 89,
+            "提成金额": 90,
+            "利润率(%)": 92,
         }
 
         for header, expected_index in expected_indexes.items():

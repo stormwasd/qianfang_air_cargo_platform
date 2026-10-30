@@ -40,6 +40,10 @@ from app.utils.helpers import format_datetime_china, get_china_now
 from app.schemas.consignment_operation_log import ConsignmentOperationLogPage
 from app.services.consignment_operation_log import append_consignment_operation, get_consignment_operations
 
+from app.services.consignment_financial import (
+    ADDITIONAL_COST_FIELDS, financial_snapshot, cost_extra_export_values,
+)
+
 router = APIRouter()
 
 
@@ -111,6 +115,7 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
 
     data = {
         "id": str(record.id),
+        "expense_tags": list(getattr(record, "expense_tags", None) or []),
         "status": int(getattr(record, "status", CostConsignmentSubmissionStatus.SUBMITTED.value)),
         
         # (1) 货主委托信息
@@ -272,6 +277,13 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
     }
     if hasattr(record, "creator_id") and record.creator_id:
         data["creator_id"] = str(record.creator_id)
+    for path, fields in ADDITIONAL_COST_FIELDS.items():
+        section = data
+        for key in path.split("."):
+            section = section[key]
+        for name, column in fields.items():
+            value = getattr(record, column, None)
+            section[name] = float(value) if value is not None and not isinstance(value, str) else value
     return data
 
 
@@ -281,6 +293,15 @@ def _apply_cost_payload(
     db: Optional[Session] = None,
 ):
     """从层级化 Payload 赋值属性到 ORM 模型对象"""
+    if payload.expense_tags is not None:
+        record.expense_tags = list(payload.expense_tags)
+    for path, fields in ADDITIONAL_COST_FIELDS.items():
+        section = _section(payload, path)
+        if section is not None:
+            for name, column in fields.items():
+                if name in section.model_fields_set:
+                    setattr(record, column, getattr(section, name))
+
     # 1. 货主委托信息
     if payload.consignor_info is not None:
         info = payload.consignor_info
@@ -470,6 +491,15 @@ def _apply_cost_payload(
         record.profit_margin = op.profit_margin if op.profit_margin is not None else record.profit_margin
 
 
+def _section(payload, path):
+    section = payload
+    for key in path.split("."):
+        section = getattr(section, key, None)
+        if section is None:
+            break
+    return section
+
+
 # ============================================================================
 # 1. 费用信息登记接口（系统唯一一条数据，支持编辑和保存）
 # ============================================================================
@@ -567,8 +597,12 @@ async def create_cost_consignment(
         creator_id=current_user.id,
         status=CostConsignmentSubmissionStatus.SUBMITTED.value,
     )
+    cs_record.financial_data = financial_snapshot(new_record)
     db.add(cs_record)
-    append_consignment_operation(db, new_record.id, current_user, source="cost_service", action="save")
+    append_consignment_operation(
+        db, new_record.id, current_user, source="cost_service", action="save",
+        internal_doc_id=new_record.internal_doc_id,
+    )
     db.commit()
     db.refresh(new_record)
     
@@ -592,7 +626,10 @@ async def create_cost_consignment_draft(
 
     db.add(new_record)
     db.flush()
-    append_consignment_operation(db, new_record.id, current_user, source="cost_service", action="draft")
+    append_consignment_operation(
+        db, new_record.id, current_user, source="cost_service", action="draft",
+        internal_doc_id=new_record.internal_doc_id,
+    )
     db.commit()
     db.refresh(new_record)
 
@@ -812,7 +849,10 @@ async def update_cost_consignment_draft(
     _ensure_cost_consignment_not_voided(record)
     _apply_cost_payload(record, payload, db)
     record.status = CostConsignmentSubmissionStatus.UNSUBMITTED.value
-    append_consignment_operation(db, record.id, current_user, source="cost_service", action="draft")
+    append_consignment_operation(
+        db, record.id, current_user, source="cost_service", action="draft",
+        internal_doc_id=record.internal_doc_id,
+    )
     db.commit()
     db.refresh(record)
 
@@ -888,7 +928,11 @@ async def update_cost_consignment(
         )
         db.add(cs_record)
 
-    append_consignment_operation(db, record.id, current_user, source="cost_service", action="save")
+    cs_record.financial_data = financial_snapshot(record)
+    append_consignment_operation(
+        db, record.id, current_user, source="cost_service", action="save",
+        internal_doc_id=record.internal_doc_id,
+    )
     db.commit()
     db.refresh(record)
     
@@ -917,7 +961,10 @@ async def void_cost_consignment(
     customer_record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
     if customer_record:
         customer_record.status = CostConsignmentSubmissionStatus.VOIDED.value
-    append_consignment_operation(db, record.id, current_user, source="cost_service", action="void")
+    append_consignment_operation(
+        db, record.id, current_user, source="cost_service", action="void",
+        internal_doc_id=record.internal_doc_id,
+    )
     db.commit()
     db.refresh(record)
 
@@ -952,16 +999,16 @@ async def batch_delete_cost_consignments(
             
     # 仅删除已提交费用单据对应的客服接单台记录；费用草稿可能对应客服接单台中
     # 已提交的历史版本，删除草稿不能误删该版本。
-    source_records = db.query(CostConsignment.id, CostConsignment.status).filter(
+    source_records = db.query(CostConsignment.id, CostConsignment.status, CostConsignment.internal_doc_id).filter(
         CostConsignment.id.in_(int_ids),
     ).all()
-    operation_ids = [record_id for record_id, _ in source_records]
+    operation_ids = [(record_id, doc_id) for record_id, _status, doc_id in source_records]
     submitted_ids = [
-        record_id for record_id, status in source_records
+        record_id for record_id, status, _doc_id in source_records
         if status == CostConsignmentSubmissionStatus.SUBMITTED.value
     ]
     voided_ids = [
-        record_id for record_id, status in source_records
+        record_id for record_id, status, _doc_id in source_records
         if status == CostConsignmentSubmissionStatus.VOIDED.value
     ]
     if submitted_ids:
@@ -975,8 +1022,11 @@ async def batch_delete_cost_consignments(
             ConsignmentInfo.status == CostConsignmentSubmissionStatus.VOIDED.value,
         ).delete(synchronize_session=False)
     deleted_count = db.query(CostConsignment).filter(CostConsignment.id.in_(int_ids)).delete(synchronize_session=False)
-    for record_id in operation_ids:
-        append_consignment_operation(db, record_id, current_user, source="cost_service", action="delete")
+    for record_id, doc_id in operation_ids:
+        append_consignment_operation(
+            db, record_id, current_user, source="cost_service", action="delete",
+            internal_doc_id=doc_id,
+        )
     db.commit()
     
     return success_response(
@@ -1015,7 +1065,10 @@ async def delete_cost_consignment(
             ConsignmentInfo.status == CostConsignmentSubmissionStatus.VOIDED.value,
         ).delete(synchronize_session=False)
     db.delete(record)
-    append_consignment_operation(db, record.id, current_user, source="cost_service", action="delete")
+    append_consignment_operation(
+        db, record.id, current_user, source="cost_service", action="delete",
+        internal_doc_id=record.internal_doc_id,
+    )
     db.commit()
     
     return success_response(data={"id": consignment_id}, msg="单据信息删除成功")
@@ -1033,7 +1086,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件首列为序号、第二列为状态（未提交/已提交/作废），包含三级分组表头及 94 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
+    导出文件首列为序号、第二列为状态（未提交/已提交/作废），包含三级分组表头及 137 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -1121,7 +1174,6 @@ async def export_cost_consignments_to_excel(
             ),
             # (1) 货主委托信息
             _v_dt(rec.create_time),
-            _v_str(rec.internal_doc_id),
             _v_date(rec.warehouse_entry_date),
             _v_str(rec.customer_name),
             _v_str(rec.origin_destination),
@@ -1234,6 +1286,7 @@ async def export_cost_consignments_to_excel(
             _v_num(rec.profit_margin),
         ]
 
+        row_data.extend(cost_extra_export_values(rec))
         if len(row_data) != len(headers):
             raise RuntimeError(
                 f"费用登记导出表头与数据列数量不一致：{len(headers)} != {len(row_data)}"

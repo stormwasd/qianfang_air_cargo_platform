@@ -1,4 +1,6 @@
 """记录真实用户操作；同步写入不另记为一次用户操作。"""
+from typing import Optional
+
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BadRequestException, NotFoundException
@@ -24,10 +26,12 @@ OPERATION_NAMES = {
 
 def append_consignment_operation(
     db: Session, consignment_id: int, operator: User, *, source: str, action: str,
+    internal_doc_id: Optional[str] = None,
 ) -> None:
     """仅加入当前事务；由调用方与单据及同步数据一起提交。"""
     db.add(ConsignmentOperationLog(
         consignment_id=consignment_id,
+        internal_doc_id=internal_doc_id,
         source=source,
         action=action,
         operation_name=OPERATION_NAMES[(source, action)],
@@ -51,18 +55,29 @@ def get_consignment_operations(
         ConsignmentOperationLog.consignment_id == record_id,
     )
     total = query.count()
+    # 查询少量标量列，不加载完整费用对象；编号独立于当前时间线分页。
+    customer = db.query(ConsignmentInfo.internal_doc_id).filter(ConsignmentInfo.id == record_id).first()
+    cost = db.query(CostConsignment.internal_doc_id).filter(CostConsignment.id == record_id).first()
     # 有历史记录的已删除单据仍可追溯；从未存在的 ID 不伪装为空历史。
     if total == 0:
-        customer_exists = db.query(ConsignmentInfo.id).filter(ConsignmentInfo.id == record_id).first()
-        cost_exists = db.query(CostConsignment.id).filter(CostConsignment.id == record_id).first()
-        if not customer_exists and not cost_exists:
+        if customer is None and cost is None:
             raise NotFoundException(f"单据及操作记录不存在 (ID: {consignment_id})")
+
+    internal_doc_id = (cost[0] if cost else None) or (customer[0] if customer else None)
+    if customer is None and cost is None and total:
+        snapshot = db.query(ConsignmentOperationLog.internal_doc_id).filter(
+            ConsignmentOperationLog.consignment_id == record_id,
+            ConsignmentOperationLog.internal_doc_id.isnot(None),
+            ConsignmentOperationLog.internal_doc_id != "",
+        ).order_by(ConsignmentOperationLog.operated_at.desc(), ConsignmentOperationLog.id.desc()).first()
+        internal_doc_id = snapshot[0] if snapshot else None
 
     records = query.order_by(
         ConsignmentOperationLog.operated_at.desc(), ConsignmentOperationLog.id.desc(),
     ).offset((page - 1) * page_size).limit(page_size).all()
     return ConsignmentOperationLogPage(
-        consignment_id=str(record_id), total=total, page=page, pageSize=page_size,
+        consignment_id=str(record_id), internal_doc_id=internal_doc_id or "",
+        total=total, page=page, pageSize=page_size,
         items=[ConsignmentOperationLogItem(
             id=str(record.id), consignment_id=str(record.consignment_id),
             source=record.source, action=record.action, operation_name=record.operation_name,

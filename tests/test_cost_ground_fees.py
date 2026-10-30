@@ -71,10 +71,12 @@ class CostGroundFeeTests(unittest.IsolatedAsyncioTestCase):
                 item = next(item for item in response.json()["data"]["items"] if int(item["id"]) == record_id)
                 self.assert_ground(item)
                 if not suffix:
-                    await customer_service.update_consignment(
-                        ConsignmentInfoUpdate(customer_name="客户保存"), str(record_id),
-                        current_user=self.user, db=self.db,
-                    )
+                    from app.core.exceptions import ConflictException
+                    with self.assertRaises(ConflictException):
+                        await customer_service.update_consignment(
+                            ConsignmentInfoUpdate(customer_name="客户保存"), str(record_id),
+                            current_user=self.user, db=self.db,
+                        )
                     response = await client.get(path)
                     self.assert_ground(response.json()["data"])
 
@@ -88,10 +90,11 @@ class CostGroundFeeTests(unittest.IsolatedAsyncioTestCase):
                 }}})
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assert_ground(response.json()["data"], tc=0, pickup=0)
-                await customer_service.update_consignment(
-                    ConsignmentInfoUpdate(customer_name="客户修改"), str(record_id),
-                    current_user=self.user, db=self.db,
-                )
+                with self.assertRaises(ConflictException):
+                    await customer_service.update_consignment(
+                        ConsignmentInfoUpdate(customer_name="客户修改"), str(record_id),
+                        current_user=self.user, db=self.db,
+                    )
                 response = await client.get(path)
                 self.assert_ground(response.json()["data"], tc=0, pickup=0)
                 response = await client.put(path + "/void")

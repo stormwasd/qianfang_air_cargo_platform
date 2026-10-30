@@ -17,6 +17,7 @@ class ConsignmentOperationLogItem(BaseModel):
 
 class ConsignmentOperationLogPage(BaseModel):
     consignment_id: str
+    internal_doc_id: str = Field(..., description="弹窗顶部内部单据ID，无历史编号时为空字符串")
     total: int
     items: List[ConsignmentOperationLogItem]
     page: int

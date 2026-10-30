@@ -1,7 +1,7 @@
 """
 客服接单台数据库模型
 """
-from sqlalchemy import Column, BigInteger, String, Integer, Numeric, Text, DateTime, Date
+from sqlalchemy import Column, BigInteger, String, Integer, Numeric, Text, DateTime, Date, JSON
 from app.database import Base
 from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
@@ -12,6 +12,7 @@ class ConsignmentRegistration(Base):
     __tablename__ = "consignment_registrations"
     
     id = Column(BigInteger, primary_key=True, default=generate_id, comment="登记表记录ID")
+    customer_tags = Column(JSON, nullable=True, comment="客服页面勾选项，最多5项")
     create_time = Column(DateTime(timezone=True), nullable=True, comment="制单时间")
     internal_doc_id = Column(String(100), nullable=True, comment="内部单据ID")
     warehouse_entry_date = Column(Date, nullable=True, comment="进仓日期")
@@ -29,6 +30,7 @@ class ConsignmentRegistration(Base):
     first_leg_weight = Column(Numeric(10, 2), nullable=True, comment="一程重量")
     agent = Column(String(100), nullable=True, comment="代理")
     remark = Column(Text, nullable=True, comment="备注")
+    financial_data = Column(JSON, nullable=True, comment="客服录入的应收及应付信息，保留显式录入字段")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")
 
@@ -38,6 +40,7 @@ class ConsignmentInfo(Base):
     __tablename__ = "consignment_infos"
     
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="委托信息ID")
+    customer_tags = Column(JSON, nullable=True, comment="客服页面勾选项，最多5项")
     create_time = Column(DateTime(timezone=True), nullable=True, index=True, comment="制单时间")
     internal_doc_id = Column(String(100), nullable=True, comment="内部单据ID")
     warehouse_entry_date = Column(Date, nullable=True, index=True, comment="进仓日期")
@@ -57,5 +60,6 @@ class ConsignmentInfo(Base):
     remark = Column(Text, nullable=True, comment="备注")
     status = Column(Integer, nullable=False, default=1, index=True, comment="单据状态：0=未提交，1=已提交，2=作废")
     creator_id = Column(BigInteger, nullable=True, comment="创建者ID")
+    financial_data = Column(JSON, nullable=True, comment="客服录入的应收及应付信息，保留显式录入字段")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")

@@ -14,6 +14,7 @@ class ConsignmentOperationLog(Base):
 
     id = Column(BigInteger, primary_key=True, default=generate_id, comment="操作记录ID")
     consignment_id = Column(BigInteger, nullable=False, comment="两台共用单据ID")
+    internal_doc_id = Column(String(100), nullable=True, comment="内部单据ID快照")
     source = Column(String(32), nullable=False, comment="操作来源台")
     action = Column(String(16), nullable=False, comment="draft/save/void/delete")
     operation_name = Column(String(50), nullable=False, comment="操作名称快照")

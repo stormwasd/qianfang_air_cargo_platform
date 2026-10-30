@@ -48,19 +48,19 @@ class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
             "remark": "remark",
         }
         expected_headers = [
-            "状态", "制单时间", "内部单据ID", "进仓日期", "客户名称",
+            "状态", "制单时间", "进仓日期", "客户名称",
             "始发站-目的站", "报关", "提单", "航班日期", "航班号",
             "航班单号", "件数", "实际重量(kg)", "计费重量(kg)",
             "体积(m³)", "一程重量(kg)", "代理", "备注",
         ]
         expected_values = [
-            "2026-09-14 10:20:30", "DOC-1", "2026-09-13", "customer",
+            "2026-09-14 10:20:30", "2026-09-13", "customer",
             "SZX-NRT", "customs", "直单", "2026-09-16", "MF809",
             "731-90064074", 36, 123.25, 125, 1.25, 120.5, "agent", "remark",
         ]
         cases = (
-            (export_consignments_to_excel, ExportExcelRequest, ConsignmentInfo, 2, 18, 1, 1, 2),
-            (export_cost_consignments_to_excel, CostExportExcelRequest, CostConsignment, 4, 94, 0, 2, 3),
+            (export_consignments_to_excel, ExportExcelRequest, ConsignmentInfo, 2, 132, 1, 1, 2),
+            (export_cost_consignments_to_excel, CostExportExcelRequest, CostConsignment, 4, 137, 0, 2, 3),
         )
         for (
             endpoint, request_type, model, data_row, column_count, status,
@@ -83,16 +83,16 @@ class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     [
                         sheet.cell(data_row, c).value
-                        for c in range(consignment_start_column, consignment_start_column + 17)
+                        for c in range(consignment_start_column, consignment_start_column + 16)
                     ],
                     expected_values,
                 )
                 self.assertEqual(record.status, status)
                 if data_row == 2:
-                    self.assertEqual([cell.value for cell in sheet[1]], expected_headers)
-                    for column in (2, 4, 9, 12, 13, 14, 15, 16):
+                    self.assertEqual([cell.value for cell in sheet[1]][:17], expected_headers)
+                    for column in (2, 3, 8, 11, 12, 13, 14, 15):
                         self.assertEqual(sheet.cell(data_row, column).alignment.horizontal, "center")
-                    self.assertEqual(sheet.cell(data_row, 3).alignment.horizontal, "left")
+                    self.assertEqual(sheet.cell(data_row, 4).alignment.horizontal, "left")
                 else:
                     self.assertEqual(sheet["A1"].value, "序号")
                     self.assertEqual(sheet.cell(data_row, 1).value, 1)
@@ -104,13 +104,13 @@ class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
                         )
                     )
                     self.assertEqual(
-                        [sheet.cell(3, c).value for c in range(3, 20)], expected_headers[1:],
+                        [sheet.cell(3, c).value for c in range(3, 19)], expected_headers[1:],
                     )
 
     async def test_empty_result_still_exports_status_headers(self):
         for endpoint, request_type, column_count, header_rows in (
-            (export_consignments_to_excel, ExportExcelRequest, 18, 1),
-            (export_cost_consignments_to_excel, CostExportExcelRequest, 94, 3),
+            (export_consignments_to_excel, ExportExcelRequest, 132, 1),
+            (export_cost_consignments_to_excel, CostExportExcelRequest, 137, 3),
         ):
             with self.subTest(endpoint=endpoint.__name__):
                 sheet = await self.export(endpoint, request_type, [])

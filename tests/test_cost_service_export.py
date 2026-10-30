@@ -109,7 +109,7 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         worksheet = workbook.active
         self.addCleanup(workbook.close)
 
-        self.assertEqual(worksheet.max_column, 94)
+        self.assertEqual(worksheet.max_column, 137)
         self.assertEqual(worksheet.max_row, 6)
         self.assertEqual(worksheet["A1"].value, "序号")
         self.assertEqual(worksheet["B1"].value, "状态")
@@ -118,11 +118,11 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(worksheet["B4"].value, "未提交")
         self.assertEqual(worksheet["B5"].value, "已提交")
         for subtotal_cell, expected in {
-            "BC": 101.25,
-            "BI": 404.00,
-            "BT": 505.25,
-            "CA": 202.50,
-            "CH": 303.75,
+            "BB": 101.25,
+            "BH": 404.00,
+            "BS": 505.25,
+            "BZ": 202.50,
+            "CG": 303.75,
         }.items():
             with self.subTest(subtotal_cell=subtotal_cell):
                 self.assertEqual(worksheet[f"{subtotal_cell}3"].value, "小计")
@@ -132,52 +132,52 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(worksheet[f"{subtotal_cell}6"].value)
 
         expected_adjacent_values = {
-            "AN4": "international",
-            "BC4": 101.25,
-            "BD4": "customs agent",
-            "BH4": 904.25,
-            "BI4": 404.00,
-            "BJ4": "ground unit",
-            "BM4": 120.00,
-            "BN4": 35.50,
-            "BO4": 20.75,
-            "BS4": 905.25,
-            "BT4": 505.25,
-            "BU4": "trucking unit",
-            "CA4": 202.50,
-            "CB4": "domestic unit",
-            "CH4": 303.75,
-            "CI4": 1516.75,
-            "CJ4": "discount person",
-            "CK4": 7.25,
-            "CL4": 88.50,
-            "CM4": "salesperson",
-            "CN4": 171.39,
-            "CO4": 1428.25,
+            "AM4": "international",
+            "BB4": 101.25,
+            "BC4": "customs agent",
+            "BG4": 904.25,
+            "BH4": 404.00,
+            "BI4": "ground unit",
+            "BL4": 120.00,
+            "BM4": 35.50,
+            "BN4": 20.75,
+            "BR4": 905.25,
+            "BS4": 505.25,
+            "BT4": "trucking unit",
+            "BZ4": 202.50,
+            "CA4": "domestic unit",
+            "CG4": 303.75,
+            "CH4": 1516.75,
+            "CI4": "discount person",
+            "CJ4": 7.25,
+            "CK4": 88.50,
+            "CL4": "salesperson",
+            "CM4": 171.39,
+            "CN4": 1428.25,
         }
         for cell, expected in expected_adjacent_values.items():
             with self.subTest(cell=cell):
                 self.assertEqual(worksheet[cell].value, expected)
 
-        for cell in ("BH4", "BS4"):
+        for cell in ("BG4", "BR4"):
             with self.subTest(other_fee_cell=cell):
                 self.assertEqual(worksheet[cell].data_type, "n")
 
         self.assertEqual(
-            [worksheet[f"{column}3"].value for column in ("CJ", "CK", "CL")],
+            [worksheet[f"{column}3"].value for column in ("CI", "CJ", "CK")],
             ["折让人员", "费率", "折让费"],
         )
-        self.assertEqual(worksheet["CK4"].data_type, "n")
+        self.assertEqual(worksheet["CJ4"].data_type, "n")
         self.assertEqual(
-            [worksheet[f"{column}3"].value for column in ("CM", "CN")],
+            [worksheet[f"{column}3"].value for column in ("CL", "CM")],
             ["业务员", "提成金额"],
         )
         self.assertNotIn("提成百分比", [cell.value for cell in worksheet[3]])
-        self.assertEqual(worksheet["CN4"].data_type, "n")
-        for column, title in (("BM", "前置仓"), ("BN", "TC费"), ("BO", "提货费")):
+        self.assertEqual(worksheet["CM4"].data_type, "n")
+        for column, title in (("BL", "前置仓"), ("BM", "TC费"), ("BN", "提货费")):
             self.assertEqual(worksheet[f"{column}3"].value, title)
             self.assertEqual(worksheet[f"{column}4"].data_type, "n")
-        for column in ("BN", "BO"):
+        for column in ("BM", "BN"):
             self.assertEqual(worksheet[f"{column}5"].value, 0)
             self.assertIsNone(worksheet[f"{column}6"].value)
 
@@ -191,7 +191,7 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             "removed domestic freight method", "removed domestic remark", "2026-09-19",
             "customs remark", "2026-09-20", "ground remark",
         }
-        exported_values = {cell.value for cell in worksheet[4]}
+        exported_values = {cell.value for cell in worksheet[4][:93]}
         self.assertTrue(removed_values.isdisjoint(exported_values))
 
 

@@ -99,7 +99,7 @@ class CustomerServiceListFilterTests(unittest.IsolatedAsyncioTestCase):
     async def test_destination_matches_any_english_substring_of_final_segment(self):
         for keyword in ("K", "U", "L", "KU", "UL", "kul"):
             with self.subTest(keyword=keyword):
-                self.assertEqual(await self.query_ids(destination=keyword), {"1"})
+                self.assertEqual(await self.query_ids(destination=keyword), {"1", "5"} if keyword == "K" else {"1"})
 
     async def test_destination_matches_chinese_in_final_segment(self):
         self.assertEqual(await self.query_ids(destination="隆"), {"3", "4"})

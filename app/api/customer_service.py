@@ -40,6 +40,10 @@ from app.services.cost_excel_export import (
 from app.utils.helpers import format_datetime_china, get_china_now
 from app.schemas.consignment_operation_log import ConsignmentOperationLogPage
 from app.services.consignment_operation_log import append_consignment_operation, get_consignment_operations
+from app.services.consignment_financial import (
+    merge_financial_payload, format_financial_data, sync_financial_to_cost,
+    FINANCIAL_EXPORT_FIELDS, financial_export_values,
+)
 
 router = APIRouter()
 
@@ -114,6 +118,7 @@ def _format_record_dict(record: Any) -> Dict[str, Any]:
 
     data = {
         "id": str(record.id),
+        "customer_tags": list(getattr(record, "customer_tags", None) or []),
         "create_time": create_time_str,
         "internal_doc_id": record.internal_doc_id or "",
         "warehouse_entry_date": warehouse_entry_date_str,
@@ -137,12 +142,16 @@ def _format_record_dict(record: Any) -> Dict[str, Any]:
     }
     if hasattr(record, "creator_id") and record.creator_id:
         data["creator_id"] = str(record.creator_id)
+    data.update(format_financial_data(record))
     return data
 
 
 def _apply_consignment_payload(record: ConsignmentInfo, payload: ConsignmentBase, *, partial: bool) -> None:
     """将客服接单台请求字段写入记录，并保留修改接口的字段缺省语义。"""
     fields_set = payload.model_fields_set
+    if payload.customer_tags is not None:
+        record.customer_tags = list(payload.customer_tags)
+    merge_financial_payload(record, payload)
 
     if not partial:
         record.create_time = _parse_datetime(payload.create_time) or get_china_now()
@@ -232,14 +241,19 @@ def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
     for source_field, target_field in _COST_INTL_AIR_SYNC_FIELD_MAP:
         setattr(cost_record, target_field, getattr(record, source_field))
 
+    # 客服显式填写的国际空运数据优先于旧版顶层字段预填。
+    sync_financial_to_cost(record, cost_record, _parse_date)
+
     # 客服提交只完成客服环节；费用登记台仍需费用人员核对并保存。
     cost_record.status = ConsignmentSubmissionStatus.UNSUBMITTED.value
 
 
-def _ensure_customer_consignment_not_voided(record: ConsignmentInfo) -> None:
-    """作废是终态，只能继续查询或物理删除。"""
+def _ensure_customer_consignment_editable(record: ConsignmentInfo) -> None:
+    """只有未提交的客服单据允许编辑；作废仍保留查询和删除流程。"""
     if int(record.status) == ConsignmentSubmissionStatus.VOIDED.value:
         raise ConflictException("已作废的委托信息不能暂存或保存")
+    if int(record.status) == ConsignmentSubmissionStatus.SUBMITTED.value:
+        raise ConflictException("已提交的委托信息不能修改或暂存，请在费用登记台维护")
 
 
 # ============================================================================
@@ -274,56 +288,14 @@ async def save_consignment_registration(
     """
     record = db.query(ConsignmentRegistration).first()
     
-    create_time_val = _parse_datetime(payload.create_time) or get_china_now()
-    warehouse_entry_date_val = _parse_date(payload.warehouse_entry_date)
-    flight_date_val = _parse_date(payload.flight_date)
-    
-    if record:
-        record.create_time = create_time_val
-        record.internal_doc_id = payload.internal_doc_id
-        record.warehouse_entry_date = warehouse_entry_date_val
-        record.customer_name = payload.customer_name
-        record.origin_destination = payload.origin_destination
-        record.customs_declaration = payload.customs_declaration
-        record.bill_of_lading = payload.bill_of_lading
-        record.flight_date = flight_date_val
-        record.flight_no = payload.flight_no
-        record.flight_doc_no = payload.flight_doc_no
-        record.pieces = payload.pieces
-        record.actual_weight = payload.actual_weight
-        record.chargeable_weight = payload.chargeable_weight
-        record.volume = payload.volume
-        record.first_leg_weight = payload.first_leg_weight
-        record.agent = payload.agent
-        record.remark = payload.remark
-        
-        db.commit()
-        db.refresh(record)
-        msg = "委托信息登记更新成功"
-    else:
-        record = ConsignmentRegistration(
-            create_time=create_time_val,
-            internal_doc_id=payload.internal_doc_id,
-            warehouse_entry_date=warehouse_entry_date_val,
-            customer_name=payload.customer_name,
-            origin_destination=payload.origin_destination,
-            customs_declaration=payload.customs_declaration,
-            bill_of_lading=payload.bill_of_lading,
-            flight_date=flight_date_val,
-            flight_no=payload.flight_no,
-            flight_doc_no=payload.flight_doc_no,
-            pieces=payload.pieces,
-            actual_weight=payload.actual_weight,
-            chargeable_weight=payload.chargeable_weight,
-            volume=payload.volume,
-            first_leg_weight=payload.first_leg_weight,
-            agent=payload.agent,
-            remark=payload.remark,
-        )
+    is_new = record is None
+    if is_new:
+        record = ConsignmentRegistration()
         db.add(record)
-        db.commit()
-        db.refresh(record)
-        msg = "委托信息登记保存成功"
+    _apply_consignment_payload(record, payload, partial=False)
+    db.commit()
+    db.refresh(record)
+    msg = "委托信息登记保存成功" if is_new else "委托信息登记更新成功"
 
     return success_response(data=_format_record_dict(record), msg=msg)
 
@@ -351,7 +323,10 @@ async def create_consignment(
     db.flush()
     
     _sync_consignment_to_cost(db, new_record)
-    append_consignment_operation(db, new_record.id, current_user, source="customer_service", action="save")
+    append_consignment_operation(
+        db, new_record.id, current_user, source="customer_service", action="save",
+        internal_doc_id=new_record.internal_doc_id,
+    )
     db.commit()
     db.refresh(new_record)
     
@@ -372,7 +347,10 @@ async def create_consignment_draft(
     _apply_consignment_payload(new_record, payload, partial=False)
     db.add(new_record)
     db.flush()
-    append_consignment_operation(db, new_record.id, current_user, source="customer_service", action="draft")
+    append_consignment_operation(
+        db, new_record.id, current_user, source="customer_service", action="draft",
+        internal_doc_id=new_record.internal_doc_id,
+    )
     db.commit()
     db.refresh(new_record)
 
@@ -563,16 +541,19 @@ async def update_consignment(
     except ValueError:
         raise BadRequestException("consignment_id 必须为合法数字格式")
         
-    record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
+    record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).with_for_update().first()
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
 
-    _ensure_customer_consignment_not_voided(record)
+    _ensure_customer_consignment_editable(record)
     _apply_consignment_payload(record, payload, partial=True)
     record.status = ConsignmentSubmissionStatus.SUBMITTED.value
     _sync_consignment_to_cost(db, record)
 
-    append_consignment_operation(db, record.id, current_user, source="customer_service", action="save")
+    append_consignment_operation(
+        db, record.id, current_user, source="customer_service", action="save",
+        internal_doc_id=record.internal_doc_id,
+    )
     db.commit()
     db.refresh(record)
     
@@ -592,14 +573,17 @@ async def update_consignment_draft(
     except ValueError:
         raise BadRequestException("consignment_id 必须为合法数字格式")
 
-    record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
+    record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).with_for_update().first()
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
 
-    _ensure_customer_consignment_not_voided(record)
+    _ensure_customer_consignment_editable(record)
     _apply_consignment_payload(record, payload, partial=True)
     record.status = ConsignmentSubmissionStatus.UNSUBMITTED.value
-    append_consignment_operation(db, record.id, current_user, source="customer_service", action="draft")
+    append_consignment_operation(
+        db, record.id, current_user, source="customer_service", action="draft",
+        internal_doc_id=record.internal_doc_id,
+    )
     db.commit()
     db.refresh(record)
 
@@ -628,7 +612,10 @@ async def void_consignment(
     cost_record = db.query(CostConsignment).filter(CostConsignment.id == c_id).first()
     if cost_record:
         cost_record.status = ConsignmentSubmissionStatus.VOIDED.value
-    append_consignment_operation(db, record.id, current_user, source="customer_service", action="void")
+    append_consignment_operation(
+        db, record.id, current_user, source="customer_service", action="void",
+        internal_doc_id=record.internal_doc_id,
+    )
     db.commit()
     db.refresh(record)
 
@@ -666,7 +653,10 @@ async def delete_consignment(
             CostConsignment.status == ConsignmentSubmissionStatus.VOIDED.value,
         ).delete(synchronize_session=False)
     db.delete(record)
-    append_consignment_operation(db, record.id, current_user, source="customer_service", action="delete")
+    append_consignment_operation(
+        db, record.id, current_user, source="customer_service", action="delete",
+        internal_doc_id=record.internal_doc_id,
+    )
     db.commit()
     
     return success_response(data={"id": consignment_id}, msg="委托信息删除成功")
@@ -693,16 +683,16 @@ async def batch_delete_consignments(
         except ValueError:
             raise BadRequestException(f"ID '{raw_id}' 格式无效")
             
-    source_records = db.query(ConsignmentInfo.id, ConsignmentInfo.status).filter(
+    source_records = db.query(ConsignmentInfo.id, ConsignmentInfo.status, ConsignmentInfo.internal_doc_id).filter(
         ConsignmentInfo.id.in_(int_ids),
     ).all()
-    operation_ids = [record_id for record_id, _ in source_records]
+    operation_ids = [(record_id, doc_id) for record_id, _status, doc_id in source_records]
     submitted_ids = [
-        record_id for record_id, status in source_records
+        record_id for record_id, status, _doc_id in source_records
         if status == ConsignmentSubmissionStatus.SUBMITTED.value
     ]
     voided_ids = [
-        record_id for record_id, status in source_records
+        record_id for record_id, status, _doc_id in source_records
         if status == ConsignmentSubmissionStatus.VOIDED.value
     ]
     if submitted_ids:
@@ -713,8 +703,11 @@ async def batch_delete_consignments(
             CostConsignment.status == ConsignmentSubmissionStatus.VOIDED.value,
         ).delete(synchronize_session=False)
     deleted_count = db.query(ConsignmentInfo).filter(ConsignmentInfo.id.in_(int_ids)).delete(synchronize_session=False)
-    for record_id in operation_ids:
-        append_consignment_operation(db, record_id, current_user, source="customer_service", action="delete")
+    for record_id, doc_id in operation_ids:
+        append_consignment_operation(
+            db, record_id, current_user, source="customer_service", action="delete",
+            internal_doc_id=doc_id,
+        )
     db.commit()
     
     return success_response(
@@ -735,7 +728,7 @@ async def export_consignments_to_excel(
 ):
     """
     选中委托信息列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    首列为状态（未提交/已提交/作废），共 18 列，数据从第 2 行开始。
+    首列为状态（未提交/已提交/作废），共 132 列，数据从第 2 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -756,12 +749,14 @@ async def export_consignments_to_excel(
     ws.title = "委托信息列表"
     
     headers = [
-        "状态", "制单时间", "内部单据ID", "进仓日期", "客户名称",
+        "状态", "制单时间", "进仓日期", "客户名称",
         "始发站-目的站", "报关", "提单", "航班日期",
         "航班号", "航班单号", "件数", "实际重量(kg)",
         "计费重量(kg)", "体积(m³)", "一程重量(kg)", "代理", "备注"
     ]
     
+    headers.extend(f"{label}-{title}" for _path, _name, _column, label, title in FINANCIAL_EXPORT_FIELDS)
+    headers.append("应付款项-应付合计")
     ws.append(headers)
     
     # 样式配置
@@ -794,7 +789,6 @@ async def export_consignments_to_excel(
                 getattr(rec, "status", ConsignmentSubmissionStatus.SUBMITTED.value)
             ),
             create_time_str,
-            rec.internal_doc_id or "",
             wh_date_str,
             rec.customer_name or "",
             rec.origin_destination or "",
@@ -812,6 +806,7 @@ async def export_consignments_to_excel(
             rec.remark or ""
         ]
         
+        row_data.extend(financial_export_values(rec))
         ws.append(row_data)
         ws.row_dimensions[r_idx].height = 22
         
@@ -820,7 +815,7 @@ async def export_consignments_to_excel(
             cell.font = data_font
             cell.border = thin_border
             # 数字和日期居中，文本左对齐
-            if c_idx in (1, 2, 4, 9, 12, 13, 14, 15, 16):
+            if c_idx in (1, 2, 3, 8, 11, 12, 13, 14, 15):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 cell.alignment = Alignment(horizontal="left", vertical="center")

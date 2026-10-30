@@ -1,7 +1,7 @@
 """
 费用登记台数据库模型
 """
-from sqlalchemy import Column, BigInteger, String, Integer, Numeric, Text, DateTime, Date
+from sqlalchemy import Column, BigInteger, String, Integer, Numeric, Text, DateTime, Date, JSON
 from app.database import Base
 from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
@@ -12,6 +12,7 @@ class CostRegistration(Base):
     __tablename__ = "cost_registrations"
     
     id = Column(BigInteger, primary_key=True, default=generate_id, comment="登记模版记录ID")
+    expense_tags = Column(JSON, nullable=True, comment="费用页面勾选项，最多7项")
     
     # (1) 货主委托信息
     create_time = Column(DateTime(timezone=True), nullable=True, comment="制单时间")
@@ -155,6 +156,29 @@ class CostRegistration(Base):
     profit = Column(Numeric(10, 2), nullable=True, comment="利润")
     profit_margin = Column(Numeric(10, 2), nullable=True, comment="利润率")
     
+
+    # 客户字段补充（旧金额列继续沿用，不重复存储）
+    receivable_buy_order_fee = Column(Numeric(10, 2), nullable=True, comment="receivables-买单费/单")
+    receivable_document_fee = Column(Numeric(10, 2), nullable=True, comment="receivables-单证费/单")
+    receivable_fuel_rate = Column(Numeric(10, 2), nullable=True, comment="receivables-燃油费率")
+    receivable_fuel_weight_method = Column(String(50), nullable=True, comment="receivables-燃油费取重方式")
+    receivable_tc_rate = Column(Numeric(10, 2), nullable=True, comment="receivables-TC费率")
+    receivable_front_warehouse_rate = Column(Numeric(10, 2), nullable=True, comment="receivables-前置仓费率")
+    receivable_remark = Column(Text, nullable=True, comment="receivables-应收备注")
+    pay_intl_air_buy_order_fee = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-买单费/单")
+    pay_intl_air_document_fee = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-单证费/单")
+    pay_intl_air_fuel_rate = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-燃油费率")
+    pay_intl_air_fuel_weight_method = Column(String(50), nullable=True, comment="payables.intl_air-燃油费取重方式")
+    pay_intl_air_tc_rate = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-TC费率")
+    pay_intl_air_front_warehouse_rate = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-前置仓费率")
+    pay_customs_buy_order_fee = Column(Numeric(10, 2), nullable=True, comment="payables.customs-买单费/单")
+    pay_customs_document_fee = Column(Numeric(10, 2), nullable=True, comment="payables.customs-单证费/单")
+    pay_ground_tc_rate = Column(Numeric(10, 2), nullable=True, comment="payables.ground-TC费率")
+    pay_trucking_flight_doc_no = Column(String(100), nullable=True, comment="payables.trucking-主单号")
+    pay_trucking_origin_city = Column(String(100), nullable=True, comment="payables.trucking-始发城市")
+    pay_trucking_destination_city = Column(String(100), nullable=True, comment="payables.trucking-目的城市")
+    pay_dom_air_volume = Column(Numeric(10, 3), nullable=True, comment="payables.dom_air-体积")
+
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")
 
@@ -164,6 +188,7 @@ class CostConsignment(Base):
     __tablename__ = "cost_consignments"
     
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="费用单据明细ID")
+    expense_tags = Column(JSON, nullable=True, comment="费用页面勾选项，最多7项")
     
     # (1) 货主委托信息
     create_time = Column(DateTime(timezone=True), nullable=True, comment="制单时间")
@@ -309,5 +334,28 @@ class CostConsignment(Base):
     profit_margin = Column(Numeric(10, 2), nullable=True, comment="利润率")
     
     creator_id = Column(BigInteger, nullable=True, comment="创建者ID")
+
+    # 客户字段补充（旧金额列继续沿用，不重复存储）
+    receivable_buy_order_fee = Column(Numeric(10, 2), nullable=True, comment="receivables-买单费/单")
+    receivable_document_fee = Column(Numeric(10, 2), nullable=True, comment="receivables-单证费/单")
+    receivable_fuel_rate = Column(Numeric(10, 2), nullable=True, comment="receivables-燃油费率")
+    receivable_fuel_weight_method = Column(String(50), nullable=True, comment="receivables-燃油费取重方式")
+    receivable_tc_rate = Column(Numeric(10, 2), nullable=True, comment="receivables-TC费率")
+    receivable_front_warehouse_rate = Column(Numeric(10, 2), nullable=True, comment="receivables-前置仓费率")
+    receivable_remark = Column(Text, nullable=True, comment="receivables-应收备注")
+    pay_intl_air_buy_order_fee = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-买单费/单")
+    pay_intl_air_document_fee = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-单证费/单")
+    pay_intl_air_fuel_rate = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-燃油费率")
+    pay_intl_air_fuel_weight_method = Column(String(50), nullable=True, comment="payables.intl_air-燃油费取重方式")
+    pay_intl_air_tc_rate = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-TC费率")
+    pay_intl_air_front_warehouse_rate = Column(Numeric(10, 2), nullable=True, comment="payables.intl_air-前置仓费率")
+    pay_customs_buy_order_fee = Column(Numeric(10, 2), nullable=True, comment="payables.customs-买单费/单")
+    pay_customs_document_fee = Column(Numeric(10, 2), nullable=True, comment="payables.customs-单证费/单")
+    pay_ground_tc_rate = Column(Numeric(10, 2), nullable=True, comment="payables.ground-TC费率")
+    pay_trucking_flight_doc_no = Column(String(100), nullable=True, comment="payables.trucking-主单号")
+    pay_trucking_origin_city = Column(String(100), nullable=True, comment="payables.trucking-始发城市")
+    pay_trucking_destination_city = Column(String(100), nullable=True, comment="payables.trucking-目的城市")
+    pay_dom_air_volume = Column(Numeric(10, 3), nullable=True, comment="payables.dom_air-体积")
+
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")

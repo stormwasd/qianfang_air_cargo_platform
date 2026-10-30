@@ -1,6 +1,7 @@
 -- 创建客服接单台-委托信息登记表 (系统唯一记录)
 CREATE TABLE IF NOT EXISTS `consignment_registrations` (
     `id` bigint(20) NOT NULL COMMENT '登记表记录ID',
+    `customer_tags` JSON DEFAULT NULL COMMENT '客服页面勾选项，最多5项',
     `create_time` datetime DEFAULT NULL COMMENT '制单时间',
     `internal_doc_id` varchar(100) DEFAULT NULL COMMENT '内部单据ID',
     `warehouse_entry_date` date DEFAULT NULL COMMENT '进仓日期',
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS `consignment_registrations` (
     `first_leg_weight` decimal(10,2) DEFAULT NULL COMMENT '一程重量',
     `agent` varchar(100) DEFAULT NULL COMMENT '代理',
     `remark` text DEFAULT NULL COMMENT '备注',
+    `financial_data` JSON DEFAULT NULL COMMENT '客服应收应付录入信息',
     `created_at` datetime NOT NULL COMMENT '创建时间',
     `updated_at` datetime NOT NULL COMMENT '更新时间',
     PRIMARY KEY (`id`)
@@ -26,6 +28,7 @@ CREATE TABLE IF NOT EXISTS `consignment_registrations` (
 -- 创建客服接单台-委托信息表 (委托信息列表)
 CREATE TABLE IF NOT EXISTS `consignment_infos` (
     `id` bigint(20) NOT NULL COMMENT '委托信息ID',
+    `customer_tags` JSON DEFAULT NULL COMMENT '客服页面勾选项，最多5项',
     `create_time` datetime DEFAULT NULL COMMENT '制单时间',
     `internal_doc_id` varchar(100) DEFAULT NULL COMMENT '内部单据ID',
     `warehouse_entry_date` date DEFAULT NULL COMMENT '进仓日期',
@@ -45,6 +48,7 @@ CREATE TABLE IF NOT EXISTS `consignment_infos` (
     `remark` text DEFAULT NULL COMMENT '备注',
     `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '单据状态：0=未提交，1=已提交，2=作废',
     `creator_id` bigint(20) DEFAULT NULL COMMENT '创建者ID',
+    `financial_data` JSON DEFAULT NULL COMMENT '客服应收应付录入信息',
     `created_at` datetime NOT NULL COMMENT '创建时间',
     `updated_at` datetime NOT NULL COMMENT '更新时间',
     PRIMARY KEY (`id`),

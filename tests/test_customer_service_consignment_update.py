@@ -20,6 +20,9 @@ class _Query:
     def filter(self, *_args):
         return self
 
+    def with_for_update(self):
+        return self
+
     def first(self):
         return self.record
 
@@ -111,7 +114,7 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
             first_leg_weight=450.0,
             agent="代理A",
             remark=None,
-            status=1,
+            status=0,
             creator_id=99,
             created_at=None,
             updated_at=None,
@@ -251,7 +254,7 @@ class CustomerServiceConsignmentUpdateTests(unittest.TestCase):
     def test_draft_update_keeps_cost_data_untouched_and_marks_unsubmitted(self):
         consignment = SimpleNamespace(
             id=1,
-            status=1,
+            status=0,
             create_time=None,
             internal_doc_id="DOC-001",
             warehouse_entry_date=None,

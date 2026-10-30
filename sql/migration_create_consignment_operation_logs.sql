@@ -3,6 +3,7 @@
 CREATE TABLE IF NOT EXISTS `consignment_operation_logs` (
     `id` bigint NOT NULL COMMENT '操作记录ID',
     `consignment_id` bigint NOT NULL COMMENT '两台共用单据ID',
+    `internal_doc_id` varchar(100) DEFAULT NULL COMMENT '内部单据ID快照',
     `source` varchar(32) NOT NULL COMMENT 'customer_service/cost_service',
     `action` varchar(16) NOT NULL COMMENT 'draft/save/void/delete',
     `operation_name` varchar(50) NOT NULL COMMENT '操作名称快照',

@@ -2,6 +2,7 @@
 from typing import Dict, List, Tuple
 
 from openpyxl.worksheet.worksheet import Worksheet
+from app.services.consignment_financial import COST_EXTRA_EXPORT_FIELDS
 
 
 BILL_OF_LADING_EXPORT_LABELS: Dict[str, str] = {
@@ -87,52 +88,55 @@ def format_bill_of_lading_for_export(value: object) -> str:
     return raw_value
 
 
-COST_EXPORT_HEADERS: Tuple[str, ...] = (
+LEGACY_COST_EXPORT_HEADERS: Tuple[str, ...] = (
     "序号",
     "状态",
 
-    # 货主托运信息（3-19）
-    "制单时间", "内部单据ID", "进仓日期", "客户名称", "始发站-目的站",
+    # 货主托运信息（3-18）
+    "制单时间", "进仓日期", "客户名称", "始发站-目的站",
     "报关", "提单", "航班日期", "航班号", "航班单号",
     "件数", "实际重量(kg)", "计费重量(kg)", "体积(m³)", "一程重量(kg)",
     "代理", "委托备注",
 
-    # 应收款项（20-39）
+    # 应收款项（19-38）
     "应收-单价", "应收-运费计算方式", "应收-运费", "应收-燃油费", "应收-提单费/信息录入费", "应收-分单费 电报费/底账费",
     "应收-报关费", "应收-续页费", "应收-海关查验费", "应收-磁检费/安检费",
     "应收-TC费", "应收-前置仓费", "应收-制单费",
     "应收-制单分单费", "应收-垫板费", "应收-打板/装箱费", "应收-探板费",
     "应收-耗材费", "应收-一程费用", "应收-合计",
 
-    # 应付款项 - 国际空运（40-55）
+    # 应付款项 - 国际空运（39-54）
     "国空应付-外发单位", "国空应付-实际重量", "国空应付-体积",
     "国空应付-计费重量", "国空应付-单价", "国空应付-运费", "国空应付-提单费",
     "国空应付-分单费", "国空应付-燃油费", "国空应付-TC费",
     "国空应付-报关费", "国空应付-续页费", "国空应付-耗材费", "国空应付-前置仓",
     "国空应付-其他费用", "国空应付-小计",
 
-    # 应付款项 - 报关（56-61）
+    # 应付款项 - 报关（55-60）
     "报关应付-报关代理", "报关应付-报关费", "报关应付-续页费",
     "报关应付-查验/删单费", "报关应付-其他费用", "报关应付-小计",
 
-    # 应付款项 - 地面操作（62-72）
+    # 应付款项 - 地面操作（61-71）
     "地面应付-外发单位", "地面应付-计费重量",
     "地面应付-费率", "地面应付-前置仓", "地面应付-TC费", "地面应付-提货费",
     "地面应付-提单/快件处置费", "地面应付-安检/报关费",
     "地面应付-打板/退场费", "地面应付-其他费用", "地面应付-小计",
 
-    # 应付款项 - 汽运（73-79）
+    # 应付款项 - 汽运（72-78）
     "汽运应付-外发单位", "汽运应付-重量", "汽运应付-单价",
     "汽运应付-运费", "汽运应付-制单费", "汽运应付-其他费用", "汽运应付-小计",
 
-    # 应付款项 - 国内空运（80-86）
+    # 应付款项 - 国内空运（79-85）
     "国空内应付-外发单位", "国空内应付-实际重量", "国空内应付-计费重量",
     "国空内应付-费率", "国空内应付-运费", "国空内应付-其他费用", "国空内应付-小计",
 
-    # 应付款项总计、折让信息、业务信息、经营信息（87-94）
+    # 应付款项总计、折让信息、业务信息、经营信息（86-93）
     "应付合计", "折让人员", "费率", "折让费", "业务员", "提成金额", "利润", "利润率(%)",
 )
 
+COST_EXPORT_HEADERS = LEGACY_COST_EXPORT_HEADERS + tuple(
+    f"{label}-{title}" for _path, _name, _column, label, title in COST_EXTRA_EXPORT_FIELDS
+)
 
 _LEAF_PREFIXES: Tuple[str, ...] = (
     "应收-",
@@ -158,8 +162,8 @@ def _leaf_header(raw_header: str) -> str:
 
 def append_cost_export_headers(ws: Worksheet) -> List[str]:
     """写入截图所示的三级分组表头，并返回最底层字段标题。"""
-    if len(COST_EXPORT_HEADERS) != 94:
-        raise RuntimeError("费用登记导出字段数量异常，预期为 94 列")
+    if len(LEGACY_COST_EXPORT_HEADERS) != 93:
+        raise RuntimeError("费用登记导出字段数量异常，预期为 93 列")
 
     leaf_headers = [_leaf_header(header) for header in COST_EXPORT_HEADERS]
     top_headers: List[str] = [""] * len(COST_EXPORT_HEADERS)
@@ -170,24 +174,31 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
         (0, "序号"),
         (1, "状态"),
         (2, "货主托运信息"),
-        (19, "应收款项"),
-        (39, "应付款项"),
-        (87, "折让信息"),
-        (90, "业务信息"),
-        (92, "经营信息"),
+        (18, "应收款项"),
+        (38, "应付款项"),
+        (86, "折让信息"),
+        (89, "业务信息"),
+        (91, "经营信息"),
     ):
         top_headers[index] = title
 
     # 应付款项下的二级分组。
     for index, title in (
-        (39, "国际空运信息"),
-        (55, "报关信息"),
-        (61, "地面操作信息"),
-        (72, "汽运信息"),
-        (79, "国内空运信息"),
-        (86, "应付合计"),
+        (38, "国际空运信息"),
+        (54, "报关信息"),
+        (60, "地面操作信息"),
+        (71, "汽运信息"),
+        (78, "国内空运信息"),
+        (85, "应付合计"),
     ):
         subgroup_headers[index] = title
+
+    if COST_EXTRA_EXPORT_FIELDS:
+        top_headers[93] = "补充业务字段"
+        for i, field in enumerate(COST_EXTRA_EXPORT_FIELDS, 93):
+            leaf_headers[i] = field[4]
+            if i == 93 or field[3] != COST_EXTRA_EXPORT_FIELDS[i - 94][3]:
+                subgroup_headers[i] = field[3]
 
     ws.append(top_headers)
     ws.append(subgroup_headers)
@@ -198,11 +209,11 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
 
     # 无二级分组的一级标题跨前两行；应付款项保留完整三级结构。
     for start_col, end_col in (
-        (3, 19),
-        (20, 39),
-        (88, 90),
-        (91, 92),
-        (93, 94),
+        (3, 18),
+        (19, 38),
+        (87, 89),
+        (90, 91),
+        (92, 93),
     ):
         ws.merge_cells(
             start_row=1,
@@ -210,15 +221,23 @@ def append_cost_export_headers(ws: Worksheet) -> List[str]:
             end_row=2,
             end_column=end_col,
         )
-    ws.merge_cells(start_row=1, start_column=40, end_row=1, end_column=87)
+    ws.merge_cells(start_row=1, start_column=39, end_row=1, end_column=86)
 
-    for start_col, end_col in ((40, 55), (56, 61), (62, 72), (73, 79), (80, 86)):
+    for start_col, end_col in ((39, 54), (55, 60), (61, 71), (72, 78), (79, 85)):
         ws.merge_cells(
             start_row=2,
             start_column=start_col,
             end_row=2,
             end_column=end_col,
         )
-    ws.merge_cells(start_row=2, start_column=87, end_row=3, end_column=87)
+    ws.merge_cells(start_row=2, start_column=86, end_row=3, end_column=86)
+
+    if COST_EXTRA_EXPORT_FIELDS:
+        ws.merge_cells(start_row=1, start_column=94, end_row=1, end_column=len(COST_EXPORT_HEADERS))
+        start = 94
+        for column in range(95, len(COST_EXPORT_HEADERS) + 2):
+            if column > len(COST_EXPORT_HEADERS) or subgroup_headers[column - 1]:
+                ws.merge_cells(start_row=2, start_column=start, end_row=2, end_column=column - 1)
+                start = column
 
     return leaf_headers

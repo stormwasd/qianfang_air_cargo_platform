@@ -70,22 +70,24 @@ class ConsignmentOperationLogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual((customer.status, cost.status), (1, 1))
         self.assertEqual(customer.customer_name, "费用保存")
-        await customer_service.update_consignment_draft(
-            ConsignmentInfoUpdate(customer_name="客服草稿"), str(record_id),
-            current_user=self.customer, db=self.db,
-        )
+        with self.assertRaises(ConflictException):
+            await customer_service.update_consignment_draft(
+                ConsignmentInfoUpdate(customer_name="客服草稿"), str(record_id),
+                current_user=self.customer, db=self.db,
+            )
         self.assertEqual(cost.customer_name, "费用保存")
-        await customer_service.update_consignment(
-            ConsignmentInfoUpdate(customer_name="客服保存"), str(record_id),
-            current_user=self.customer, db=self.db,
-        )
-        self.assertEqual((customer.status, cost.status), (1, 0))
-        self.assertEqual(cost.customer_name, "客服保存")
+        with self.assertRaises(ConflictException):
+            await customer_service.update_consignment(
+                ConsignmentInfoUpdate(customer_name="客服保存"), str(record_id),
+                current_user=self.customer, db=self.db,
+            )
+        self.assertEqual((customer.status, cost.status), (1, 1))
+        self.assertEqual(cost.customer_name, "费用保存")
         logs = self.logs(record_id)
         self.assertEqual([r.operation_name for r in logs], [
-            "货主委托信息保存", "费用信息暂存", "费用信息保存", "货主委托信息暂存", "货主委托信息保存",
+            "货主委托信息保存", "费用信息暂存", "费用信息保存",
         ])
-        self.assertEqual([r.operator_id for r in logs], [100, 200, 200, 100, 100])
+        self.assertEqual([r.operator_id for r in logs], [100, 200, 200])
         self.customer.name = "改名后的客服"
         customer_result = await customer_service.get_consignment_operation_logs(
             str(record_id), page=1, pageSize=20, current_user=self.customer, db=self.db,
@@ -94,10 +96,10 @@ class ConsignmentOperationLogTests(unittest.IsolatedAsyncioTestCase):
             str(record_id), page=1, pageSize=20, current_user=self.cost_user, db=self.db,
         )
         self.assertEqual(customer_result.data, cost_result.data)
-        self.assertEqual(customer_result.data["total"], 5)
+        self.assertEqual(customer_result.data["total"], 3)
         item = customer_result.data["items"][0]
-        self.assertEqual(item["operator_name"], "客服甲")
-        self.assertEqual(item["operator_id"], "100")
+        self.assertEqual(item["operator_name"], "费用乙")
+        self.assertEqual(item["operator_id"], "200")
         self.assertEqual(item["consignment_id"], str(record_id))
         self.assertTrue(item["operated_at"].endswith("+08:00"))
         self.assertIsInstance(item["id"], str)
@@ -229,7 +231,7 @@ class ConsignmentOperationLogTests(unittest.IsolatedAsyncioTestCase):
     async def test_business_sync_and_log_are_rolled_back_together_on_commit_failure(self):
         for cost in (False, True):
             with self.subTest(cost=cost):
-                record_id = await self.create(cost=cost)
+                record_id = await self.create(cost=cost, draft=not cost)
                 endpoint = cost_service.update_cost_consignment if cost else customer_service.update_consignment
                 payload = CostConsignmentUpdate(consignor_info={"customer_name": "失败修改"}) if cost else ConsignmentInfoUpdate(customer_name="失败修改")
                 with patch.object(self.db, "commit", side_effect=RuntimeError("模拟提交失败")):
@@ -237,7 +239,10 @@ class ConsignmentOperationLogTests(unittest.IsolatedAsyncioTestCase):
                         await endpoint(payload, str(record_id), current_user=self.cost_user if cost else self.customer, db=self.db)
                 self.db.rollback()
                 self.assertEqual(self.db.get(ConsignmentInfo, record_id).customer_name, "原客户")
-                self.assertEqual(self.db.get(CostConsignment, record_id).customer_name, "原客户")
+                if cost:
+                    self.assertEqual(self.db.get(CostConsignment, record_id).customer_name, "原客户")
+                else:
+                    self.assertIsNone(self.db.get(CostConsignment, record_id))
                 self.assertEqual(len(self.logs(record_id)), 1)
 
     async def test_new_records_sync_and_logs_are_rolled_back_together(self):
