@@ -3,8 +3,8 @@
 """
 from enum import Enum
 from typing import Optional, List, Literal
-from pydantic import BaseModel, Field, field_validator
-from app.schemas.consignment_tags import ExpenseTag
+from pydantic import BaseModel, Field
+from app.schemas.consignment_tags import ConsignmentTags
 
 
 # ============================================================================
@@ -209,22 +209,14 @@ class OperatingInfo(BaseModel):
 # 2. 顶级请求与查询 Schema 定义
 # ============================================================================
 
-class CostRegistrationSave(BaseModel):
+class CostRegistrationSave(ConsignmentTags):
     """费用信息登记 保存/修改 层级结构"""
-    expense_tags: Optional[List[ExpenseTag]] = Field(
-        None, max_length=7, description="费用勾选项；省略或null保持原值，[]清空，最多7项",
-    )
     consignor_info: Optional[ConsignorInfo] = Field(default_factory=ConsignorInfo, description="货主委托信息")
     receivables: Optional[ReceivablesInfo] = Field(default_factory=ReceivablesInfo, description="应收款项")
     payables: Optional[PayablesInfo] = Field(default_factory=PayablesInfo, description="应付款项")
     discount_info: Optional[DiscountInfo] = Field(default_factory=DiscountInfo, description="折让信息")
     sales_commission: Optional[SalesCommission] = Field(default_factory=SalesCommission, description="销售提成")
     operating_info: Optional[OperatingInfo] = Field(default_factory=OperatingInfo, description="经营信息")
-
-    @field_validator("expense_tags")
-    @classmethod
-    def deduplicate_expense_tags(cls, value):
-        return list(dict.fromkeys(value)) if value is not None else None
 
 
 class CostConsignmentCreate(CostRegistrationSave):

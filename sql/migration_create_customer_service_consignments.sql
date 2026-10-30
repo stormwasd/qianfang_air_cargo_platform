@@ -2,6 +2,7 @@
 CREATE TABLE IF NOT EXISTS `consignment_registrations` (
     `id` bigint(20) NOT NULL COMMENT '登记表记录ID',
     `customer_tags` JSON DEFAULT NULL COMMENT '客服页面勾选项，最多5项',
+    `expense_tags` JSON DEFAULT NULL COMMENT '费用页面勾选项，最多7项',
     `create_time` datetime DEFAULT NULL COMMENT '制单时间',
     `internal_doc_id` varchar(100) DEFAULT NULL COMMENT '内部单据ID',
     `warehouse_entry_date` date DEFAULT NULL COMMENT '进仓日期',
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS `consignment_registrations` (
 CREATE TABLE IF NOT EXISTS `consignment_infos` (
     `id` bigint(20) NOT NULL COMMENT '委托信息ID',
     `customer_tags` JSON DEFAULT NULL COMMENT '客服页面勾选项，最多5项',
+    `expense_tags` JSON DEFAULT NULL COMMENT '费用页面勾选项，最多7项',
     `create_time` datetime DEFAULT NULL COMMENT '制单时间',
     `internal_doc_id` varchar(100) DEFAULT NULL COMMENT '内部单据ID',
     `warehouse_entry_date` date DEFAULT NULL COMMENT '进仓日期',

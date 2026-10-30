@@ -39,6 +39,7 @@ from app.services.cost_excel_export import (
 from app.utils.helpers import format_datetime_china, get_china_now
 from app.schemas.consignment_operation_log import ConsignmentOperationLogPage
 from app.services.consignment_operation_log import append_consignment_operation, get_consignment_operations
+from app.services.consignment_tags import apply_consignment_tags, format_consignment_tags
 
 from app.services.consignment_financial import (
     ADDITIONAL_COST_FIELDS, financial_snapshot, cost_extra_export_values,
@@ -115,7 +116,7 @@ def _format_cost_record(record: Any) -> Dict[str, Any]:
 
     data = {
         "id": str(record.id),
-        "expense_tags": list(getattr(record, "expense_tags", None) or []),
+        **format_consignment_tags(record),
         "status": int(getattr(record, "status", CostConsignmentSubmissionStatus.SUBMITTED.value)),
         
         # (1) 货主委托信息
@@ -293,8 +294,7 @@ def _apply_cost_payload(
     db: Optional[Session] = None,
 ):
     """从层级化 Payload 赋值属性到 ORM 模型对象"""
-    if payload.expense_tags is not None:
-        record.expense_tags = list(payload.expense_tags)
+    apply_consignment_tags(record, payload)
     for path, fields in ADDITIONAL_COST_FIELDS.items():
         section = _section(payload, path)
         if section is not None:
@@ -597,6 +597,7 @@ async def create_cost_consignment(
         creator_id=current_user.id,
         status=CostConsignmentSubmissionStatus.SUBMITTED.value,
     )
+    apply_consignment_tags(cs_record, new_record)
     cs_record.financial_data = financial_snapshot(new_record)
     db.add(cs_record)
     append_consignment_operation(
@@ -927,6 +928,9 @@ async def update_cost_consignment(
             status=CostConsignmentSubmissionStatus.SUBMITTED.value,
         )
         db.add(cs_record)
+
+        # 费用首次补建客服记录时带入标签，既有客服标签保留提交时的选择。
+        apply_consignment_tags(cs_record, record)
 
     cs_record.financial_data = financial_snapshot(record)
     append_consignment_operation(

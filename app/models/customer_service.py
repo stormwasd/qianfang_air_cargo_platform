@@ -13,6 +13,7 @@ class ConsignmentRegistration(Base):
     
     id = Column(BigInteger, primary_key=True, default=generate_id, comment="登记表记录ID")
     customer_tags = Column(JSON, nullable=True, comment="客服页面勾选项，最多5项")
+    expense_tags = Column(JSON, nullable=True, comment="费用页面勾选项，最多7项")
     create_time = Column(DateTime(timezone=True), nullable=True, comment="制单时间")
     internal_doc_id = Column(String(100), nullable=True, comment="内部单据ID")
     warehouse_entry_date = Column(Date, nullable=True, comment="进仓日期")
@@ -41,6 +42,7 @@ class ConsignmentInfo(Base):
     
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="委托信息ID")
     customer_tags = Column(JSON, nullable=True, comment="客服页面勾选项，最多5项")
+    expense_tags = Column(JSON, nullable=True, comment="费用页面勾选项，最多7项")
     create_time = Column(DateTime(timezone=True), nullable=True, index=True, comment="制单时间")
     internal_doc_id = Column(String(100), nullable=True, comment="内部单据ID")
     warehouse_entry_date = Column(Date, nullable=True, index=True, comment="进仓日期")

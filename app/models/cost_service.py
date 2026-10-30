@@ -13,6 +13,7 @@ class CostRegistration(Base):
     
     id = Column(BigInteger, primary_key=True, default=generate_id, comment="登记模版记录ID")
     expense_tags = Column(JSON, nullable=True, comment="费用页面勾选项，最多7项")
+    customer_tags = Column(JSON, nullable=True, comment="客服页面勾选项，最多5项")
     
     # (1) 货主委托信息
     create_time = Column(DateTime(timezone=True), nullable=True, comment="制单时间")
@@ -189,6 +190,7 @@ class CostConsignment(Base):
     
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="费用单据明细ID")
     expense_tags = Column(JSON, nullable=True, comment="费用页面勾选项，最多7项")
+    customer_tags = Column(JSON, nullable=True, comment="客服页面勾选项，最多5项")
     
     # (1) 货主委托信息
     create_time = Column(DateTime(timezone=True), nullable=True, comment="制单时间")

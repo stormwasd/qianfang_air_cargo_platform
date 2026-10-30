@@ -2,19 +2,16 @@
 客服接单台 Pydantic Schemas
 """
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from typing import List, Optional, Union
 from datetime import datetime, date
 from app.schemas.cost_service import ReceivablesInfo, PayablesInfo
-from app.schemas.consignment_tags import CustomerTag
+from app.schemas.consignment_tags import ConsignmentTags
 
 
-class ConsignmentBase(BaseModel):
+class ConsignmentBase(ConsignmentTags):
     """委托信息基础 Schema"""
     internal_doc_id: Optional[str] = Field(None, description="内部单据ID，仍由前端传入；仅在操作记录弹窗展示")
-    customer_tags: Optional[List[CustomerTag]] = Field(
-        None, max_length=5, description="客服勾选项；省略或null保持原值，[]清空，最多5项",
-    )
     receivables: Optional[ReceivablesInfo] = Field(None, description="应收款项，字段与费用登记台一致")
     payables: Optional[PayablesInfo] = Field(None, description="应付款项，字段与费用登记台一致")
     create_time: Optional[Union[datetime, str]] = Field(None, description="制单时间，例如 '2026-07-25 14:30:00' 或 ISO 格式")
@@ -33,11 +30,6 @@ class ConsignmentBase(BaseModel):
     first_leg_weight: Optional[float] = Field(None, description="一程重量")
     agent: Optional[str] = Field(None, description="代理")
     remark: Optional[str] = Field(None, description="备注")
-
-    @field_validator("customer_tags")
-    @classmethod
-    def deduplicate_customer_tags(cls, value):
-        return list(dict.fromkeys(value)) if value is not None else None
 
 
 class ConsignmentRegistrationSave(ConsignmentBase):

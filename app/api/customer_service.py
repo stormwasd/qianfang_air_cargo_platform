@@ -40,6 +40,7 @@ from app.services.cost_excel_export import (
 from app.utils.helpers import format_datetime_china, get_china_now
 from app.schemas.consignment_operation_log import ConsignmentOperationLogPage
 from app.services.consignment_operation_log import append_consignment_operation, get_consignment_operations
+from app.services.consignment_tags import apply_consignment_tags, format_consignment_tags
 from app.services.consignment_financial import (
     merge_financial_payload, format_financial_data, sync_financial_to_cost,
     FINANCIAL_EXPORT_FIELDS, financial_export_values,
@@ -118,7 +119,7 @@ def _format_record_dict(record: Any) -> Dict[str, Any]:
 
     data = {
         "id": str(record.id),
-        "customer_tags": list(getattr(record, "customer_tags", None) or []),
+        **format_consignment_tags(record),
         "create_time": create_time_str,
         "internal_doc_id": record.internal_doc_id or "",
         "warehouse_entry_date": warehouse_entry_date_str,
@@ -149,8 +150,7 @@ def _format_record_dict(record: Any) -> Dict[str, Any]:
 def _apply_consignment_payload(record: ConsignmentInfo, payload: ConsignmentBase, *, partial: bool) -> None:
     """将客服接单台请求字段写入记录，并保留修改接口的字段缺省语义。"""
     fields_set = payload.model_fields_set
-    if payload.customer_tags is not None:
-        record.customer_tags = list(payload.customer_tags)
+    apply_consignment_tags(record, payload)
     merge_financial_payload(record, payload)
 
     if not partial:
@@ -216,6 +216,8 @@ def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
     if not cost_record:
         cost_record = CostConsignment(id=record.id, creator_id=record.creator_id)
         db.add(cost_record)
+
+    apply_consignment_tags(cost_record, record)
 
     for field_name in (
         "create_time",

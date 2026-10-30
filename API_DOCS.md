@@ -10428,8 +10428,15 @@ Authorization: Bearer <token>
 
 ```json
 {
-  "receivables": {"fuel_rate": 0, "remark": null},
-  "payables": {"ground": {"tc_fee": null}}
+  "receivables": {
+    "fuel_rate": 0,
+    "remark": null
+  },
+  "payables": {
+    "ground": {
+      "tc_fee": null
+    }
+  }
 }
 ```
 
@@ -10734,7 +10741,8 @@ PUT列表单据可只提交变更字段；不得提交id、status、creator_id�
     },
     "pay_total": 3104.4
   },
-  "customer_tags": []
+  "customer_tags": [],
+  "expense_tags": []
 }
 ```
 
@@ -10895,7 +10903,8 @@ PUT列表单据可只提交变更字段；不得提交id、status、creator_id�
       },
       "pay_total": 3104.4
     },
-    "customer_tags": []
+    "customer_tags": [],
+    "expense_tags": []
   },
   "msg": "委托信息创建成功"
 }
@@ -11024,7 +11033,8 @@ GET单据没有请求体；查询参数和此前相同。模板不存在时为 `
     "profit": 990.6,
     "profit_margin": 24.19
   },
-  "expense_tags": []
+  "expense_tags": [],
+  "customer_tags": []
 }
 ```
 
@@ -11201,7 +11211,8 @@ GET单据没有请求体；查询参数和此前相同。模板不存在时为 `
     "created_at": "2026-10-30T10:00:00+08:00",
     "updated_at": "2026-10-30T10:00:00+08:00",
     "creator_id": "99",
-    "expense_tags": []
+    "expense_tags": [],
+    "customer_tags": []
   },
   "msg": "单据信息创建成功"
 }
@@ -11233,7 +11244,12 @@ GET列表 `GET /api/v1/cost-service/consignments?page=1&pageSize=10` 返回
 两个导出均 `POST`，请求结构不变：
 
 ```json
-{"ids":["358000000000000001","358000000000000002"]}
+{
+  "ids": [
+    "358000000000000001",
+    "358000000000000002"
+  ]
+}
 ```
 
 成功返回文件二进制，HTTP200，Content-Type为 `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，
@@ -11426,11 +11442,11 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
 #### 23.12 两台页面勾选项存储与详情回显（2026-10-30）
 
 本节对应页面右上角的“填写更多数据”勾选框。字段名及英文标识数组已确认：
-客服使用 `customer_tags`，费用使用 `expense_tags`，**请求体及响应 `data` 中都位于第一层级**。
-两者分别属于各自页面，不放入 `consignor_info`、`receivables`、`payables` 等业务对象。
+**两台均支持 `customer_tags` 和 `expense_tags` 两个字段**，请求体及响应 `data` 中都位于第一层级。
+customer_tags表示5项选项集合，expense_tags表示7项选项集合，字段名不再限制使用页面；不放入业务子对象。客服提交将两个同名字段流转到费用，费用可独立覆盖；详见23.14。
 
 复用现有新增、保存、暂存及登记模板接口传入标签，无新增独立的标签写入路由。
-接口认证、单据状态、流转、操作记录和费用计算规则不变，客服已提交单据仍不能修改标签。
+接口认证、单据状态、操作记录和费用计算规则不变；标签流转按23.14执行，客服已提交单据仍不能修改标签。
 
 ##### 23.12.1 字段类型与勾选框对应值
 
@@ -11458,27 +11474,27 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
 
 | 方法 | 路径 | 请求变化 | 响应变化 |
 |---|---|---|---|
-| GET | `/customer-service/consignment-registration` | 无请求体 | `data.customer_tags`；模板不存在时仍为data:null |
-| PUT | `/customer-service/consignment-registration` | 顶层可传customer_tags | `data.customer_tags` |
-| POST | `/customer-service/consignments` | 顶层可传customer_tags | `data.customer_tags`，status=1 |
-| POST | `/customer-service/consignments/draft` | 顶层可传customer_tags | `data.customer_tags`，status=0 |
-| PUT | `/customer-service/consignments/{consignment_id}` | 顶层可传customer_tags；仅未提交单据可执行 | `data.customer_tags`，status=1 |
-| PUT | `/customer-service/consignments/{consignment_id}/draft` | 顶层可传customer_tags；仅未提交单据可执行 | `data.customer_tags`，status=0 |
-| GET | `/customer-service/consignments/{consignment_id}` | 无请求体 | **`data.customer_tags`（详情回显入口）** |
-| GET | `/customer-service/consignments` | 查询参数不变 | `data.items[].customer_tags` |
-| PUT | `/customer-service/consignments/{consignment_id}/void` | 无请求体 | `data.customer_tags`保留原值，status=2 |
-| GET | `/cost-service/cost-registration` | 无请求体 | `data.expense_tags`；模板不存在时仍为data:null |
-| PUT | `/cost-service/cost-registration` | 顶层可传expense_tags | `data.expense_tags` |
-| POST | `/cost-service/consignments` | 顶层可传expense_tags | `data.expense_tags`，status=1 |
-| POST | `/cost-service/consignments/draft` | 顶层可传expense_tags | `data.expense_tags`，status=0 |
-| PUT | `/cost-service/consignments/{consignment_id}` | 顶层可传expense_tags | `data.expense_tags`，status=1 |
-| PUT | `/cost-service/consignments/{consignment_id}/draft` | 顶层可传expense_tags | `data.expense_tags`，status=0 |
-| GET | `/cost-service/consignments/{consignment_id}` | 无请求体 | **`data.expense_tags`（详情回显入口）** |
-| GET | `/cost-service/consignments` | 查询参数不变 | `data.items[].expense_tags` |
-| PUT | `/cost-service/consignments/{consignment_id}/void` | 无请求体 | `data.expense_tags`保留原值，status=2 |
+| GET | `/customer-service/consignment-registration` | 无请求体 | `data.customer_tags`及`data.expense_tags`；模板不存在时仍为data:null |
+| PUT | `/customer-service/consignment-registration` | 顶层可传customer_tags、expense_tags | `data.customer_tags`及`data.expense_tags` |
+| POST | `/customer-service/consignments` | 顶层可传customer_tags、expense_tags | `data.customer_tags`及`data.expense_tags`，status=1 |
+| POST | `/customer-service/consignments/draft` | 顶层可传customer_tags、expense_tags | `data.customer_tags`及`data.expense_tags`，status=0 |
+| PUT | `/customer-service/consignments/{consignment_id}` | 顶层可传customer_tags、expense_tags；仅未提交单据可执行 | `data.customer_tags`及`data.expense_tags`，status=1 |
+| PUT | `/customer-service/consignments/{consignment_id}/draft` | 顶层可传customer_tags、expense_tags；仅未提交单据可执行 | `data.customer_tags`及`data.expense_tags`，status=0 |
+| GET | `/customer-service/consignments/{consignment_id}` | 无请求体 | **`data.customer_tags`及`data.expense_tags`（详情回显入口）** |
+| GET | `/customer-service/consignments` | 查询参数不变 | `data.items[].customer_tags`及`data.items[].expense_tags` |
+| PUT | `/customer-service/consignments/{consignment_id}/void` | 无请求体 | `data.customer_tags`及`data.expense_tags`保留原值，status=2 |
+| GET | `/cost-service/cost-registration` | 无请求体 | `data.customer_tags`及`data.expense_tags`；模板不存在时仍为data:null |
+| PUT | `/cost-service/cost-registration` | 顶层可传customer_tags、expense_tags | `data.customer_tags`及`data.expense_tags` |
+| POST | `/cost-service/consignments` | 顶层可传customer_tags、expense_tags | `data.customer_tags`及`data.expense_tags`，status=1 |
+| POST | `/cost-service/consignments/draft` | 顶层可传customer_tags、expense_tags | `data.customer_tags`及`data.expense_tags`，status=0 |
+| PUT | `/cost-service/consignments/{consignment_id}` | 顶层可传customer_tags、expense_tags | `data.customer_tags`及`data.expense_tags`，status=1 |
+| PUT | `/cost-service/consignments/{consignment_id}/draft` | 顶层可传customer_tags、expense_tags | `data.customer_tags`及`data.expense_tags`，status=0 |
+| GET | `/cost-service/consignments/{consignment_id}` | 无请求体 | **`data.customer_tags`及`data.expense_tags`（详情回显入口）** |
+| GET | `/cost-service/consignments` | 查询参数不变 | `data.items[].customer_tags`及`data.items[].expense_tags` |
+| PUT | `/cost-service/consignments/{consignment_id}/void` | 无请求体 | `data.customer_tags`及`data.expense_tags`保留原值，status=2 |
 
-客服响应只增加customer_tags，费用响应只增加expense_tags；不是在同一个详情data里同时新增两个字段。
-列表、保存及暂存响应也返回各自的数组，前端可直接复用；唯一登记模板与列表单据仍为独立记录。
+两台详情data同时返回customer_tags及expense_tags两个数组。
+列表每项、保存及暂存响应也返回两个数组，前端可直接复用；唯一登记模板与列表单据仍为独立记录。
 路径参数 `consignment_id` 为列表返回的字符串ID。删除、操作记录及Excel导出接口结构不变；标签不增加Excel列，也不用于裁剪导出业务数据。
 
 ##### 23.12.3 保存、清空与兼容语义
@@ -11496,8 +11512,8 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
 新增或更新模板不会自动更改任何列表单据的勾选项；前端创建新单据时如需沿用模板，须把模板数组带入新增请求。
 
 标签是页面勾选状态，取消勾选不会删除该业务分组的数据，也不会修改金额、合计或利润。
-两台独立存储：客服提交不修改费用expense_tags，费用保存不修改客服customer_tags；跨台首次补建记录时，对端未保存过标签则详情返回[]。
-如需在另一台显示相同分组，由前端在该台允许执行的保存/暂存请求中明确提交对应标签数组。
+两台分别持久化两个同名字段：客服暂存不流转，客服提交将已保存的非null数组（含[]）复制到费用；客服未保存的字段不清空费用已有值。费用可分别覆盖或清空两个字段，费用保存不反向改写既有客服标签；费用首次新建客服记录时带入两个字段初值。
+客服已提交锁定仍适用于两个字段。详情查询读取本台存储值，不在查询时重新覆盖费用选择，也不自动将customer_tags重命名为expense_tags。
 
 ##### 23.12.4 客服请求与详情响应示例
 
@@ -11506,7 +11522,11 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
 ```json
 {
   "customer_name": "示例客户",
-  "customer_tags": ["intl_air", "customs"]
+  "customer_tags": [
+    "intl_air",
+    "customs"
+  ],
+  "expense_tags": []
 }
 ```
 
@@ -11514,7 +11534,12 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
 
 ```json
 {
-  "customer_tags": ["intl_air", "ground", "dom_air"]
+  "customer_tags": [
+    "intl_air",
+    "ground",
+    "dom_air"
+  ],
+  "expense_tags": []
 }
 ```
 
@@ -11527,9 +11552,14 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
   "code": 0,
   "data": {
     "id": "358000000000000001",
-    "customer_tags": ["intl_air", "ground", "dom_air"],
+    "customer_tags": [
+      "intl_air",
+      "ground",
+      "dom_air"
+    ],
     "status": 0,
-    "customer_name": "示例客户"
+    "customer_name": "示例客户",
+    "expense_tags": []
   },
   "msg": "查询成功"
 }
@@ -11538,7 +11568,10 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
 全部取消，向未提交客服单据的暂存接口提交：
 
 ```json
-{"customer_tags": []}
+{
+  "customer_tags": [],
+  "expense_tags": []
+}
 ```
 
 ##### 23.12.5 费用请求与详情响应示例
@@ -11547,8 +11580,19 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
 
 ```json
 {
-  "expense_tags": ["intl_air", "customs", "ground", "trucking", "dom_air", "discount_info", "sales_commission"],
-  "consignor_info": {"customer_name": "示例客户"}
+  "expense_tags": [
+    "intl_air",
+    "customs",
+    "ground",
+    "trucking",
+    "dom_air",
+    "discount_info",
+    "sales_commission"
+  ],
+  "consignor_info": {
+    "customer_name": "示例客户"
+  },
+  "customer_tags": []
 }
 ```
 
@@ -11556,12 +11600,17 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
 
 ```json
 {
-  "expense_tags": ["intl_air", "discount_info", "sales_commission"]
+  "expense_tags": [
+    "intl_air",
+    "discount_info",
+    "sales_commission"
+  ],
+  "customer_tags": []
 }
 ```
 
 `PUT /consignments/{consignment_id}` 的入参结构相同。费用暂存及保存仍分别设status=0及status=1；选择接口时沿用原有页面行为。
-`expense_tags` 与 `consignor_info`、`payables` 等同级；标签可以和业务字段放在同一次请求中原子保存。
+`customer_tags`、`expense_tags` 与 `consignor_info`、`payables` 等同级；标签可以和业务字段放在同一次请求中原子保存。
 
 费用详情 `GET /api/v1/cost-service/consignments/358000000000000001` 响应节选（其他完整业务字段同23.11.7）：
 
@@ -11570,19 +11619,26 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
   "code": 0,
   "data": {
     "id": "358000000000000001",
-    "expense_tags": ["intl_air", "discount_info", "sales_commission"],
+    "expense_tags": [
+      "intl_air",
+      "discount_info",
+      "sales_commission"
+    ],
     "status": 0,
-    "consignor_info": {"customer_name": "示例客户"}
+    "consignor_info": {
+      "customer_name": "示例客户"
+    },
+    "customer_tags": []
   },
   "msg": "查询成功"
 }
 ```
 
-全部取消提交 `{"expense_tags":[]}`。字段省略或null均不清空，查询旧记录或首次跨台补建的费用单据时expense_tags为[]。
+全部取消提交 `{"expense_tags":[]}`。字段省略或null均不清空，旧记录未保存且没有客服流转值时，两个字段均返回[]。
 
 ##### 23.12.6 错误及状态约束
 
-请求中标签不是数组、数组元素类型不对、非法标识、超出5/7项、客服传折让/业务员选项，均返回HTTP422并拒绝整次请求，不写入业务或操作记录。
+请求中标签不是数组、数组元素类型不对、非法标识、超出5/7项、customer_tags传折让/业务员选项（两台expense_tags均支持这两项），均返回HTTP422并拒绝整次请求，不写入业务或操作记录。
 错误响应沿用统一 `{code:422,data:null,msg:参数验证失败信息}`；msg中定位到 `body -> customer_tags` 或 `body -> expense_tags` 及具体错误元素。
 合法标签请求仍需通过原有状态校验：客服已提交/作废后PUT保存或暂存返回409；费用作废后PUT保存或暂存返回409；不存在的单据返回404。
 即使只提交标签或伪造请求status=0，也不能绕过后端锁定。
@@ -11605,8 +11661,10 @@ Content-Disposition继续给出原有文件名；前端使用blob下载，无JSO
 - `cost_registrations`、`cost_consignments` 增加可空JSON列 `expense_tags`。
 
 迁移只加列，不覆盖历史业务、状态或费用；历史值为NULL，接口映射为[]。
-两台全新建表SQL及ORM模型均已包含标签列，新库通过建表脚本/ORM初始化后不再执行此增量脚本。
+原增量脚本仅包含每台原先的一个标签列；存量库另需执行 `sql/migration_sync_consignment_tags.sql` 补齐另一标签列及历史客服标签，详见23.14。
+两台全新建表SQL及ORM模型已包含每台两个标签列，新库通过建表脚本/ORM初始化后不再执行上述增量加列。
 这与23.11的财务字段迁移是两个独立脚本，两项需求同时上线的存量库需要依次执行两个脚本；未在生产库代为执行。
+
 
 #### 23.13 内部单据ID移至操作记录展示（2026-10-30）
 
@@ -11750,3 +11808,141 @@ Authorization: Bearer <access_token>
 四张业务/模板表的 `internal_doc_id` 列继续保留，不删除原编号；历史操作人及时间仍不虚构补录。已删除且没有可恢复编号的旧记录保留NULL，接口映射为空字符串。
 本次未连接生产数据库执行迁移。与前两项需求一起发布时，财务字段迁移、勾选项迁移及本节操作快照迁移都需按数据库现状执行。
 本仓库为后端项目；前端需自行完成编辑区控件及列表列隐藏、隐藏值继续传入、操作记录弹窗顶部展示的页面改动。后端已提供相应查询字段及下载内容调整。
+
+#### 23.14 两组标签从客服流转至费用，费用可覆盖（2026-10-30）
+
+本节为前端最新确认的标签契约：**客服和费用两台均接受并返回customer_tags、expense_tags，客服提交时两个字段按同名传递至费用，费用可分别覆盖。**
+这是对原先“客服仅customer_tags、费用仅expense_tags，互不流转”的明确调整。不是把customer_tags重命名为expense_tags；两个字段各自保留含义与选项范围。
+没有新增接口URL，以下JSON字段都在请求体顶层、响应data第一层，列表则在每个items元素第一层。
+
+##### 23.14.1 受影响接口与入参
+
+均需有效Bearer Token；以下路径已包含 `/api/v1` 前缀。GET无请求体，PUT作废无请求体；其余写入接口可在原业务请求中带两个可选标签字段。
+
+| 台 | 方法 | 路径 | 请求/返回变化 |
+|---|---|---|---|
+| 客服 | GET / PUT | `/api/v1/customer-service/consignment-registration` | 模板PUT接受两个标签；GET/PUT的data返回两个数组，无模板仍为null |
+| 客服 | POST | `/api/v1/customer-service/consignments` | 两个标签入参；返回两个数组，status=1，同事务流转费用 |
+| 客服 | POST | `/api/v1/customer-service/consignments/draft` | 两个标签入参；返回两个数组，status=0，不流转 |
+| 客服 | PUT | `/api/v1/customer-service/consignments/{consignment_id}` | 两个标签入参；仅客服0可用，提交并流转 |
+| 客服 | PUT | `/api/v1/customer-service/consignments/{consignment_id}/draft` | 两个标签入参；仅客服0可用，只保存客服 |
+| 客服 | GET | `/api/v1/customer-service/consignments/{consignment_id}` | data同时含两个数组 |
+| 客服 | GET | `/api/v1/customer-service/consignments` | data.items每项同时含两个数组；筛选/分页参数不变 |
+| 客服 | PUT | `/api/v1/customer-service/consignments/{consignment_id}/void` | data保留两个数组，status=2 |
+| 费用 | GET / PUT | `/api/v1/cost-service/cost-registration` | 模板PUT接受两个标签；GET/PUT的data返回两个数组，无模板仍为null |
+| 费用 | POST | `/api/v1/cost-service/consignments` | 接受及返回两个数组，status=1 |
+| 费用 | POST | `/api/v1/cost-service/consignments/draft` | 接受及返回两个数组，status=0 |
+| 费用 | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 接受两个字段覆盖本台值，status=1；不回写既有客服标签 |
+| 费用 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 接受两个字段覆盖本台值，status=0，不回写客服 |
+| 费用 | GET | `/api/v1/cost-service/consignments/{consignment_id}` | data同时含两个数组，读取费用已保存的值 |
+| 费用 | GET | `/api/v1/cost-service/consignments` | data.items每项同时含两个数组；筛选/分页参数不变 |
+| 费用 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | data保留两个数组，status=2 |
+
+路径consignment_id仍为列表返回的数字字符串id，非internal_doc_id；业务金额字段、操作记录接口和Excel文件结构不变，标签不增加Excel列。
+
+| JSON字段（两台均顶层） | 类型 | 必填 | 取值/含义 |
+|---|---|---|---|
+| `customer_tags` | string[] / null | 否 | 最多5项：intl_air、customs、ground、trucking、dom_air；表示客服标签集合 |
+| `expense_tags` | string[] / null | 否 | 最多7项：上述5项及discount_info、sales_commission；表示费用标签集合 |
+
+intl_air=国际空运，customs=报关，ground=地面操作，trucking=汽运，dom_air=国内空运，discount_info=折让信息，sales_commission=销售提成。
+两字段均：省略或null保留原值，[]明确清空，合法数组整体覆盖，去重并保留第一次出现的顺序。数组长度限制仍在去重前校验。
+两字段分别校验：即使在费用台，customer_tags也不能传discount_info；即使在客服台，expense_tags也允许discount_info及sales_commission。
+
+##### 23.14.2 流转及覆盖规则
+
+1. 客服暂存只保存本台两组标签，不创建/修改费用台。客服提交时读取本单据已保存的两个数组，复制到同ID费用单据；包含此前草稿保存过的值，不要求最终提交请求重复携带。
+2. 每个字段独立复制：数据库非NULL数组（含[]）覆盖费用同名字段；客服一直未保存的NULL字段不清空费用已有值。仅传customer_tags不会自动填充expense_tags，前端如需两个分组均选中，应分别提交。
+3. 费用暂存或保存可独立替换两组标签；省略其中一组不修改该组。费用详情、列表读取已存的费用值，不在查询时重新用客服数组覆盖，因此费用覆盖及明确清空均可持续保留。
+4. 费用修改标签不反向改写既有客服标签。费用保存仍按旧逻辑同步基本信息和财务快照；只有费用首次创建或补建客服记录时，两个标签作为初值一起带入，之后两台可各自保留值。
+5. 客服status=1提交锁定、两台status=2作废不可编辑的规则对两个字段都有效。不能通过仅发标签、传空对象或伪造status=0绕过。
+6. 唯一登记模板分别存储两个数组，不自动同步对端模板，也不修改列表单据；前端需在新建时把所需模板值带入请求。
+7. 同步与业务保存共用事务，不增加标签专用操作记录。标签不参与金额计算，也不因[]删除已填写的财务分组。
+
+##### 23.14.3 客服提交、费用详情及覆盖示例
+
+客服保存新增：`POST /api/v1/customer-service/consignments`（可以同时携带23.11的财务字段）：
+
+```json
+{
+  "customer_name": "示例客户",
+  "customer_tags": ["intl_air", "customs"],
+  "expense_tags": ["ground", "discount_info"]
+}
+```
+
+客服成功响应节选（其余字段仍按23.11.6完整返回）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "358000000000000001",
+    "status": 1,
+    "customer_name": "示例客户",
+    "customer_tags": ["intl_air", "customs"],
+    "expense_tags": ["ground", "discount_info"]
+  },
+  "msg": "委托信息创建成功"
+}
+```
+
+费用详情：`GET /api/v1/cost-service/consignments/358000000000000001`，成功响应节选：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "358000000000000001",
+    "status": 0,
+    "customer_tags": ["intl_air", "customs"],
+    "expense_tags": ["ground", "discount_info"],
+    "consignor_info": {"customer_name": "示例客户"}
+  },
+  "msg": "查询成功"
+}
+```
+
+费用覆盖并暂存：`PUT /api/v1/cost-service/consignments/358000000000000001/draft`：
+
+```json
+{
+  "customer_tags": ["dom_air"],
+  "expense_tags": []
+}
+```
+
+暂存成功响应节选：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "358000000000000001",
+    "status": 0,
+    "customer_tags": ["dom_air"],
+    "expense_tags": [],
+    "consignor_info": {"customer_name": "示例客户"}
+  },
+  "msg": "单据信息暂存成功"
+}
+```
+
+之后费用GET详情仍返回customer_tags=["dom_air"]、expense_tags=[]；客服GET详情仍是提交时的两个数组。
+费用若改用PUT保存接口（去掉/draft），请求同上，返回status=1、msg="单据信息更新成功"，两个字段覆盖结果一致。
+只清空费用customer_tags可传 `{"customer_tags":[]}`，此时expense_tags不变；传null不能清空。
+
+##### 23.14.4 错误、历史回填及部署
+
+参数类型/选项/长度错误返回HTTP422，按统一结构 `{code:422,data:null,msg:"参数验证失败..."}` 返回，整次请求不写业务或操作记录。
+已提交客服修改/暂存仍409；作废两台修改/暂存仍409；不存在记录404、非法数字格式id400、鉴权沿用原规则。
+
+已有旧标签列的存量库，发布前执行 **`sql/migration_sync_consignment_tags.sql` 一次**：
+
+- 客服模板、客服单据各加expense_tags；费用模板、费用单据各加customer_tags，均为可空JSON。
+- 从同ID已提交/已作废客服单据回填费用NULL（含JSON null）的同名标签，不覆盖费用已经保存的数组（包括[]）。不根据费用金额猜测标签，不把customer_tags转换成expense_tags。
+- 回填保留业务updated_at，不新增虚构用户操作，不复制模板，也不从客服未提交草稿回填。
+- 原库若连旧标签列都没有，先执行migration_add_consignment_tags.sql，再执行本脚本。全新库使用已更新建表SQL或ORM，不重复执行这些增量加列。
+
+历史费用数据中新加customer_tags为空、客服存在原选择时，迁移会补齐该值，使截图中的老单据也能回显；费用原先expense_tags=[]会保留，不将其误判为“没选择过”。
+未执行迁移前不要先发布依赖新列的代码；本次未代为连接或修改生产数据库。
