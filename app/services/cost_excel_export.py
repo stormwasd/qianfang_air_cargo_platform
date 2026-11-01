@@ -1,8 +1,10 @@
-"""费用登记 Excel 导出的表头及字段展示转换。"""
-from typing import Dict, List, Tuple
+"""两台 Excel 导出的有序列定义及展示转换。"""
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Dict
 
-from openpyxl.worksheet.worksheet import Worksheet
-from app.services.consignment_financial import COST_EXTRA_EXPORT_FIELDS
+from app.services.consignment_financial import FINANCIAL_FIELD_MAP, format_financial_data
 
 
 BILL_OF_LADING_EXPORT_LABELS: Dict[str, str] = {
@@ -88,156 +90,155 @@ def format_bill_of_lading_for_export(value: object) -> str:
     return raw_value
 
 
-LEGACY_COST_EXPORT_HEADERS: Tuple[str, ...] = (
-    "序号",
-    "状态",
+@dataclass(frozen=True)
+class ExportColumn:
+    title: str
+    # 客服财务快照使用的路径；基础字段不带分组前缀。
+    path: str
+    cost_attribute: str
 
-    # 货主托运信息（3-18）
-    "制单时间", "进仓日期", "客户名称", "始发站-目的站",
-    "报关", "提单", "航班日期", "航班号", "航班单号",
-    "件数", "实际重量(kg)", "计费重量(kg)", "体积(m³)", "一程重量(kg)",
-    "代理", "委托备注",
 
-    # 应收款项（19-38）
-    "应收-单价", "应收-运费计算方式", "应收-运费", "应收-燃油费", "应收-提单费/信息录入费", "应收-分单费 电报费/底账费",
-    "应收-报关费", "应收-续页费", "应收-海关查验费", "应收-磁检费/安检费",
-    "应收-TC费", "应收-前置仓费", "应收-制单费",
-    "应收-制单分单费", "应收-垫板费", "应收-打板/装箱费", "应收-探板费",
-    "应收-耗材费", "应收-一程费用", "应收-合计",
+def _columns(group, fields):
+    """显式定义产品列顺序；费用字段复用已验证的持久化映射。"""
+    return tuple(
+        ExportColumn(title, f"{group}.{name}" if group else name,
+                     FINANCIAL_FIELD_MAP[group][name] if group else name)
+        for title, name in fields
+    )
 
-    # 应付款项 - 国际空运（39-54）
-    "国空应付-外发单位", "国空应付-实际重量", "国空应付-体积",
-    "国空应付-计费重量", "国空应付-单价", "国空应付-运费", "国空应付-提单费",
-    "国空应付-分单费", "国空应付-燃油费", "国空应付-TC费",
-    "国空应付-报关费", "国空应付-续页费", "国空应付-耗材费", "国空应付-前置仓",
-    "国空应付-其他费用", "国空应付-小计",
 
-    # 应付款项 - 报关（55-60）
-    "报关应付-报关代理", "报关应付-报关费", "报关应付-续页费",
-    "报关应付-查验/删单费", "报关应付-其他费用", "报关应付-小计",
-
-    # 应付款项 - 地面操作（61-71）
-    "地面应付-外发单位", "地面应付-计费重量",
-    "地面应付-费率", "地面应付-前置仓", "地面应付-TC费", "地面应付-提货费",
-    "地面应付-提单/快件处置费", "地面应付-安检/报关费",
-    "地面应付-打板/退场费", "地面应付-其他费用", "地面应付-小计",
-
-    # 应付款项 - 汽运（72-78）
-    "汽运应付-外发单位", "汽运应付-重量", "汽运应付-单价",
-    "汽运应付-运费", "汽运应付-制单费", "汽运应付-其他费用", "汽运应付-小计",
-
-    # 应付款项 - 国内空运（79-85）
-    "国空内应付-外发单位", "国空内应付-实际重量", "国空内应付-计费重量",
-    "国空内应付-费率", "国空内应付-运费", "国空内应付-其他费用", "国空内应付-小计",
-
-    # 应付款项总计、折让信息、业务信息、经营信息（86-93）
-    "应付合计", "折让人员", "费率", "折让费", "业务员", "提成金额", "利润", "利润率(%)",
+_BASIC = _columns("", (
+    ("序号", "sequence"), ("状态", "status"), ("客户名称", "customer_name"),
+    ("进仓日期", "warehouse_entry_date"), ("主单号", "flight_doc_no"),
+    ("始发站-目的站", "origin_destination"), ("件数", "pieces"),
+    ("实际重量", "actual_weight"), ("计费重量", "chargeable_weight"),
+    ("体积", "volume"), ("报关", "customs_declaration"),
+    ("提单", "bill_of_lading"), ("备注", "remark"),
+))
+_RECEIVABLES = _columns("receivables", (
+    ("应收提单费/信息录入费", "lading_info_fee"),
+    ("应收分单费 电报费/底账费", "split_offset_telex_fee"),
+    ("应收报关费", "customs_fee"), ("应收续页费", "continuation_sheet_fee"),
+    ("应收海关查验费", "customs_inspection_fee"),
+    ("应收磁检费/安检费", "magnetic_security_fee"),
+    ("应收燃油费", "receivable_fuel_fee"), ("应收TC费", "tc_express_fee"),
+    ("应收前置仓费", "warehouse_ground_fee"), ("应收制单费", "doc_make_fee"),
+    ("应收制单分单费", "doc_split_fee"), ("应收垫板费", "skid_fee"),
+    ("应收打板/装箱费", "pallet_packing_fee"), ("应收探板费", "probe_fee"),
+    ("应收耗材费", "consumables_fee"),
+))
+_INTL_AIR = _columns("payables.intl_air", (
+    ("国际空运代理名称", "outsource_unit"), ("始发站", "origin"),
+    ("到达站", "destination"), ("主单号", "flight_doc_no"),
+    ("航班号", "flight_no"), ("航班日期", "flight_date"), ("件数", "pieces"),
+    ("实际重量", "weight"), ("体积", "volume"), ("计费重量", "chargeable_weight"),
+    ("提单费", "lading_fee"), ("单价", "rate"), ("运费", "freight"),
+    ("分单", "split_fee"), ("燃油费", "borrow_magnetic_fuel_pickup_fee"),
+    ("TC费", "tc_network_disposal_fee"), ("报关费", "customs_fee"),
+    ("续页费", "continuation_sheet_fee"), ("耗材费", "consumables_fee"),
+    ("前置仓费", "front_warehouse"), ("其他费用", "other_fee"),
+    ("备注", "remark"), ("应付小计", "subtotal"),
+))
+_CUSTOMS = _columns("payables.customs", (
+    ("报关代理名称", "agent"), ("报关日期", "date"), ("报关费", "customs_fee"),
+    ("续页费", "continuation_sheet_fee"), ("查验费/删单费", "inspection_delete_fee"),
+    ("其他费用", "other_fee"), ("备注", "remark"), ("应付小计", "subtotal"),
+))
+_GROUND = _columns("payables.ground", (
+    ("地面操作代理名称", "outsource_unit"), ("操作日期", "date"),
+    ("计费重量", "chargeable_weight"), ("前置仓费", "freight"), ("TC费", "tc_fee"),
+    ("提货费", "pickup_fee"), ("提单费", "lading_express_fee"),
+    ("安检费/报关费", "security_customs_fee"), ("打板费/退场费", "pallet_exit_fee"),
+    ("其他费用", "other_fee"), ("备注", "remark"), ("应付小计", "subtotal"),
+))
+_TRUCKING = _columns("payables.trucking", (
+    ("汽运代理名称", "outsource_unit"), ("托运日期", "date"),
+    ("主单号", "flight_doc_no"), ("始发城市", "origin_city"),
+    ("目的城市", "destination_city"), ("件数", "pieces"),
+    ("计费重量", "weight"), ("体积", "volume"), ("单价", "unit_price"),
+    ("运费", "freight"), ("制单费", "doc_fee"), ("其他费用", "other_fee"),
+    ("备注", "remark"), ("应付小计", "subtotal"),
+))
+_DOM_AIR = _columns("payables.dom_air", (
+    ("国内空运代理名称", "outsource_unit"), ("始发站", "origin"),
+    ("到达站", "destination"), ("主单号", "flight_doc_no"),
+    ("航班号", "flight_no"), ("航班日期", "flight_date"), ("件数", "pieces"),
+    ("实际重量", "weight"), ("计费重量", "chargeable_weight"), ("体积", "volume"),
+    ("单价", "rate"), ("运费", "freight"), ("其他费用", "other_fee"),
+    ("备注", "remark"), ("应付小计", "subtotal"),
+))
+_RECEIVABLE_TOTAL = _columns("receivables", (("应收合计", "total"),))
+_COST_SUMMARY = (
+    *_columns("", (
+        ("折让人", "discount_person"), ("费率", "discount_rate"),
+        ("折让费", "discount_fee"), ("业务员", "salesperson"),
+        ("提成金额", "commission_amount"),
+    )),
+    *_RECEIVABLE_TOTAL,
+    *_columns("payables", (("应付合计", "pay_total"),)),
+    *_columns("", (("利润", "profit"), ("利润率%", "profit_margin"))),
 )
 
-COST_EXPORT_HEADERS = LEGACY_COST_EXPORT_HEADERS + tuple(
-    f"{label}-{title}" for _path, _name, _column, label, title in COST_EXTRA_EXPORT_FIELDS
+
+def _customer_payables(columns):
+    # 客服新表头不包含单价、运费及分组小计，其余业务列与费用台一致。
+    return tuple(c for c in columns if c.title not in {"单价", "运费", "应付小计"})
+
+
+CUSTOMER_EXPORT_COLUMNS = (
+    *_BASIC, *_RECEIVABLES,
+    *_customer_payables(_INTL_AIR), *_customer_payables(_CUSTOMS),
+    *_customer_payables(_GROUND), *_customer_payables(_TRUCKING),
+    *_customer_payables(_DOM_AIR),
 )
-
-_LEAF_PREFIXES: Tuple[str, ...] = (
-    "应收-",
-    "国空应付-",
-    "汽运应付-",
-    "国空内应付-",
-    "报关应付-",
-    "地面应付-",
+COST_EXPORT_COLUMNS = (
+    *_BASIC,
+    *_columns("receivables", (
+        ("运费费率", "unit_price"), ("运费计算方式", "freight_method"), ("运费", "freight"),
+    )),
+    *_RECEIVABLES, *_RECEIVABLE_TOTAL,
+    *_INTL_AIR, *_CUSTOMS, *_GROUND, *_TRUCKING, *_DOM_AIR, *_COST_SUMMARY,
 )
+CUSTOMER_EXPORT_HEADERS = tuple(c.title for c in CUSTOMER_EXPORT_COLUMNS)
+COST_EXPORT_HEADERS = tuple(c.title for c in COST_EXPORT_COLUMNS)
 
 
-def _leaf_header(raw_header: str) -> str:
-    if raw_header == "委托备注":
-        return "备注"
-    if raw_header == "应付合计":
-        # 应付合计没有下一层字段，标题在第二、三行纵向合并展示。
+def _export_value(column, value):
+    if column.path == "status":
+        return format_submission_status_for_export(value)
+    if column.path == "bill_of_lading":
+        return format_bill_of_lading_for_export(value)
+    if column.path == "receivables.freight_method":
+        return format_freight_method_for_export(value)
+    if value is None:
         return ""
-    for prefix in _LEAF_PREFIXES:
-        if raw_header.startswith(prefix):
-            return raw_header[len(prefix):]
-    return raw_header
+    if isinstance(value, (date, datetime)):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
-def append_cost_export_headers(ws: Worksheet) -> List[str]:
-    """写入截图所示的三级分组表头，并返回最底层字段标题。"""
-    if len(LEGACY_COST_EXPORT_HEADERS) != 93:
-        raise RuntimeError("费用登记导出字段数量异常，预期为 93 列")
+def customer_export_values(record, sequence):
+    """客服财务列取该单据自己的快照，缺省分组留空。"""
+    financial = format_financial_data(record)
+    values = []
+    for column in CUSTOMER_EXPORT_COLUMNS:
+        if column.path == "sequence":
+            value = sequence
+        elif "." not in column.path:
+            value = getattr(record, column.path, None)
+        else:
+            value = financial
+            for key in column.path.split("."):
+                value = (value or {}).get(key)
+        values.append(_export_value(column, value))
+    return values
 
-    leaf_headers = [_leaf_header(header) for header in COST_EXPORT_HEADERS]
-    top_headers: List[str] = [""] * len(COST_EXPORT_HEADERS)
-    subgroup_headers: List[str] = [""] * len(COST_EXPORT_HEADERS)
 
-    # 一级分组：货主托运、应收、应付、折让、业务、经营。
-    for index, title in (
-        (0, "序号"),
-        (1, "状态"),
-        (2, "货主托运信息"),
-        (18, "应收款项"),
-        (38, "应付款项"),
-        (86, "折让信息"),
-        (89, "业务信息"),
-        (91, "经营信息"),
-    ):
-        top_headers[index] = title
-
-    # 应付款项下的二级分组。
-    for index, title in (
-        (38, "国际空运信息"),
-        (54, "报关信息"),
-        (60, "地面操作信息"),
-        (71, "汽运信息"),
-        (78, "国内空运信息"),
-        (85, "应付合计"),
-    ):
-        subgroup_headers[index] = title
-
-    if COST_EXTRA_EXPORT_FIELDS:
-        top_headers[93] = "补充业务字段"
-        for i, field in enumerate(COST_EXTRA_EXPORT_FIELDS, 93):
-            leaf_headers[i] = field[4]
-            if i == 93 or field[3] != COST_EXTRA_EXPORT_FIELDS[i - 94][3]:
-                subgroup_headers[i] = field[3]
-
-    ws.append(top_headers)
-    ws.append(subgroup_headers)
-    ws.append(leaf_headers)
-
-    ws.merge_cells(start_row=1, start_column=1, end_row=3, end_column=1)
-    ws.merge_cells(start_row=1, start_column=2, end_row=3, end_column=2)
-
-    # 无二级分组的一级标题跨前两行；应付款项保留完整三级结构。
-    for start_col, end_col in (
-        (3, 18),
-        (19, 38),
-        (87, 89),
-        (90, 91),
-        (92, 93),
-    ):
-        ws.merge_cells(
-            start_row=1,
-            start_column=start_col,
-            end_row=2,
-            end_column=end_col,
-        )
-    ws.merge_cells(start_row=1, start_column=39, end_row=1, end_column=86)
-
-    for start_col, end_col in ((39, 54), (55, 60), (61, 71), (72, 78), (79, 85)):
-        ws.merge_cells(
-            start_row=2,
-            start_column=start_col,
-            end_row=2,
-            end_column=end_col,
-        )
-    ws.merge_cells(start_row=2, start_column=86, end_row=3, end_column=86)
-
-    if COST_EXTRA_EXPORT_FIELDS:
-        ws.merge_cells(start_row=1, start_column=94, end_row=1, end_column=len(COST_EXPORT_HEADERS))
-        start = 94
-        for column in range(95, len(COST_EXPORT_HEADERS) + 2):
-            if column > len(COST_EXPORT_HEADERS) or subgroup_headers[column - 1]:
-                ws.merge_cells(start_row=2, start_column=start, end_row=2, end_column=column - 1)
-                start = column
-
-    return leaf_headers
+def cost_export_values(record, sequence):
+    """费用列直接取自身持久化字段，不重算金额或回查客服记录。"""
+    return [
+        _export_value(c, sequence if c.path == "sequence" else getattr(record, c.cost_attribute, None))
+        for c in COST_EXPORT_COLUMNS
+    ]

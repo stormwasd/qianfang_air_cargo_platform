@@ -109,90 +109,39 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         worksheet = workbook.active
         self.addCleanup(workbook.close)
 
-        self.assertEqual(worksheet.max_column, 137)
-        self.assertEqual(worksheet.max_row, 6)
-        self.assertEqual(worksheet["A1"].value, "序号")
-        self.assertEqual(worksheet["B1"].value, "状态")
-        self.assertEqual([worksheet[f"A{row}"].value for row in range(4, 7)], [1, 2, 3])
-        self.assertEqual(worksheet["A4"].alignment.horizontal, "center")
-        self.assertEqual(worksheet["B4"].value, "未提交")
-        self.assertEqual(worksheet["B5"].value, "已提交")
-        for subtotal_cell, expected in {
-            "BB": 101.25,
-            "BH": 404.00,
-            "BS": 505.25,
-            "BZ": 202.50,
-            "CG": 303.75,
-        }.items():
-            with self.subTest(subtotal_cell=subtotal_cell):
-                self.assertEqual(worksheet[f"{subtotal_cell}3"].value, "小计")
-                self.assertEqual(worksheet[f"{subtotal_cell}4"].value, expected)
-                self.assertEqual(worksheet[f"{subtotal_cell}4"].data_type, "n")
-                self.assertEqual(worksheet[f"{subtotal_cell}5"].value, 0)
-                self.assertIsNone(worksheet[f"{subtotal_cell}6"].value)
-
-        expected_adjacent_values = {
-            "AM4": "international",
-            "BB4": 101.25,
-            "BC4": "customs agent",
-            "BG4": 904.25,
-            "BH4": 404.00,
-            "BI4": "ground unit",
-            "BL4": 120.00,
-            "BM4": 35.50,
-            "BN4": 20.75,
-            "BR4": 905.25,
-            "BS4": 505.25,
-            "BT4": "trucking unit",
-            "BZ4": 202.50,
-            "CA4": "domestic unit",
-            "CG4": 303.75,
-            "CH4": 1516.75,
-            "CI4": "discount person",
-            "CJ4": 7.25,
-            "CK4": 88.50,
-            "CL4": "salesperson",
-            "CM4": 171.39,
-            "CN4": 1428.25,
+        self.assertEqual(worksheet.max_column, 113)
+        self.assertEqual(worksheet.max_row, 4)
+        self.assertEqual([worksheet.cell(row, 1).value for row in range(2, 5)], [1, 2, 3])
+        self.assertEqual(worksheet["B2"].value, "未提交")
+        self.assertEqual(worksheet["B3"].value, "已提交")
+        # 独立坐标校验每个分组末尾，避免同名“应付小计”串列。
+        for column, expected in ((55, 101.25), (63, 404), (75, 505.25), (89, 202.5), (104, 303.75)):
+            with self.subTest(column=column):
+                self.assertEqual(worksheet.cell(1, column).value, "应付小计")
+                self.assertEqual(worksheet.cell(2, column).value, expected)
+                self.assertEqual(worksheet.cell(2, column).data_type, "n")
+                self.assertEqual(worksheet.cell(3, column).value, 0)
+                self.assertIsNone(worksheet.cell(4, column).value)
+        expected_values = {
+            33: "international", 34: "removed intl origin", 35: "removed intl destination",
+            36: "removed intl document", 37: "removed intl flight", 38: "2026-09-16", 39: 901,
+            54: "removed international remark", 56: "customs agent", 57: "2026-09-19",
+            61: 904.25, 62: "customs remark", 64: "ground unit", 65: "2026-09-20",
+            67: 120, 68: 35.5, 69: 20.75, 73: 905.25, 74: "ground remark",
+            76: "trucking unit", 77: "2026-09-17", 81: 902, 83: 902.25,
+            88: "removed trucking remark", 90: "domestic unit", 91: "removed domestic origin",
+            92: "removed domestic destination", 93: "removed domestic document",
+            94: "removed domestic flight", 95: "2026-09-21", 96: 903,
+            103: "removed domestic remark", 105: "discount person", 106: 7.25,
+            107: 88.5, 108: "salesperson", 109: 171.39, 111: 1516.75, 112: 1428.25,
         }
-        for cell, expected in expected_adjacent_values.items():
-            with self.subTest(cell=cell):
-                self.assertEqual(worksheet[cell].value, expected)
-
-        for cell in ("BG4", "BR4"):
-            with self.subTest(other_fee_cell=cell):
-                self.assertEqual(worksheet[cell].data_type, "n")
-
-        self.assertEqual(
-            [worksheet[f"{column}3"].value for column in ("CI", "CJ", "CK")],
-            ["折让人员", "费率", "折让费"],
-        )
-        self.assertEqual(worksheet["CJ4"].data_type, "n")
-        self.assertEqual(
-            [worksheet[f"{column}3"].value for column in ("CL", "CM")],
-            ["业务员", "提成金额"],
-        )
-        self.assertNotIn("提成百分比", [cell.value for cell in worksheet[3]])
-        self.assertEqual(worksheet["CM4"].data_type, "n")
-        for column, title in (("BL", "前置仓"), ("BM", "TC费"), ("BN", "提货费")):
-            self.assertEqual(worksheet[f"{column}3"].value, title)
-            self.assertEqual(worksheet[f"{column}4"].data_type, "n")
-        for column in ("BM", "BN"):
-            self.assertEqual(worksheet[f"{column}5"].value, 0)
-            self.assertIsNone(worksheet[f"{column}6"].value)
-
-        removed_values = {
-            "removed intl origin", "removed intl destination", "removed intl document",
-            "removed intl flight", "2026-09-16", 901, "removed intl freight method",
-            "removed international remark", "2026-09-17", 902, 902.25,
-            "removed trucking remark", "2026-09-18", "removed domestic origin",
-            "removed domestic destination", "removed domestic airline", "must not export",
-            "removed domestic document", "removed domestic flight", "2026-09-21", 903,
-            "removed domestic freight method", "removed domestic remark", "2026-09-19",
-            "customs remark", "2026-09-20", "ground remark",
-        }
-        exported_values = {cell.value for cell in worksheet[4][:93]}
-        self.assertTrue(removed_values.isdisjoint(exported_values))
+        for column, expected in expected_values.items():
+            with self.subTest(column=column):
+                self.assertEqual(worksheet.cell(2, column).value, expected)
+        exported_values = {cell.value for cell in worksheet[2]}
+        for excluded in ("2026-09-18", "removed domestic airline", "must not export",
+                         "removed intl freight method", "removed domestic freight method", 12.5):
+            self.assertNotIn(excluded, exported_values)
 
 
 if __name__ == "__main__":

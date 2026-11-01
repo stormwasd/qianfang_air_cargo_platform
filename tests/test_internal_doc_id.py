@@ -164,7 +164,7 @@ class InternalDocumentIdTests(unittest.IsolatedAsyncioTestCase):
             CostConsignment(id=1, status=0, internal_doc_id="PRIVATE-COST", customer_name="客户", pieces=8, receivable_total=123.45),
         ])
         self.db.commit()
-        for base, header_rows, count in (("/customer", 1, 132), ("/cost", 3, 137)):
+        for base, header_rows, count in (("/customer", 1, 89), ("/cost", 1, 113)):
             response = await self.client.post(base + "/consignments/export-excel", json={"ids": ["1"]})
             self.assertEqual(response.status_code, 200, response.text)
             workbook = load_workbook(io.BytesIO(response.content), data_only=True)

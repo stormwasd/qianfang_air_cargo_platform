@@ -13,6 +13,7 @@ from app.models.customer_service import ConsignmentInfo
 from app.schemas.cost_service import CostExportExcelRequest
 from app.schemas.customer_service import ExportExcelRequest
 from app.services.cost_excel_export import format_submission_status_for_export
+from tests.test_cost_excel_export import EXPECTED_CUSTOMER_HEADERS, EXPECTED_COST_HEADERS
 
 
 class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
@@ -47,84 +48,45 @@ class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
             "agent": "agent",
             "remark": "remark",
         }
-        expected_headers = [
-            "状态", "制单时间", "进仓日期", "客户名称",
-            "始发站-目的站", "报关", "提单", "航班日期", "航班号",
-            "航班单号", "件数", "实际重量(kg)", "计费重量(kg)",
-            "体积(m³)", "一程重量(kg)", "代理", "备注",
-        ]
         expected_values = [
-            "2026-09-14 10:20:30", "2026-09-13", "customer",
-            "SZX-NRT", "customs", "直单", "2026-09-16", "MF809",
-            "731-90064074", 36, 123.25, 125, 1.25, 120.5, "agent", "remark",
+            "customer", "2026-09-13", "731-90064074", "SZX-NRT", 36,
+            123.25, 125, 1.25, "customs", "直单", "remark",
         ]
-        cases = (
-            (export_consignments_to_excel, ExportExcelRequest, ConsignmentInfo, 2, 132, 1, 1, 2),
-            (export_cost_consignments_to_excel, CostExportExcelRequest, CostConsignment, 4, 137, 0, 2, 3),
-        )
-        for (
-            endpoint, request_type, model, data_row, column_count, status,
-            status_column, consignment_start_column,
-        ) in cases:
+        for endpoint, request_type, model, expected_headers, status in (
+            (export_consignments_to_excel, ExportExcelRequest, ConsignmentInfo, EXPECTED_CUSTOMER_HEADERS, 1),
+            (export_cost_consignments_to_excel, CostExportExcelRequest, CostConsignment, EXPECTED_COST_HEADERS, 0),
+        ):
             with self.subTest(endpoint=endpoint.__name__):
                 record = model(**fields, status=status)
                 second = model(id=2, status=1 - status)
                 sheet = await self.export(endpoint, request_type, [record, second])
-                self.assertEqual(sheet.max_column, column_count)
-                self.assertEqual(sheet.cell(1, status_column).value, "状态")
-                self.assertEqual(
-                    sheet.cell(data_row, status_column).value,
-                    "已提交" if status == 1 else "未提交",
-                )
-                self.assertEqual(
-                    sheet.cell(data_row + 1, status_column).value,
-                    "未提交" if status == 1 else "已提交",
-                )
-                self.assertEqual(
-                    [
-                        sheet.cell(data_row, c).value
-                        for c in range(consignment_start_column, consignment_start_column + 16)
-                    ],
-                    expected_values,
-                )
+                self.assertEqual(tuple(c.value for c in sheet[1]), expected_headers)
+                self.assertEqual(sheet.max_row, 3)
+                self.assertEqual(sheet.max_column, len(expected_headers))
+                self.assertEqual(list(sheet.merged_cells.ranges), [])
+                self.assertEqual(sheet.cell(2, 1).value, 1)
+                self.assertEqual(sheet.cell(3, 1).value, 2)
+                self.assertEqual(sheet.cell(2, 2).value, "已提交" if status == 1 else "未提交")
+                self.assertEqual(sheet.cell(3, 2).value, "未提交" if status == 1 else "已提交")
+                self.assertEqual([sheet.cell(2, c).value for c in range(3, 14)], expected_values)
+                self.assertEqual(sheet.cell(2, 1).alignment.horizontal, "center")
                 self.assertEqual(record.status, status)
-                if data_row == 2:
-                    self.assertEqual([cell.value for cell in sheet[1]][:17], expected_headers)
-                    for column in (2, 3, 8, 11, 12, 13, 14, 15):
-                        self.assertEqual(sheet.cell(data_row, column).alignment.horizontal, "center")
-                    self.assertEqual(sheet.cell(data_row, 4).alignment.horizontal, "left")
-                else:
-                    self.assertEqual(sheet["A1"].value, "序号")
-                    self.assertEqual(sheet.cell(data_row, 1).value, 1)
-                    self.assertEqual(sheet.cell(data_row + 1, 1).value, 2)
-                    self.assertEqual(sheet.cell(data_row, 1).alignment.horizontal, "center")
-                    self.assertTrue(
-                        {"A1:A3", "B1:B3"}.issubset(
-                            {str(r) for r in sheet.merged_cells.ranges}
-                        )
-                    )
-                    self.assertEqual(
-                        [sheet.cell(3, c).value for c in range(3, 19)], expected_headers[1:],
-                    )
 
     async def test_empty_result_still_exports_status_headers(self):
         for endpoint, request_type, column_count, header_rows in (
-            (export_consignments_to_excel, ExportExcelRequest, 132, 1),
-            (export_cost_consignments_to_excel, CostExportExcelRequest, 137, 3),
+            (export_consignments_to_excel, ExportExcelRequest, 89, 1),
+            (export_cost_consignments_to_excel, CostExportExcelRequest, 113, 1),
         ):
             with self.subTest(endpoint=endpoint.__name__):
                 sheet = await self.export(endpoint, request_type, [])
-                expected_first_header = (
-                    "序号" if endpoint is export_cost_consignments_to_excel else "状态"
-                )
-                self.assertEqual(sheet["A1"].value, expected_first_header)
+                self.assertEqual(sheet["A1"].value, "序号")
                 self.assertEqual(sheet.max_column, column_count)
                 self.assertEqual(sheet.max_row, header_rows)
 
     async def test_both_exports_display_voided_status(self):
         for endpoint, request_type, model, data_row, status_column in (
-            (export_consignments_to_excel, ExportExcelRequest, ConsignmentInfo, 2, 1),
-            (export_cost_consignments_to_excel, CostExportExcelRequest, CostConsignment, 4, 2),
+            (export_consignments_to_excel, ExportExcelRequest, ConsignmentInfo, 2, 2),
+            (export_cost_consignments_to_excel, CostExportExcelRequest, CostConsignment, 2, 2),
         ):
             with self.subTest(endpoint=endpoint.__name__):
                 sheet = await self.export(endpoint, request_type, [model(id=1, status=2)])

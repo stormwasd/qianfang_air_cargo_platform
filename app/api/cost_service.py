@@ -31,10 +31,7 @@ from app.schemas.cost_service import (
     CostExportExcelRequest,
 )
 from app.services.cost_excel_export import (
-    append_cost_export_headers,
-    format_bill_of_lading_for_export,
-    format_freight_method_for_export,
-    format_submission_status_for_export,
+    COST_EXPORT_HEADERS, cost_export_values,
 )
 from app.utils.helpers import format_datetime_china, get_china_now
 from app.schemas.consignment_operation_log import ConsignmentOperationLogPage
@@ -42,7 +39,7 @@ from app.services.consignment_operation_log import append_consignment_operation,
 from app.services.consignment_tags import apply_consignment_tags, format_consignment_tags
 
 from app.services.consignment_financial import (
-    ADDITIONAL_COST_FIELDS, financial_snapshot, cost_extra_export_values,
+    ADDITIONAL_COST_FIELDS, financial_snapshot,
 )
 
 router = APIRouter()
@@ -1090,7 +1087,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件首列为序号、第二列为状态（未提交/已提交/作废），包含三级分组表头及 137 列字段，数据从第 4 行开始；应付款项分组顺序与 Web 端一致。
+    导出文件采用单行表头，共 113 列，首列为序号、第二列为状态，数据从第 2 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -1124,7 +1121,8 @@ async def export_cost_consignments_to_excel(
     ws = wb.active
     ws.title = "费用单据信息全量列表"
     
-    headers = append_cost_export_headers(ws)
+    headers = COST_EXPORT_HEADERS
+    ws.append(headers)
     
     # 样式配置
     header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
@@ -1137,160 +1135,18 @@ async def export_cost_consignments_to_excel(
         bottom=Side(style='thin', color='D3D3D3')
     )
     
-    for header_row in range(1, 4):
-        for col_num in range(1, len(headers) + 1):
-            cell = ws.cell(row=header_row, column=col_num)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.border = thin_border
+    for col_num in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = thin_border
 
-    ws.row_dimensions[1].height = 24
-    ws.row_dimensions[2].height = 24
-    ws.row_dimensions[3].height = 28
-    
-    def _v_str(val):
-        return str(val) if val is not None else ""
-
-    def _v_num(val):
-        return float(val) if val is not None else ""
-
-    def _v_date(val):
-        if not val:
-            return ""
-        if isinstance(val, (datetime, date)):
-            return val.strftime("%Y-%m-%d")
-        return str(val)
-
-    def _v_dt(val):
-        if not val:
-            return ""
-        if isinstance(val, datetime):
-            return val.strftime("%Y-%m-%d %H:%M:%S")
-        return str(val)
+    ws.row_dimensions[1].height = 28
 
     for sequence, rec in enumerate(records, 1):
-        r_idx = sequence + 3
-        row_data = [
-            sequence,
-            format_submission_status_for_export(
-                getattr(rec, "status", CostConsignmentSubmissionStatus.SUBMITTED.value)
-            ),
-            # (1) 货主委托信息
-            _v_dt(rec.create_time),
-            _v_date(rec.warehouse_entry_date),
-            _v_str(rec.customer_name),
-            _v_str(rec.origin_destination),
-            _v_str(rec.customs_declaration),
-            format_bill_of_lading_for_export(rec.bill_of_lading),
-            _v_date(rec.flight_date),
-            _v_str(rec.flight_no),
-            _v_str(rec.flight_doc_no),
-            rec.pieces if rec.pieces is not None else "",
-            _v_num(rec.actual_weight),
-            _v_num(rec.chargeable_weight),
-            _v_num(rec.volume),
-            _v_num(rec.first_leg_weight),
-            _v_str(rec.agent),
-            _v_str(rec.remark),
-
-            # (2) 应收款项
-            _v_num(rec.unit_price),
-            format_freight_method_for_export(rec.freight_method),
-            _v_num(rec.receivable_freight),
-            _v_num(rec.receivable_fuel_fee),
-            _v_num(rec.receivable_lading_info_fee),
-            _v_num(rec.receivable_split_offset_telex_fee),
-            _v_num(rec.receivable_customs_fee),
-            _v_num(rec.receivable_continuation_sheet_fee),
-            _v_num(rec.receivable_customs_inspection_fee),
-            _v_num(rec.receivable_magnetic_security_fee),
-            _v_num(rec.receivable_tc_express_fee),
-            _v_num(rec.receivable_warehouse_ground_fee),
-            _v_num(rec.receivable_doc_make_fee),
-            _v_num(rec.receivable_doc_split_fee),
-            _v_num(rec.receivable_skid_fee),
-            _v_num(rec.receivable_pallet_packing_fee),
-            _v_num(rec.receivable_probe_fee),
-            _v_num(rec.receivable_consumables_fee),
-            _v_num(rec.receivable_first_leg_fee),
-            _v_num(rec.receivable_total),
-
-            # (3) 应付款项 - 国际空运
-            _v_str(rec.pay_intl_air_outsource_unit),
-            _v_num(rec.pay_intl_air_weight),
-            _v_num(rec.pay_intl_air_volume),
-            _v_num(rec.pay_intl_air_chargeable_weight),
-            _v_num(rec.pay_intl_air_rate),
-            _v_num(rec.pay_intl_air_freight),
-            _v_num(rec.pay_intl_air_lading_fee),
-            _v_num(rec.pay_intl_air_split_fee),
-            _v_num(rec.pay_intl_air_borrow_magnetic_fuel_pickup_fee),
-            _v_num(rec.pay_intl_air_tc_network_disposal_fee),
-            _v_num(rec.pay_intl_air_customs_fee),
-            _v_num(rec.pay_intl_air_continuation_sheet_fee),
-            _v_num(rec.pay_intl_air_consumables_fee),
-            _v_num(rec.pay_intl_air_front_warehouse),
-            _v_num(rec.pay_intl_air_other_fee),
-            _v_num(rec.pay_intl_air_subtotal),
-
-            # (3) 应付款项 - 报关
-            _v_str(rec.pay_customs_agent),
-            _v_num(rec.pay_customs_fee),
-            _v_num(rec.pay_customs_continuation_sheet_fee),
-            _v_num(rec.pay_customs_inspection_delete_fee),
-            _v_num(rec.pay_customs_other_fee),
-            _v_num(rec.pay_customs_subtotal),
-
-            # (3) 应付款项 - 地面操作
-            _v_str(rec.pay_ground_outsource_unit),
-            _v_num(rec.pay_ground_chargeable_weight),
-            _v_num(rec.pay_ground_rate),
-            _v_num(rec.pay_ground_freight),
-            _v_num(rec.pay_ground_tc_fee),
-            _v_num(rec.pay_ground_pickup_fee),
-            _v_num(rec.pay_ground_lading_express_fee),
-            _v_num(rec.pay_ground_security_customs_fee),
-            _v_num(rec.pay_ground_pallet_exit_fee),
-            _v_num(rec.pay_ground_other_fee),
-            _v_num(rec.pay_ground_subtotal),
-
-            # (3) 应付款项 - 汽运
-            _v_str(rec.pay_trucking_outsource_unit),
-            _v_num(rec.pay_trucking_weight),
-            _v_num(rec.pay_trucking_unit_price),
-            _v_num(rec.pay_trucking_freight),
-            _v_num(rec.pay_trucking_doc_fee),
-            _v_num(rec.pay_trucking_other_fee),
-            _v_num(rec.pay_trucking_subtotal),
-
-            # (3) 应付款项 - 国内空运
-            _v_str(rec.pay_dom_air_outsource_unit),
-            _v_num(rec.pay_dom_air_weight),
-            _v_num(rec.pay_dom_air_chargeable_weight),
-            _v_num(rec.pay_dom_air_rate),
-            _v_num(rec.pay_dom_air_freight),
-            _v_num(rec.pay_dom_air_other_fee),
-            _v_num(rec.pay_dom_air_subtotal),
-
-            # (3) 应付款项 - 总计
-            _v_num(rec.pay_total),
-
-            # (4) 折让信息
-            _v_str(rec.discount_person),
-            _v_num(rec.discount_rate),
-            _v_num(rec.discount_fee),
-
-            # (5) 销售提成
-            _v_str(rec.salesperson),
-            _v_num(rec.commission_amount),
-
-            # (6) 经营信息
-            _v_num(rec.profit),
-            _v_num(rec.profit_margin),
-        ]
-
-        row_data.extend(cost_extra_export_values(rec))
+        r_idx = sequence + 1
+        row_data = cost_export_values(rec, sequence)
         if len(row_data) != len(headers):
             raise RuntimeError(
                 f"费用登记导出表头与数据列数量不一致：{len(headers)} != {len(row_data)}"

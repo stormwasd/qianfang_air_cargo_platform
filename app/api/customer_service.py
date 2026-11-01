@@ -34,8 +34,7 @@ from app.schemas.customer_service import (
     ConsignmentInfoResponse,
 )
 from app.services.cost_excel_export import (
-    format_bill_of_lading_for_export,
-    format_submission_status_for_export,
+    CUSTOMER_EXPORT_HEADERS, customer_export_values,
 )
 from app.utils.helpers import format_datetime_china, get_china_now
 from app.schemas.consignment_operation_log import ConsignmentOperationLogPage
@@ -43,7 +42,6 @@ from app.services.consignment_operation_log import append_consignment_operation,
 from app.services.consignment_tags import apply_consignment_tags, format_consignment_tags
 from app.services.consignment_financial import (
     merge_financial_payload, format_financial_data, sync_financial_to_cost,
-    FINANCIAL_EXPORT_FIELDS, financial_export_values,
 )
 
 router = APIRouter()
@@ -730,7 +728,7 @@ async def export_consignments_to_excel(
 ):
     """
     选中委托信息列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    首列为状态（未提交/已提交/作废），共 132 列，数据从第 2 行开始。
+    单行表头，共 89 列，首列序号、第二列状态，数据从第 2 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -750,15 +748,7 @@ async def export_consignments_to_excel(
     ws = wb.active
     ws.title = "委托信息列表"
     
-    headers = [
-        "状态", "制单时间", "进仓日期", "客户名称",
-        "始发站-目的站", "报关", "提单", "航班日期",
-        "航班号", "航班单号", "件数", "实际重量(kg)",
-        "计费重量(kg)", "体积(m³)", "一程重量(kg)", "代理", "备注"
-    ]
-    
-    headers.extend(f"{label}-{title}" for _path, _name, _column, label, title in FINANCIAL_EXPORT_FIELDS)
-    headers.append("应付款项-应付合计")
+    headers = CUSTOMER_EXPORT_HEADERS
     ws.append(headers)
     
     # 样式配置
@@ -781,34 +771,9 @@ async def export_consignments_to_excel(
     
     ws.row_dimensions[1].height = 28
     
-    for r_idx, rec in enumerate(records, 2):
-        create_time_str = rec.create_time.strftime("%Y-%m-%d %H:%M:%S") if rec.create_time else ""
-        wh_date_str = rec.warehouse_entry_date.strftime("%Y-%m-%d") if rec.warehouse_entry_date else ""
-        fl_date_str = rec.flight_date.strftime("%Y-%m-%d") if rec.flight_date else ""
-        
-        row_data = [
-            format_submission_status_for_export(
-                getattr(rec, "status", ConsignmentSubmissionStatus.SUBMITTED.value)
-            ),
-            create_time_str,
-            wh_date_str,
-            rec.customer_name or "",
-            rec.origin_destination or "",
-            rec.customs_declaration or "",
-            format_bill_of_lading_for_export(rec.bill_of_lading),
-            fl_date_str,
-            rec.flight_no or "",
-            rec.flight_doc_no or "",
-            rec.pieces if rec.pieces is not None else "",
-            float(rec.actual_weight) if rec.actual_weight is not None else "",
-            float(rec.chargeable_weight) if rec.chargeable_weight is not None else "",
-            float(rec.volume) if rec.volume is not None else "",
-            float(rec.first_leg_weight) if rec.first_leg_weight is not None else "",
-            rec.agent or "",
-            rec.remark or ""
-        ]
-        
-        row_data.extend(financial_export_values(rec))
+    for sequence, rec in enumerate(records, 1):
+        r_idx = sequence + 1
+        row_data = customer_export_values(rec, sequence)
         ws.append(row_data)
         ws.row_dimensions[r_idx].height = 22
         
@@ -817,7 +782,7 @@ async def export_consignments_to_excel(
             cell.font = data_font
             cell.border = thin_border
             # 数字和日期居中，文本左对齐
-            if c_idx in (1, 2, 3, 8, 11, 12, 13, 14, 15):
+            if c_idx in (1, 2, 4, 7, 8, 9, 10):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 cell.alignment = Alignment(horizontal="left", vertical="center")
