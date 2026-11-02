@@ -242,7 +242,7 @@ class CostConsignment(Base):
     pay_intl_air_destination = Column(String(50), nullable=True, comment="国际空运-到达站")
     pay_intl_air_flight_doc_no = Column(String(100), nullable=True, comment="国际空运-航班单号/航空单号")
     pay_intl_air_flight_no = Column(String(50), nullable=True, comment="国际空运-航班号")
-    pay_intl_air_flight_date = Column(Date, nullable=True, comment="国际空运-航班日期")
+    pay_intl_air_flight_date = Column(Date, nullable=True, index=True, comment="国际空运-航班日期")
     pay_intl_air_pieces = Column(Integer, nullable=True, comment="国际空运-件数")
     pay_intl_air_weight = Column(Numeric(10, 2), nullable=True, comment="国际空运-重量")
     pay_intl_air_volume = Column(Numeric(10, 3), nullable=True, comment="国际空运-体积")

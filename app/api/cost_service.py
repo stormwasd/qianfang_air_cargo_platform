@@ -642,8 +642,8 @@ async def create_cost_consignment_draft(
 async def get_cost_consignments(
     start_warehouse_date: Optional[str] = Query(None, description="进仓开始日期 (YYYY-MM-DD)"),
     end_warehouse_date: Optional[str] = Query(None, description="进仓结束日期 (YYYY-MM-DD)"),
-    start_flight_date: Optional[str] = Query(None, description="航班开始日期 (YYYY-MM-DD)"),
-    end_flight_date: Optional[str] = Query(None, description="航班结束日期 (YYYY-MM-DD)"),
+    start_flight_date: Optional[str] = Query(None, description="国际空运应付款项航班开始日期 (YYYY-MM-DD，含当天；payables.intl_air.flight_date)"),
+    end_flight_date: Optional[str] = Query(None, description="国际空运应付款项航班结束日期 (YYYY-MM-DD，含当天；payables.intl_air.flight_date)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
     status: Optional[CostConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
     agent: Optional[str] = Query(None, description="代理单位 (模糊查询)"),
@@ -676,8 +676,8 @@ async def get_cost_consignments(
     支持参数：
     - **start_warehouse_date**: 进仓日期区间开始，例如 '2026-07-25'
     - **end_warehouse_date**: 进仓日期区间结束，例如 '2026-07-30'
-    - **start_flight_date**: 货主托运信息航班日期区间开始，例如 '2026-07-25'
-    - **end_flight_date**: 货主托运信息航班日期区间结束，例如 '2026-07-30'
+    - **start_flight_date**: 国际空运应付款项航班日期区间开始（含当天），例如 '2026-07-25'
+    - **end_flight_date**: 国际空运应付款项航班日期区间结束（含当天），例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
     - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）；不传则查询全部
     - **agent**: 代理单位 (支持模糊匹配)
@@ -701,16 +701,16 @@ async def get_cost_consignments(
         if e_date:
             query_obj = query_obj.filter(CostConsignment.warehouse_entry_date <= e_date)
 
-    # 2. 货主托运信息航班日期区间筛选；与进仓日期条件相互独立。
+    # 2. 应付款项-国际空运航班日期区间筛选；与进仓日期条件相互独立。
     if start_flight_date:
         s_date = _parse_date(start_flight_date)
         if s_date:
-            query_obj = query_obj.filter(CostConsignment.flight_date >= s_date)
+            query_obj = query_obj.filter(CostConsignment.pay_intl_air_flight_date >= s_date)
 
     if end_flight_date:
         e_date = _parse_date(end_flight_date)
         if e_date:
-            query_obj = query_obj.filter(CostConsignment.flight_date <= e_date)
+            query_obj = query_obj.filter(CostConsignment.pay_intl_air_flight_date <= e_date)
 
     # 3. 客户名称模糊查询
     if customer_name and customer_name.strip():

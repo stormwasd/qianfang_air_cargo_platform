@@ -9856,15 +9856,15 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      |---|---|---|---|
      | `start_warehouse_date` | 否 | `consignor_info.warehouse_entry_date` | 进仓日期下限，包含当天 |
      | `end_warehouse_date` | 否 | `consignor_info.warehouse_entry_date` | 进仓日期上限，包含当天 |
-     | `start_flight_date` | 否 | `consignor_info.flight_date` | 航班日期下限，包含当天 |
-     | `end_flight_date` | 否 | `consignor_info.flight_date` | 航班日期上限，包含当天 |
+     | `start_flight_date` | 否 | `payables.intl_air.flight_date` | 应付款项-国际空运航班日期下限，包含当天 |
+     | `end_flight_date` | 否 | `payables.intl_air.flight_date` | 应付款项-国际空运航班日期上限，包含当天 |
 
    - 进仓日期和航班日期是两组相互独立的可选条件。前端可以只传 `start_flight_date`、只传 `end_flight_date`，或同时传航班日期上下限，而无需传任何进仓日期参数。
    - 同一组只传开始日期时查询该日期及之后的数据，只传结束日期时查询该日期及之前的数据；开始和结束日期相同时可精确查询某一天。
-   - 两组日期同时传入时采用 AND 关系，记录必须同时满足进仓日期范围和货主托运信息航班日期范围。均不传时不进行日期筛选。
-   - 航班日期条件仅匹配货主托运信息的 `flight_date`，不匹配国际空运应付或国内空运应付中的航班日期。
-   - 为保证航班日期范围查询性能，`cost_consignments.flight_date` 已增加数据库索引；已有数据库需执行 `sql/migration_add_cost_consignment_flight_date_index.sql`，全新建表脚本已包含该索引。
-   - 示例：只查询货主托运航班日期为 2026-09-20 的记录：`GET /api/v1/cost-service/consignments?start_flight_date=2026-09-20&end_flight_date=2026-09-20&page=1&pageSize=10`。
+   - 两组日期同时传入时采用 AND 关系，记录必须同时满足进仓日期范围和应付款项-国际空运航班日期范围。均不传时不进行日期筛选。
+   - 航班日期条件仅匹配 `payables.intl_air.flight_date`，不匹配货主委托信息或国内空运应付中的航班日期；国际空运航班日期为空时，不符合任何有效日期边界条件，不回退其他日期。完整约定及示例见23.17。
+   - 为支持范围查询，`cost_consignments.pay_intl_air_flight_date` 增加数据库索引；已有数据库需执行 `sql/migration_add_cost_consignment_intl_air_flight_date_index.sql` 一次，全新建表脚本已包含该索引。保留原 `flight_date` 索引及既有导出排序。
+   - 示例：只查询应付款项-国际空运航班日期为 2026-09-20 的记录：`GET /api/v1/cost-service/consignments?start_flight_date=2026-09-20&end_flight_date=2026-09-20&page=1&pageSize=10`。
 
 8. **列表航班号筛选规范**：
    - `GET /api/v1/cost-service/consignments` 的 `flight_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航班号字段：`consignor_info.flight_no`、`payables.intl_air.flight_no`、`payables.dom_air.flight_no`。
@@ -12160,7 +12160,7 @@ Content-Type: application/json
 | `page` | query | integer | 否 | 页码，默认1，最小1，沿用原规则 |
 | `pageSize` | query | integer | 否 | 每页数量，默认10，最小1，沿用原规则 |
 
-其他既有参数如 `customer_name`、`agent`、`status`、`flight_no`、进仓/航班日期范围、`sort_by`、`sort_order` 均继续支持，含义和默认值不变：
+其他既有参数如 `customer_name`、`agent`、`status`、`flight_no`、进仓/航班日期范围、`sort_by`、`sort_order` 均继续支持；航班日期范围按23.17筛选国际空运应付款项航班日期，其余含义和默认值不变：
 
 - 关键字 `123456` 可匹配国际空运主单号 `784-12345678`；完整号码也按包含方式搜索。
 - 此参数**仅搜索国际空运主单号**。货主主单号、货主提单、国内空运主单号、汽运主单号包含关键字而国际空运主单号不包含时，该记录不匹配；国际空运主单号为NULL/空字符串时，不回退其他字段。
@@ -12206,7 +12206,7 @@ Authorization: Bearer <token>
 }
 ```
 
-多个条件示例：`GET /api/v1/cost-service/consignments?flight_doc_no=123456&status=0&start_flight_date=2026-11-01&end_flight_date=2026-11-02&page=1&pageSize=10`，要求国际空运主单号包含123456、费用状态为未提交，且货主航班日期处于给定区间，三个条件同时成立。
+多个条件示例：`GET /api/v1/cost-service/consignments?flight_doc_no=123456&status=0&start_flight_date=2026-11-01&end_flight_date=2026-11-02&page=1&pageSize=10`，要求国际空运主单号包含123456、费用状态为未提交，且国际空运应付款项航班日期处于给定区间，三个条件同时成立。
 没有匹配数据时成功HTTP200，完整返回：
 
 ```json
@@ -12215,3 +12215,82 @@ Authorization: Bearer <token>
 
 分页、状态或排序参数非法仍HTTP422，认证失败沿用现有错误格式；没有新增错误码。
 本次不修改客服接单台列表筛选、单据新增/修改、同步、状态、导出表头及字段取值；无需数据库迁移。此为后端仓库，搜索框“主单号”文字及提示由前端调整。
+
+#### 23.17 费用列表航班日期改为搜索国际空运应付款项（2026-11-02）
+
+**涉及接口**：`GET /api/v1/cost-service/consignments`，继续使用 `Authorization: Bearer <token>`。请求无body；保留现有查询参数名，航班日期筛选字段改为 `payables.intl_air.flight_date`，对应数据库列 `cost_consignments.pay_intl_air_flight_date`。
+
+##### 23.17.1 查询参数与匹配规则
+
+| 参数 | 位置 | 类型/格式 | 必填 | 含义 |
+|---|---|---|---|---|
+| `start_flight_date` | query | string，YYYY-MM-DD | 否 | 应付款项-国际空运航班日期下限，包含当天 |
+| `end_flight_date` | query | string，YYYY-MM-DD | 否 | 应付款项-国际空运航班日期上限，包含当天 |
+| `start_warehouse_date` | query | string，YYYY-MM-DD | 否 | 货主委托信息进仓日期下限，包含当天，规则不变 |
+| `end_warehouse_date` | query | string，YYYY-MM-DD | 否 | 货主委托信息进仓日期上限，包含当天，规则不变 |
+| `page` | query | integer | 否 | 页码，默认1，最小1 |
+| `pageSize` | query | integer | 否 | 每页数量，默认10，最小1 |
+
+- 两个航班日期参数可独立使用：只传开始日期为“大于等于”，只传结束日期为“小于等于”；同时传入为闭区间，同一天可精确查询。均不传时不启用航班日期筛选。
+- 只检查国际空运应付款项航班日期。该字段为NULL时，不符合任何有效日期边界；货主或国内空运日期即使在区间内，也不会代替国际空运日期参与匹配。未启用此筛选时，日期为空的记录仍可被其他条件选中。
+- 进仓日期继续使用 `consignor_info.warehouse_entry_date`，与航班日期独立；客户、代理、主单号、航班号、状态等有效筛选条件按AND组合。主单号仍仅搜索国际空运主单号，航班号仍保持原多分组OR匹配。
+- 沿用现有日期解析兼容行为：未传、空字符串、无法解析的日期边界均忽略；若只有一端能解析，则只应用有效的一端。前端应传有效 `YYYY-MM-DD` 日期。有效开始日期晚于有效结束日期时返回空列表，不新增错误码。
+- 先筛选并计算 `total`，再按原列表排序和分页返回；默认仍按进仓日期倒序、制单时间倒序、ID倒序。响应结构、字段原值、状态和业务数据不变。
+
+##### 23.17.2 请求与返回示例
+
+查询国际空运应付款项航班日期为2026-11-02的单据：
+
+```http
+GET /api/v1/cost-service/consignments?start_flight_date=2026-11-02&end_flight_date=2026-11-02&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+成功HTTP200，以下为**响应片段**，其余既有业务字段省略，实际接口不裁剪字段。示例说明货主、国际空运、国内空运日期可以不同，筛选只看国际空运日期：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [
+      {
+        "id": "358000000000000001",
+        "status": 0,
+        "consignor_info": {
+          "warehouse_entry_date": "2026-10-30",
+          "flight_date": "2026-11-01"
+        },
+        "payables": {
+          "intl_air": {
+            "flight_doc_no": "784-12345678",
+            "flight_date": "2026-11-02"
+          },
+          "dom_air": {"flight_date": "2026-11-03"}
+        }
+      }
+    ],
+    "page": 1,
+    "pageSize": 10
+  },
+  "msg": "查询成功"
+}
+```
+
+单边条件示例：`GET /api/v1/cost-service/consignments?start_flight_date=2026-11-02`，查询国际空运航班日期为当天及之后的记录。
+
+组合条件示例：`GET /api/v1/cost-service/consignments?start_warehouse_date=2026-10-01&end_warehouse_date=2026-10-31&start_flight_date=2026-11-01&end_flight_date=2026-11-02&flight_doc_no=123456&status=0&page=1&pageSize=10`，要求进仓日期在10月、国际空运航班日期在11月1日至2日、国际空运主单号包含123456且状态为未提交，全部条件同时满足。
+
+无匹配记录时成功HTTP200，完整响应：
+
+```json
+{"code":0,"data":{"total":0,"items":[],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+分页、状态、排序参数的校验错误仍HTTP422，认证失败沿用现有格式；没有新增错误码或请求字段。
+
+##### 23.17.3 数据库索引与发布
+
+业务字段已存在，无需新增字段、回填历史日期或重算费用。为支持新的日期范围查询，存量库发布时需执行 `sql/migration_add_cost_consignment_intl_air_flight_date_index.sql` 一次，为 `pay_intl_air_flight_date` 增加索引。全新库使用已更新建表SQL或ORM建表时已包含索引，无需重复执行。该脚本未在生产数据库执行。
+
+保留原货主 `flight_date` 及其索引；本次仅调整费用列表查询，客服列表、保存/同步、Excel列内容和费用Excel按货主航班日期的既有排序不变。

@@ -327,6 +327,7 @@ CREATE TABLE IF NOT EXISTS `cost_consignments` (
     PRIMARY KEY (`id`),
     KEY `idx_warehouse_entry_date` (`warehouse_entry_date`),
     KEY `idx_flight_date` (`flight_date`),
+    KEY `idx_pay_intl_air_flight_date` (`pay_intl_air_flight_date`),
     KEY `idx_customer_name` (`customer_name`),
     KEY `idx_agent` (`agent`),
     KEY `idx_status` (`status`),
