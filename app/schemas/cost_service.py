@@ -263,10 +263,7 @@ class CostConsignmentQuery(BaseModel):
     agent: Optional[str] = Field(None, description="代理单位 (模糊匹配)")
     flight_doc_no: Optional[str] = Field(
         None,
-        description=(
-            "航司单号/航班单号 (模糊匹配，同时匹配货主托运、国际空运应付、"
-            "国内空运应付中的航司单号，并兼容匹配提单)"
-        ),
+        description="主单号 (仅模糊匹配国际空运应付款项的 payables.intl_air.flight_doc_no)",
     )
     flight_no: Optional[str] = Field(
         None,

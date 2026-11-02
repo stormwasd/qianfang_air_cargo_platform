@@ -9870,10 +9870,10 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - `GET /api/v1/cost-service/consignments` 的 `flight_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航班号字段：`consignor_info.flight_no`、`payables.intl_air.flight_no`、`payables.dom_air.flight_no`。
    - 三个字段之间采用“或（OR）”关系；任一字段包含传入的 `flight_no` 即返回该单据。参数首尾空白会被去除，未传或仅传空白时不增加航班号筛选条件。
 
-9. **列表航司单号筛选规范**：
-   - `GET /api/v1/cost-service/consignments` 的 `flight_doc_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航司单号字段：`consignor_info.flight_doc_no`、`payables.intl_air.flight_doc_no`、`payables.dom_air.flight_doc_no`。
-   - 为保持既有查询能力，`flight_doc_no`同时兼容匹配`consignor_info.bill_of_lading`（提单）。上述四个数据库字段采用“或（OR）”关系；任一字段包含传入值即返回该单据。
-   - 参数首尾空白会被去除，未传或仅传空白时不增加航司单号筛选条件。该筛选只决定单据是否入选，不会改写响应中各字段的原始值。
+9. **列表主单号筛选规范（2026-11-02更新）**：
+   - `GET /api/v1/cost-service/consignments` 保留查询参数 `flight_doc_no`，前端搜索框显示名称改为“主单号”；仅模糊匹配国际空运应付款项 `payables.intl_air.flight_doc_no`，数据库列为 `cost_consignments.pay_intl_air_flight_doc_no`。
+   - 不再通过货主委托信息 `consignor_info.flight_doc_no`、提单 `consignor_info.bill_of_lading` 或国内空运 `payables.dom_air.flight_doc_no` 匹配，汽运主单号也不在此筛选范围内。国际空运主单号为空、仅其他分组有相同号码时不入选。
+   - 参数首尾空白会被去除，未传、空字符串或仅传空白时不增加主单号筛选条件；与其他查询条件按AND组合。返回对象、分页、排序及其他筛选逻辑延续。参数及返回示例详见23.16。
 
 10. **列表排序规范**：
    - `GET /api/v1/cost-service/consignments` 新增 `sort_by` 和 `sort_order` 查询参数，排序在分页前执行。
@@ -12147,3 +12147,71 @@ Content-Type: application/json
 - 存量数据库须在发布代码前执行 `sql/migration_add_cost_trucking_freight_method.sql` 一次，分别为 `cost_registrations` 和 `cost_consignments` 新增可空 `varchar(50)` 列 `pay_trucking_freight_method`。历史记录默认为NULL，不推断或回填计算方式，不回算金额。
 - 客服继续使用已有 `financial_data` JSON，无需新增数据库列。全新库使用已更新的 `sql/migration_create_cost_service_consignments.sql` 或ORM建表，已包含该字段，不再执行此增量加列。
 - 本次未连接生产数据库执行迁移；既有财务快照、标签、状态及操作记录表等历史迁移仍需按数据库现状执行。
+
+#### 23.16 费用列表主单号仅搜索国际空运主单号（2026-11-02）
+
+**涉及接口**：`GET /api/v1/cost-service/consignments`。使用原列表接口及原认证方式 `Authorization: Bearer <token>`，只修改主单号查询范围。前端将搜索框标题和提示从“航司单号”改为“主单号”，仍使用 `flight_doc_no` 查询参数，无需更改参数名或新增请求字段。
+
+##### 23.16.1 参数与匹配规则
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+|---|---|---|---|---|
+| `flight_doc_no` | query | string | 否 | 主单号关键字，去除首尾空白后，仅对国际空运应付款项主单号 `payables.intl_air.flight_doc_no` 进行包含式模糊匹配，对应数据库列 `pay_intl_air_flight_doc_no` |
+| `page` | query | integer | 否 | 页码，默认1，最小1，沿用原规则 |
+| `pageSize` | query | integer | 否 | 每页数量，默认10，最小1，沿用原规则 |
+
+其他既有参数如 `customer_name`、`agent`、`status`、`flight_no`、进仓/航班日期范围、`sort_by`、`sort_order` 均继续支持，含义和默认值不变：
+
+- 关键字 `123456` 可匹配国际空运主单号 `784-12345678`；完整号码也按包含方式搜索。
+- 此参数**仅搜索国际空运主单号**。货主主单号、货主提单、国内空运主单号、汽运主单号包含关键字而国际空运主单号不包含时，该记录不匹配；国际空运主单号为NULL/空字符串时，不回退其他字段。
+- 未传、传空字符串或仅空白时不启用主单号筛选。数据仍可被其他筛选条件选中，包括国际空运主单号为空的单据。
+- 与客户、代理、状态、航班号、日期等其他有效条件按AND组合。航班号 `flight_no` 的原多分组OR查询范围不变。
+- 先按全部条件筛选并计算 `total`，再按原排序及分页返回。默认仍进仓日期倒序、制单时间倒序、ID倒序；显式排序规则沿用23.2。
+- 筛选不改写记录，也不改变响应字段名称或值：货主 `consignor_info.flight_doc_no` 仍按原值返回，搜索实际对应 `payables.intl_air.flight_doc_no`。前端如需展示或回填此次搜索对应的号码，应读取国际空运分组字段。
+
+##### 23.16.2 请求与响应示例
+
+请求无body，示例：
+
+```http
+GET /api/v1/cost-service/consignments?flight_doc_no=784-12345678&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+若仅单据 `358000000000000001` 的国际空运主单号匹配，成功HTTP200，以下为**响应片段**（其余单据业务字段省略，实际结构不裁剪）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [
+      {
+        "id": "358000000000000001",
+        "status": 0,
+        "consignor_info": {
+          "flight_doc_no": "货主单号原值",
+          "bill_of_lading": "提单原值"
+        },
+        "payables": {
+          "intl_air": {"flight_doc_no": "784-12345678"},
+          "dom_air": {"flight_doc_no": "国内单号原值"}
+        }
+      }
+    ],
+    "page": 1,
+    "pageSize": 10
+  },
+  "msg": "查询成功"
+}
+```
+
+多个条件示例：`GET /api/v1/cost-service/consignments?flight_doc_no=123456&status=0&start_flight_date=2026-11-01&end_flight_date=2026-11-02&page=1&pageSize=10`，要求国际空运主单号包含123456、费用状态为未提交，且货主航班日期处于给定区间，三个条件同时成立。
+没有匹配数据时成功HTTP200，完整返回：
+
+```json
+{"code":0,"data":{"total":0,"items":[],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+分页、状态或排序参数非法仍HTTP422，认证失败沿用现有错误格式；没有新增错误码。
+本次不修改客服接单台列表筛选、单据新增/修改、同步、状态、导出表头及字段取值；无需数据库迁移。此为后端仓库，搜索框“主单号”文字及提示由前端调整。

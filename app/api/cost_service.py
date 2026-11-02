@@ -649,10 +649,7 @@ async def get_cost_consignments(
     agent: Optional[str] = Query(None, description="代理单位 (模糊查询)"),
     flight_doc_no: Optional[str] = Query(
         None,
-        description=(
-            "航司单号/航班单号 (模糊查询，同时匹配货主托运、国际空运应付、"
-            "国内空运应付中的航司单号，并兼容匹配提单)"
-        ),
+        description="主单号 (仅模糊查询国际空运应付款项的 payables.intl_air.flight_doc_no)",
     ),
     flight_no: Optional[str] = Query(
         None,
@@ -684,7 +681,7 @@ async def get_cost_consignments(
     - **customer_name**: 客户名称 (支持模糊匹配)
     - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）；不传则查询全部
     - **agent**: 代理单位 (支持模糊匹配)
-    - **flight_doc_no**: 航司单号/航班单号 (支持模糊匹配；任一货主托运、国际空运应付、国内空运应付航司单号或提单匹配即返回)
+    - **flight_doc_no**: 主单号 (仅模糊匹配国际空运应付款项 payables.intl_air.flight_doc_no；去除首尾空白，未传或仅空白不筛选)
     - **flight_no**: 航班号 (支持模糊匹配；任一货主托运、国际空运应付或国内空运应付航班号匹配即返回)
     - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `warehouse_entry_date`
     - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
@@ -726,15 +723,11 @@ async def get_cost_consignments(
     if agent and agent.strip():
         query_obj = query_obj.filter(CostConsignment.agent.like(f"%{agent.strip()}%"))
         
-    # 5. 航司单号/航班单号模糊查询：覆盖响应中全部三个 flight_doc_no 字段，
-    #    并保留对货主托运提单 bill_of_lading 的兼容查询。
+    # 5. 主单号模糊查询：仅匹配应付款项-国际空运的主单号。
     if flight_doc_no and flight_doc_no.strip():
         doc_no = flight_doc_no.strip()
         query_obj = query_obj.filter(
-            (CostConsignment.flight_doc_no.like(f"%{doc_no}%")) |
-            (CostConsignment.bill_of_lading.like(f"%{doc_no}%")) |
-            (CostConsignment.pay_intl_air_flight_doc_no.like(f"%{doc_no}%")) |
-            (CostConsignment.pay_dom_air_flight_doc_no.like(f"%{doc_no}%"))
+            CostConsignment.pay_intl_air_flight_doc_no.like(f"%{doc_no}%")
         )
         
     # 6. 航班号模糊查询：覆盖响应中全部三个 flight_no 字段。
