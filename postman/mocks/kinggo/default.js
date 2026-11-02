@@ -88,12 +88,15 @@ http.createServer(async (req, res) => {
     const cabinScenario = scenario.startsWith("CABIN_");
     const targetCabin = scenario === "CABIN_A" ? "A" : "Z";
     const adjusted = cabinScenario && fields.get("cabinTypeName") === targetCabin && fields.get("cabinType") === targetCabin;
+    const expectedNote = scenario.startsWith("NOTE:") ?
+      Buffer.from(scenario.slice(5), "base64").toString("utf8") :
+      cabinScenario ? "鲜活最长运输时限24小时\n轻拿轻放 & 勿倒置+保温=是%" : "";
     for (const [key, expected] of Object.entries({
       awbNo: "62046633", takeOffTime: "1525", awbPrefix: "479", billCode: "A1",
       aliasCode: "GEN", formerRate: "5.3", aviationFee: "50", totalFee: "51",
       deliveryFee: "0", oldCabinType: "C", cabinType: adjusted ? targetCabin : "F",
       cabinTypeName: adjusted ? targetCabin : scenario === "CABIN_CODE_MISMATCH" ? "Z" : "F舱",
-      carrierCode: "ZH", transNote: "配件", goodsName: "配件", tlicellCellinfos: "[]",
+      carrierCode: "ZH", transNote: expectedNote, goodsName: "配件", tlicellCellinfos: "[]",
       pieces: "1", chargeWeight: cabinScenario || scenario === "BUSINESS_REJECT" ? "45" : "3", firstAddFee: "", awbType: "",
     })) {
       if (fields.get(key) !== expected) return send(400, { error: `contract mismatch: ${key}` });

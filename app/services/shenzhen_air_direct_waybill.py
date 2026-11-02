@@ -140,6 +140,11 @@ class ShenzhenAirDirectWaybillService:
             "freight_code": cls._text(cargo.get("freight_code") or defaults.get("freight_code"), "货运代码"),
             "cargo_code": cls._text(cargo.get("cargo_code") or defaults.get("cargo_code"), "货物代码"),
             "cargo_name": cls._text(cargo.get("cargo_name") or defaults.get("cargo_name"), "货物名称"),
+            # Independent optional text: never substitute the cargo name or defaults.
+            "storage_and_transportation_precautions": (
+                "" if cargo.get("storage_and_transportation_precautions") is None
+                else str(cargo["storage_and_transportation_precautions"])
+            ),
             "package": cls._text(cargo.get("package") or defaults.get("package"), "包装类型"),
             "waybill_type": cls._text(flight.get("waybill_type") or defaults.get("waybill_type"), "运单类型", required=False),
         }
@@ -430,7 +435,8 @@ class ShenzhenAirDirectWaybillService:
             "depOtherFee": costs["depOtherFee"], "firstAddFee": "",
             "otherAgencyFeeStr": "",
             "totalFee": format(total_fee, "f"), "payType": settings.SHENZHEN_AIR_KINGGO_PAY_TYPE,
-            "realAmount": "", "template": "1", "transNote": values["cargo_name"], "settleNote": "",
+            "realAmount": "", "template": "1",
+            "transNote": values.get("storage_and_transportation_precautions") or "", "settleNote": "",
             "cellmodel": "", "brandno": "", "equipmodel": "", "checkcompany": "", "packType": "",
             "reportNo": "", "isButtonCell": "", "carrier": "", "ldcName": "", "ldcSign": "", "battId": "",
             "agentType": settings.SHENZHEN_AIR_KINGGO_AGENT_TYPE,

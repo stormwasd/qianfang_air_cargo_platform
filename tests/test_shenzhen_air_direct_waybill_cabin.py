@@ -26,7 +26,10 @@ class CabinCorrectionTests(unittest.IsolatedAsyncioTestCase):
 
     async def run_scenario(self, scenario, timeout=30):
         form = copy.deepcopy(fixtures.FORM)
-        form["cargo_info"].update(weight="35", chargeable_weight="45")
+        form["cargo_info"].update(
+            weight="35", chargeable_weight="45",
+            storage_and_transportation_precautions="鲜活最长运输时限24小时\n轻拿轻放 & 勿倒置+保温=是%",
+        )
         form["shipper_consignee_info"]["shipper_info"] = scenario
         self.waybill.form_data = json.dumps(form)
         self.db.commit()
@@ -64,6 +67,12 @@ class CabinCorrectionTests(unittest.IsolatedAsyncioTestCase):
         task = self.db.get(Task, int(queued.data["task_id"]))
         snapshot = json.loads(task.request_data)
         self.assertEqual(snapshot["form_data"], form)
+        expected_note = form["cargo_info"]["storage_and_transportation_precautions"]
+        self.assertEqual(snapshot["values"]["storage_and_transportation_precautions"], expected_note)
+        for path, _, fields in requests:
+            if path.endswith(("check_awb", "submit_awb")):
+                self.assertEqual(fields["transNote"], expected_note)
+                self.assertEqual(fields["goodsName"], form["cargo_info"]["cargo_name"])
         detail = await get_waybill("101", SimpleNamespace(id=1), self.db)
         self.assertEqual(detail.data["form_data"]["cargo_info"], form["cargo_info"])
         polled = await get_task_status(str(task.id), SimpleNamespace(id=1), self.db)

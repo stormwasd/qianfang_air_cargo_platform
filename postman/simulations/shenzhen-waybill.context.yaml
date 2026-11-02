@@ -1,0 +1,44 @@
+purpose:
+  stands_in_for: KingGo direct-waybill HTTP endpoints using the existing local fixture.
+  unblocks: Verify storage-instruction mapping without creating a real airline waybill.
+assumptions:
+  - id: direct-storage-note-independent-of-cargo-name
+    status: supported
+    claim: In the local scenarios run, check_awb and submit_awb received the task's storage instructions independently of goodsName.
+    reason: The actual worker and HTTP client sent UTF-8 form bodies to KingGo's local stand-in; assertions checked both decoded fields and signed bodies.
+    verification: >-
+      On 2026-11-02 ran 52 tests across storage notes, direct creation, cabin corrections,
+      diagnostics, voiding and post-processing guards. All passed. The simulation recorded
+      210 KingGo HTTP requests and 82 check/submit form bodies; none substituted goodsName
+      for transNote. Chinese, CRLF/LF, whitespace and &=+% survived serialization.
+      Empty/null/missing notes sent empty strings. Cabin rechecks and resubmissions retained
+      the same note. No RPA or Ctrip member is configured in this simulation.
+    source: tests/test_shenzhen_air_direct_waybill_storage_note.py; tests/test_shenzhen_air_direct_waybill_cabin.py; postman/mocks/kinggo/default.js
+    updated_at: "2026-11-02"
+  - id: old-queued-snapshot-note-recovery
+    status: supported
+    claim: Old pending tasks missing the parsed storage-note value recover it from their saved form rather than the live waybill form in the tested flow.
+    reason: The regression changed the live form after enqueue and checked the emitted note and unchanged stored task snapshot.
+    verification: >-
+      On 2026-11-02 the persistent-worker regression completed one creation using the
+      original note. A separately tested explicitly empty parsed snapshot stayed empty.
+      Completed tasks were not re-executed. Database transactions used local SQLite.
+    source: app/services/shenzhen_air_direct_waybill_worker.py; tests/test_shenzhen_air_direct_waybill_storage_note.py
+    updated_at: "2026-11-02"
+  - id: live-kinggo-storage-note-display-after-fix
+    status: unknown
+    claim: Real KingGo will display the corrected submitted transNote exactly as sent, including all whitespace and special characters.
+    reason: The supplied screenshots and previous cargo-name mapping identify the wrong source field, but local simulation cannot establish upstream text normalization.
+    verification: >-
+      Source mapping and supplied screenshots were reviewed on 2026-11-02. No real KingGo
+      waybill was created or changed during this fix. Verify the airline display on the
+      next authorized business creation. Existing provider assumptions and historical
+      cabin/weight findings remain in shenzhen-waybill.context.md; this run does not
+      independently confirm real provider cabin semantics or weight restrictions.
+    source: app/services/shenzhen_air_direct_waybill.py; API_DOCS.md; postman/simulations/shenzhen-waybill.context.md
+    updated_at: "2026-11-02"
+fingerprints:
+  - id: storage-note-fix
+    date: "2026-11-02"
+    commit: fa412e9 plus the uncommitted storage-note fix
+    cli: Postman CLI 1.74.0, local path routing on port 4913; no live airline writes

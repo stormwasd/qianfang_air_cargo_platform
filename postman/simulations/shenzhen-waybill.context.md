@@ -30,6 +30,14 @@ Inspect request events and stop the simulation with Ctrl+C.
 ## Observations
 
 <!-- begin:observations -->
+2026-11-02: 52 storage-note, direct-waybill, cabin, diagnostic, void and
+post-processing tests passed. KingGo served 210 HTTP requests; all 82
+check/submit form bodies kept transNote separate from goodsName. Empty notes,
+old pending snapshots, CRLF/LF and special characters were covered. The local
+port was used to reuse existing test wiring; no production origin or proxy
+configuration changed. The simulation was stopped after verification.
+Current evidence and remaining live-provider uncertainty are recorded in
+shenzhen-waybill.context.yaml. No live waybill was created or changed.
 2026-10-29: KingGo served the real worker's cabin-correction traffic. Z/A retries
 aligned name and code, retained the original oldCabinType and one candidate,
 and confirmed once. Explicit repeat rejections and recheck/signing failures

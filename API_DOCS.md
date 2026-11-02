@@ -1,5 +1,33 @@
 # API 文档
 
+## 2026-11-02 修复深航 direct 开单储运注意事项映射
+
+适用 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE=direct`。创建/修改运单的表单结构、
+`POST /api/v1/waybills/{waybill_id}/execute` 入参及异步返回、任务查询接口均不变。
+
+储运注意事项继续填写在 `form_data.cargo_info.storage_and_transportation_precautions`。
+此前 direct 未提取该字段，且错误地将货物名称写入 KingGo `transNote`；现已修正：
+
+| 本系统字段 | KingGo 检查及提交字段 | 规则 |
+| --- | --- | --- |
+| `cargo_info.cargo_name` | `goodsName` | 仍为货物名称，保留既有默认值规则 |
+| `cargo_info.storage_and_transportation_precautions` | `transNote` | 独立可选文本；缺失、null 或空字符串时传空，不回退为货物名称或业务默认值 |
+
+例如以下为运单表单中 `cargo_info` 的部分字段，其他必填信息仍按既有契约提交：
+
+```json
+{"cargo_name":"水果白菜内含冰袋冰瓶","storage_and_transportation_precautions":"鲜活最长运输时限24小时\n轻拿轻放"}
+```
+
+上述注意事项保留用户文本（含换行、空格及特殊字符），按现有 UTF-8 表单编码、
+对实际请求体生成签名；`check_awb` 与 `submit_awb` 使用同一注意事项。
+遇明确舱位调整时仅调整既有舱位字段，重查、重提过程中不改变该文本。
+
+新任务将该值存入原有任务参数快照；升级前已排队任务若解析参数中缺少该字段，
+执行时从同一任务保存的原始表单快照补取，不读取运单最新表单，也不覆盖已有快照值。
+这不会自动修正已经在航司创建的历史运单，也不会为其重新提交或重复开单。
+RPA 模式及南航开单逻辑不变，无需改表、迁移 SQL 或新增配置。
+
 ## 2026-10-29 补齐遵义茅台、临沂机场天气查询
 
 `GET /api/v1/weather` 保持原认证方式（已登录用户）、查询参数及 `code/data/msg` 响应结构。修复 WMT、LYI 因本地机场映射缺失，直接将 IATA 三字码作为高德 `city` 参数、上游返回空预报的问题。
@@ -1556,7 +1584,8 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 | `depCode/destCode/flightDate/flightNo/transDate` | `flight_info.origin_station/destination/flight_date/flight_number/flight_date`；始发站为空时使用业务默认值 |
 | `shpInfo/cneInfo` | `shipper_consignee_info.shipper_info/consignee_info`；发货人为空时使用业务默认值 |
 | `pieces/weight/chargeWeight` | `cargo_info.quantity/weight/chargeable_weight`；必须为正数，件数必须为整数 |
-| `aliasCode/goodsCode/goodsName/packName/transNote` | `cargo_info.freight_code/cargo_code/cargo_name/package/cargo_name`；允许沿用对应业务默认值 |
+| `aliasCode/goodsCode/goodsName/packName` | `cargo_info.freight_code/cargo_code/cargo_name/package`；允许沿用对应业务默认值 |
+| `transNote` | `cargo_info.storage_and_transportation_precautions`；独立可选文本，未填时传空，不回退为货物名称 |
 | `billCode/aug/ldcFlag/feeModel/fastFreightFlag/dealCode/oldCabinType` | 第2步元数据，`oldCabinType` 对应 `cabinType` |
 | `takeOffTime/carrierCode` | 第3步匹配航班的 `takeoffTime/carrierCode` |
 | `formerRate/aviationRate/formerFee/aviationFee` | 第4步 `aviationRate/aviationRate/aviationFee/aviationFee` |

@@ -107,7 +107,13 @@ class ShenzhenAirDirectWaybillWorker:
                 raise RuntimeError("运单已在执行或已有运单号，拒绝重复开单")
             snapshot = json.loads(task.request_data)
             form_data = snapshot["form_data"]
-            values = snapshot["values"]
+            values = dict(snapshot["values"])
+            # Pending tasks from older versions lack this parsed value. Recover
+            # only from their immutable form snapshot, never from today's form.
+            values.setdefault(
+                "storage_and_transportation_precautions",
+                (form_data.get("cargo_info") or {}).get("storage_and_transportation_precautions") or "",
+            )
             waybill_id = waybill.id
             # Never hold a row lock or database connection while replaying HAR or
             # waiting for upstream requests. The immutable snapshot was enqueued

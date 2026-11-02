@@ -303,6 +303,7 @@ class SimulationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fields["deliveryFee"], ["0"])
         self.assertEqual(fields["totalFee"], ["51"])
         self.assertEqual(fields["goodsName"], ["配件"])
+        self.assertEqual(fields["transNote"], [""])
         self.assertEqual(fields["oldCabinType"], ["C"])
 
     async def test_check_rejection_never_submits(self):
