@@ -108,6 +108,10 @@ class PayableTrucking(BaseModel):
     weight: Optional[float] = Field(None, description="计费重量")
     volume: Optional[float] = Field(None, description="体积")
     unit_price: Optional[float] = Field(None, description="单价")
+    freight_method: Optional[str] = Field(
+        None, max_length=50,
+        description="汽运运费计算方式，由前端定义选项并原样传入；未传保留，null清空",
+    )
     freight: Optional[float] = Field(None, description="运费")
     doc_fee: Optional[float] = Field(None, description="制单费")
     other_fee: Optional[float] = Field(None, description="其他费用")

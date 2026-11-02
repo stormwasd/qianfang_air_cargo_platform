@@ -51,6 +51,7 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             pay_trucking_date=date(2026, 9, 17),
             pay_trucking_pieces=902,
             pay_trucking_volume=Decimal("902.25"),
+            pay_trucking_freight_method="体积重",
             pay_trucking_remark="removed trucking remark",
             pay_trucking_subtotal=Decimal("202.50"),
             pay_dom_air_outsource_unit="domestic unit",
@@ -109,13 +110,13 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         worksheet = workbook.active
         self.addCleanup(workbook.close)
 
-        self.assertEqual(worksheet.max_column, 113)
+        self.assertEqual(worksheet.max_column, 114)
         self.assertEqual(worksheet.max_row, 4)
         self.assertEqual([worksheet.cell(row, 1).value for row in range(2, 5)], [1, 2, 3])
         self.assertEqual(worksheet["B2"].value, "未提交")
         self.assertEqual(worksheet["B3"].value, "已提交")
         # 独立坐标校验每个分组末尾，避免同名“应付小计”串列。
-        for column, expected in ((55, 101.25), (63, 404), (75, 505.25), (89, 202.5), (104, 303.75)):
+        for column, expected in ((55, 101.25), (63, 404), (75, 505.25), (90, 202.5), (105, 303.75)):
             with self.subTest(column=column):
                 self.assertEqual(worksheet.cell(1, column).value, "应付小计")
                 self.assertEqual(worksheet.cell(2, column).value, expected)
@@ -129,15 +130,17 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
             61: 904.25, 62: "customs remark", 64: "ground unit", 65: "2026-09-20",
             67: 120, 68: 35.5, 69: 20.75, 73: 905.25, 74: "ground remark",
             76: "trucking unit", 77: "2026-09-17", 81: 902, 83: 902.25,
-            88: "removed trucking remark", 90: "domestic unit", 91: "removed domestic origin",
-            92: "removed domestic destination", 93: "removed domestic document",
-            94: "removed domestic flight", 95: "2026-09-21", 96: 903,
-            103: "removed domestic remark", 105: "discount person", 106: 7.25,
-            107: 88.5, 108: "salesperson", 109: 171.39, 111: 1516.75, 112: 1428.25,
+            89: "removed trucking remark", 91: "domestic unit", 92: "removed domestic origin",
+            93: "removed domestic destination", 94: "removed domestic document",
+            95: "removed domestic flight", 96: "2026-09-21", 97: 903,
+            104: "removed domestic remark", 106: "discount person", 107: 7.25,
+            108: 88.5, 109: "salesperson", 110: 171.39, 112: 1516.75, 113: 1428.25,
         }
         for column, expected in expected_values.items():
             with self.subTest(column=column):
                 self.assertEqual(worksheet.cell(2, column).value, expected)
+        self.assertEqual(worksheet.cell(1, 85).value, "运费计算方式")
+        self.assertEqual(worksheet.cell(2, 85).value, "体积重")
         exported_values = {cell.value for cell in worksheet[2]}
         for excluded in ("2026-09-18", "removed domestic airline", "must not export",
                          "removed intl freight method", "removed domestic freight method", 12.5):

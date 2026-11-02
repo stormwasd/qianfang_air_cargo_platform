@@ -156,7 +156,8 @@ _TRUCKING = _columns("payables.trucking", (
     ("主单号", "flight_doc_no"), ("始发城市", "origin_city"),
     ("目的城市", "destination_city"), ("件数", "pieces"),
     ("计费重量", "weight"), ("体积", "volume"), ("单价", "unit_price"),
-    ("运费", "freight"), ("制单费", "doc_fee"), ("其他费用", "other_fee"),
+    ("运费计算方式", "freight_method"), ("运费", "freight"),
+    ("制单费", "doc_fee"), ("其他费用", "other_fee"),
     ("备注", "remark"), ("应付小计", "subtotal"),
 ))
 _DOM_AIR = _columns("payables.dom_air", (

@@ -9733,7 +9733,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 | 操作记录 | GET | `/api/v1/cost-service/consignments/{consignment_id}/operation-logs` | 单据跨台完整操作记录（详见 23.7） |
 | 单据信息 | DELETE | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-删除（单个） |
 | 单据信息 | POST/DELETE | `/api/v1/cost-service/consignments/batch-delete` | 单据信息-批量删除 |
-| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（113列、单行表头，第1列序号、第2列状态；详见23.11.9） |
+| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（114列、单行表头，第1列序号、第2列状态；详见23.11.9） |
 
 #### 23.2 数据结构规范说明
 
@@ -9833,12 +9833,12 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - 旧客户端继续提交 `payables.intl_air.date` 或 `payables.intl_air.airline` 时，服务端将其作为未声明字段忽略，不会写入数据库，也不会在响应中返回。
    - 存量数据库分别通过 `sql/migration_drop_cost_intl_air_date.sql` 和 `sql/migration_drop_cost_intl_air_airline.sql` 删除对应历史列；全新建表脚本不再创建这两个字段。
 
-6. **Excel 导出规范（2026-11-01更新）**：
-   - 两台均改为单行表头，第1列“序号”、第2列“状态”，数据从第2行开始，无合并单元格和空白占位列。客服89列（A至CK），费用113列（A至DI）。完整入参、响应及逐列字段来源以23.11.9为准。
+6. **Excel 导出规范（2026-11-02更新）**：
+   - 两台均改为单行表头，第1列“序号”、第2列“状态”，数据从第2行开始，无合并单元格和空白占位列。客服90列（A至CL），费用114列（A至DJ）。完整入参、响应及逐列字段来源以23.11.9为准。
    - 状态读取本台单据status，0/1/2显示未提交/已提交/作废。客服导出按制单时间倒序；序号按导出结果从1连续生成。
    - 应收金额表头使用客户原文，如“应收提单费/信息录入费”“应收分单费 电报费/底账费”；基础“航班单号”改称“主单号”，金额不重算，0保留为数值，null留空。
-   - 费用保留应收运费费率、运费计算方式和运费；五个应付分组末尾均为“应付小计”。业务员和提成金额位于第108-109列；末尾为应收合计、应付合计、利润、利润率%。
-   - 客服不导出运费费率/计算方式/运费、各分组单价与小计、各项合计、折让及销售提成。两台都不导出内部单据ID、制单时间、一程重量等新表头未列出的字段，CRUD保存/查询字段不变。
+   - 费用保留应收运费费率、运费计算方式和运费；五个应付分组末尾均为“应付小计”。业务员和提成金额位于第109-110列；末尾为应收合计、应付合计、利润、利润率%。
+   - 客服不导出应收运费费率/应收运费计算方式/运费、各分组单价与小计、各项合计、折让及销售提成；汽运运费计算方式单独导出。两台都不导出内部单据ID、制单时间、一程重量等新表头未列出的字段，CRUD保存/查询字段不变。
    - 费用应收 `freight_method` 仅在第15列导出时转换：1=实际重量、2=计费重量；国际和国内空运同名字段不再导出，燃油取重方式也不导出。
    - “提单”列不会直接输出前端保存的编码，而是按页面展示语义转换：
      - 一主多分：`1-0 → 一主`、`1-1 → 一主（一）分`、`1-2 → 一主（二）分`、`1-3 → 一主（三）分`、`1-4 → 一主（四）分`、`1-5 → 一主（五）分`、`1-6 → 一主（六）分`、`1-7 → 一主（七）分`、`1-8 → 一主（八）分`、`1-9 → 一主（九）分`。
@@ -9941,7 +9941,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 可传新字段 | `data` 中新增两个字段 |
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 可传新字段 | `data` 中新增两个字段 |
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 无；作废不改金额 | `data` 中新增两个字段 |
-     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 单行表头113列，地面前置仓费/TC费/提货费及完整顺序详见23.11.9 |
+     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 单行表头114列，地面前置仓费/TC费/提货费及完整顺序详见23.11.9 |
 
    - 上线代码前，存量数据库需执行 `sql/migration_add_cost_ground_fees.sql`，为 `cost_registrations` 和 `cost_consignments` 同时增加两个可空金额列；历史记录默认 `NULL`。全新建表脚本 `sql/migration_create_cost_service_consignments.sql` 已包含新列，新库不再重复执行增量脚本。
    - 地面TC费及提货费原先仅属于费用台；2026-10-30起客服也可通过payables.ground录入和提交。客服未录入这些字段时，仍不覆盖费用台已有金额，详见23.11。
@@ -9988,9 +9988,9 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | `sales_commission.salesperson` 触发后台匹配；无新增请求字段 | `data.sales_commission.commission_percentage` |
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | `sales_commission.salesperson` 触发后台匹配；无新增请求字段 | `data.sales_commission.commission_percentage` |
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 无；作废不修改提成数据 | `data.sales_commission.commission_percentage` |
-     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 不导出提成百分比；单行表头113列，详见23.11.9 |
+     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 不导出提成百分比；单行表头114列，详见23.11.9 |
 
-   - `commission_percentage` 仅供接口返回给前端计算，不作为页面展示字段，也不进入 Excel。Excel 第108-109列（DD-DE）依次为业务员、提成金额；第110-113列依次为应收合计、应付合计、利润、利润率%，单行表头共113列。
+   - `commission_percentage` 仅供接口返回给前端计算，不作为页面展示字段，也不进入 Excel。Excel 第109-110列（DE-DF）依次为业务员、提成金额；第111-114列依次为应收合计、应付合计、利润、利润率%，单行表头共114列。
    - 存量数据库上线前需执行 `sql/migration_add_cost_sales_commission_percentage.sql`，同时为 `cost_registrations` 和 `cost_consignments` 增加可空的 `decimal(5,2)` 字段；全新建表脚本已包含该字段。
 
 #### 23.3 客服接单台与费用登记台提交同步规范
@@ -10331,7 +10331,7 @@ Authorization: Bearer <token>
 | PUT | `/customer-service/consignments/{consignment_id}` | 同客服请求，可只传变更字段；仅 status=0 可执行 | S，status=1；同步费用 status=0；已提交/作废返回409 |
 | PUT | `/customer-service/consignments/{consignment_id}/draft` | 同上；仅 status=0 可执行 | S，status=0；不写费用；已提交/作废返回409 |
 | PUT | `/customer-service/consignments/{consignment_id}/void` | 无请求体 | S，status=2；新增分组随业务数据保留 |
-| POST | `/customer-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；89列，单行表头，第2行开始为数据 |
+| POST | `/customer-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；90列，单行表头，第2行开始为数据 |
 | GET | `/cost-service/cost-registration` | 无 | C；无模板时仍为 null |
 | PUT | `/cost-service/cost-registration` | 既有费用请求增加20个叶字段 | C；只更新模板 |
 | POST | `/cost-service/consignments` | 同费用请求 | C，status=1；回写客服基本信息及应收/应付快照，客服锁定 |
@@ -10341,7 +10341,7 @@ Authorization: Bearer <token>
 | PUT | `/cost-service/consignments/{consignment_id}` | 同费用请求，可只传变更字段 | C，status=1；回写客服基本信息及应收/应付快照 |
 | PUT | `/cost-service/consignments/{consignment_id}/draft` | 同费用请求 | C，status=0；不回写客服，客服仍保持已提交锁定 |
 | PUT | `/cost-service/consignments/{consignment_id}/void` | 无请求体 | C，status=2；新增业务字段保留 |
-| POST | `/cost-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；113列，单行表头，第2行开始为数据 |
+| POST | `/cost-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；114列，单行表头，第2行开始为数据 |
 
 路径参数 `consignment_id` 为列表返回的 `id`；非法数字返回400，不存在返回404。
 列表仍支持原有分页、状态、日期、航班及排序条件，响应分页键名称不变；操作记录、删除接口的请求及响应结构不变。
@@ -10576,6 +10576,7 @@ Authorization: Bearer <token>
 | `payables.trucking.weight` | number | 计费重量 |
 | `payables.trucking.volume` | number | 体积 |
 | `payables.trucking.unit_price` | number | 单价 |
+| `payables.trucking.freight_method` | string / null | 运费计算方式，前端定义选项，原样保存，最多50字符，未传保留/null清空；详见23.15 |
 | `payables.trucking.freight` | number | 运费 |
 | `payables.trucking.doc_fee` | number | 制单费 |
 | `payables.trucking.other_fee` | number | 其他费用 |
@@ -11235,14 +11236,14 @@ GET列表 `GET /api/v1/cost-service/consignments?page=1&pageSize=10` 返回
 已作废客服单据保存/暂存：HTTP409，msg为“已作废的委托信息不能暂存或保存”；非法燃油取重编码、数值字段空字符串等由请求Schema校验，返回HTTP422。
 鉴权401、停用账号403、非法ID400、记录不存在404沿用统一错误格式。
 
-##### 23.11.9 Excel导出契约（2026-11-01更新）
+##### 23.11.9 Excel导出契约（2026-11-02更新）
 
-两个现有导出接口仅调整下载文件的表头、列顺序与取值范围，不新增路由。2026-11-01起使用以下单行表头契约。
+两个现有导出接口仅调整下载文件的表头、列顺序与取值范围，不新增路由。2026-11-01改为单行表头；2026-11-02两台汽运分组补充“运费计算方式”，当前契约如下。
 
 | 方法 | 完整接口路径 | 总列数 | 表头行 | 首条数据行 |
 |---|---|---|---|---|
-| POST | `/api/v1/customer-service/consignments/export-excel` | 89（A至CK） | 第1行 | 第2行 |
-| POST | `/api/v1/cost-service/consignments/export-excel` | 113（A至DI） | 第1行 | 第2行 |
+| POST | `/api/v1/customer-service/consignments/export-excel` | 90（A至CL） | 第1行 | 第2行 |
+| POST | `/api/v1/cost-service/consignments/export-excel` | 114（A至DJ） | 第1行 | 第2行 |
 
 **请求**：沿用当前登录认证（`Authorization: Bearer <token>`），`Content-Type: application/json`。两台相同：
 
@@ -11271,11 +11272,11 @@ Access-Control-Expose-Headers: Content-Disposition
 - 客服排序仍为制单时间 `create_time` 倒序；费用仍按货主航班日期 `consignor_info.flight_date` 升序，空日期最后，同日期按主键ID升序。航班日期虽然不再在基础列展示，费用排序仍使用该字段。
 - 客服财务列读取客服自身财务快照；费用列读取费用自身保存值。标签不增加列，也不裁剪数据。只导出新表头列出的字段：内部单据ID、制单时间、一程重量、基础代理等不再进入Excel；未列出的费率、取重方式等字段仍按原接口保存和查询。
 - 金额、重量、体积、件数、费率均为数值（含0），null/未填写为空单元格；日期显示YYYY-MM-DD。“提单”按23.2规则转中文，未知值原样保留。
-- 只有费用第15列“运费计算方式”转换1=实际重量、2=计费重量，未知值原样保留。客服不导出运费计算方式，两台不导出燃油取重方式及国际/国内空运的运费计算方式。
-- 费用第32列（AF）和第110列（DF）均为“应收合计”，都读取 `receivables.total`，按客户模板保留两次。五个“应付小计”依次位于第55（BC）、63（BK）、75（BW）、89（CK）、104（CZ）列，分别来自国际空运、报关、地面操作、汽运、国内空运的subtotal。第111列“应付合计”读取 `payables.pay_total`。
+- 费用第15列应收“运费计算方式”继续转换1=实际重量、2=计费重量，未知值原样保留。两台新增汽运“运费计算方式”：客服第75列（BW），费用第85列（CG），均读取 `payables.trucking.freight_method` 原样输出字符串，不转换1/2，不推断“计费重/体积重”；null或空字符串为空单元格。费用该列位于汽运单价与运费之间，客服位于汽运体积与制单费之间，后续列顺延1列。两台仍不导出燃油取重方式及国际/国内空运的运费计算方式。
+- 费用第32列（AF）和第111列（DG）均为“应收合计”，都读取 `receivables.total`，按客户模板保留两次。五个“应付小计”依次位于第55（BC）、63（BK）、75（BW）、90（CL）、105（DA）列，分别来自国际空运、报关、地面操作、汽运、国内空运的subtotal。第112列“应付合计”读取 `payables.pay_total`。
 - 汽运“计费重量”读取 `payables.trucking.weight`；地面操作“前置仓费”读取 `payables.ground.freight`、“提单费”读取 `payables.ground.lading_express_fee`；国际空运“燃油费”读取 `borrow_magnetic_fuel_pickup_fee`、“TC费”读取 `tc_network_disposal_fee`，不新增同义字段。
 - 所有运费、报关费、小计、总计、利润、利润率直接使用已保存值，不重算、不写Excel计算公式；修改导出格式不会修改业务记录、提交状态或操作记录。
-- 没有匹配记录时仍成功返回完整第1行表头，不生成空白数据行。已有暂存、提交锁定、两台同步及标签覆盖逻辑不变。本次导出调整无需数据库迁移。
+- 没有匹配记录时仍成功返回完整第1行表头，不生成空白数据行。已有暂存、提交锁定、两台同步及标签覆盖逻辑不变。导出布局调整本身无需额外迁移；汽运新增字段的存储列仍需按23.15执行数据库迁移。
 
 **失败响应**：沿用原校验逻辑。`ids`缺省、类型不合法返回422；`ids=[]`客服在Schema校验返回422、费用返回400；非数字字符串如 `"abc"` 返回400；登录/权限失败沿用认证规则。失败返回JSON，前端不能当作Excel保存。例如：
 
@@ -11283,7 +11284,7 @@ Access-Control-Expose-Headers: Content-Disposition
 {"code":400,"data":null,"msg":"ID 'abc' 格式无效"}
 ```
 
-**客服完整列顺序（89列）**：路径均相对客服详情 `data`。序号由导出生成。
+**客服完整列顺序（90列）**：路径均相对客服详情 `data`。序号由导出生成。
 
 | 列号（1起） | Excel列 | 表头原文 | 对应详情data中的字段 / 来源 |
 |---|---|---|---|
@@ -11361,23 +11362,24 @@ Access-Control-Expose-Headers: Content-Disposition
 | 72 | BT | 件数 | `payables.trucking.pieces` |
 | 73 | BU | 计费重量 | `payables.trucking.weight` |
 | 74 | BV | 体积 | `payables.trucking.volume` |
-| 75 | BW | 制单费 | `payables.trucking.doc_fee` |
-| 76 | BX | 其他费用 | `payables.trucking.other_fee` |
-| 77 | BY | 备注 | `payables.trucking.remark` |
-| 78 | BZ | 国内空运代理名称 | `payables.dom_air.outsource_unit` |
-| 79 | CA | 始发站 | `payables.dom_air.origin` |
-| 80 | CB | 到达站 | `payables.dom_air.destination` |
-| 81 | CC | 主单号 | `payables.dom_air.flight_doc_no` |
-| 82 | CD | 航班号 | `payables.dom_air.flight_no` |
-| 83 | CE | 航班日期 | `payables.dom_air.flight_date` |
-| 84 | CF | 件数 | `payables.dom_air.pieces` |
-| 85 | CG | 实际重量 | `payables.dom_air.weight` |
-| 86 | CH | 计费重量 | `payables.dom_air.chargeable_weight` |
-| 87 | CI | 体积 | `payables.dom_air.volume` |
-| 88 | CJ | 其他费用 | `payables.dom_air.other_fee` |
-| 89 | CK | 备注 | `payables.dom_air.remark` |
+| 75 | BW | 运费计算方式 | `payables.trucking.freight_method` |
+| 76 | BX | 制单费 | `payables.trucking.doc_fee` |
+| 77 | BY | 其他费用 | `payables.trucking.other_fee` |
+| 78 | BZ | 备注 | `payables.trucking.remark` |
+| 79 | CA | 国内空运代理名称 | `payables.dom_air.outsource_unit` |
+| 80 | CB | 始发站 | `payables.dom_air.origin` |
+| 81 | CC | 到达站 | `payables.dom_air.destination` |
+| 82 | CD | 主单号 | `payables.dom_air.flight_doc_no` |
+| 83 | CE | 航班号 | `payables.dom_air.flight_no` |
+| 84 | CF | 航班日期 | `payables.dom_air.flight_date` |
+| 85 | CG | 件数 | `payables.dom_air.pieces` |
+| 86 | CH | 实际重量 | `payables.dom_air.weight` |
+| 87 | CI | 计费重量 | `payables.dom_air.chargeable_weight` |
+| 88 | CJ | 体积 | `payables.dom_air.volume` |
+| 89 | CK | 其他费用 | `payables.dom_air.other_fee` |
+| 90 | CL | 备注 | `payables.dom_air.remark` |
 
-**费用完整列顺序（113列）**：路径均相对费用详情 `data`。重复表头对应的分组、列号见下表，勿按表头名称去重。
+**费用完整列顺序（114列）**：路径均相对费用详情 `data`。重复表头对应的分组、列号见下表，勿按表头名称去重。
 
 | 列号（1起） | Excel列 | 表头原文 | 对应详情data中的字段 / 来源 |
 |---|---|---|---|
@@ -11465,35 +11467,36 @@ Access-Control-Expose-Headers: Content-Disposition
 | 82 | CD | 计费重量 | `payables.trucking.weight` |
 | 83 | CE | 体积 | `payables.trucking.volume` |
 | 84 | CF | 单价 | `payables.trucking.unit_price` |
-| 85 | CG | 运费 | `payables.trucking.freight` |
-| 86 | CH | 制单费 | `payables.trucking.doc_fee` |
-| 87 | CI | 其他费用 | `payables.trucking.other_fee` |
-| 88 | CJ | 备注 | `payables.trucking.remark` |
-| 89 | CK | 应付小计 | `payables.trucking.subtotal` |
-| 90 | CL | 国内空运代理名称 | `payables.dom_air.outsource_unit` |
-| 91 | CM | 始发站 | `payables.dom_air.origin` |
-| 92 | CN | 到达站 | `payables.dom_air.destination` |
-| 93 | CO | 主单号 | `payables.dom_air.flight_doc_no` |
-| 94 | CP | 航班号 | `payables.dom_air.flight_no` |
-| 95 | CQ | 航班日期 | `payables.dom_air.flight_date` |
-| 96 | CR | 件数 | `payables.dom_air.pieces` |
-| 97 | CS | 实际重量 | `payables.dom_air.weight` |
-| 98 | CT | 计费重量 | `payables.dom_air.chargeable_weight` |
-| 99 | CU | 体积 | `payables.dom_air.volume` |
-| 100 | CV | 单价 | `payables.dom_air.rate` |
-| 101 | CW | 运费 | `payables.dom_air.freight` |
-| 102 | CX | 其他费用 | `payables.dom_air.other_fee` |
-| 103 | CY | 备注 | `payables.dom_air.remark` |
-| 104 | CZ | 应付小计 | `payables.dom_air.subtotal` |
-| 105 | DA | 折让人 | `discount_info.discount_person` |
-| 106 | DB | 费率 | `discount_info.discount_rate` |
-| 107 | DC | 折让费 | `discount_info.discount_fee` |
-| 108 | DD | 业务员 | `sales_commission.salesperson` |
-| 109 | DE | 提成金额 | `sales_commission.commission_amount` |
-| 110 | DF | 应收合计 | `receivables.total` |
-| 111 | DG | 应付合计 | `payables.pay_total` |
-| 112 | DH | 利润 | `operating_info.profit` |
-| 113 | DI | 利润率% | `operating_info.profit_margin` |
+| 85 | CG | 运费计算方式 | `payables.trucking.freight_method` |
+| 86 | CH | 运费 | `payables.trucking.freight` |
+| 87 | CI | 制单费 | `payables.trucking.doc_fee` |
+| 88 | CJ | 其他费用 | `payables.trucking.other_fee` |
+| 89 | CK | 备注 | `payables.trucking.remark` |
+| 90 | CL | 应付小计 | `payables.trucking.subtotal` |
+| 91 | CM | 国内空运代理名称 | `payables.dom_air.outsource_unit` |
+| 92 | CN | 始发站 | `payables.dom_air.origin` |
+| 93 | CO | 到达站 | `payables.dom_air.destination` |
+| 94 | CP | 主单号 | `payables.dom_air.flight_doc_no` |
+| 95 | CQ | 航班号 | `payables.dom_air.flight_no` |
+| 96 | CR | 航班日期 | `payables.dom_air.flight_date` |
+| 97 | CS | 件数 | `payables.dom_air.pieces` |
+| 98 | CT | 实际重量 | `payables.dom_air.weight` |
+| 99 | CU | 计费重量 | `payables.dom_air.chargeable_weight` |
+| 100 | CV | 体积 | `payables.dom_air.volume` |
+| 101 | CW | 单价 | `payables.dom_air.rate` |
+| 102 | CX | 运费 | `payables.dom_air.freight` |
+| 103 | CY | 其他费用 | `payables.dom_air.other_fee` |
+| 104 | CZ | 备注 | `payables.dom_air.remark` |
+| 105 | DA | 应付小计 | `payables.dom_air.subtotal` |
+| 106 | DB | 折让人 | `discount_info.discount_person` |
+| 107 | DC | 费率 | `discount_info.discount_rate` |
+| 108 | DD | 折让费 | `discount_info.discount_fee` |
+| 109 | DE | 业务员 | `sales_commission.salesperson` |
+| 110 | DF | 提成金额 | `sales_commission.commission_amount` |
+| 111 | DG | 应收合计 | `receivables.total` |
+| 112 | DH | 应付合计 | `payables.pay_total` |
+| 113 | DI | 利润 | `operating_info.profit` |
+| 114 | DJ | 利润率% | `operating_info.profit_margin` |
 
 ##### 23.11.10 数据库部署与兼容说明
 
@@ -11857,12 +11860,12 @@ Authorization: Bearer <access_token>
 
 ##### 23.13.4 Excel下载变化
 
-两个导出接口继续不输出内部单据ID（表头及值均不输出）。2026-11-01客户重新确认完整列顺序后，两台均改为单行表头，客服89列、费用113列，数据从第2行开始，不保留空白占位列。
+两个导出接口继续不输出内部单据ID（表头及值均不输出）。2026-11-01客户重新确认完整列顺序后，两台均改为单行表头；2026-11-02补充汽运计算方式后，客服90列、费用114列，数据从第2行开始，不保留空白占位列。
 
 | 方法与路径（含 `/api/v1` 前缀） | 入参 | 下载结果 |
 |---|---|---|
-| `POST /api/v1/customer-service/consignments/export-excel` | `{"ids":["358000000000000001"]}`，必填数字字符串数组 | 89列、单行表头、A列序号、B列状态 |
-| `POST /api/v1/cost-service/consignments/export-excel` | 同上 | 113列、单行表头、A列序号、B列状态 |
+| `POST /api/v1/customer-service/consignments/export-excel` | `{"ids":["358000000000000001"]}`，必填数字字符串数组 | 90列、单行表头、A列序号、B列状态 |
+| `POST /api/v1/cost-service/consignments/export-excel` | 同上 | 114列、单行表头、A列序号、B列状态 |
 
 逐列顺序、字段路径、重复表头规则、下载响应示例及校验规则详见23.11.9。仍返回xlsx二进制，下载文件名、排序及中文转换规则延续。前端继续传入隐藏的内部编号，操作记录展示逻辑不受导出变更影响。
 
@@ -12011,3 +12014,136 @@ intl_air=国际空运，customs=报关，ground=地面操作，trucking=汽运�
 
 历史费用数据中新加customer_tags为空、客服存在原选择时，迁移会补齐该值，使截图中的老单据也能回显；费用原先expense_tags=[]会保留，不将其误判为“没选择过”。
 未执行迁移前不要先发布依赖新列的代码；本次未代为连接或修改生产数据库。
+
+
+#### 23.15 汽运新增运费计算方式（2026-11-02）
+
+费用登记台“汽运信息”新增可选字段 `payables.trucking.freight_method`，位于汽运单价与运费之间。沿用现有接口，无需新增独立保存路由。字段属于汽运分组，**不是**应收 `receivables.freight_method`，也不是国际/国内空运分组的同名字段，四者分别保存。
+
+##### 23.15.1 字段契约
+
+| 字段路径（请求体 / 响应data） | 类型 | 必填 | 长度 | 说明 |
+|---|---|---|---|---|
+| `payables.trucking.freight_method` | string / null | 否 | 最多50个字符 | 汽运运费计算方式，前端设置“计费重/体积重”等选项并传入所需字符串；后端不维护枚举、不转换编码、不自动选择或推断该值 |
+
+- 前端可传 `"计费重"`、`"体积重"` 或其约定的字符串编码，例如 `"1"`、`"2"`；后端仅原样保存，**不规定1/2对应哪个选项**。前端提交值和回显值应使用同一套格式。
+- 新增未传或显式传null：保存为NULL，返回 `null`；历史未填写记录也返回 `null`，不虚构默认选项。
+- 修改时不传叶字段，或 `payables` / `trucking` 分组未传或为null：保留旧值；显式 `{"payables":{"trucking":{"freight_method":null}}}` 清空为NULL，响应返回null。
+- 显式传 `""`：保存空字符串，响应返回 `""`。不会将空字符串和null互相转换。
+- 非字符串值（如数字、数组、对象）、超过50字符的值返回HTTP422，沿用 `{code,data,msg}` 错误格式，整次请求不修改业务、状态或操作记录。
+- 更改计算方式不会自动重算 `unit_price`、`weight`、`volume`、`freight`、`subtotal`、`pay_total`、利润等字段；运费等仍由前端计算并提交。
+
+##### 23.15.2 受影响接口
+
+以下路径均带 `/api/v1` 前缀，沿用有效Bearer Token认证。写入字段路径为 `payables.trucking.freight_method`，单条响应路径为 `data.payables.trucking.freight_method`；列表响应为 `data.items[].payables.trucking.freight_method`，其余字段、分页和错误规范不变。
+
+| 方法 | 接口路径 | 请求与响应变化 |
+|---|---|---|
+| GET | `/cost-service/cost-registration` | 无新参数；已保存模板返回新增字段，模板不存在仍返回data:null |
+| PUT | `/cost-service/cost-registration` | 可选传入新字段；保存响应回显 |
+| POST | `/cost-service/consignments` | 可选传入新字段；创建响应回显；按原流程同步客服快照 |
+| POST | `/cost-service/consignments/draft` | 可选传入新字段；暂存响应回显，不流转客服 |
+| PUT | `/cost-service/consignments/{consignment_id}` | 可选修改新字段；保存响应回显，并按原流程回写客服快照 |
+| PUT | `/cost-service/consignments/{consignment_id}/draft` | 可选修改新字段；暂存响应回显，不回写客服 |
+| GET | `/cost-service/consignments/{consignment_id}` | 详情data中的汽运分组增加字段 |
+| GET | `/cost-service/consignments` | 列表items每条汽运分组增加字段；查询参数不变 |
+| PUT | `/cost-service/consignments/{consignment_id}/void` | 无新请求参数；作废响应保留并返回该字段 |
+| GET | `/customer-service/consignment-registration` | 共用汽运结构，已保存模板新增同名字段，模板不存在仍data:null |
+| PUT | `/customer-service/consignment-registration` | 可选传入新字段；模板响应回显 |
+| POST | `/customer-service/consignments` | 可选传入新字段；响应回显，提交时同名流转至费用 |
+| POST | `/customer-service/consignments/draft` | 可选传入新字段；暂存响应回显，不流转费用 |
+| PUT | `/customer-service/consignments/{consignment_id}` | 仅未提交客服单据可保存；新字段一并流转费用 |
+| PUT | `/customer-service/consignments/{consignment_id}/draft` | 仅未提交客服单据可暂存；响应回显 |
+| GET | `/customer-service/consignments/{consignment_id}` | 汽运快照增加同名字段，费用保存后的值可从此回显 |
+| GET | `/customer-service/consignments` | items每条汽运快照增加字段；查询参数不变 |
+| PUT | `/customer-service/consignments/{consignment_id}/void` | 无新请求参数；作废响应保留并返回该字段 |
+
+路径参数 `consignment_id` 仍为单据主键的数字字符串，不是内部单据ID。没有新增查询参数、必填参数、状态或计算规则。客服共用 `PayableTrucking` 结构，因此同步支持此可选字段，避免已有财务快照流转时丢失；不要求客服页面增加控件。
+
+费用与客服导出接口也同步增加该列：
+
+| 方法 | 完整路径 | 入参 | 返回变化 |
+|---|---|---|---|
+| POST | `/api/v1/cost-service/consignments/export-excel` | `{"ids":["358000000000000001"]}`，必填数字字符串数组 | xlsx文件二进制，114列；汽运第85列“运费计算方式”取本费用单据保存值 |
+| POST | `/api/v1/customer-service/consignments/export-excel` | 同上 | xlsx文件二进制，90列；汽运第75列“运费计算方式”取本客服单据财务快照 |
+
+两个导出均继续单行表头，第2行开始写数据；认证、文件名、Content-Type、排序、错误规则不变，成功响应没有JSON包裹。完整下载请求/响应示例及全列路径见23.11.9。
+
+##### 23.15.3 前端调用及响应示例
+
+费用详情修改保存：
+
+```http
+PUT /api/v1/cost-service/consignments/358000000000000001
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "payables": {
+    "trucking": {
+      "unit_price": 2,
+      "freight_method": "体积重",
+      "weight": 100,
+      "volume": 1.2,
+      "freight": 123.45,
+      "subtotal": 133.45,
+      "doc_fee": 10
+    }
+  }
+}
+```
+
+`unit_price`为单价、`weight`为汽运计费重量、`volume`为体积、`freight`为前端已计算的运费、`doc_fee`为制单费、`subtotal`为前端已计算的汽运应付小计。示例中后端按传入值保存123.45，不根据单价、重量或体积回算。
+成功HTTP200，**响应片段**（原有其他字段省略）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "358000000000000001",
+    "status": 1,
+    "payables": {
+      "trucking": {
+        "unit_price": 2.0,
+        "freight_method": "体积重",
+        "weight": 100.0,
+        "volume": 1.2,
+        "freight": 123.45,
+        "subtotal": 133.45,
+        "doc_fee": 10.0
+      }
+    }
+  },
+  "msg": "单据信息更新成功"
+}
+```
+
+只修改计算方式时可只传 `{"payables":{"trucking":{"freight_method":"计费重"}}}`，其他汽运数据不变。
+如需暂存，调用相同路径加 `/draft`，结构相同，返回status=0、msg="单据信息暂存成功"；不会将暂存结果同步给客服。
+随后GET详情时，请求无body，HTTP200、msg="查询成功"，上述字段位于 `data.payables.trucking.freight_method`；GET列表位于 `data.items[].payables.trucking.freight_method`。
+模板使用 `PUT /api/v1/cost-service/cost-registration`，新增使用 `POST /api/v1/cost-service/consignments`（或 `/draft`），均使用同样的汽运分组请求。
+
+清空请求示例：
+
+```json
+{"payables":{"trucking":{"freight_method":null}}}
+```
+
+保存/暂存成功后该字段返回null；旧客户端完全不传本字段仍兼容。错误示例：
+
+```json
+{"code":422,"data":null,"msg":"参数验证失败 (body -> payables -> trucking -> freight_method): Input should be a valid string"}
+```
+
+已提交客服保存/暂存仍409，两台已作废保存/暂存仍409，不存在单据404、非法主键400、认证失败规则均延续。
+
+##### 23.15.4 流转、Excel与部署
+
+- 客服保存提交时，若汽运快照实际包含该字段，则按原同步规则写入费用列，显式null/空字符串也一并同步；客服未传此字段时不覆盖费用已有值。客服暂存不流转。
+- 费用保存提交时，按原逻辑将该值写入客服财务快照；费用暂存只保存费用自身。两台提交、作废及锁定规则不变。
+- **Excel同步增加汽运运费计算方式**：客服共90列（A至CL），新字段在第75列（BW）；费用共114列（A至DJ），新字段在第85列（CG），位于汽运单价和运费之间。均为单行表头，数据从第2行开始。新增列直接读取 `payables.trucking.freight_method` 原样展示，不转换字符串编码、不参与运费计算；后续列顺延1列，完整列映射见23.11.9。
+- 存量数据库须在发布代码前执行 `sql/migration_add_cost_trucking_freight_method.sql` 一次，分别为 `cost_registrations` 和 `cost_consignments` 新增可空 `varchar(50)` 列 `pay_trucking_freight_method`。历史记录默认为NULL，不推断或回填计算方式，不回算金额。
+- 客服继续使用已有 `financial_data` JSON，无需新增数据库列。全新库使用已更新的 `sql/migration_create_cost_service_consignments.sql` 或ORM建表，已包含该字段，不再执行此增量加列。
+- 本次未连接生产数据库执行迁移；既有财务快照、标签、状态及操作记录表等历史迁移仍需按数据库现状执行。

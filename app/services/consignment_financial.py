@@ -35,6 +35,7 @@ ADDITIONAL_COST_FIELDS = {
         "tc_rate": "pay_ground_tc_rate"
     },
     "payables.trucking": {
+        "freight_method": "pay_trucking_freight_method",
         "flight_doc_no": "pay_trucking_flight_doc_no",
         "origin_city": "pay_trucking_origin_city",
         "destination_city": "pay_trucking_destination_city"
