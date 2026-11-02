@@ -1,6 +1,6 @@
 purpose:
   stands_in_for: KingGo direct-waybill HTTP endpoints using the existing local fixture.
-  unblocks: Verify storage-instruction mapping without creating a real airline waybill.
+  unblocks: Verify storage-instruction mapping and chargeable-weight cabin rules without creating a real airline waybill.
 assumptions:
   - id: direct-storage-note-independent-of-cargo-name
     status: supported
@@ -37,8 +37,39 @@ assumptions:
       independently confirm real provider cabin semantics or weight restrictions.
     source: app/services/shenzhen_air_direct_waybill.py; API_DOCS.md; postman/simulations/shenzhen-waybill.context.md
     updated_at: "2026-11-02"
+  - id: chargeable-weight-below-45-fixed-f-caller
+    status: supported
+    claim: In the scenarios run, direct creation sent F/F舱 for chargeable weight below 45kg and never followed a cabin-change suggestion for those tasks.
+    reason: The real enqueue, persistent worker and HTTP client ran against independent expected form fields in the local fixture; gross weight and conflicting configured or metadata cabins did not change the below-45 result.
+    verification: >-
+      On 2026-11-02, with fingerprint fixed-f-cabin, 57 related tests passed, including
+      five new test methods. After adding the screenshot's suggested C cabin, all five
+      policy methods passed again. Covered 30, 44.999999999999999999, 0.5, 45, 45.000,
+      45.001 and 50kg; check/submit suggestions C/Z/A/F; submit HTTP 503; old pending
+      task snapshot versus changed live form. Check rejection did not submit; explicit
+      submit rejection became failed; submit gateway failure stayed unknown. Existing
+      at-45kg Z/A retry tests passed. Combined runs recorded 407 KingGo requests and
+      143 check/submit forms, of which all 71 below-45 forms sent F/F舱. No real airline writes.
+    source: app/services/shenzhen_air_direct_waybill.py; tests/test_shenzhen_air_direct_waybill_weight_cabin.py; tests/test_shenzhen_air_direct_waybill_cabin.py; postman/mocks/kinggo/default.js
+    updated_at: "2026-11-02"
+  - id: live-kinggo-fixed-f-acceptance
+    status: unknown
+    claim: Real KingGo will accept F/F舱 as the requested cabin for the customer's below-45kg chargeable-weight waybills.
+    reason: The customer supplied the below-45kg business rule and a screenshot of an unexpected C cabin; local mocks establish caller fields and retry behavior only, not real provider acceptance or final cabin display.
+    verification: >-
+      On 2026-11-02 reviewed the current caller and screenshots. Reused this repository's
+      sanitized KingGo fixture with independent synthetic weight/cabin expectations.
+      No real KingGo submission was made. Verify the requested F cabin and final airline
+      record on the next authorized business creation; the client surfaces a conflicting
+      upstream rejection instead of silently changing cabin.
+    source: API_DOCS.md; app/services/shenzhen_air_direct_waybill.py; postman/mocks/kinggo/default.js
+    updated_at: "2026-11-02"
 fingerprints:
   - id: storage-note-fix
     date: "2026-11-02"
     commit: fa412e9 plus the uncommitted storage-note fix
     cli: Postman CLI 1.74.0, local path routing on port 4913; no live airline writes
+  - id: fixed-f-cabin
+    date: "2026-11-02"
+    commit: b9cc3e0 plus the uncommitted below-45kg F-cabin fix
+    cli: Postman CLI 1.74.0, existing local path routing on port 4913; no live airline writes

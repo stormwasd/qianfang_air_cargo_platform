@@ -1,5 +1,36 @@
 # API 文档
 
+## 2026-11-02 深航 direct 计费重量低于45kg固定F舱
+
+适用 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE=direct` 的深航开单。
+创建/修改运单、`POST /api/v1/waybills/{waybill_id}/execute` 及任务查询接口的
+请求/响应结构不变，前端仍提交 `form_data.cargo_info.chargeable_weight`，无需增加舱位参数。
+
+| 任务快照的计费重量（kg） | KingGo 检查与提交的舱位规则 |
+| --- | --- |
+| `0 < chargeable_weight < 45` | 固定 `cabinType=F`、`cabinTypeName=F舱`，优先于舱位配置和运单元数据的默认舱位 |
+| `chargeable_weight >= 45` | 沿用原规则：优先使用 `SHENZHEN_AIR_KINGGO_CABIN_TYPE` 与 `_NAME`，两者均为空时使用运单信息返回的舱位；符合条件时仍允许按上游提示调整一次 |
+
+边界按十进制精确比较：`30`、`44.999` 固定F舱，`45`、`45.000` 不触发此固定规则。
+判断仅依赖计费重量，不使用 `cargo_info.weight`（实际重量）；不会改写用户填写的两种重量，
+费用查询继续使用原计费重量并保留上游返回费用。`oldCabinType` 仍保留运单信息接口原始舱位，
+例如上游默认C舱时可出现 `cabinType=F/cabinTypeName=F舱/oldCabinType=C`，后者不是本次申请舱位。
+
+固定F舱的任务在检查、提交阶段收到“舱位等级不足，是否变更为Z舱？”等提示时，
+**不自动接受换舱，也不重发检查或提交**；保留具体上游错误供核查。
+符合既有完整识别条件的明确提交拒绝仍标记 `failed`，未发出提交的检查失败也为 `failed`；
+提交后的超时、非2xx、非JSON、普通业务拒绝或未确认结果仍按原保护规则标记 `unknown`，
+不会因固定F舱而绕过防重复开单保护。
+
+固定F舱任务的检查/提交异常诊断（后台日志及任务查询 `error_message` 中原有诊断JSON）
+增加 `cabin_policy="chargeable_weight_lt_45_fixed_f"`；识别到其他目标舱位并阻止调整时
+增加 `cabin_adjustment_blocked=true`。`request_summary` 继续记录实际请求中的舱位字段，
+`suggested_cabin_type_name` 保留识别出的上游目标；无换舱时成功结果不增加 `cabin_adjustment`。
+
+该规则在实际执行时根据任务已有的计费重量快照判断，兼容升级前的待执行任务，
+不读取运单最新表单来覆盖快照。无需改表、迁移SQL、新增配置或前端修改。
+RPA及南航逻辑不变，历史已开成功的运单不会自动改舱或重新提交。
+
 ## 2026-11-02 修复深航 direct 开单储运注意事项映射
 
 适用 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE=direct`。创建/修改运单的表单结构、
@@ -292,7 +323,7 @@ const options = items.map(item => ({
 
 ### 触发条件与上游请求参数
 
-正常开单仍依次获取候选单号、运单元数据、航班、费用，再检查并提交。仅当 KingGo 的检查 `POST /awb/inland/check_awb?nti=90` 或提交 `POST /awb/inland/submit_awb?nti=90` 返回以下**明确的舱位变更询问**时，自动接受一次调整：
+正常开单仍依次获取候选单号、运单元数据、航班、费用，再检查并提交。计费重量低于45kg时按2026-11-02规则固定F舱，不接受自动换舱。其余任务仅当 KingGo 的检查 `POST /awb/inland/check_awb?nti=90` 或提交 `POST /awb/inland/submit_awb?nti=90` 返回以下**明确的舱位变更询问**时，自动接受一次调整：
 
 ```json
 {"retCode":"400","msg":"舱位等级不足，是否变更为Z舱？","result":""}
@@ -1563,7 +1594,7 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 
 调用前必须在运行服务的文件系统配置有效 KingGo HAR，默认路径 `generated_files/www.kinggo.com.har`。Docker 部署中该目录挂载到 `/app/generated_files`。每一次 KingGo HTTP 请求都会重新读取 HAR、离线执行 `/main` 保护脚本提取配置和 Cookie，并针对当前实际请求 URL 重新生成 `oOr6SIhu`；不会缓存签名配置或 Cookie。`SHENZHEN_AIR_KINGGO_BROWSER` 控制提取浏览器；Linux/Docker 建议使用 `chromium`。HAR 不含可用 Cookie、HAR 无效或签名生成失败时，该次请求不会发给 KingGo。
 
-接口依次为：`get_awb_no` 获取 `479` 前缀后的八位单号，按航线/日期/货运代码查询运单信息，查询航班并精确匹配航班号/航线/日期及起飞时间，查询费用，调用 `check_awb` 校验，最后调用 `submit_awb` 提交。字段从 `form_data.flight_info`、`shipper_consignee_info`、`cargo_info` 映射。代理身份、操作员、提货电话、收货地址代码和付款方式从环境变量读取，账号字段必须按真实账号填写。与提供的检查/提交表单一致，舱位默认为 `F/F舱`，`oldCabinType` 使用运单信息响应的 `cabinType`；固定舱位代码和名称必须同时设置；两者均置空时使用运单信息返回的舱位。
+接口依次为：`get_awb_no` 获取 `479` 前缀后的八位单号，按航线/日期/货运代码查询运单信息，查询航班并精确匹配航班号/航线/日期及起飞时间，查询费用，调用 `check_awb` 校验，最后调用 `submit_awb` 提交。字段从 `form_data.flight_info`、`shipper_consignee_info`、`cargo_info` 映射。代理身份、操作员、提货电话、收货地址代码和付款方式从环境变量读取，账号字段必须按真实账号填写。计费重量低于45kg时固定 `F/F舱`；45kg及以上使用舱位配置（默认 `F/F舱`），代码和名称必须同时设置，两者均置空时使用运单信息返回的舱位。`oldCabinType` 始终使用运单信息响应的原始 `cabinType`。
 
 上游调用契约（路径相对于 `https://www.kinggo.com`，每次独立附加新签名和Cookie）：
 
@@ -1618,7 +1649,7 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 | `SHENZHEN_AIR_KINGGO_OPER_ID` | 空 | KingGo 操作员 ID |
 | `SHENZHEN_AIR_KINGGO_PICK_TEL_NO` | 空 | 提货联系电话 |
 | `SHENZHEN_AIR_KINGGO_CNE_ADDR` | 空 | KingGo 收货地址代码 |
-| `SHENZHEN_AIR_KINGGO_CABIN_TYPE(_NAME)` | `F` / `F舱` | 固定舱位代码和名称；两者均置空时使用运单信息响应 |
+| `SHENZHEN_AIR_KINGGO_CABIN_TYPE(_NAME)` | `F` / `F舱` | 计费重量45kg及以上时使用的舱位代码和名称；两者均置空时使用运单信息响应。低于45kg时始终固定F舱，覆盖该配置 |
 | `SHENZHEN_AIR_KINGGO_PAY_TYPE` | `1` | 付款方式 |
 
 每次提取时将实际方法、URL和完整编码表单交给HAR原脚本，随后将原脚本产生的 `requestDigest` 传入 `generate` 生成本次新签名，保证提取和实际发送使用同一份请求体。POST 使用 `application/x-www-form-urlencoded`。签名/Cookie提取失败不降级发送。HAR含有会话Cookie，不得提交代码仓库、写入日志或API响应。

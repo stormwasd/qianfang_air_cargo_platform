@@ -85,6 +85,10 @@ http.createServer(async (req, res) => {
   if ((path.endsWith("get_awb_no") ? "GET" : "POST") !== req.method) return send(400, { error: "method" });
   if (path.endsWith("check_awb") || path.endsWith("submit_awb")) {
     const scenario = fields.get("shpInfo") || "";
+    // Independent expectations supplied by boundary tests, not inferred from
+    // the request's cabin fields or weight. No real provider rule is asserted.
+    const weightPolicy = scenario.startsWith("WEIGHT_POLICY:") ?
+      JSON.parse(Buffer.from(scenario.slice(14), "base64").toString("utf8")) : null;
     const cabinScenario = scenario.startsWith("CABIN_");
     const targetCabin = scenario === "CABIN_A" ? "A" : "Z";
     const adjusted = cabinScenario && fields.get("cabinTypeName") === targetCabin && fields.get("cabinType") === targetCabin;
@@ -94,14 +98,22 @@ http.createServer(async (req, res) => {
     for (const [key, expected] of Object.entries({
       awbNo: "62046633", takeOffTime: "1525", awbPrefix: "479", billCode: "A1",
       aliasCode: "GEN", formerRate: "5.3", aviationFee: "50", totalFee: "51",
-      deliveryFee: "0", oldCabinType: "C", cabinType: adjusted ? targetCabin : "F",
-      cabinTypeName: adjusted ? targetCabin : scenario === "CABIN_CODE_MISMATCH" ? "Z" : "F舱",
+      deliveryFee: "0", oldCabinType: "C", cabinType: weightPolicy?.cabinType ?? (adjusted ? targetCabin : "F"),
+      cabinTypeName: weightPolicy?.cabinTypeName ?? (adjusted ? targetCabin : scenario === "CABIN_CODE_MISMATCH" ? "Z" : "F舱"),
       carrierCode: "ZH", transNote: expectedNote, goodsName: "配件", tlicellCellinfos: "[]",
-      pieces: "1", chargeWeight: cabinScenario || scenario === "BUSINESS_REJECT" ? "45" : "3", firstAddFee: "", awbType: "",
+      pieces: "1", chargeWeight: weightPolicy?.chargeWeight ?? (cabinScenario || scenario === "BUSINESS_REJECT" ? "45" : "3"), firstAddFee: "", awbType: "",
     })) {
       if (fields.get(key) !== expected) return send(400, { error: `contract mismatch: ${key}` });
     }
     if (!fields.has("agentSname") || !fields.has("operId")) return send(400, { error: "identity" });
+    if (weightPolicy) {
+      if (fields.get("weight") !== weightPolicy.weight) return send(400, { error: "weight contract" });
+      const stage = path.endsWith("check_awb") ? "check" : "submit";
+      if (stage === weightPolicy.rejectionStage) {
+        if (weightPolicy.gatewayError) return send(503, { error: "synthetic gateway failure" });
+        return send(200, { retCode: "400", msg: `舱位等级不足，是否变更为${weightPolicy.target}舱？`, result: "" });
+      }
+    }
     if (cabinScenario) {
       if (fields.get("weight") !== "35") return send(400, { error: "weight contract" });
       const check = path.endsWith("check_awb");

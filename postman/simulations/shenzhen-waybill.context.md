@@ -30,6 +30,13 @@ Inspect request events and stop the simulation with Ctrl+C.
 ## Observations
 
 <!-- begin:observations -->
+2026-11-02: Below-45kg chargeable-weight cabin policy passed 57 related regression
+tests, followed by all five policy test methods after adding explicit C-cabin
+suggestions. Across both runs KingGo served 407 requests; all 71 below-45
+check/submit bodies sent F/F舱. The 45kg boundary, metadata/config precedence,
+snapshot execution, rejection and unknown-submit protections were covered.
+At/above-45 original cabin adjustment remained available. These are local caller
+observations; real airline acceptance and final display still need business verification.
 2026-11-02: 52 storage-note, direct-waybill, cabin, diagnostic, void and
 post-processing tests passed. KingGo served 210 HTTP requests; all 82
 check/submit form bodies kept transNote separate from goodsName. Empty notes,

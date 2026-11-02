@@ -346,6 +346,9 @@ class ShenzhenAirDirectWaybillService:
 
     async def create_waybill(self, values: dict, *, before_submit: Callable[[str], None]) -> dict:
         self.validate_configuration()
+        # Compare the chargeable weight exactly; gross weight does not determine
+        # this business rule. Apply at execution time for old queued tasks too.
+        fixed_f_cabin = self._decimal(values["chargeable_weight"], "计费重量") < Decimal("45")
         number_result = await self._request("number")
         suffix = number_result.get("result") if isinstance(number_result, dict) else None
         if (not isinstance(number_result, dict) or str(number_result.get("retCode")) != "100"
@@ -405,8 +408,8 @@ class ShenzhenAirDirectWaybillService:
                                                    details={"stage": "costs", "reason_code": "missing_field", "field": field})
             self._decimal(costs[field], field)
 
-        cabin_code = settings.SHENZHEN_AIR_KINGGO_CABIN_TYPE or str(bill["cabinType"])
-        cabin_name = settings.SHENZHEN_AIR_KINGGO_CABIN_TYPE_NAME or str(bill["cabinTypeName"])
+        cabin_code = "F" if fixed_f_cabin else (settings.SHENZHEN_AIR_KINGGO_CABIN_TYPE or str(bill["cabinType"]))
+        cabin_name = "F舱" if fixed_f_cabin else (settings.SHENZHEN_AIR_KINGGO_CABIN_TYPE_NAME or str(bill["cabinTypeName"]))
         total_fee = self._decimal(costs["otherTotalFee"], "otherTotalFee") + self._decimal(costs["aviationFee"], "aviationFee")
         operation_date = get_china_today().isoformat()
         fields = {
@@ -472,7 +475,11 @@ class ShenzhenAirDirectWaybillService:
                 if exc.submission_rejected:
                     last_submit_rejected = True
                 suggested = exc.details.get("suggested_cabin_type_name")
-                if (attempt == 0 and exc.details.get("reason_code") == "business_rejected"
+                if fixed_f_cabin:
+                    exc.details["cabin_policy"] = "chargeable_weight_lt_45_fixed_f"
+                    if isinstance(suggested, str) and re.fullmatch(r"[A-Z]", suggested) and suggested != "F":
+                        exc.details["cabin_adjustment_blocked"] = True
+                if (not fixed_f_cabin and attempt == 0 and exc.details.get("reason_code") == "business_rejected"
                         and exc.details.get("stage") in {"check", "submit"}
                         and exc.details.get("http_status") == 200
                         and exc.details.get("upstream_ret_code") == "400"
