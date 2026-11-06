@@ -41,8 +41,8 @@ class BookingCreate(BaseModel):
           "oversized_cargo": "",  // 超规货
           "special_cargo_code": "",  // 用户附加特货码（可选）；多个使用英文逗号分隔，例如 GEN,AKA
           "no_dangerous_goods": "",  // 无危险品
-          "consignee": "",  // 收货人
-          "consignee_phone": "",  // 收货人手机号
+          "consignee": "",  // 收货人（可选；与 consignee_phone 均非空时才提交收发货人信息）
+          "consignee_phone": "",  // 收货人手机号（可选；任一项缺失、null 或去空格后为空时整组不提交）
           "storage_and_transportation_precautions": ""  // 储运注意事项（可选）
         }
       ],
@@ -52,7 +52,9 @@ class BookingCreate(BaseModel):
     说明：
     - `order_contact_name` 和 `order_contact_phone` 位于 form_data 顶层，不在 bookings 数组元素中
     - 执行南航订舱时，`contactName`、`contactPhone` 优先使用上述 form_data 字段；未传时分别读取业务参数配置中的 `business_default.order_contact_name`、`business_default.order_contact_phone`
-    - `shipper_unit` 仅作为平台业务数据保存，不替换南航 createOrder 中的任何字段；`orderShipmentContact` 按南航请求结构传 null
+    - `shipper_unit` 仅作为平台业务数据保存，不替换南航 createOrder 中的任何字段
+    - direct 订舱仅在 `bookings[0].consignee`、`consignee_phone` 均非空时填充 `orderInfo.orderShipmentContact`，否则传 null；不会使用系统默认收货人补齐。托运人、手机及地址读取 `china_southern_air.booking_and_create.business_default` 的 `shipper`、`phone`、`address.region/detail`，仅启用联系人信息时校验这些配置；机场自提等字段沿用 `direct_order` 配置及默认值
+    - Excel 新增可选列“收货人”“收货人手机号”，分别映射到每行 `bookings[0].consignee`、`consignee_phone`；旧模板缺列仍可导入。普通页面新增/修改使用相同字段及 direct 执行规则，无需额外开关
     - `special_cargo_code` 可不填；执行时按始发站、目的站、货物类型和有效产品名称查询南航默认特货码，再与用户码去重合并。平台 `form_data` 回写为英文逗号格式，发往南航的 `spCode`、`productionCode` 使用 `/` 格式
     - 南航接口订舱时，`bookings[0].product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
     - `bookings[0].booking_volume` 可不填；未填、为 `null` 或空字符串时，执行阶段使用 `origin_station` 和 `weight` 调用南航 `calculateCWeight`，并将返回的 `volume` 用于后续 `calculateCharge`、`createOrder`；已填写时原值优先

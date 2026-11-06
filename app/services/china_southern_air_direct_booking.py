@@ -85,6 +85,48 @@ class ChinaSouthernAirDirectBookingService:
         return value if isinstance(value, dict) else {}
 
     @classmethod
+    def _get_shipment_contact(
+        cls, item: Dict[str, Any], business_config: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """收货人及手机齐全才提交联系人；托运人信息仅取南航开单默认配置。"""
+        consignee = str(item.get("consignee") or "").strip()
+        consignee_phone = str(item.get("consignee_phone") or "").strip()
+        if not consignee or not consignee_phone:
+            return None
+
+        defaults = cls._business_default(business_config)
+        config = cls._direct_order_config(business_config)
+        address = defaults.get("address")
+        if not isinstance(address, dict):
+            raise ChinaSouthernAirDirectBookingError("缺少南航订舱必填字段：系统参数.托运人地址")
+        region = address.get("region")
+        if isinstance(region, str):
+            region = region.split("/")
+        if not isinstance(region, list):
+            region = []
+        region_parts = [
+            cls._required_text(
+                region[index] if index < len(region) else None,
+                f"系统参数.托运人{label}",
+            )
+            for index, label in enumerate(("省份", "城市", "区县"))
+        ]
+        return {
+            "shipperName": cls._required_text(defaults.get("shipper"), "系统参数.托运人"),
+            "shipperMobile": cls._required_text(defaults.get("phone"), "系统参数.托运人手机号"),
+            "shipperState": region_parts[0],
+            "shipperCity": region_parts[1],
+            "shipperDistrict": region_parts[2],
+            "shipperAddress": cls._required_text(address.get("detail"), "系统参数.托运人详细地址"),
+            "shipperCountryCode": str(config.get("shipper_country_code") or "CN").strip().upper(),
+            "consigneeName": consignee,
+            "consigneeMobile": consignee_phone,
+            "consigneeCountryCode": str(config.get("consignee_country_code") or "CN").strip().upper(),
+            "consigneeAddress": str(config.get("consignee_address") or "机场自提").strip(),
+            "selfPickUp": str(config.get("self_pick_up") or "Y").strip().upper(),
+        }
+
+    @classmethod
     def get_form_values(
         cls, form_data: Dict[str, Any], business_config: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -146,6 +188,7 @@ class ChinaSouthernAirDirectBookingService:
             "booking_remark_narrow": str(item.get("booking_remark_narrow") or defaults.get("booking_remark_narrow") or "").strip(),
             # 为空表示不覆盖南航费用查询结果，保留上游返回的原始勾选状态。
             "selected_fee": selected_fee or None,
+            "shipment_contact": cls._get_shipment_contact(item, business_config),
             "agent_check_name": cls._required_text(defaults.get("agent_checker_name"), "系统参数.代理公司检查人名称"),
             "agent_carrier_name": cls._required_text(defaults.get("agent_consignor_name"), "系统参数.代理公司交运人名称"),
             "contact_name": cls._required_text(
@@ -492,7 +535,7 @@ class ChinaSouthernAirDirectBookingService:
                     "awbNoType": str(config.get("awb_no_type", "BMI")),
                 },
                 "orderShipmentDangerous": None,
-                "orderShipmentContact": None,
+                "orderShipmentContact": deepcopy(values.get("shipment_contact")),
                 "orderShipmentLiveAnimals": None,
             },
             "addServiceCharges": [],

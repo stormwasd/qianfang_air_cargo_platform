@@ -22,8 +22,19 @@ http.createServer(async (req, res) => {
       shipment.rateCode !== expected[shipment.shipmentTypeName]) {
     return send(400, { code: "fixture_contract_mismatch", message: "Cargo name/code mismatch" });
   }
+  // Local contract fixture only: does not establish CSA's live checkbox semantics.
+  const contact = payload.orderInfo.orderShipmentContact;
+  if (path.endsWith("/createOrder") && contact != null) {
+    const required = ["shipperName", "shipperMobile", "shipperState", "shipperCity",
+      "shipperDistrict", "shipperAddress", "shipperCountryCode", "consigneeName",
+      "consigneeMobile", "consigneeCountryCode", "consigneeAddress", "selfPickUp"];
+    if (required.some(field => typeof contact[field] !== "string" || !contact[field].trim())) {
+      return send(400, { code: "fixture_contract_mismatch", message: "Incomplete shipment contact" });
+    }
+  }
   return send(200, { code: "0000", result: {
     extServiceCharges: payload.extServiceCharges,
     observedCargoType: { name: shipment.shipmentTypeName, code: shipment.rateCode },
+    ...(path.endsWith("/createOrder") ? { observedShipmentContact: contact } : {}),
   } });
 }).listen(process.env.PORT || 4903);

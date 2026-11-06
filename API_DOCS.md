@@ -1842,6 +1842,7 @@ python -m unittest tests.test_shenzhen_air_direct_waybill -v
 - 下载时动态读取启用的数据字典 `nanfang_air_cargo_type`，将全部有效 `label` 作为`货物类型`列的单选下拉选项；数据字典同步覆盖后，再次下载即可获得最新选项。选中该列单元格时不显示额外的输入提示浮窗；该动态处理不修改模板其他列、样式、默认值或既有下拉框。
 - `特货码（多个用英文逗号隔开）`为可选列：用户只需填写默认码之外的附加特货码；多个使用英文逗号分隔，例如 `GEN,AKA`。执行订舱时后端会查询并自动合并南航默认特货码。
 - `出港货邮处理费选项`为可选列，可留空；留空时执行订舱直接透传南航费用查询返回的完整费用列表。
+- 模板末尾新增文本列 `收货人`、`收货人手机号`，分别对应 `form_data.bookings[0].consignee`、`consignee_phone`。两列都填写才启用收发货人信息；任意一列未填写时，该行 direct 订舱不提交整组联系人信息，不会报收货人必填错误。托运人、手机号、地区和详细地址从南航开单的系统默认配置读取，不增加托运人列或联系人开关列。
 - `超规货`、`无隐含危险品`、`出港货邮处理费选项`均为单选下拉框。
 
 ### 后台解析批量订舱 Excel
@@ -1859,6 +1860,7 @@ python -m unittest tests.test_shenzhen_air_direct_waybill -v
 - 后端逐行解析 Excel，每个有效数据行创建一条未执行订舱记录。
 - 全部行校验成功后才统一写库；任一行失败时不创建任何记录。
 - 根据 Excel 的 `货物类型`，精确匹配启用的数据字典 `nanfang_air_cargo_type` 的 `label`，把对应 `value` 写入 `form_data.bookings[0].cargo_type_code`。
+- `收货人`、`收货人手机号`解析为该行的 `form_data.bookings[0].consignee`、`consignee_phone`，去除首尾空白并按文本保存，响应中一并返回。两列均为可选列，兼容缺少其中一列或两列的旧模板；缺列按空字符串处理。只填一项时仍保存已填值，但执行时整组联系人传 `null`，不会从配置补默认收货人。仅填写收货人信息而缺少航班等必填数据的行，仍按不完整订舱行报错。
 - `出港货邮处理费选项`写入 `form_data.outbound_cargo_and_mail_handling_fee_options`；该列允许留空。留空时执行订舱不会按名称定位或补勾，直接使用南航费用查询接口返回的完整费用列表。
 - 本接口仅创建订舱记录，不直接调用南航；随后调用 `POST /api/v1/bookings/execute` 执行订舱。
 
@@ -1879,6 +1881,72 @@ python -m unittest tests.test_shenzhen_air_direct_waybill -v
 `PUT /api/v1/bookings/{booking_id}`
 
 南航数据的 `cargo_type_code` 缺失时，采用与新增接口一致的字典映射规则自动补齐；已传入非空值时保持原值。
+
+### 南航订舱收发货人信息（Excel 与普通页面共用）
+
+适用于 `POST /api/v1/bookings`、`PUT /api/v1/bookings/{booking_id}` 及 Excel 导入创建的记录；以下提交规则在 `direct` 执行时生效，RPA 参数协议不变。
+
+| 页面/Excel 字段 | JSON 路径 | 类型 | 必填 |
+| --- | --- | --- | --- |
+| 收货人 | `form_data.bookings[n].consignee` | string | 否 |
+| 收货人手机号 | `form_data.bookings[n].consignee_phone` | string | 否 |
+
+这两个字段位于每个 `bookings` 元素中，不在 `form_data` 顶层，也不是 `order_contact_name/order_contact_phone`。普通页面应使用相同字段提交，并从保存响应及详情接口 `GET /api/v1/bookings/{booking_id}` 的 `data.form_data.bookings[0]` 回显。批量新增时，每条记录保留各自收货人信息。手机号应以字符串提交，例如 `"13800138000"`，避免丢失前导零或 `+`。
+
+```json
+{
+  "form_data": {
+    "airline": "2",
+    "bookings": [{
+      "origin_station": "SZX",
+      "destination": "PEK",
+      "flight_date": "2026-11-06",
+      "shipper_unit": "客户公司",
+      "flight_number": "CZ3101",
+      "cargo_type": "普通货物",
+      "cargo_type_code": "3006",
+      "cargo_code": "9000",
+      "cargo_name": "服装",
+      "quantity": "2",
+      "weight": "100",
+      "consignee": "张三",
+      "consignee_phone": "13800138000"
+    }]
+  }
+}
+```
+
+执行规则（空值包括字段缺失、`null`、空字符串及去除首尾空白后为空）：
+
+| 收货人 | 收货人手机号 | 发往南航的 `orderInfo.orderShipmentContact` |
+| --- | --- | --- |
+| 有值 | 有值 | 完整对象：收货人取本条记录，托运人及地址取系统参数 |
+| 有值 | 空 | `null` |
+| 空 | 有值 | `null` |
+| 空 | 空 | `null`；历史记录维持原行为 |
+
+不新增独立的联系人启用开关；不会用业务配置中的默认收货人补齐缺项。仅当两项都有值时校验托运人配置；配置缺失或地址省市区不完整时，该条执行失败，返回 `缺少南航订舱必填字段：系统参数.托运人…`，并在航班等外部查询及运单号预占前结束。保存/导入阶段不会因为这些配置缺失而失败。
+
+启用时，南航 `orderInfo.orderShipmentContact` 映射如下。`business_default` 和 `direct_order` 均指 `china_southern_air.booking_and_create` 下的配置：
+
+| 南航字段 | 数据来源 |
+| --- | --- |
+| `consigneeName` | 本条 `bookings[0].consignee`，去除首尾空白 |
+| `consigneeMobile` | 本条 `bookings[0].consignee_phone`，去除首尾空白 |
+| `shipperName` | `business_default.shipper`（系统参数“托运人”，必填） |
+| `shipperMobile` | `business_default.phone`（系统参数“手机号”，必填） |
+| `shipperState` | `business_default.address.region` 的第 1 项（省份，必填） |
+| `shipperCity` | 同上第 2 项（城市，必填） |
+| `shipperDistrict` | 同上第 3 项（区县，必填） |
+| `shipperAddress` | `business_default.address.detail`（详细地址，必填） |
+| `shipperCountryCode` | `direct_order.shipper_country_code`，默认 `CN` |
+| `consigneeCountryCode` | `direct_order.consignee_country_code`，默认 `CN` |
+| `consigneeAddress` | `direct_order.consignee_address`，默认 `机场自提` |
+| `selfPickUp` | `direct_order.self_pick_up`，默认 `Y` |
+
+`address.region` 兼容 `"广东省/深圳市/宝安区"` 和 `["广东省", "深圳市", "宝安区"]`，各部分去除首尾空白。托运人信息在执行时读取当前系统参数，不使用页面传入的托运人覆盖。`shipper_unit` 仍仅为平台客户名称，不映射为 `shipperName`。收货人地址及提货方式沿用现有开单配置，不增加 Excel 列。
+
+订单联系人 `orderInfo.order.contactName/contactPhone` 的既有取值规则保持不变，不使用收货人信息替换。订舱转开单时继续沿用既有映射：收货人取本条订舱记录，托运人及地址取系统配置；开单自身的必填校验不变。
 
 ### 批量执行订舱（接口直连）
 

@@ -1,0 +1,23 @@
+purpose:
+  stands_in_for: CSA calculateCharge/createOrder, using the existing local cargo-type contract mock.
+  unblocks: Local HTTP verification of cargo-type pairs and optional booking shipment contacts.
+assumptions:
+  - id: booking-contact-request-serialization
+    status: supported
+    claim: In the local scenarios, direct booking serializes complete recipients and configured shippers into orderShipmentContact; incomplete recipients serialize as null.
+    reason: The real Python request builder and HTTP client reached the local Postman member, whose response echoed the serialized contact object for comparison.
+    verification: On 2026-11-06, BookingContactSimulationTests made six createOrder requests (page complete, name only, phone only, legacy missing fields, Excel complete, Excel name only). All returned HTTP 200 and the observed contacts matched the expected objects or null. This verifies the caller against this fixture, not the live provider. Uses fingerprint booking-contacts-20261106.
+    source: tests/test_china_southern_air_booking_contacts.py; app/services/china_southern_air_direct_booking.py; postman/mocks/csa-cargo-defaults/default.js
+    updated_at: "2026-11-06"
+  - id: csa-contact-checkbox-semantics
+    status: unknown
+    claim: CSA booking accepts a populated orderShipmentContact without a separate contact-section enable flag.
+    reason: Existing direct order code sends the same object to the shared createOrder endpoint without an enable flag. No live booking request or official provider contract was captured in this task; the mock models the intended shape only. The existing repository mock was reused; no remote owner mock was discovered.
+    verification: Reviewed both request builders and final HTTP serialization on 2026-11-06. Local contact requests passed, but actual CSA booking acceptance and the website checkbox semantics remain unverified. Confirm with an authorized live booking or captured website request.
+    source: app/services/china_southern_air_direct_order.py; app/services/china_southern_air_direct_booking.py; postman/mocks/csa-cargo-defaults/default.js
+    updated_at: "2026-11-06"
+fingerprints:
+  - id: booking-contacts-20261106
+    date: "2026-11-06"
+    commit: "534c6d05a8200a208efc0287998677408beae90a (dirty working tree: booking contact changes)"
+    cli: "1.74.0"

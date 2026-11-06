@@ -1301,6 +1301,9 @@ async def import_china_southern_air_booking_excel(
       直接透传南航费用查询返回的完整费用列表。
     - 本接口只创建订舱记录，不直接调用南航；确认后使用 `POST /api/v1/bookings/execute`
       执行返回的订舱 ID。
+    - `收货人`、`收货人手机号`为可选列，分别写入 `form_data.bookings[0]`
+      的 `consignee`、`consignee_phone`；缺列兼容旧模板。direct 执行时仅在两项
+      均非空时提交收发货人信息，托运人及地址取南航开单默认配置；任一项为空则整组不提交。
     """
     filename = (file.filename or "").strip()
     if not filename.lower().endswith(".xlsx"):
