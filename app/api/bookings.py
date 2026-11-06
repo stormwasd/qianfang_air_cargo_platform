@@ -343,6 +343,7 @@ def _fail_china_southern_air_direct_booking(
         else:
             _release_china_southern_air_booking_stock_item(db, stock_item_id)
     locked_booking.master_airwaybill_number = None
+    locked_booking.has_complete_contact_info = False
     locked_booking.booking_status = "2"
     locked_booking.booking_feedback = (message or "南航订舱失败")[:255]
     db.commit()
@@ -373,6 +374,7 @@ async def _execute_china_southern_air_direct_booking(
         locked_booking.booking_status = "1"
         locked_booking.booking_feedback = None
         locked_booking.master_airwaybill_number = None
+        locked_booking.has_complete_contact_info = False
         db.commit()
     except Exception:
         db.rollback()
@@ -580,6 +582,9 @@ async def _execute_china_southern_air_direct_booking(
             expected_full_number=locked_booking.master_airwaybill_number,
         )
         locked_booking.booking_status = "3"
+        locked_booking.has_complete_contact_info = bool(
+            create_payload["orderInfo"]["orderShipmentContact"]
+        )
         locked_booking.booking_feedback = None
         db.commit()
     except Exception:
@@ -773,6 +778,7 @@ async def create_booking(
                 "form_data": form_data_dict_parsed,
                 "booking_status": new_booking.booking_status,
                 "invoice_status": new_booking.invoice_status,
+                "has_complete_contact_info": bool(new_booking.has_complete_contact_info),
                 "booking_time": format_datetime_china(new_booking.booking_time),
                 "master_airwaybill_number": new_booking.master_airwaybill_number,
                 "rpa_work_uuid": new_booking.rpa_work_uuid,
@@ -794,6 +800,28 @@ async def create_booking(
         print(f"创建订舱记录失败: {str(e)}")
         print(f"错误详情: {traceback.format_exc()}")
         raise BadRequestException(f"创建订舱记录失败: {str(e)}")
+
+
+def _fill_booking_contact_flags(db: Session, items: list[BookingExecuteItem]) -> None:
+    """批量读取持久化标记；未知/无效 ID 保持 false，避免逐条查询。"""
+    booking_ids = set()
+    for item in items:
+        try:
+            booking_id = int(item.booking_id)
+        except (TypeError, ValueError):
+            continue
+        if 0 < booking_id < 2**63:
+            booking_ids.add(booking_id)
+    if not booking_ids:
+        return
+    flags = dict(db.query(Booking.id, Booking.has_complete_contact_info).filter(
+        Booking.id.in_(booking_ids)
+    ).all())
+    for item in items:
+        try:
+            item.has_complete_contact_info = bool(flags.get(int(item.booking_id), False))
+        except (TypeError, ValueError):
+            pass
 
 
 @router.post("/execute", summary="确认并执行订舱（批量）")
@@ -877,6 +905,7 @@ async def execute_booking(
                     raise ChinaSouthernAirDirectBookingError(
                         f"缺少必填参数: {', '.join(missing_params)}"
                     )
+                booking.has_complete_contact_info = False
                 task = rpa_task_service.create_task(
                     db=db,
                     task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
@@ -914,6 +943,7 @@ async def execute_booking(
                     error_message=f"处理订舱时发生错误: {exc}",
                 ))
                 failed_count += 1
+        _fill_booking_contact_flags(db, execute_results)
         response_data = BookingExecuteResponse(
             items=execute_results, total=len(execute_results),
             success_count=success_count, failed_count=failed_count,
@@ -1019,6 +1049,7 @@ async def execute_booking(
                 created_by=current_user.id,
             )
             booking.booking_status = "1"
+            booking.has_complete_contact_info = False
             booking.booking_feedback = None
             db.add(task)
             db.commit()
@@ -1117,6 +1148,7 @@ async def execute_booking(
 
     success_count = sum(1 for item in final_items if item.success)
     failed_count = len(final_items) - success_count
+    _fill_booking_contact_flags(db, final_items)
     response_data = BookingExecuteResponse(
         items=final_items,
         total=len(final_items),
@@ -1228,6 +1260,7 @@ async def get_bookings(
             "form_data": processed_form_data,
             "booking_status": booking.booking_status,
             "invoice_status": booking.invoice_status,
+            "has_complete_contact_info": bool(booking.has_complete_contact_info),
             "booking_time": format_datetime_china(booking.booking_time),
             "master_airwaybill_number": booking.master_airwaybill_number,
             "rpa_work_uuid": booking.rpa_work_uuid,
@@ -1363,6 +1396,7 @@ async def import_china_southern_air_booking_excel(
                 "form_data": form_data,
                 "booking_status": new_booking.booking_status,
                 "invoice_status": new_booking.invoice_status,
+                "has_complete_contact_info": bool(new_booking.has_complete_contact_info),
                 "booking_time": format_datetime_china(new_booking.booking_time),
                 "master_airwaybill_number": new_booking.master_airwaybill_number,
                 "created_at": format_datetime_china(new_booking.created_at),
@@ -1400,6 +1434,7 @@ async def get_booking(
         "form_data": form_data_dict,
         "booking_status": booking.booking_status,
         "invoice_status": booking.invoice_status,
+        "has_complete_contact_info": bool(booking.has_complete_contact_info),
         "booking_time": format_datetime_china(booking.booking_time),
         "master_airwaybill_number": booking.master_airwaybill_number,
         "rpa_work_uuid": booking.rpa_work_uuid,
@@ -1590,7 +1625,8 @@ async def get_booking_waybill_form(
         "form_data": waybill_form_data,
         "master_airwaybill_number": booking.master_airwaybill_number,
         "booking_status": booking.booking_status,
-        "invoice_status": booking.invoice_status
+        "invoice_status": booking.invoice_status,
+        "has_complete_contact_info": bool(booking.has_complete_contact_info)
     }
     
     return success_response(data=response_data, msg="查询成功")
@@ -1640,6 +1676,13 @@ async def update_booking(
     
     form_data_json = json.dumps(single_form_data, ensure_ascii=False)
     
+    if existing_booking.has_complete_contact_info:
+        try:
+            previous_form_data = json.loads(existing_booking.form_data)
+        except (TypeError, ValueError):
+            previous_form_data = None
+        if previous_form_data != single_form_data:
+            existing_booking.has_complete_contact_info = False
     existing_booking.form_data = form_data_json
     
     db.commit()
@@ -1652,6 +1695,7 @@ async def update_booking(
         "form_data": form_data_dict,
         "booking_status": existing_booking.booking_status,
         "invoice_status": existing_booking.invoice_status,
+        "has_complete_contact_info": bool(existing_booking.has_complete_contact_info),
         "booking_time": format_datetime_china(existing_booking.booking_time),
         "master_airwaybill_number": existing_booking.master_airwaybill_number,
         "rpa_work_uuid": existing_booking.rpa_work_uuid,
@@ -1824,6 +1868,7 @@ async def cancel_booking(
         "form_data": form_data_dict,
         "booking_status": booking.booking_status,
         "invoice_status": booking.invoice_status,
+        "has_complete_contact_info": bool(booking.has_complete_contact_info),
         "booking_time": format_datetime_china(booking.booking_time),
         "master_airwaybill_number": booking.master_airwaybill_number,
         "rpa_work_uuid": booking.rpa_work_uuid,
@@ -2056,6 +2101,7 @@ async def direct_invoice(
     3. 如果是南航，创建RPA直接开单任务并加入队列
     4. Worker会从队列中取出任务执行RPA调用
     5. 当RPA执行成功后，从4个队列中获取数据，创建结算单，然后删除队列
+    联系人完整性由前端依据 has_complete_contact_info 控制按钮，本接口不新增联系人拦截。
     
     - **booking_id**: 订舱ID（字符串格式）
     
@@ -2078,7 +2124,7 @@ async def direct_invoice(
     
     if not booking.master_airwaybill_number:
         raise BadRequestException("订舱尚未完成，无法进行开单操作")
-    
+
     existing_task = rpa_task_service.get_pending_task_for_target(
         db,
         target_type=RPATargetType.BOOKING.value,
@@ -2091,7 +2137,7 @@ async def direct_invoice(
     business_config = _get_business_config(db)
     if not business_config:
         raise BadRequestException("业务参数配置不存在，无法调用南航直接开单接口")
-    
+
     china_southern_air_config = business_config.get("china_southern_air", {})
     booking_and_create_config = china_southern_air_config.get("booking_and_create", {})
     china_southern_air_login = booking_and_create_config.get("china_southern_air_login", {})
@@ -2132,6 +2178,7 @@ async def direct_invoice(
         "form_data": form_data_dict,
         "booking_status": booking.booking_status,
         "invoice_status": booking.invoice_status,
+        "has_complete_contact_info": bool(booking.has_complete_contact_info),
         "booking_time": format_datetime_china(booking.booking_time),
         "master_airwaybill_number": booking.master_airwaybill_number,
         "rpa_work_uuid": booking.rpa_work_uuid,
@@ -2311,6 +2358,7 @@ async def invoice_with_data(
         "submitted_form_data": form_data,  
         "booking_status": booking.booking_status,
         "invoice_status": booking.invoice_status,
+        "has_complete_contact_info": bool(booking.has_complete_contact_info),
         "booking_time": format_datetime_china(booking.booking_time),
         "master_airwaybill_number": booking.master_airwaybill_number,
         "rpa_work_uuid": booking.rpa_work_uuid,

@@ -9,6 +9,13 @@ assumptions:
     verification: On 2026-11-06, BookingContactSimulationTests made six createOrder requests (page complete, name only, phone only, legacy missing fields, Excel complete, Excel name only). All returned HTTP 200 and the observed contacts matched the expected objects or null. This verifies the caller against this fixture, not the live provider. Uses fingerprint booking-contacts-20261106.
     source: tests/test_china_southern_air_booking_contacts.py; app/services/china_southern_air_direct_booking.py; postman/mocks/csa-cargo-defaults/default.js
     updated_at: "2026-11-06"
+  - id: booking-contact-success-snapshot
+    status: supported
+    claim: Direct booking persists has_complete_contact_info only after successful createOrder with a complete contact object; incomplete recipients or configured shippers submit null and still succeed with false.
+    reason: The actual Python booking executor and HTTP client used the local Postman simulation; prerequisite airline lookups and stock allocation were isolated, while SQLite transactions and booking API responses were real.
+    verification: On 2026-11-07 (Asia/Shanghai), the regression run exercised three executor HTTP scenarios (complete contacts, missing recipient phone, missing shipper detail) and six existing page/Excel HTTP serialization scenarios. All nine createOrder requests returned HTTP 200; persisted executor flags were true/false/false. The related suite ran 67 tests, 66 passed and one unrelated cargo-type simulation test was skipped because CSA_CARGO_SIM_ORIGIN was unset. No live CSA order was submitted.
+    source: tests/test_china_southern_air_booking_contact_flag.py; tests/test_china_southern_air_booking_contacts.py; app/api/bookings.py
+    updated_at: "2026-11-07"
   - id: csa-contact-checkbox-semantics
     status: unknown
     claim: CSA booking accepts a populated orderShipmentContact without a separate contact-section enable flag.
@@ -20,4 +27,8 @@ fingerprints:
   - id: booking-contacts-20261106
     date: "2026-11-06"
     commit: "534c6d05a8200a208efc0287998677408beae90a (dirty working tree: booking contact changes)"
+    cli: "1.74.0"
+  - id: booking-contact-snapshot-20261107
+    date: "2026-11-07"
+    commit: "f9612b4 (dirty working tree: contact completeness snapshot)"
     cli: "1.74.0"

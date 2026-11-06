@@ -136,23 +136,20 @@ class BookingContactTests(unittest.TestCase):
         self.assertEqual(contact["consigneeAddress"], "指定自提地址")
         self.assertEqual(contact["selfPickUp"], "Y")
 
-    def test_enabled_contacts_require_complete_shipper_configuration(self):
+    def test_incomplete_shipper_configuration_disables_whole_contact_group(self):
         for key in ("shipper", "phone", "address"):
             with self.subTest(key=key):
                 config = configuration()
                 config["china_southern_air"]["booking_and_create"]["business_default"].pop(key)
-                with self.assertRaisesRegex(ChinaSouthernAirDirectBookingError, "系统参数.托运人"):
-                    Direct.get_form_values(form(), config)
+                self.assertIsNone(payload(form(), config)["orderInfo"]["orderShipmentContact"])
         for region in (None, "广东省/深圳市", ["广东省", "", "宝安区"], "广东省/深圳市/ "):
             with self.subTest(region=region):
                 config = configuration()
                 config["china_southern_air"]["booking_and_create"]["business_default"]["address"]["region"] = region
-                with self.assertRaisesRegex(ChinaSouthernAirDirectBookingError, "系统参数.托运人"):
-                    Direct.get_form_values(form(), config)
+                self.assertIsNone(payload(form(), config)["orderInfo"]["orderShipmentContact"])
         config = configuration()
         config["china_southern_air"]["booking_and_create"]["business_default"]["address"]["detail"] = " "
-        with self.assertRaisesRegex(ChinaSouthernAirDirectBookingError, "托运人详细地址"):
-            Direct.get_form_values(form(), config)
+        self.assertIsNone(payload(form(), config)["orderInfo"]["orderShipmentContact"])
 
     def test_contacts_only_change_the_shipment_contact_object(self):
         enabled = payload(form(), configuration())

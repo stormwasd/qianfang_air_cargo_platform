@@ -1239,7 +1239,9 @@ class RPAWorker:
         if not booking:
             raise Exception("订舱不存在")
         
-        booking.booking_status = "1"  
+        booking.booking_status = "1"
+        # 旧 RPA 订舱协议不提交这组联系人，不推断为已完整提交。
+        booking.has_complete_contact_info = False
         db.commit()
         
         allocated_stock_item = None

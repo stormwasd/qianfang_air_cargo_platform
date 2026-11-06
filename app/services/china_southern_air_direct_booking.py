@@ -88,7 +88,7 @@ class ChinaSouthernAirDirectBookingService:
     def _get_shipment_contact(
         cls, item: Dict[str, Any], business_config: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """收货人及手机齐全才提交联系人；托运人信息仅取南航开单默认配置。"""
+        """收发货人必需信息全部齐全才提交整组；缺项仍允许正常订舱。"""
         consignee = str(item.get("consignee") or "").strip()
         consignee_phone = str(item.get("consignee_phone") or "").strip()
         if not consignee or not consignee_phone:
@@ -98,26 +98,27 @@ class ChinaSouthernAirDirectBookingService:
         config = cls._direct_order_config(business_config)
         address = defaults.get("address")
         if not isinstance(address, dict):
-            raise ChinaSouthernAirDirectBookingError("缺少南航订舱必填字段：系统参数.托运人地址")
+            return None
         region = address.get("region")
         if isinstance(region, str):
             region = region.split("/")
         if not isinstance(region, list):
             region = []
-        region_parts = [
-            cls._required_text(
-                region[index] if index < len(region) else None,
-                f"系统参数.托运人{label}",
-            )
-            for index, label in enumerate(("省份", "城市", "区县"))
-        ]
+        region_parts = [str(part or "").strip() for part in region[:3]]
+        shipper = str(defaults.get("shipper") or "").strip()
+        shipper_phone = str(defaults.get("phone") or "").strip()
+        shipper_address = str(address.get("detail") or "").strip()
+        if len(region_parts) != 3 or not all([
+            shipper, shipper_phone, shipper_address, *region_parts,
+        ]):
+            return None
         return {
-            "shipperName": cls._required_text(defaults.get("shipper"), "系统参数.托运人"),
-            "shipperMobile": cls._required_text(defaults.get("phone"), "系统参数.托运人手机号"),
+            "shipperName": shipper,
+            "shipperMobile": shipper_phone,
             "shipperState": region_parts[0],
             "shipperCity": region_parts[1],
             "shipperDistrict": region_parts[2],
-            "shipperAddress": cls._required_text(address.get("detail"), "系统参数.托运人详细地址"),
+            "shipperAddress": shipper_address,
             "shipperCountryCode": str(config.get("shipper_country_code") or "CN").strip().upper(),
             "consigneeName": consignee,
             "consigneeMobile": consignee_phone,

@@ -129,7 +129,11 @@ class DirectBookingWorker:
                 business_config=config, token=token.token,
                 allow_in_progress=True,
             )
-            task.result = json.dumps({"booking_id": str(booking_id)}, ensure_ascii=False)
+            db.refresh(booking)
+            task.result = json.dumps({
+                "booking_id": str(booking_id),
+                "has_complete_contact_info": bool(booking.has_complete_contact_info),
+            }, ensure_ascii=False)
             task.status = ChinaSouthernAirBookingTaskStatus.SUCCESS
             task.finished_at = get_china_now()
             task.error_message = None
@@ -146,6 +150,7 @@ class DirectBookingWorker:
                 booking = db.query(Booking).filter(Booking.id == booking_id).first()
                 if booking and booking.booking_status != "3":
                     booking.booking_status = "2"
+                    booking.has_complete_contact_info = False
                     booking.booking_feedback = message[:255]
             task = db.query(ChinaSouthernAirBookingTask).filter(ChinaSouthernAirBookingTask.id == task_id).first()
             if task:
@@ -208,6 +213,7 @@ class DirectBookingWorkerManager:
                     booking = db.query(Booking).filter(Booking.id == booking_id).first()
                     if booking and booking.booking_status != "3":
                         booking.booking_status = "2"
+                        booking.has_complete_contact_info = False
                         booking.booking_feedback = task.error_message[:255]
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                     pass

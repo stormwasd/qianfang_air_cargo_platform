@@ -106,6 +106,7 @@ class BookingResponse(BaseModel):
     invoice_status: str
     booking_time: datetime
     master_airwaybill_number: Optional[str]
+    has_complete_contact_info: bool = Field(False, description="南航直连订舱成功时是否已提交完整收发货人信息；只读")
     rpa_work_uuid: Optional[str]
     rpa_queue_uuid: Optional[str]
     rpa_queue_id: Optional[str]
@@ -134,6 +135,7 @@ class BookingExecuteItem(BaseModel):
     booking_id: str
     task_id: Optional[str] = Field(None, description="南航直连订舱任务ID")
     success: bool
+    has_complete_contact_info: bool = Field(False, description="本条订舱已持久化的联系人完整标记，未确认提交时为false")
     error_message: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = Field(
         None,

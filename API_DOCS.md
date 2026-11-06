@@ -1918,14 +1918,13 @@ python -m unittest tests.test_shenzhen_air_direct_waybill -v
 
 执行规则（空值包括字段缺失、`null`、空字符串及去除首尾空白后为空）：
 
-| 收货人 | 收货人手机号 | 发往南航的 `orderInfo.orderShipmentContact` |
+| 本条收货人及手机号 | 系统托运人、手机号、省市区及详细地址 | 发往南航的 `orderInfo.orderShipmentContact` |
 | --- | --- | --- |
-| 有值 | 有值 | 完整对象：收货人取本条记录，托运人及地址取系统参数 |
-| 有值 | 空 | `null` |
-| 空 | 有值 | `null` |
-| 空 | 空 | `null`；历史记录维持原行为 |
+| 全部有值 | 全部有值 | 完整对象：收货人取本条记录，托运人及地址取系统参数 |
+| 任一缺失 | 任意 | `null`，继续订舱 |
+| 全部有值 | 任一缺失 | `null`，继续订舱 |
 
-不新增独立的联系人启用开关；不会用业务配置中的默认收货人补齐缺项。仅当两项都有值时校验托运人配置；配置缺失或地址省市区不完整时，该条执行失败，返回 `缺少南航订舱必填字段：系统参数.托运人…`，并在航班等外部查询及运单号预占前结束。保存/导入阶段不会因为这些配置缺失而失败。
+不新增独立的联系人启用开关；不会用业务配置中的默认收货人补齐缺项。只要上述必需信息有一项缺失，就不提交整组联系人，不因此阻止保存、导入或订舱执行；其他既有订舱必填项及上游校验仍有效。完整地址要求省、市、区和详细地址四项都有值，不只检查地址对象是否存在。
 
 启用时，南航 `orderInfo.orderShipmentContact` 映射如下。`business_default` 和 `direct_order` 均指 `china_southern_air.booking_and_create` 下的配置：
 
@@ -1961,6 +1960,64 @@ python -m unittest tests.test_shenzhen_air_direct_waybill -v
 最终 `volume` 确定后、预占单号之前，后端调用南航 `queryB2eFlightPrice` 查询当前产品的运价舱位。请求映射为：`flightDep <- origin_station`、`flightDest <- destination`、`flightNo <- flight_number`、`flightDate <- flight_date`、`rateCode/shipmentType <- cargo_type_code`、`shipmentTypeName <- cargo_type`、`weight <- weight`、`volume <- 最终订舱体积`；其余固定为 `channel=B`、`customerCode=SZXFED`、`dimensions=null`、`rateType=SPY`。南航可能同时返回多个产品方案，后端按有效 `product_name`（为空时使用与 `parentProductionName` 相同的业务配置或默认“南航快运”）精确匹配 `result.charge[].parentProductionName`，将该项 `flightPriceCalculateResult.spaceClass` 同时写入 `bookGrade`、`spaceClass`，将 `subSpaceClass` 写入同名字段，并用于后续 `calculateCharge`、`createOrder`。匹配不到产品、舱位为空或南航查询失败时，该条订舱失败且不占用单号；`error_details.stage` 为 `query_b2e_flight_price`，并返回期望产品、可选产品及安全的上下游诊断信息。同一次批量执行中，全部查询维度一致时复用结果。
 
 `form_data.bookings[0].special_cargo_code` 为可选字段，填写内容视为用户附加特货码。执行阶段在预占单号之前调用南航 `queryShipmentSubProductCode`：`dest <- destination`、`origin <- origin_station`、`shipmentType <- cargo_type`、`productName <- product_name`（为空时使用与 `parentProductionName` 一致的业务配置或默认“南航快运”），并固定传入 `channel=B`、`directTransfer=D`、`customerno=SZXFED`。返回的 `result.subCode` 作为默认码，按“默认码在前、用户码在后”进行大小写不敏感去重；例如默认 `XPS`、用户填写 `GEN`，持久化的 `form_data` 会回写为 `XPS,GEN`，发往南航 `orderInfo.orderShipment.spCode` 和 `productionCode` 的值均为 `XPS/GEN`。英文逗号、中文逗号及历史 `/` 分隔数据均兼容；同一次批量执行中，相同始发站、目的站、货物类型和产品名称复用查询结果。查询失败时该条订舱失败且不占用单号，`error_details.stage` 为 `query_shipment_sub_product_code`，诊断数据不包含 Token、Cookie 或请求头。
+
+### 订舱完整联系人提交标记与直接开单
+
+新增只读字段 `has_complete_contact_info`，JSON 类型为 **boolean**，放在 booking 响应对象顶层，与 `booking_status` 同级，不在 `form_data` 中。前端提交该字段不会覆盖服务端值。
+
+- `true`：本平台南航 `direct` 订舱成功，且这次实际提交的 `orderInfo.orderShipmentContact` 包含完整收发货人信息。
+- `false`：未执行、执行中、执行失败、联系人任一必需项缺失，或无法确认完整信息已经提交。字段不代表实时校验当前系统配置，也不代表已查询核验南航远端订单。
+- 执行时使用本条收货人及手机号，以及当时系统配置中的托运人、手机号、省市区和详细地址判断是否提交联系人；只有成功受理并完成本地成功状态落库后才写为 `true`。入队及重试时先清为 `false`，失败不残留旧的 `true`；重复提交被拒绝不会清空已有成功记录的标记。
+- 后续修改系统配置不改变既有成功标记；通过修改订舱接口实际修改 `form_data` 时，保守清为 `false`，避免把修改后的内容当成已提交南航的信息。相同表单重复保存保留原值。退舱、直接开单及修改数据后开单保留原标记，仍需结合原有业务状态判断按钮可用性。
+- 新建、历史记录及其他航司默认 `false`；历史数据不按当前表单/配置推断回填。旧南航 RPA 订舱协议不提交这组联系人，因此也不会写为 `true`。
+
+以下响应统一新增字段（现有字段及列表 `form_data` 扁平化规则不变）：
+
+| 接口 | 字段路径 |
+| --- | --- |
+| `POST /api/v1/bookings` | `data.items[].has_complete_contact_info` |
+| `POST /api/v1/bookings/china-southern-air/import-excel` | `data.items[].has_complete_contact_info` |
+| `GET /api/v1/bookings` | `data.items[].has_complete_contact_info` |
+| `GET /api/v1/bookings/{booking_id}` | `data.has_complete_contact_info` |
+| `PUT /api/v1/bookings/{booking_id}` | `data.has_complete_contact_info` |
+| `GET /api/v1/bookings/{booking_id}/waybill-form` | `data.has_complete_contact_info` |
+| `POST /api/v1/bookings/{booking_id}/cancel` | `data.has_complete_contact_info` |
+| `POST /api/v1/bookings/{booking_id}/direct-invoice` | `data.has_complete_contact_info` |
+| `POST /api/v1/bookings/{booking_id}/invoice-with-data` | `data.has_complete_contact_info` |
+| `POST /api/v1/bookings/execute` | `data.items[].has_complete_contact_info`，读取各 booking 已持久化的实际标记；无效或不存在的 ID 为 `false` |
+| `GET /api/v1/china-southern-air-booking-tasks/{task_id}` | 新成功任务的 `data.result.has_complete_contact_info` |
+| `GET /api/v1/china-southern-air-booking-tasks` | 新成功任务的 `data.list[].result.has_complete_contact_info` |
+
+任务 `result` 中的标记是该次执行完成时的结果快照；待执行、失败或历史任务的 `result` 仍可能为 `null` 或不含该字段，前端应按 `false` 处理；以 booking 列表/详情中的字段控制当前记录按钮。批量执行等待超时不等于最终执行失败，应继续通过原有任务查询及 booking 查询获取最终结果。
+
+例如 booking 详情返回（省略其他既有字段）：
+
+```json
+{
+  "code": 200,
+  "data": {
+    "id": "123456789012345678",
+    "booking_status": "3",
+    "has_complete_contact_info": true
+  },
+  "msg": "查询成功"
+}
+```
+
+前端将此字段作为订舱后“直接开单”按钮的额外可用条件：只有 `has_complete_contact_info === true` 才满足联系人条件；`false` 时置灰，可提示“订舱时未提交完整收发货人信息，请选择修改数据后开单”。同时沿用原有订舱成功、主单号、开单中/已开单、退舱等按钮条件。
+
+`POST /api/v1/bookings/{booking_id}/direct-invoice` **取消此前新增的联系人完整性拦截**，不再根据 booking 表单、当前托运人配置或该标记额外返回联系人缺失错误。原有航司、主单号、登录配置和重复任务校验继续有效；成功入队仍返回 `data.task_id`，不代表开单已完成。`invoice-with-data` 的修改数据后开单逻辑及开单自身校验保持不变。
+
+部署前执行 `sql/migration_add_booking_complete_contact_info.sql`（MySQL，一次性执行）：
+
+```sql
+ALTER TABLE `bookings`
+    ADD COLUMN `has_complete_contact_info` TINYINT(1) NOT NULL DEFAULT 0
+    COMMENT '南航直连订舱成功时是否已提交完整收发货人信息'
+    AFTER `master_airwaybill_number`;
+```
+
+数据库存储 `0/1`，API 序列化为 `false/true`；必须先加列再部署后端，不需要修改 Excel 模板或前端订舱请求字段。
 
 ## 南航开单
 
