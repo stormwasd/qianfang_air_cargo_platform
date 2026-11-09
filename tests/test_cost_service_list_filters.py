@@ -30,7 +30,7 @@ class CostServiceListDateFilterTests(unittest.IsolatedAsyncioTestCase):
                 warehouse_entry_date=date(2026, 9, 1),
                 flight_date=date(2026, 9, 20),
                 pay_intl_air_flight_date=date(2026, 9, 20),
-                customer_name="国际空运日期匹配",
+                customer_name="委托和国际空运日期均匹配",
             ),
             CostConsignment(
                 id=2,
@@ -60,6 +60,7 @@ class CostServiceListDateFilterTests(unittest.IsolatedAsyncioTestCase):
             CostConsignment(id=5, flight_date=date(2026, 9, 20),
                             pay_dom_air_flight_date=date(2026, 9, 20)),
             CostConsignment(id=6, pay_intl_air_flight_date=date(2026, 9, 22)),
+            CostConsignment(id=7, pay_dom_air_flight_date=date(2026, 9, 20)),
         ])
         self.db.commit()
 
@@ -91,7 +92,7 @@ class CostServiceListDateFilterTests(unittest.IsolatedAsyncioTestCase):
             end_flight_date="2026-09-20",
         )
 
-        self.assertEqual(ids, {"1", "4"})
+        self.assertEqual(ids, {"1", "3", "5"})
 
     async def test_warehouse_date_filter_keeps_its_existing_behavior(self):
         ids = await self.query_ids(
@@ -109,7 +110,7 @@ class CostServiceListDateFilterTests(unittest.IsolatedAsyncioTestCase):
             end_flight_date="2026-09-20",
         )
 
-        self.assertEqual(ids, set())
+        self.assertEqual(ids, {"3"})
         self.assertEqual(await self.query_ids(
             start_warehouse_date="2026-09-20", end_warehouse_date="2026-09-20",
             start_flight_date="2026-09-21", end_flight_date="2026-09-21",
@@ -118,12 +119,22 @@ class CostServiceListDateFilterTests(unittest.IsolatedAsyncioTestCase):
     async def test_flight_date_supports_independent_one_sided_bounds(self):
         self.assertEqual(
             await self.query_ids(start_flight_date="2026-09-21"),
-            {"2", "6"},
+            {"2", "4"},
         )
         self.assertEqual(
             await self.query_ids(end_flight_date="2026-09-20"),
-            {"1", "3", "4"},
+            {"1", "3", "5"},
         )
+
+    async def test_unfiltered_list_keeps_null_dates_and_filter_does_not_write_dates(self):
+        self.assertEqual(await self.query_ids(), {str(i) for i in range(1, 8)})
+        self.assertEqual(await self.query_ids(
+            start_flight_date="2026-09-19", end_flight_date="2026-09-22",
+        ), {str(i) for i in range(1, 6)})
+        self.assertIsNone(self.db.get(CostConsignment, 6).flight_date)
+        self.assertIsNone(self.db.get(CostConsignment, 7).flight_date)
+        self.assertEqual(self.db.get(CostConsignment, 3).pay_intl_air_flight_date, date(2026, 9, 19))
+        self.assertFalse(self.db.dirty)
 
     def test_openapi_marks_both_flight_date_parameters_as_optional(self):
         app = FastAPI()
@@ -137,8 +148,8 @@ class CostServiceListDateFilterTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(name=name):
                 self.assertIn(name, parameters)
                 self.assertFalse(parameters[name]["required"])
-                self.assertIn("payables.intl_air.flight_date", parameters[name]["description"])
-                self.assertIn("payables.intl_air.flight_date", CostConsignmentQuery.model_fields[name].description)
+                self.assertIn("consignor_info.flight_date", parameters[name]["description"])
+                self.assertIn("consignor_info.flight_date", CostConsignmentQuery.model_fields[name].description)
 
 
 class CostServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
@@ -228,7 +239,7 @@ class CostServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
             ({"status": 0}, {"1"}), ({"status": 1}, {"6"}), ({"status": 2}, {"7"}),
             ({"customer_name": "客户A", "agent": "代理A"}, {"1", "6"}),
             ({"customer_name": "客户A", "agent": "代理B"}, set()),
-            ({"start_flight_date": "2026-11-02", "end_flight_date": "2026-11-02"}, {"6"}),
+            ({"start_flight_date": "2026-11-02", "end_flight_date": "2026-11-02"}, {"7"}),
             ({"start_warehouse_date": "2026-11-01", "end_warehouse_date": "2026-11-01"}, {"1"}),
             ({"flight_no": "CZ-TOP"}, {"1"}), ({"flight_no": "CZ-INTL"}, {"6"}),
             ({"flight_no": "CZ-DOM"}, {"7"}),
@@ -238,19 +249,21 @@ class CostServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["total"], len(expected))
                 self.assertEqual({item["id"] for item in result["items"]}, expected)
 
-    async def test_international_flight_date_boundaries_pagination_and_null_exclusion(self):
+    async def test_entrustment_flight_date_boundaries_pagination_and_null_exclusion(self):
         params = {"start_flight_date": "2026-11-01", "end_flight_date": "2026-11-03", "pageSize": 2}
         first = await self.query(**params)
-        self.assertEqual(first["total"], 3)
+        self.assertEqual(first["total"], 4)
         self.assertEqual([item["id"] for item in first["items"]], ["7", "6"])
         second = await self.query(**params, page=2)
-        self.assertEqual(second["total"], 3)
-        self.assertEqual([item["id"] for item in second["items"]], ["1"])
+        self.assertEqual(second["total"], 4)
+        self.assertEqual([item["id"] for item in second["items"]], ["1", "2"])
         exact = await self.query(start_flight_date="2026-11-02", end_flight_date="2026-11-02")
-        self.assertEqual(exact["total"], 1)
-        self.assertEqual(exact["items"][0]["id"], "6")
-        self.assertEqual(exact["items"][0]["payables"]["intl_air"]["flight_date"], "2026-11-02")
-        self.assertEqual(exact["items"][0]["consignor_info"]["flight_date"], "2026-11-01")
+        self.assertEqual(exact["total"], 2)
+        self.assertEqual([item["id"] for item in exact["items"]], ["7", "2"])
+        self.assertEqual(exact["items"][0]["payables"]["intl_air"]["flight_date"], "2026-11-03")
+        self.assertEqual(exact["items"][0]["consignor_info"]["flight_date"], "2026-11-02")
+        self.assertIsNone(exact["items"][1]["payables"]["intl_air"]["flight_date"])
+        self.assertEqual(exact["items"][1]["consignor_info"]["flight_date"], "2026-11-02")
         reversed_dates = await self.query(start_flight_date="2026-11-03", end_flight_date="2026-11-01")
         self.assertEqual(reversed_dates, {"total": 0, "items": [], "page": 1, "pageSize": 10})
         self.assertFalse(self.db.dirty)
@@ -261,7 +274,7 @@ class CostServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(params=params):
                 self.assertEqual((await self.query(**params))["total"], 8)
         result = await self.query(start_flight_date="bad-date", end_flight_date="2026-11-02")
-        self.assertEqual({x["id"] for x in result["items"]}, {"1", "6"})
+        self.assertEqual({x["id"] for x in result["items"]}, {"2", "6", "7"})
 
     def test_openapi_and_query_schema_describe_international_master_doc(self):
         params = {p["name"]: p for p in self.app.openapi()["paths"]["/api/v1/cost-service/consignments"]["get"]["parameters"]}

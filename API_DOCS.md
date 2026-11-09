@@ -9856,15 +9856,15 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      |---|---|---|---|
      | `start_warehouse_date` | 否 | `consignor_info.warehouse_entry_date` | 进仓日期下限，包含当天 |
      | `end_warehouse_date` | 否 | `consignor_info.warehouse_entry_date` | 进仓日期上限，包含当天 |
-     | `start_flight_date` | 否 | `payables.intl_air.flight_date` | 应付款项-国际空运航班日期下限，包含当天 |
-     | `end_flight_date` | 否 | `payables.intl_air.flight_date` | 应付款项-国际空运航班日期上限，包含当天 |
+     | `start_flight_date` | 否 | `consignor_info.flight_date` | 委托信息航班日期下限，包含当天 |
+     | `end_flight_date` | 否 | `consignor_info.flight_date` | 委托信息航班日期上限，包含当天 |
 
    - 进仓日期和航班日期是两组相互独立的可选条件。前端可以只传 `start_flight_date`、只传 `end_flight_date`，或同时传航班日期上下限，而无需传任何进仓日期参数。
    - 同一组只传开始日期时查询该日期及之后的数据，只传结束日期时查询该日期及之前的数据；开始和结束日期相同时可精确查询某一天。
-   - 两组日期同时传入时采用 AND 关系，记录必须同时满足进仓日期范围和应付款项-国际空运航班日期范围。均不传时不进行日期筛选。
-   - 航班日期条件仅匹配 `payables.intl_air.flight_date`，不匹配货主委托信息或国内空运应付中的航班日期；国际空运航班日期为空时，不符合任何有效日期边界条件，不回退其他日期。完整约定及示例见23.17。
-   - 为支持范围查询，`cost_consignments.pay_intl_air_flight_date` 增加数据库索引；已有数据库需执行 `sql/migration_add_cost_consignment_intl_air_flight_date_index.sql` 一次，全新建表脚本已包含该索引。保留原 `flight_date` 索引及既有导出排序。
-   - 示例：只查询应付款项-国际空运航班日期为 2026-09-20 的记录：`GET /api/v1/cost-service/consignments?start_flight_date=2026-09-20&end_flight_date=2026-09-20&page=1&pageSize=10`。
+   - 两组日期同时传入时采用 AND 关系，记录必须同时满足进仓日期范围和委托信息航班日期范围。均不传时不进行日期筛选。
+   - 航班日期条件仅匹配 `consignor_info.flight_date`（委托信息区），为空时不满足任何有效日期边界，不回退国际/国内空运日期。完整约定及示例见23.20；23.17为已被替代的历史规则。
+   - 范围查询使用既有 `cost_consignments.flight_date` 列及其索引。本次无新增迁移；旧库若缺少该索引，可按23.20说明核查补齐。既有导出排序保持原规则。
+   - 示例：只查询委托信息航班日期为 2026-09-20 的记录：`GET /api/v1/cost-service/consignments?start_flight_date=2026-09-20&end_flight_date=2026-09-20&page=1&pageSize=10`。
 
 8. **列表航班号筛选规范**：
    - `GET /api/v1/cost-service/consignments` 的 `flight_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航班号字段：`consignor_info.flight_no`、`payables.intl_air.flight_no`、`payables.dom_air.flight_no`。
@@ -10005,7 +10005,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      - 在费用登记台新增费用单据时，系统亦会自动在客服接单台表 (`consignment_infos`) 中创建相同 `id` 的委托记录，实现无缝互通。
    - **修改 (PUT)**：
      - 客服接单台点击“保存”时，客服单据状态变为 `status=1`（已提交），并自动联动更新费用登记台相同 `id` 的各委托字段（若不存在则补全创建）；同步后的费用单据状态统一变为 `status=0`（未提交），不会直接标记为费用已提交；
-     - 客服接单台仅允许对status=0的草稿“暂存”修改，保持`0`（未提交）；已提交记录保存/暂存均返回409，费用登记台已有数据保持不变；费用登记台暂存也不更新客服记录。费用登记台点击“保存”时，按既有代码同步覆盖同 ID 客服记录（包括未提交客服草稿），并将客服状态设为 `1`；客服记录不存在时会同步创建。费用保存同时回写应收/应付快照；详见23.11。
+     - 客服接单台在editable=true时可“暂存”修改，暂存后为`0`（未提交）；费用保存提交锁定客服后，客服保存/暂存均返回409；客服暂存时费用登记台已有数据保持不变；费用登记台暂存也不更新客服记录。费用登记台点击“保存”时，按既有代码同步覆盖同 ID 客服记录（包括未提交客服草稿），并将客服状态设为 `1`；客服记录不存在时会同步创建。费用保存同时回写应收/应付快照；详见23.11。
    - **作废 (PUT /void)**：
      - 从任意一台作废时，将来源台记录设置为 `status=2`；同 ID 对端记录存在时在同一事务中同步设置为 `status=2`，不存在时不补建。作废只改变状态，不清空业务字段、不删除记录；详情、列表和导出仍可查询。
      - 作废是终态。已作废单据不能再通过保存或暂存接口改回 `0/1`；重复作废及作废后保存/暂存均返回 HTTP 409。系统目前不提供恢复作废接口。
@@ -10032,10 +10032,12 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    | `volume`（体积） | `payables.intl_air.volume` | `pay_intl_air_volume` |
    | `flight_doc_no`（航班单号） | `payables.intl_air.flight_doc_no` | `pay_intl_air_flight_doc_no` |
 
-   - 上述字段采用覆盖语义；客服草稿提交时，会使用保存后货主委托信息中的当前值预填费用登记台对应国际空运字段；分组中明确填写的字段（含null）优先于预填值。已提交客服记录不得再次保存。同步时当前值为 `null` 或空值的，目标字段也写入对应空值。
+   - 上述字段采用覆盖语义；客服草稿提交时，会使用保存后货主委托信息中的当前值预填费用登记台对应国际空运字段；分组中明确填写的字段（含null）优先于预填值。客服editable=true时可重复保存，费用保存提交锁定后不得再次保存。同步时当前值为 `null` 或空值的，目标字段也写入对应空值。
    - 原7字段预填规则保留，新增财务分组覆盖优先级与提交锁定以23.11为准。
 
 #### 23.4 客服接单台委托列表排序规范
+
+客服列表另支持可选主单号参数 `flight_doc_no`，仅匹配客服委托信息顶层主单号；参数、规则和响应示例见23.21。
 
 - `GET /api/v1/customer-service/consignments` 返回的委托信息包含 `create_time`（制单时间）和 `warehouse_entry_date`（进仓日期），现支持通过 `sort_by` 和 `sort_order` 查询参数在分页前排序。
 - `sort_by` 可选值：`create_time`、`warehouse_entry_date`；默认值为 `create_time`。
@@ -10060,9 +10062,9 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 
 #### 23.6 客服接单台暂存与状态筛选规范
 
-- 原保存接口保持不变：新增使用 `POST /api/v1/customer-service/consignments`，修改使用 `PUT /api/v1/customer-service/consignments/{consignment_id}`（仅status=0可执行，已提交/作废返回409）；保存成功后客服接口响应字段为 `status=1`（已提交），同步到费用登记台的对应记录为 `status=0`（未提交），等待费用人员后续保存。
+- 原保存接口保持不变：新增使用 `POST /api/v1/customer-service/consignments`，修改使用 `PUT /api/v1/customer-service/consignments/{consignment_id}`（仅editable=true可执行，费用保存提交已锁定或作废返回409）；保存成功后客服接口响应字段为 `status=1`（已提交），同步到费用登记台的对应记录为 `status=0`（未提交），等待费用人员后续保存。
 - 新增暂存接口：`POST /api/v1/customer-service/consignments/draft`，请求体与原新增接口一致，只创建客服接单台记录，响应字段 `status=0`（未提交）。
-- 修改暂存接口：`PUT /api/v1/customer-service/consignments/{consignment_id}/draft`（仅status=0可执行，已提交/作废返回409），请求体与原修改接口一致，只更新客服接单台记录，费用登记台相同 ID 的数据保持不变，响应字段 `status=0`（未提交）。
+- 修改暂存接口：`PUT /api/v1/customer-service/consignments/{consignment_id}/draft`（仅editable=true可执行，费用保存提交已锁定或作废返回409），请求体与原修改接口一致，只更新客服接单台记录，费用登记台相同 ID 的数据保持不变，响应字段 `status=0`（未提交）。
 - 客服接单台列表、详情、新增、修改、暂存和作废响应均返回数值字段 `status`：`0`=未提交，`1`=已提交，`2`=作废；前端可将其转换为中文展示。
 - `GET /api/v1/customer-service/consignments` 的可选查询参数 `status` 接受数值 `0`（未提交）、`1`（已提交）和 `2`（作废），筛选在统计总数和分页之前执行。例如：`GET /api/v1/customer-service/consignments?status=2&page=1&pageSize=10`。其他值返回 HTTP 422。
 - 状态接口范围：暂存使用 `POST /api/v1/customer-service/consignments/draft`、`PUT /api/v1/customer-service/consignments/{consignment_id}/draft`；作废使用 `PUT /api/v1/customer-service/consignments/{consignment_id}/void`；列表 `GET /api/v1/customer-service/consignments` 支持 `status` 筛选。作废接口详见 23.8。
@@ -10309,8 +10311,8 @@ Authorization: Bearer <token>
 旧字段键名继续沿用；客服委托信息仍在 JSON 顶层，增加 `receivables` 与 `payables` 两个对象。
 费用登记台仍使用 `consignor_info`、`receivables`、`payables` 等既有分组。所有接口均需有效 Bearer Token；路由地址没有新增或改名。
 
-**提交锁定规则**：客服单据 `status=0` 才允许 PUT 保存或 PUT 暂存；保存成功后为 `status=1`，立即在客服端锁定，不等待费用人员提交。
-已提交单据的上述两个 PUT 均返回 HTTP 409，管理员也遵守此规则；`status=2` 仍不可编辑。
+**编辑锁定规则（2026-11-09更新）**：客服保存后 `status=1`、`editable=true`，可再次PUT保存或暂存；费用保存提交成功后客服 `editable=false`，届时才锁定。不得只根据status禁用编辑。完整契约、迁移说明见23.19。
+费用保存提交后锁定客服，上述两个PUT均返回HTTP409，管理员也遵守；客服status=2始终不可编辑。
 费用台暂存、保存、既有作废和物理删除流程保持原语义；本次锁定针对客服的字段编辑与退回暂存，不取消作废/删除接口。
 前端应根据客服响应 `status` 控制编辑按钮，服务端也会校验，不能仅靠禁用按钮。
 系统唯一登记模板与列表单据相互独立，模板 PUT 仍可编辑，不解除任何已提交列表单据的锁定。
@@ -10328,8 +10330,8 @@ Authorization: Bearer <token>
 | POST | `/customer-service/consignments/draft` | 同客服新增 | S，status=0；只写客服 |
 | GET | `/customer-service/consignments` | 查询条件不变 | `{items:[S],total,page,pageSize}`；每条增加两个分组 |
 | GET | `/customer-service/consignments/{consignment_id}` | 无 | S，增加两个分组 |
-| PUT | `/customer-service/consignments/{consignment_id}` | 同客服请求，可只传变更字段；仅 status=0 可执行 | S，status=1；同步费用 status=0；已提交/作废返回409 |
-| PUT | `/customer-service/consignments/{consignment_id}/draft` | 同上；仅 status=0 可执行 | S，status=0；不写费用；已提交/作废返回409 |
+| PUT | `/customer-service/consignments/{consignment_id}` | 同客服请求，可只传变更字段；仅 editable=true 可执行 | S，status=1、editable=true；同步费用status=0；费用提交锁定或作废返回409 |
+| PUT | `/customer-service/consignments/{consignment_id}/draft` | 同上；仅 editable=true 可执行 | S，status=0、editable=true；不写费用；费用提交锁定或作废返回409 |
 | PUT | `/customer-service/consignments/{consignment_id}/void` | 无请求体 | S，status=2；新增分组随业务数据保留 |
 | POST | `/customer-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；91列，单行表头，第2行开始为数据 |
 | GET | `/cost-service/cost-registration` | 无 | C；无模板时仍为 null |
@@ -10339,7 +10341,7 @@ Authorization: Bearer <token>
 | GET | `/cost-service/consignments` | 查询条件不变 | `{items:[C],total,page,pageSize}`；每条补齐新增字段 |
 | GET | `/cost-service/consignments/{consignment_id}` | 无 | C，补齐新增字段 |
 | PUT | `/cost-service/consignments/{consignment_id}` | 同费用请求，可只传变更字段 | C，status=1；回写客服基本信息及应收/应付快照 |
-| PUT | `/cost-service/consignments/{consignment_id}/draft` | 同费用请求 | C，status=0；不回写客服，客服仍保持已提交锁定 |
+| PUT | `/cost-service/consignments/{consignment_id}/draft` | 同费用请求 | C，status=0；不回写客服，也不改变客服现有editable（费用曾保存后不会解锁） |
 | PUT | `/cost-service/consignments/{consignment_id}/void` | 无请求体 | C，status=2；新增业务字段保留 |
 | POST | `/cost-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；115列，单行表头，第2行开始为数据 |
 
@@ -10768,6 +10770,7 @@ PUT列表单据可只提交变更字段；不得提交id、status、creator_id�
     "agent": "示例代理",
     "remark": "委托备注",
     "status": 1,
+    "editable": true,
     "created_at": "2026-10-30T09:00:00+08:00",
     "updated_at": "2026-10-30T09:00:00+08:00",
     "creator_id": "99",
@@ -11223,13 +11226,13 @@ GET列表 `GET /api/v1/cost-service/consignments?page=1&pageSize=10` 返回
 
 ##### 23.11.8 错误响应和前端状态处理
 
-重复保存已提交客服单据、或对其暂存：HTTP409，两种请求无论提交顶层字段、财务分组或空对象均拒绝，不写入操作记录、不改变两台数据。
+对费用保存提交后已锁定的客服单据（editable=false）保存或暂存：HTTP409，无论提交顶层字段、财务分组或空对象均拒绝，不写入操作记录、不改变两台数据。客服仅自身已提交（status=1）但editable=true时允许重复保存。
 
 ```json
 {
   "code": 409,
   "data": null,
-  "msg": "已提交的委托信息不能修改或暂存，请在费用登记台维护"
+  "msg": "费用登记台已保存提交，客服委托信息不能修改或暂存，请在费用登记台维护"
 }
 ```
 
@@ -11507,7 +11510,7 @@ Access-Control-Expose-Headers: Content-Disposition
 迁移只加列，不清空/回算历史金额，不自动搬运历史费用数据；旧记录新增列为NULL。
 全新建表脚本已同步包含这些字段，新库使用建表脚本或ORM初始化后无需重复执行此增量脚本。
 本次未连接生产数据库执行迁移，部署时仍需执行。原有status及操作记录表迁移是本功能现有前提，不能遗漏。
-旧客户端不传新分组/新字段仍可新增、暂存或提交未提交单据；已提交客服禁止编辑是本次明确的业务规则变更。
+旧客户端不传新分组/新字段仍可新增、暂存或提交未提交单据；客服编辑锁定时机已改为费用保存提交成功后，详见23.19。
 
 #### 23.12 两台页面勾选项存储与详情回显（2026-10-30）
 
@@ -11516,7 +11519,7 @@ Access-Control-Expose-Headers: Content-Disposition
 customer_tags表示5项选项集合，expense_tags表示7项选项集合，字段名不再限制使用页面；不放入业务子对象。客服提交将两个同名字段流转到费用，费用可独立覆盖；详见23.14。
 
 复用现有新增、保存、暂存及登记模板接口传入标签，无新增独立的标签写入路由。
-接口认证、单据状态、操作记录和费用计算规则不变；标签流转按23.14执行，客服已提交单据仍不能修改标签。
+接口认证、单据状态、操作记录和费用计算规则不变；标签流转按23.14执行，客服editable=false时不能修改标签，editable=true时已保存客服仍可修改标签。
 
 ##### 23.12.1 字段类型与勾选框对应值
 
@@ -11583,7 +11586,7 @@ customer_tags表示5项选项集合，expense_tags表示7项选项集合，字�
 
 标签是页面勾选状态，取消勾选不会删除该业务分组的数据，也不会修改金额、合计或利润。
 两台分别持久化两个同名字段：客服暂存不流转，客服提交将已保存的非null数组（含[]）复制到费用；客服未保存的字段不清空费用已有值。费用可分别覆盖或清空两个字段，费用保存不反向改写既有客服标签；费用首次新建客服记录时带入两个字段初值。
-客服已提交锁定仍适用于两个字段。详情查询读取本台存储值，不在查询时重新覆盖费用选择，也不自动将customer_tags重命名为expense_tags。
+费用保存提交后的客服锁定仍适用于两个字段；客服仅保存后可编辑。详情查询读取本台存储值，不在查询时重新覆盖费用选择，也不自动将customer_tags重命名为expense_tags。
 
 ##### 23.12.4 客服请求与详情响应示例
 
@@ -11613,7 +11616,7 @@ customer_tags表示5项选项集合，expense_tags表示7项选项集合，字�
 }
 ```
 
-只暂存标签时，未提交的其他委托及费用字段保持原值。PUT保存接口使用相同入参，但会提交单据并锁定客服编辑，不能当成不改状态的标签更新接口。
+只暂存标签时，未提交的其他委托及费用字段保持原值。PUT保存接口使用相同入参，客服置status=1并同步费用草稿，仍可编辑；费用保存提交才锁定客服。它仍不能当成不改状态或不流转的标签更新接口。
 
 详情查询 `GET /api/v1/customer-service/consignments/358000000000000001`，响应节选（其他完整业务字段同23.11.6）：
 
@@ -11710,16 +11713,16 @@ customer_tags表示5项选项集合，expense_tags表示7项选项集合，字�
 
 请求中标签不是数组、数组元素类型不对、非法标识、超出5/7项、customer_tags传折让/业务员选项（两台expense_tags均支持这两项），均返回HTTP422并拒绝整次请求，不写入业务或操作记录。
 错误响应沿用统一 `{code:422,data:null,msg:参数验证失败信息}`；msg中定位到 `body -> customer_tags` 或 `body -> expense_tags` 及具体错误元素。
-合法标签请求仍需通过原有状态校验：客服已提交/作废后PUT保存或暂存返回409；费用作废后PUT保存或暂存返回409；不存在的单据返回404。
+合法标签请求仍需通过原有状态校验：客服费用提交锁定后或作废后PUT保存/暂存返回409；费用作废后PUT保存或暂存返回409；不存在的单据返回404。
 即使只提交标签或伪造请求status=0，也不能绕过后端锁定。
 
-已提交客服单据的标签修改失败示例（HTTP409）：
+费用保存提交已锁定客服单据的标签修改失败示例（HTTP409）：
 
 ```json
 {
   "code": 409,
   "data": null,
-  "msg": "已提交的委托信息不能修改或暂存，请在费用登记台维护"
+  "msg": "费用登记台已保存提交，客服委托信息不能修改或暂存，请在费用登记台维护"
 }
 ```
 
@@ -11925,7 +11928,7 @@ intl_air=国际空运，customs=报关，ground=地面操作，trucking=汽运�
 2. 每个字段独立复制：数据库非NULL数组（含[]）覆盖费用同名字段；客服一直未保存的NULL字段不清空费用已有值。仅传customer_tags不会自动填充expense_tags，前端如需两个分组均选中，应分别提交。
 3. 费用暂存或保存可独立替换两组标签；省略其中一组不修改该组。费用详情、列表读取已存的费用值，不在查询时重新用客服数组覆盖，因此费用覆盖及明确清空均可持续保留。
 4. 费用修改标签不反向改写既有客服标签。费用保存仍按旧逻辑同步基本信息和财务快照；只有费用首次创建或补建客服记录时，两个标签作为初值一起带入，之后两台可各自保留值。
-5. 客服status=1提交锁定、两台status=2作废不可编辑的规则对两个字段都有效。不能通过仅发标签、传空对象或伪造status=0绕过。
+5. 客服editable=false锁定、两台status=2作废不可编辑的规则对两个字段都有效。不能通过仅发标签、传空对象或伪造status=0绕过。
 6. 唯一登记模板分别存储两个数组，不自动同步对端模板，也不修改列表单据；前端需在新建时把所需模板值带入请求。
 7. 同步与业务保存共用事务，不增加标签专用操作记录。标签不参与金额计算，也不因[]删除已填写的财务分组。
 
@@ -12005,7 +12008,7 @@ intl_air=国际空运，customs=报关，ground=地面操作，trucking=汽运�
 ##### 23.14.4 错误、历史回填及部署
 
 参数类型/选项/长度错误返回HTTP422，按统一结构 `{code:422,data:null,msg:"参数验证失败..."}` 返回，整次请求不写业务或操作记录。
-已提交客服修改/暂存仍409；作废两台修改/暂存仍409；不存在记录404、非法数字格式id400、鉴权沿用原规则。
+费用保存提交已锁定客服修改/暂存仍409；作废两台修改/暂存仍409；不存在记录404、非法数字格式id400、鉴权沿用原规则。
 
 已有旧标签列的存量库，发布前执行 **`sql/migration_sync_consignment_tags.sql` 一次**：
 
@@ -12139,7 +12142,7 @@ Content-Type: application/json
 {"code":422,"data":null,"msg":"参数验证失败 (body -> payables -> trucking -> freight_method): Input should be a valid string"}
 ```
 
-已提交客服保存/暂存仍409，两台已作废保存/暂存仍409，不存在单据404、非法主键400、认证失败规则均延续。
+费用保存提交已锁定客服保存/暂存仍409，两台已作废保存/暂存仍409，不存在单据404、非法主键400、认证失败规则均延续。
 
 ##### 23.15.4 流转、Excel与部署
 
@@ -12162,7 +12165,7 @@ Content-Type: application/json
 | `page` | query | integer | 否 | 页码，默认1，最小1，沿用原规则 |
 | `pageSize` | query | integer | 否 | 每页数量，默认10，最小1，沿用原规则 |
 
-其他既有参数如 `customer_name`、`agent`、`status`、`flight_no`、进仓/航班日期范围、`sort_by`、`sort_order` 均继续支持；航班日期范围按23.17筛选国际空运应付款项航班日期，其余含义和默认值不变：
+其他既有参数如 `customer_name`、`agent`、`status`、`flight_no`、进仓/航班日期范围、`sort_by`、`sort_order` 均继续支持；航班日期范围按23.20筛选委托信息航班日期，其余含义和默认值不变：
 
 - 关键字 `123456` 可匹配国际空运主单号 `784-12345678`；完整号码也按包含方式搜索。
 - 此参数**仅搜索国际空运主单号**。货主主单号、货主提单、国内空运主单号、汽运主单号包含关键字而国际空运主单号不包含时，该记录不匹配；国际空运主单号为NULL/空字符串时，不回退其他字段。
@@ -12208,7 +12211,7 @@ Authorization: Bearer <token>
 }
 ```
 
-多个条件示例：`GET /api/v1/cost-service/consignments?flight_doc_no=123456&status=0&start_flight_date=2026-11-01&end_flight_date=2026-11-02&page=1&pageSize=10`，要求国际空运主单号包含123456、费用状态为未提交，且国际空运应付款项航班日期处于给定区间，三个条件同时成立。
+多个条件示例：`GET /api/v1/cost-service/consignments?flight_doc_no=123456&status=0&start_flight_date=2026-11-01&end_flight_date=2026-11-02&page=1&pageSize=10`，要求国际空运主单号包含123456、费用状态为未提交，且委托信息航班日期处于给定区间，三个条件同时成立。
 没有匹配数据时成功HTTP200，完整返回：
 
 ```json
@@ -12218,7 +12221,9 @@ Authorization: Bearer <token>
 分页、状态或排序参数非法仍HTTP422，认证失败沿用现有错误格式；没有新增错误码。
 本次不修改客服接单台列表筛选、单据新增/修改、同步、状态、导出表头及字段取值；无需数据库迁移。此为后端仓库，搜索框“主单号”文字及提示由前端调整。
 
-#### 23.17 费用列表航班日期改为搜索国际空运应付款项（2026-11-02）
+#### 23.17 费用列表航班日期改为搜索国际空运应付款项（2026-11-02，历史规则已替代）
+
+**历史说明：本节保留旧版规则与示例，已由23.20（2026-11-09）替代，不再作为当前接口契约。当前费用列表航班日期范围筛选仅使用委托信息区 `consignor_info.flight_date`；本次不要求执行本节旧索引脚本。**
 
 **涉及接口**：`GET /api/v1/cost-service/consignments`，继续使用 `Authorization: Bearer <token>`。请求无body；保留现有查询参数名，航班日期筛选字段改为 `payables.intl_air.flight_date`，对应数据库列 `cost_consignments.pay_intl_air_flight_date`。
 
@@ -12351,7 +12356,7 @@ Content-Type: application/json
 {"code":0,"data":{"id":"358000000000000001","consignor_info":{"flight_date":"2026-11-09"}},"msg":"查询成功"}
 ```
 
-列表同一字段分别位于 `data.items[].flight_date` 和 `data.items[].consignor_info.flight_date`，日期未填为null，分页包裹结构不变。新增不传则为空；原部分修改接口不传此字段或传null保留原值，其他日期解析规则延续。客服已提交/作废时仍禁止编辑，不因恢复字段放开锁定。
+列表同一字段分别位于 `data.items[].flight_date` 和 `data.items[].consignor_info.flight_date`，日期未填为null，分页包裹结构不变。新增不传则为空；原部分修改接口不传此字段或传null保留原值，其他日期解析规则延续。客服费用保存提交已锁定（editable=false）或作废时禁止编辑，客服仅保存后仍可编辑，详见23.19。
 
 ##### 23.18.2 原有同步及历史数据规则
 
@@ -12359,7 +12364,7 @@ Content-Type: application/json
 - 若客服明确录入了 `payables.intl_air.flight_date`（含显式null），该分组值继续优先于委托日期预填，保留此前扩展录入规则。本次不新增强制双向覆盖规则。
 - 费用暂存不回写客服；费用保存时将费用委托日期回写客服顶层日期，财务快照按原逻辑回写。仅编辑费用委托日期不会强制覆盖费用国际空运日期；两个字段的实际保存值分别展示。
 - 直接读取历史委托日期，无需将其搬运到国际空运或国内空运日期，不回填或改写历史数据。即使客服 `financial_data` 为NULL、费用国际空运日期为空，只要原委托日期有值，新版Excel第5列就会正常显示。
-- 费用列表搜索参数 `start_flight_date`、`end_flight_date` 仍按23.17筛选国际空运应付航班日期；恢复委托信息展示不改变搜索语义。费用Excel继续按委托航班日期升序排列，客服Excel继续按制单时间倒序排列。
+- 费用列表搜索参数 `start_flight_date`、`end_flight_date` 已按23.20改为筛选委托信息航班日期 `consignor_info.flight_date`。费用Excel继续按委托航班日期升序排列，客服Excel继续按制单时间倒序排列。
 
 ##### 23.18.3 修改的Excel接口及新列位置
 
@@ -12385,3 +12390,286 @@ Access-Control-Expose-Headers: Content-Disposition
 | 国内空运航班日期 | 第85列CG，`payables.dom_air.flight_date` | 第97列CS，同名国内空运字段 |
 
 同名表头按所在列区分，不可按名称去重。完整列号和取值表已同步更新23.11.9。本次复用原数据库日期列，无需新迁移、不重算金额；此前版本所需的字段迁移仍须完成。
+
+#### 23.19 客服可重复编辑，费用保存提交后锁定（2026-11-09）
+
+本节替代此前“客服保存立即锁定”的规则。**客服保存成功仍可编辑；费用登记台保存提交成功后，客服才不可编辑。**原有status含义、搜索/导出、保存同步、暂存不流转、标签覆盖及作废/删除规则保留。前端必须用客服单据响应新增的 `editable` 控制编辑、暂存和保存，不能再用 `status===1` 判定锁定。
+
+##### 23.19.1 新增响应字段与接口范围
+
+| 字段 | 类型 | 位置 | 说明 |
+|---|---|---|---|
+| `editable` | boolean | 客服单据响应 `data.editable`；列表 `data.items[].editable` | 只读。费用未成功保存提交且客服未作废为true；费用已成功保存提交或客服作废为false。覆盖全部客服业务字段，包括基础信息、两组标签和财务分组 |
+| `status` | integer | 原位置不变 | 0未提交、1已提交、2作废，继续表示本台单据状态。客服保存后的status=1与editable=true可以同时出现 |
+
+无新增请求字段；`editable`、内部持久化列 `edit_locked` 不可由前端设置，伪造 `status:0`、`editable:true`、`edit_locked:false` 均不能解除锁定。仅客服单据响应新增editable（含列表项），登记模板和费用响应不新增该字段，费用接口通过既有路径影响客服权限。
+
+| 方法及完整路径 | 本次行为/响应变化 |
+|---|---|
+| `POST /api/v1/customer-service/consignments` | 客服保存新增，返回status=1、editable=true；同事务流转费用草稿status=0 |
+| `POST /api/v1/customer-service/consignments/draft` | 客服暂存新增，status=0、editable=true，不流转费用 |
+| `PUT /api/v1/customer-service/consignments/{consignment_id}` | editable=true可反复保存，status=1、editable=true，每次按原规则同步费用草稿 |
+| `PUT /api/v1/customer-service/consignments/{consignment_id}/draft` | editable=true可暂存，status=0、editable=true，仅保存客服，不覆盖费用已有版本 |
+| `GET /api/v1/customer-service/consignments/{consignment_id}` | data第一层增加editable，反映持久化锁定及作废状态 |
+| `GET /api/v1/customer-service/consignments` | items每项第一层增加editable，无额外逐条查费用表；status筛选仍按客服status执行 |
+| `PUT /api/v1/customer-service/consignments/{consignment_id}/void` | 原有联动作废规则不变，返回status=2、editable=false |
+| `POST /api/v1/cost-service/consignments` | 费用保存新增时，同时创建客服记录并锁定，后续客服详情/列表editable=false |
+| `PUT /api/v1/cost-service/consignments/{consignment_id}` | 费用保存提交、回写客服业务数据、客服锁定、真实操作记录在同一事务提交 |
+| `POST /api/v1/cost-service/consignments/draft` | 仅创建费用草稿，不创建客服、不触发锁定 |
+| `PUT /api/v1/cost-service/consignments/{consignment_id}/draft` | 只暂存费用，不新增客服锁定；费用此前已保存提交时，既有客服锁定不会解除 |
+| `PUT /api/v1/cost-service/consignments/{consignment_id}/void` | 原有联动作废规则不变，客服查询editable=false |
+
+##### 23.19.2 参数说明及请求示例
+
+继续使用 `Authorization: Bearer <token>`，带body的写入请求使用 `Content-Type: application/json`。业务字段仍按23.11及后续扩展章节填写，GET无body。
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+|---|---|---|---|---|
+| `consignment_id` | path | string | 单条查询/修改/作废必填 | 两台共用的数字字符串主键，取接口返回id；不是内部单据编号 |
+| `customer_name` | 客服body第一层 | string/null | 否 | 客户名称，沿用原部分更新规则 |
+| `flight_date` | 客服body第一层 | string/null | 否 | 委托信息航班日期，建议YYYY-MM-DD，客服保存时仍预填费用国际空运日期，明确分组值优先 |
+| `pieces` | 客服body第一层 | integer/null | 否 | 件数，未传保留，显式null清空 |
+| `customer_tags` | 两台body第一层 | string[]/null | 否 | 最多5项，原英文标识数组；省略/null保留，[]清空 |
+| `expense_tags` | 两台body第一层 | string[]/null | 否 | 最多7项，原英文标识数组；省略/null保留，[]清空 |
+| `consignor_info` | 费用body第一层 | object/null | 否 | 原货主委托信息分组，可包含customer_name、flight_date、pieces等 |
+| `receivables`、`payables` | 两台body第一层 | object/null | 否 | 原应收应付业务分组，字段与计算责任不变 |
+
+客服保存新增：
+
+```http
+POST /api/v1/customer-service/consignments
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"customer_name":"客户A","flight_date":"2026-11-09","pieces":8,"customer_tags":["intl_air"],"expense_tags":["ground"]}
+```
+
+HTTP200响应片段（实际仍返回原完整业务字段）：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":1,"editable":true,"customer_name":"客户A","flight_date":"2026-11-09","pieces":8,"customer_tags":["intl_air"],"expense_tags":["ground"]},"msg":"委托信息创建成功"}
+```
+
+费用未保存提交前，客服可再次保存：
+
+```http
+PUT /api/v1/customer-service/consignments/358000000000000001
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"pieces":9}
+```
+
+HTTP200响应片段：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":1,"editable":true,"pieces":9},"msg":"委托信息更新成功"}
+```
+
+费用人员保存提交：
+
+```http
+PUT /api/v1/cost-service/consignments/358000000000000001
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"consignor_info":{"pieces":10},"receivables":{"total":1000}}
+```
+
+费用HTTP200响应片段，费用结构不增加editable：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":1,"consignor_info":{"pieces":10},"receivables":{"total":1000}},"msg":"单据信息更新成功"}
+```
+
+随后 `GET /api/v1/customer-service/consignments/358000000000000001` 的HTTP200响应片段：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":1,"editable":false,"pieces":10,"receivables":{"total":1000}},"msg":"查询成功"}
+```
+
+客服列表请求仍为 `GET /api/v1/customer-service/consignments?page=1&pageSize=10`，可选page/pageSize均为integer，默认1/10、最小1；其余原有查询参数不变。HTTP200响应片段如下：
+
+```json
+{"code":0,"data":{"total":1,"items":[{"id":"358000000000000001","status":1,"editable":false,"pieces":10}],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+费用后续暂存将费用status置0，但上述客服editable继续为false。前端选择单据时读取editable；其他人员可能同时保存费用，客服操作遇到409时应刷新详情/列表更新按钮，不能只相信页面缓存。
+
+##### 23.19.3 错误、同步与事务边界
+
+费用保存提交后，客服PUT保存、PUT暂存（包括空对象或仅改标签）均HTTP409，完整响应：
+
+```json
+{"code":409,"data":null,"msg":"费用登记台已保存提交，客服委托信息不能修改或暂存，请在费用登记台维护"}
+```
+
+作废客服仍HTTP409，msg仍为“已作废的委托信息不能暂存或保存”；不存在单据404、主键非数字400、请求校验422、认证规则沿用原实现。异常存量状态若费用已经提交/作废而客服锁尚未正确设置，客服保存还会拒绝覆盖费用，HTTP409，msg为“费用登记台已提交或作废，客服不能覆盖该单据”。
+
+- 客服重复保存同步同ID费用基础信息、国际空运预填及明确录入的财务字段和两组标签；未录入财务叶字段继续沿用原不覆盖规则，费用独有分组不被客服请求清空。客服暂存不流转。
+- 费用保存将业务回写、客服锁定及操作日志放在同一数据库事务中；校验失败、日志写入失败或数据库提交失败回滚时，不留下新增锁定。客服失败保存也不消耗后续编辑机会。若数据库已提交但客户端因网络中断未收到响应，应重新查详情确认结果，不能根据客户端报错自动解锁。
+- 两台保存统一按客服行、费用行顺序加行锁，防止客服在费用提交期间覆盖或重置费用状态；费用暂存也锁定费用行。SQLite测试验证流程和加锁语句顺序，生产MySQL执行实际行锁。
+- 锁定为独立持久化事实，不从费用当前status=0推断解锁。唯一登记模板仍可保存，保存模板不改变任何单据锁定；Excel仍按本台status显示原状态，不增加editable列；删除/作废与既有联动规则不变。
+
+##### 23.19.4 存量数据库迁移与历史边界
+
+**存量库发布前须执行 `sql/migration_add_customer_edit_lock.sql` 一次**，给 `consignment_infos` 增加非空布尔列 `edit_locked`，默认0。前提为已有两台状态字段和操作记录表。请在两台暂停写入的发布窗口执行迁移并更新服务，避免旧服务写入与锁定回填交错。模板、费用表不加该列；全新库通过已更新建表SQL或ORM建表已包含该列，不重复执行增量加列。
+
+历史回填规则：同ID费用当前status=1，或存在真实 `source=cost_service/action=save` 操作记录时设置锁定；包括费用保存后又暂存为0的情形。其余默认不锁定，客服status=1本身不构成锁定依据，作废客服仍由status=2禁止编辑。不改变业务状态、金额、日期、标签、更新时间或历史日志。
+
+在操作记录功能上线前已经费用保存、之后又暂存为0且没有保存日志的历史记录，无法仅凭现有状态还原是否曾提交；脚本不虚构依据，保留未锁定，若需保持个别记录锁定须根据真实历史证据另行核对。执行前已存在edit_locked列时勿重复ADD COLUMN；回填UPDATE仅将符合依据的未锁记录设为锁定，不重置已有锁，允许单独重跑。脚本尚未在生产库执行。
+
+
+#### 23.20 费用列表航班日期范围改用委托信息日期（2026-11-09）
+
+替代23.17的历史筛选规则。仅调整 `GET /api/v1/cost-service/consignments` 的航班日期范围筛选，匹配委托信息区 `consignor_info.flight_date`，对应数据库列 `cost_consignments.flight_date`。客服接单台继续沿用原查询逻辑。
+
+##### 23.20.1 请求参数
+
+使用 `Authorization: Bearer <token>`，请求无body。参数名、类型及可选性保持原约定：
+
+| 参数 | 位置 | 类型/格式 | 必填 | 说明 |
+|---|---|---|---|---|
+| `start_flight_date` | query | string，YYYY-MM-DD | 否 | 委托信息航班日期下限，包含当天；仅传此项时查询当天及之后 |
+| `end_flight_date` | query | string，YYYY-MM-DD | 否 | 委托信息航班日期上限，包含当天；仅传此项时查询当天及之前 |
+| `page` | query | integer | 否 | 页码，默认1，最小1 |
+| `pageSize` | query | integer | 否 | 每页条数，默认10，最小1 |
+
+其他原有条件（进仓日期范围、客户名称、代理单位、主单号、航班号、状态）和排序参数继续支持，有效条件按AND组合。主单号仍仅匹配国际空运 `payables.intl_air.flight_doc_no`。
+
+- 开始和结束日期同时有效时为闭区间，传相同日期可精确查一天；开始晚于结束返回空列表。
+- 只看委托信息日期，不回退或混用国际空运、国内空运日期。委托日期为空时不满足有效日期条件，即使国际空运日期在范围内也不入选；委托日期在范围内、国际空运日期为空或在范围外时仍可入选。
+- 两端均未传时不启用航班日期筛选，日期为空的记录可正常返回。沿用原兼容行为：空字符串、空白及无法解析的日期边界被忽略；仅一端有效时只应用该端。前端应传有效YYYY-MM-DD日期。
+- 先筛选再计算total、排序和分页。默认进仓日期倒序、制单时间倒序、ID倒序，原错误码与响应字段不变。
+
+##### 23.20.2 请求及响应示例
+
+查询委托信息航班日期为2026-11-09的费用单据：
+
+```http
+GET /api/v1/cost-service/consignments?start_flight_date=2026-11-09&end_flight_date=2026-11-09&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+成功HTTP200。以下为响应片段，实际仍返回原完整字段。国际空运日期为11月12日的记录也可返回，因为委托信息日期为11月9日：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [
+      {
+        "id": "358000000000000001",
+        "status": 0,
+        "consignor_info": {
+          "warehouse_entry_date": "2026-11-08",
+          "flight_date": "2026-11-09"
+        },
+        "payables": {
+          "intl_air": {
+            "flight_doc_no": "784-12345678",
+            "flight_date": "2026-11-12"
+          },
+          "dom_air": {"flight_date": "2026-11-15"}
+        }
+      }
+    ],
+    "page": 1,
+    "pageSize": 10
+  },
+  "msg": "查询成功"
+}
+```
+
+列表委托航班日期的读取路径为 `data.items[].consignor_info.flight_date`，返回string/null，各分组原日期保持原值。前端沿用原参数名，仅按委托信息区日期理解筛选结果。
+
+组合查询示例：`GET /api/v1/cost-service/consignments?start_warehouse_date=2026-11-01&end_warehouse_date=2026-11-08&start_flight_date=2026-11-09&end_flight_date=2026-11-09&flight_doc_no=123456&status=0`，要求委托进仓日期在11月1日至8日、委托航班日期为11月9日、国际空运主单号包含123456、费用状态未提交，全部条件同时满足。
+
+无匹配时成功HTTP200，完整响应：
+
+```json
+{"code":0,"data":{"total":0,"items":[],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+##### 23.20.3 数据与发布说明
+
+本次仅修改查询条件及接口参数说明，不修改或搬运历史日期，不改两台的日期保存/同步、Excel列值和排序、客服锁定规则。继续使用既有委托航班日期列和索引，无新增表字段或迁移脚本。已有 `flight_date` 索引时无需执行SQL；若旧库尚未加过索引，可先用 `SHOW INDEX FROM cost_consignments` 核查，缺少以flight_date为首列的索引时再执行既有 `sql/migration_add_cost_consignment_flight_date_index.sql`，避免重复加索引。无需为本次查询变更执行旧国际空运日期索引脚本，也不删除既有索引。本次未执行生产数据库操作。
+
+
+#### 23.21 客服接单台新增主单号查询条件（2026-11-09）
+
+**接口**：`GET /api/v1/customer-service/consignments`。新增可选Query参数 `flight_doc_no`，使用 `Authorization: Bearer <token>`，请求无body。
+
+##### 23.21.1 参数及筛选规则
+
+| 参数名 | 位置 | 类型 | 必填 | 说明 |
+|---|---|---|---|---|
+| `flight_doc_no` | query | string | 否 | 本次新增。客服委托信息主单号的包含式模糊查询，对应数据库 `consignment_infos.flight_doc_no`，响应路径 `data.items[].flight_doc_no` |
+| `start_date` | query | string，YYYY-MM-DD | 否 | 原制单日期下限，含当天，按create_time筛选 |
+| `end_date` | query | string，YYYY-MM-DD | 否 | 原制单日期上限，含当天，按create_time筛选 |
+| `customer_name` | query | string | 否 | 原客户名称模糊查询 |
+| `destination` | query | string | 否 | 原目的站模糊查询，仅匹配origin_destination最后一个“-”之后的内容 |
+| `flight_no` | query | string | 否 | 原客服自身航班号模糊查询 |
+| `status` | query | integer | 否 | 原状态筛选，0未提交、1已提交、2作废，不传全部；编辑权限仍按editable判断 |
+| `sort_by` | query | string | 否 | 原排序字段，create_time或warehouse_entry_date，默认create_time |
+| `sort_order` | query | string | 否 | 原排序方向，asc或desc，默认desc |
+| `page` | query | integer | 否 | 页码，默认1，最小1 |
+| `pageSize` | query | integer | 否 | 每页条数，默认10，最小1 |
+
+- 主单号仅查询客服委托信息顶层字段 `flight_doc_no`。提单 `bill_of_lading`、内部单据ID、财务分组中的国际空运/国内空运/汽运主单号不参与匹配。
+- 包含式匹配：例如主单号为784-12345678时，传784、123456或完整号码均可匹配。英文字母不区分大小写，支持中文内容。
+- 自动去除参数首尾空白；未传、空字符串、仅空白时不增加该条件，保持原列表行为。有有效查询值时，顶层主单号为null或空字符串的记录不匹配。
+- 输入中的百分号和下划线按普通字符处理，不作为SQL通配符；查询使用绑定参数，不将输入拼接为SQL语句。特殊字符应由前端标准URL编码（例如百分号编码为%25）。
+- 新条件与其他有效筛选条件按AND组合，在total统计和分页之前应用。默认仍按制单时间、ID倒序，原其他排序方式、响应字段和编辑锁定规则不变。
+
+##### 23.21.2 请求及响应示例
+
+按主单号片段查询：
+
+```http
+GET /api/v1/customer-service/consignments?flight_doc_no=123456&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+HTTP200响应片段（其余原业务字段省略，实际仍返回完整对象）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [
+      {
+        "id": "358000000000000001",
+        "status": 1,
+        "editable": true,
+        "create_time": "2026-11-09 10:00:00",
+        "customer_name": "客户A",
+        "flight_doc_no": "784-12345678",
+        "flight_no": "CZ1234",
+        "origin_destination": "CAN-KUL",
+        "bill_of_lading": "一主三分",
+        "payables": {
+          "intl_air": {"flight_doc_no": "999-87654321"}
+        }
+      }
+    ],
+    "page": 1,
+    "pageSize": 10
+  },
+  "msg": "查询成功"
+}
+```
+
+上述记录按顶层784-12345678匹配，分组中999-87654321不会影响匹配或被覆盖。前端列表“主单号”继续读取 `data.items[].flight_doc_no`，无需新增返回字段。
+
+组合查询：`GET /api/v1/customer-service/consignments?flight_doc_no=123456&start_date=2026-11-01&end_date=2026-11-09&customer_name=客户A&destination=KUL&flight_no=CZ&status=1&page=1&pageSize=10`，要求所有条件同时成立；中文由调用方标准URL编码。
+
+无匹配记录时HTTP200，完整响应：
+
+```json
+{"code":0,"data":{"total":0,"items":[],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+错误格式不变：非法status、排序枚举或分页值仍HTTP422，认证沿用原规则。本次无需数据库迁移，保存、详情、同步、Excel及费用登记台查询保持既有实现。费用登记台的同名参数仍查询国际空运主单号（见23.16），不要与本客服接口的顶层主单号混用。

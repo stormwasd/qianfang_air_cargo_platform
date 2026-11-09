@@ -233,6 +233,7 @@ class ConsignmentTagTests(unittest.IsolatedAsyncioTestCase):
             "receivables": {"customs_fee": 750},
         })
         path = "/api/v1/customer-service/consignments/" + data["id"]
+        await self.request("PUT", "/api/v1/cost-service/consignments/" + data["id"], {})
         before = self.db.query(ConsignmentOperationLog).count()
         for suffix in ("", "/draft"):
             response = await self.client.put(path + suffix, json={"customer_tags": [], "expense_tags": [], "status": 0})

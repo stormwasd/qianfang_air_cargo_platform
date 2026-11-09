@@ -83,6 +83,7 @@ class ConsignmentInfoQuery(BaseModel):
     customer_name: Optional[str] = Field(None, description="客户名称 (模糊查询)")
     destination: Optional[str] = Field(None, description="目的站 (模糊查询，仅匹配始发站-目的站的最后一段)")
     flight_no: Optional[str] = Field(None, description="客服接单台航班号 (模糊查询)")
+    flight_doc_no: Optional[str] = Field(None, description="主单号 (模糊查询客服委托信息顶层 flight_doc_no；首尾空白去除，空值不筛选)")
     status: Optional[ConsignmentSubmissionStatus] = Field(None, description="单据状态：0=未提交，1=已提交，2=作废")
     sort_by: ConsignmentInfoSortField = Field(
         ConsignmentInfoSortField.CREATE_TIME,
@@ -110,6 +111,7 @@ class ConsignmentInfoResponse(ConsignmentBase):
     """委托信息-明细响应 Schema"""
     id: str = Field(..., description="委托信息ID")
     status: ConsignmentSubmissionStatus = Field(..., description="单据状态：0=未提交，1=已提交，2=作废")
+    editable: bool = Field(..., description="是否允许客服保存/暂存；费用保存提交后或作废时为false，不能仅根据status判断", json_schema_extra={"readOnly": True})
     creator_id: Optional[str] = Field(None, description="创建人ID")
     created_at: Optional[str] = Field(None, description="创建时间")
     updated_at: Optional[str] = Field(None, description="更新时间")

@@ -141,6 +141,12 @@ def _format_record_dict(record: Any) -> Dict[str, Any]:
     }
     if hasattr(record, "creator_id") and record.creator_id:
         data["creator_id"] = str(record.creator_id)
+    if isinstance(record, ConsignmentInfo) or hasattr(record, "status"):
+        # 提交状态和编辑权限分开：客服保存可再次编辑，费用保存后永久锁定。
+        data["editable"] = (
+            int(record.status) != ConsignmentSubmissionStatus.VOIDED.value
+            and not bool(getattr(record, "edit_locked", False))
+        )
     data.update(format_financial_data(record))
     return data
 
@@ -210,7 +216,10 @@ def _apply_consignment_payload(record: ConsignmentInfo, payload: ConsignmentBase
 
 def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
     """把已提交的客服单据同步到费用登记台，并等待费用人员提交。"""
-    cost_record = db.query(CostConsignment).filter(CostConsignment.id == record.id).first()
+    cost_record = db.query(CostConsignment).filter(CostConsignment.id == record.id).with_for_update().first()
+    if cost_record and int(getattr(cost_record, "status", 0)) != ConsignmentSubmissionStatus.UNSUBMITTED.value:
+        # 保护存量异常状态，禁止客服保存将已提交/作废费用单据降为未提交。
+        raise ConflictException("费用登记台已提交或作废，客服不能覆盖该单据")
     if not cost_record:
         cost_record = CostConsignment(id=record.id, creator_id=record.creator_id)
         db.add(cost_record)
@@ -249,11 +258,11 @@ def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
 
 
 def _ensure_customer_consignment_editable(record: ConsignmentInfo) -> None:
-    """只有未提交的客服单据允许编辑；作废仍保留查询和删除流程。"""
+    """客服保存后可继续编辑；费用保存提交后锁定，作废规则不变。"""
     if int(record.status) == ConsignmentSubmissionStatus.VOIDED.value:
         raise ConflictException("已作废的委托信息不能暂存或保存")
-    if int(record.status) == ConsignmentSubmissionStatus.SUBMITTED.value:
-        raise ConflictException("已提交的委托信息不能修改或暂存，请在费用登记台维护")
+    if bool(getattr(record, "edit_locked", False)):
+        raise ConflictException("费用登记台已保存提交，客服委托信息不能修改或暂存，请在费用登记台维护")
 
 
 # ============================================================================
@@ -311,7 +320,7 @@ async def create_consignment(
     db: Session = Depends(get_db)
 ):
     """
-    新增一条委托信息记录。
+    保存新增客服单据并同步费用草稿；客服仍可编辑，费用保存提交后锁定。
     """
     new_record = ConsignmentInfo(
         creator_id=current_user.id,
@@ -368,6 +377,7 @@ async def get_consignments(
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
     destination: Optional[str] = Query(None, description="目的站 (模糊查询，仅匹配始发站-目的站的最后一段)"),
     flight_no: Optional[str] = Query(None, description="航班号 (模糊查询)"),
+    flight_doc_no: Optional[str] = Query(None, description="主单号 (模糊查询客服委托信息顶层 flight_doc_no；首尾空白去除，空值不筛选)"),
     status: Optional[ConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
     sort_by: ConsignmentInfoSortField = Query(
         ConsignmentInfoSortField.CREATE_TIME,
@@ -391,6 +401,7 @@ async def get_consignments(
     - **customer_name**: 客户名称 (支持模糊匹配)
     - **destination**: 目的站 (支持中英文模糊匹配，仅匹配 `origin_destination` 最后一个 `-` 后的内容)
     - **flight_no**: 客服接单台航班号 (支持模糊匹配)
+    - **flight_doc_no**: 客服委托信息主单号 (仅匹配顶层 flight_doc_no，支持包含式模糊匹配，忽略首尾空白)
     - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）
     - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `create_time`
     - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
@@ -439,6 +450,17 @@ async def get_consignments(
             query_obj = query_obj.filter(
                 func.upper(ConsignmentInfo.flight_no).contains(
                     flight_no_keyword.upper(),
+                    autoescape=True,
+                )
+            )
+
+    # 客服主单号取委托信息顶层字段，与费用列表的国际空运主单号筛选分开。
+    if flight_doc_no:
+        doc_no_keyword = flight_doc_no.strip()
+        if doc_no_keyword:
+            query_obj = query_obj.filter(
+                func.upper(ConsignmentInfo.flight_doc_no).contains(
+                    doc_no_keyword.upper(),
                     autoescape=True,
                 )
             )
@@ -534,7 +556,7 @@ async def update_consignment(
     db: Session = Depends(get_db)
 ):
     """
-    修改指定 ID 的委托信息接口。
+    保存修改客服单据并同步费用草稿；费用保存提交后禁止修改。
     """
     try:
         c_id = int(consignment_id)
@@ -602,14 +624,14 @@ async def void_consignment(
     except ValueError:
         raise BadRequestException("consignment_id 必须为合法数字格式")
 
-    record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
+    record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).with_for_update().first()
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
     if int(record.status) == ConsignmentSubmissionStatus.VOIDED.value:
         raise ConflictException("委托信息已作废，请勿重复操作")
 
     record.status = ConsignmentSubmissionStatus.VOIDED.value
-    cost_record = db.query(CostConsignment).filter(CostConsignment.id == c_id).first()
+    cost_record = db.query(CostConsignment).filter(CostConsignment.id == c_id).with_for_update().first()
     if cost_record:
         cost_record.status = ConsignmentSubmissionStatus.VOIDED.value
     append_consignment_operation(

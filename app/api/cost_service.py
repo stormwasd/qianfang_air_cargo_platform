@@ -593,6 +593,7 @@ async def create_cost_consignment(
         remark=new_record.remark,
         creator_id=current_user.id,
         status=CostConsignmentSubmissionStatus.SUBMITTED.value,
+        edit_locked=True,
     )
     apply_consignment_tags(cs_record, new_record)
     cs_record.financial_data = financial_snapshot(new_record)
@@ -642,8 +643,8 @@ async def create_cost_consignment_draft(
 async def get_cost_consignments(
     start_warehouse_date: Optional[str] = Query(None, description="进仓开始日期 (YYYY-MM-DD)"),
     end_warehouse_date: Optional[str] = Query(None, description="进仓结束日期 (YYYY-MM-DD)"),
-    start_flight_date: Optional[str] = Query(None, description="国际空运应付款项航班开始日期 (YYYY-MM-DD，含当天；payables.intl_air.flight_date)"),
-    end_flight_date: Optional[str] = Query(None, description="国际空运应付款项航班结束日期 (YYYY-MM-DD，含当天；payables.intl_air.flight_date)"),
+    start_flight_date: Optional[str] = Query(None, description="委托信息航班开始日期 (YYYY-MM-DD，含当天；consignor_info.flight_date)"),
+    end_flight_date: Optional[str] = Query(None, description="委托信息航班结束日期 (YYYY-MM-DD，含当天；consignor_info.flight_date)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
     status: Optional[CostConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
     agent: Optional[str] = Query(None, description="代理单位 (模糊查询)"),
@@ -676,8 +677,8 @@ async def get_cost_consignments(
     支持参数：
     - **start_warehouse_date**: 进仓日期区间开始，例如 '2026-07-25'
     - **end_warehouse_date**: 进仓日期区间结束，例如 '2026-07-30'
-    - **start_flight_date**: 国际空运应付款项航班日期区间开始（含当天），例如 '2026-07-25'
-    - **end_flight_date**: 国际空运应付款项航班日期区间结束（含当天），例如 '2026-07-30'
+    - **start_flight_date**: 委托信息航班日期区间开始（含当天），例如 '2026-07-25'
+    - **end_flight_date**: 委托信息航班日期区间结束（含当天），例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
     - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）；不传则查询全部
     - **agent**: 代理单位 (支持模糊匹配)
@@ -701,16 +702,16 @@ async def get_cost_consignments(
         if e_date:
             query_obj = query_obj.filter(CostConsignment.warehouse_entry_date <= e_date)
 
-    # 2. 应付款项-国际空运航班日期区间筛选；与进仓日期条件相互独立。
+    # 2. 委托信息航班日期区间筛选；与进仓日期条件相互独立。
     if start_flight_date:
         s_date = _parse_date(start_flight_date)
         if s_date:
-            query_obj = query_obj.filter(CostConsignment.pay_intl_air_flight_date >= s_date)
+            query_obj = query_obj.filter(CostConsignment.flight_date >= s_date)
 
     if end_flight_date:
         e_date = _parse_date(end_flight_date)
         if e_date:
-            query_obj = query_obj.filter(CostConsignment.pay_intl_air_flight_date <= e_date)
+            query_obj = query_obj.filter(CostConsignment.flight_date <= e_date)
 
     # 3. 客户名称模糊查询
     if customer_name and customer_name.strip():
@@ -833,7 +834,7 @@ async def update_cost_consignment_draft(
     except ValueError:
         raise BadRequestException("consignment_id 必须为合法数字格式")
 
-    record = db.query(CostConsignment).filter(CostConsignment.id == c_id).first()
+    record = db.query(CostConsignment).filter(CostConsignment.id == c_id).with_for_update().first()
     if not record:
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
 
@@ -858,23 +859,26 @@ async def update_cost_consignment(
     db: Session = Depends(get_db)
 ):
     """
-    修改指定 ID 的费用单据信息接口。
+    保存提交费用单据，同一事务内回写并锁定客服；后续费用暂存不解锁客服。
     """
     try:
         c_id = int(consignment_id)
     except ValueError:
         raise BadRequestException("consignment_id 必须为合法数字格式")
         
-    record = db.query(CostConsignment).filter(CostConsignment.id == c_id).first()
+    # 与客服保存采用相同加锁顺序：客服行 -> 费用行，防止同步覆盖或交叉死锁。
+    cs_record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).with_for_update().first()
+    record = db.query(CostConsignment).filter(CostConsignment.id == c_id).with_for_update().first()
     if not record:
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
 
     _ensure_cost_consignment_not_voided(record)
+    if cs_record and int(cs_record.status) == CostConsignmentSubmissionStatus.VOIDED.value:
+        raise ConflictException("客服委托信息已作废，不能保存费用单据")
     _apply_cost_payload(record, payload, db)
     record.status = CostConsignmentSubmissionStatus.SUBMITTED.value
     
     # 同步更新客服接单台 (ConsignmentInfo) 中的对应记录
-    cs_record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
     if cs_record:
         cs_record.create_time = record.create_time
         cs_record.internal_doc_id = record.internal_doc_id
@@ -922,6 +926,7 @@ async def update_cost_consignment(
         # 费用首次补建客服记录时带入标签，既有客服标签保留提交时的选择。
         apply_consignment_tags(cs_record, record)
 
+    cs_record.edit_locked = True
     cs_record.financial_data = financial_snapshot(record)
     append_consignment_operation(
         db, record.id, current_user, source="cost_service", action="save",
@@ -945,14 +950,14 @@ async def void_cost_consignment(
     except ValueError:
         raise BadRequestException("consignment_id 必须为合法数字格式")
 
-    record = db.query(CostConsignment).filter(CostConsignment.id == c_id).first()
+    customer_record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).with_for_update().first()
+    record = db.query(CostConsignment).filter(CostConsignment.id == c_id).with_for_update().first()
     if not record:
         raise NotFoundException(f"单据信息不存在 (ID: {consignment_id})")
     if int(record.status) == CostConsignmentSubmissionStatus.VOIDED.value:
         raise ConflictException("费用信息已作废，请勿重复操作")
 
     record.status = CostConsignmentSubmissionStatus.VOIDED.value
-    customer_record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).first()
     if customer_record:
         customer_record.status = CostConsignmentSubmissionStatus.VOIDED.value
     append_consignment_operation(

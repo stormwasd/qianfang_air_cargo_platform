@@ -102,16 +102,7 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cost.pay_trucking_freight_method, "计费重")
         self.assertEqual(cost.receivable_customs_fee, Decimal("750.00"))
         self.assertEqual(cost.receivable_fuel_fee, Decimal("65.00"))  # 不随后端费率 0 回算。
-        before = self.db.query(ConsignmentOperationLog).count()
-        for suffix in ("", "/draft"):
-            response = await self.client.put(path + suffix, json={"customer_name": "非法覆盖", "status": 0})
-            self.assertEqual(response.status_code, 409, response.text)
-            self.assertEqual(response.json(), {
-                "code": 409, "data": None,
-                "msg": "已提交的委托信息不能修改或暂存，请在费用登记台维护",
-            })
-        self.assertEqual(self.db.query(ConsignmentOperationLog).count(), before)
-        self.assertEqual(self.db.get(ConsignmentInfo, record_id).customer_name, "客户")
+        self.assertTrue(data["editable"])
         await self.request("PUT", "/cost/consignments/" + str(record_id), {
             "receivables": {"fuel_rate": 1.23}, "payables": {"trucking": {"destination_city": "北京", "freight_method": "体积重"}},
         })
@@ -120,6 +111,17 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail["payables"]["trucking"]["destination_city"], "北京")
         self.assertEqual(detail["status"], 1)
         self.assertEqual(detail["payables"]["trucking"]["freight_method"], "体积重")
+
+        before = self.db.query(ConsignmentOperationLog).count()
+        for suffix in ("", "/draft"):
+            response = await self.client.put(path + suffix, json={"customer_name": "非法覆盖", "status": 0})
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertEqual(response.json(), {
+                "code": 409, "data": None,
+                "msg": "费用登记台已保存提交，客服委托信息不能修改或暂存，请在费用登记台维护",
+            })
+        self.assertEqual(self.db.query(ConsignmentOperationLog).count(), before)
+        self.assertEqual(self.db.get(ConsignmentInfo, record_id).customer_name, "客户")
 
     async def test_templates_and_cost_create_draft_update_list_void_return_new_fields(self):
         for base, payload in (("/customer", FINANCIAL), ("/cost", FINANCIAL)):
@@ -461,7 +463,8 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(cost["consignor_info"]["flight_date"], "2026-11-02")
                 self.assertEqual(cost["payables"]["intl_air"]["flight_date"], "2026-11-02")
                 response = await self.client.put(path, json=payload("2026-11-03"))
-                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.json()["data"]["editable"])
         # 客服明确录入国际日期时，继续沿用原有分组字段优先规则。
         created = await self.request("POST", "/customer/consignments", {
             "flight_date": "2026-11-04", "payables": {"intl_air": {"flight_date": "2026-11-05"}},

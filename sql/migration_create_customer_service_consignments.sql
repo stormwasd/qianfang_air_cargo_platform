@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS `consignment_infos` (
     `agent` varchar(100) DEFAULT NULL COMMENT '代理',
     `remark` text DEFAULT NULL COMMENT '备注',
     `status` tinyint(1) NOT NULL DEFAULT 1 COMMENT '单据状态：0=未提交，1=已提交，2=作废',
+    `edit_locked` tinyint(1) NOT NULL DEFAULT 0 COMMENT '费用保存提交后锁定客服编辑，不随费用暂存解除',
     `creator_id` bigint(20) DEFAULT NULL COMMENT '创建者ID',
     `financial_data` JSON DEFAULT NULL COMMENT '客服应收应付录入信息',
     `created_at` datetime NOT NULL COMMENT '创建时间',
