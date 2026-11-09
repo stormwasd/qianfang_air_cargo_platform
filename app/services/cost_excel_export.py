@@ -109,7 +109,8 @@ def _columns(group, fields):
 
 _BASIC = _columns("", (
     ("序号", "sequence"), ("状态", "status"), ("客户名称", "customer_name"),
-    ("进仓日期", "warehouse_entry_date"), ("主单号", "flight_doc_no"),
+    ("进仓日期", "warehouse_entry_date"), ("航班日期", "flight_date"),
+    ("主单号", "flight_doc_no"),
     ("始发站-目的站", "origin_destination"), ("件数", "pieces"),
     ("实际重量", "actual_weight"), ("计费重量", "chargeable_weight"),
     ("体积", "volume"), ("报关", "customs_declaration"),

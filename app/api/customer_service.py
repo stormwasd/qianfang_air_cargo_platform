@@ -728,7 +728,7 @@ async def export_consignments_to_excel(
 ):
     """
     选中委托信息列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    单行表头，共 90 列，首列序号、第二列状态，数据从第 2 行开始。
+    单行表头，共 91 列，首列序号、第二列状态，第5列为委托航班日期，数据从第 2 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
@@ -782,7 +782,7 @@ async def export_consignments_to_excel(
             cell.font = data_font
             cell.border = thin_border
             # 数字和日期居中，文本左对齐
-            if c_idx in (1, 2, 4, 7, 8, 9, 10):
+            if c_idx in (1, 2, 4, 5, 8, 9, 10, 11):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 cell.alignment = Alignment(horizontal="left", vertical="center")

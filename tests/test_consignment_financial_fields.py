@@ -241,7 +241,7 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
         payload = deepcopy(FINANCIAL)
         payload["receivables"].update({"fuel_rate": 0, "freight_method": "2", "total": 987.65})
         result = await self.request("POST", "/customer/consignments", payload)
-        for base, count, ground_pickup_column in (("/customer", 90, 61), ("/cost", 114, 69)):
+        for base, count, ground_pickup_column in (("/customer", 91, 62), ("/cost", 115, 70)):
             response = await self.client.post(base + "/consignments/export-excel", json={"ids": [result["id"]]})
             self.assertEqual(response.status_code, 200, response.text)
             workbook = load_workbook(io.BytesIO(response.content), data_only=True)
@@ -259,12 +259,12 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sheet.cell(2, ground_pickup_column).data_type, "n")
             self.assertIsNone(sheet.cell(2, 3).value)
             if base == "/cost":
-                self.assertEqual(sheet.cell(2, 15).value, "计费重量")
-                self.assertEqual(sheet.cell(2, 32).value, 987.65)
-                self.assertEqual(sheet.cell(2, 111).value, 987.65)
+                self.assertEqual(sheet.cell(2, 16).value, "计费重量")
+                self.assertEqual(sheet.cell(2, 33).value, 987.65)
+                self.assertEqual(sheet.cell(2, 112).value, 987.65)
             else:
                 self.assertEqual(titles.count("运费计算方式"), 1)
-                self.assertEqual(sheet.cell(2, 75).value, "计费重")
+                self.assertEqual(sheet.cell(2, 76).value, "计费重")
                 self.assertNotIn("应付小计", titles)
                 self.assertNotIn("应收合计", titles)
             detail = await self.request("GET", base + "/consignments/" + result["id"])
@@ -294,7 +294,7 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
             ))
         self.db.commit()
         for base, count, column, expected_methods in (
-            ("/cost", 114, 85, methods), ("/customer", 90, 75, methods[::-1]),
+            ("/cost", 115, 86, methods), ("/customer", 91, 76, methods[::-1]),
         ):
             response = await self.client.post(base + "/consignments/export-excel", json={"ids": [str(i) for i in range(1, 7)]})
             self.assertEqual(response.status_code, 200, response.text)
@@ -313,14 +313,14 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
                 if method:
                     self.assertEqual(cell.data_type, "s")  # 字符串编码1/2原样，不转换为应收选项。
                 if base == "/cost":
-                    self.assertEqual(sheet.cell(row, 15).value, "计费重量")
-                    self.assertEqual([sheet.cell(row, c).value for c in range(84, 91)],
+                    self.assertEqual(sheet.cell(row, 16).value, "计费重量")
+                    self.assertEqual([sheet.cell(row, c).value for c in range(85, 92)],
                                      [2, method or None, 123.45, 0, 7.89, f"费用汽运-{row - 1}", 777.77])
-                    self.assertEqual(sheet.cell(row, 91).value, "费用国内代理")
-                    self.assertEqual([sheet.cell(row, c).value for c in range(110, 115)],
+                    self.assertEqual(sheet.cell(row, 92).value, "费用国内代理")
+                    self.assertEqual([sheet.cell(row, c).value for c in range(111, 116)],
                                      [12.34, 1000, 777.77, 222.23, 22.22])
                 else:
-                    self.assertEqual([sheet.cell(row, c).value for c in range(74, 80)],
+                    self.assertEqual([sheet.cell(row, c).value for c in range(75, 81)],
                                      [1.234, method or None, 0, 9.87, f"客服汽运-{row - 1}", "客服国内代理"])
         self.assertFalse(self.db.dirty)
         self.assertEqual(self.db.query(ConsignmentOperationLog).count(), 0)
@@ -348,8 +348,8 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
             ))
         self.db.commit()
         for base, prefix, expected_order, agent_column, fee_column, fee in (
-            ("/customer", "CUSTOMER", [4, 3, 2, 1], 29, 14, 11.11),
-            ("/cost", "COST", [2, 4, 1, 3], 33, 17, 22.22),
+            ("/customer", "CUSTOMER", [4, 3, 2, 1], 30, 15, 11.11),
+            ("/cost", "COST", [2, 4, 1, 3], 34, 18, 22.22),
         ):
             response = await self.client.post(base + "/consignments/export-excel", json={
                 "ids": ["3", "999", "1", "2", "4", "2"],
@@ -365,7 +365,7 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
             sheet = workbook.active
             self.assertEqual(sheet.max_row, 5)
             self.assertEqual([sheet.cell(row, 1).value for row in range(2, 6)], [1, 2, 3, 4])
-            self.assertEqual([sheet.cell(row, 5).value for row in range(2, 6)],
+            self.assertEqual([sheet.cell(row, 6).value for row in range(2, 6)],
                              [f"{prefix}-{i}" for i in expected_order])
             for row in range(2, 6):
                 self.assertEqual(sheet.cell(row, agent_column).value,
@@ -377,7 +377,7 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([self.db.get(CostConsignment, i).status for i in range(1, 5)], [0, 1, 2, 1])
 
     async def test_export_validation_and_no_matching_ids_keep_existing_behavior(self):
-        for base, count, empty_status in (("/customer", 90, 422), ("/cost", 114, 400)):
+        for base, count, empty_status in (("/customer", 91, 422), ("/cost", 115, 400)):
             for payload, expected in (({}, 422), ({"ids": []}, empty_status),
                                       ({"ids": ["abc"]}, 400), ({"ids": [1]}, 422)):
                 response = await self.client.post(base + "/consignments/export-excel", json=payload)
@@ -389,6 +389,86 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(workbook.close)
             self.assertEqual(workbook.active.max_row, 1)
             self.assertEqual(workbook.active.max_column, count)
+
+    async def test_legacy_entrustment_dates_survive_detail_list_and_excel_without_backfill(self):
+        # 模拟历史记录：只有委托日期、三处日期不同、委托日期为空。
+        for record_id, entrustment_date in ((1, date(2026, 9, 1)), (2, date(2026, 9, 2)), (3, None)):
+            self.db.add(ConsignmentInfo(
+                id=record_id, status=1, flight_date=entrustment_date,
+                warehouse_entry_date=date(2026, 8, 31), flight_doc_no=f"CUSTOMER-{record_id}",
+                financial_data=None if record_id == 1 else {"payables": {
+                    "intl_air": {"flight_date": "2026-09-10"},
+                    "dom_air": {"flight_date": "2026-09-11"},
+                }},
+            ))
+            self.db.add(CostConsignment(
+                id=record_id, status=1, flight_date=entrustment_date,
+                warehouse_entry_date=date(2026, 8, 31), flight_doc_no=f"COST-{record_id}",
+                pay_intl_air_flight_date=None if record_id == 1 else date(2026, 9, 10),
+                pay_dom_air_flight_date=None if record_id == 1 else date(2026, 9, 11),
+            ))
+        self.db.commit()
+        for base, intl_column, domestic_column, count in (
+            ("/customer", 35, 85, 91), ("/cost", 39, 97, 115),
+        ):
+            listing = await self.request("GET", base + "/consignments")
+            items = {item["id"]: item for item in listing["items"]}
+            for record_id, expected in ((1, "2026-09-01"), (2, "2026-09-02"), (3, None)):
+                detail = await self.request("GET", f"{base}/consignments/{record_id}")
+                for data in (detail, items[str(record_id)]):
+                    info = data if base == "/customer" else data["consignor_info"]
+                    self.assertEqual(info["flight_date"], expected)
+                response = await self.client.post(base + "/consignments/export-excel", json={"ids": [str(record_id)]})
+                self.assertEqual(response.status_code, 200, response.text)
+                workbook = load_workbook(io.BytesIO(response.content), data_only=True)
+                self.addCleanup(workbook.close)
+                sheet = workbook.active
+                self.assertEqual(sheet.max_column, count)
+                self.assertEqual([sheet.cell(1, c).value for c in (4, 5, 6)], ["进仓日期", "航班日期", "主单号"])
+                self.assertEqual(sheet.cell(2, 4).value, "2026-08-31")
+                self.assertEqual(sheet.cell(2, 5).value, expected)
+                self.assertEqual(sheet.cell(2, 6).value, f"{'CUSTOMER' if base == '/customer' else 'COST'}-{record_id}")
+                self.assertEqual(sheet.cell(2, 5).alignment.horizontal, "center")
+                for column, date_value in ((intl_column, "2026-09-10"), (domestic_column, "2026-09-11")):
+                    self.assertEqual(sheet.cell(1, column).value, "航班日期")
+                    self.assertEqual(sheet.cell(2, column).value, None if record_id == 1 else date_value)
+        self.assertFalse(self.db.dirty)
+        self.assertEqual(self.db.query(ConsignmentOperationLog).count(), 0)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(ConsignmentInfo, 1).flight_date, date(2026, 9, 1))
+        self.assertIsNone(self.db.get(ConsignmentInfo, 1).financial_data)
+        self.assertIsNone(self.db.get(CostConsignment, 1).pay_intl_air_flight_date)
+
+    async def test_entrustment_date_edit_and_existing_customer_submission_sync(self):
+        for base, template in (("/customer", "/consignment-registration"), ("/cost", "/cost-registration")):
+            def payload(value):
+                return {"flight_date": value} if base == "/customer" else {"consignor_info": {"flight_date": value}}
+
+            await self.request("PUT", base + template, payload("2026-11-01"))
+            saved = await self.request("GET", base + template)
+            self.assertEqual((saved if base == "/customer" else saved["consignor_info"])["flight_date"], "2026-11-01")
+            created = await self.request("POST", base + "/consignments/draft", payload("2026-11-01"))
+            path = base + "/consignments/" + created["id"]
+            await self.request("PUT", path + "/draft", payload("2026-11-02"))
+            self.db.expire_all()
+            detail = await self.request("GET", path)
+            self.assertEqual((detail if base == "/customer" else detail["consignor_info"])["flight_date"], "2026-11-02")
+            await self.request("PUT", path, {})
+            customer = await self.request("GET", "/customer/consignments/" + created["id"])
+            self.assertEqual(customer["flight_date"], "2026-11-02")
+            if base == "/customer":
+                cost = await self.request("GET", "/cost/consignments/" + created["id"])
+                self.assertEqual(cost["consignor_info"]["flight_date"], "2026-11-02")
+                self.assertEqual(cost["payables"]["intl_air"]["flight_date"], "2026-11-02")
+                response = await self.client.put(path, json=payload("2026-11-03"))
+                self.assertEqual(response.status_code, 409)
+        # 客服明确录入国际日期时，继续沿用原有分组字段优先规则。
+        created = await self.request("POST", "/customer/consignments", {
+            "flight_date": "2026-11-04", "payables": {"intl_air": {"flight_date": "2026-11-05"}},
+        })
+        cost = await self.request("GET", "/cost/consignments/" + created["id"])
+        self.assertEqual(cost["consignor_info"]["flight_date"], "2026-11-04")
+        self.assertEqual(cost["payables"]["intl_air"]["flight_date"], "2026-11-05")
 
     async def test_invalid_weight_method_rejected_and_legacy_payload_remains_supported(self):
         response = await self.client.post("/customer/consignments", json={"receivables": {"fuel_weight_method": "3"}})
