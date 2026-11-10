@@ -1,0 +1,30 @@
+purpose:
+  stands_in_for: CSA booking-change forward, original animal declaration, changed weight/price/charge, goods check, checkChange and createChange.
+  unblocks: Local HTTP verification without real airline transactions or captured credentials.
+assumptions:
+  - id: changed-order-identity-and-submit-sequence
+    status: supported
+    claim: In the local scenarios, the real Python client preserves the original order/version/bookId and submits identical checkChange/createChange bodies only after successful prerequisite checks.
+    reason: The local mock validates original identities and equality of the last two request bodies; recorded requests confirm the changed client reached these routes over HTTP.
+    verification: On 2026-11-10, tests.test_china_southern_air_direct_change exercised success, goods rejection, change rejection and create HTTP 500 through the local Postman simulation. The four scenarios made 29 airline-shaped HTTP requests, including one successful create and one create 500. Rejections stopped at the expected check and no scenario retried create. Additional MockTransport tests cover timeout, non-JSON, pending status, business rejection, required-fee recalculation and preservation of existing declaration/contact data.
+    source: tests/test_china_southern_air_direct_change.py; postman/mocks/csa-change/default.js; app/services/china_southern_air_direct_change.py
+    updated_at: "2026-11-10"
+  - id: direct-booking-invoice-persistence-and-mutual-exclusion
+    status: supported
+    claim: In the SQLite API scenarios, direct invoicing commits a claim before network work, preserves the booking contact snapshot and original form, and blocks competing invoices after an ambiguous submission.
+    reason: Real FastAPI handlers, SQLAlchemy transactions and the changed service ran against synthetic dependency responses, including a paused preparation with a competing request and injected persistence failures.
+    verification: Tests asserted final booking/waybill states, final cost 51.45 rather than difference -154.55, disabled automation behavior, original RPA enqueue without a token, failed-state retry, unknown-state exclusion across both invoice routes and cancel, and retention of the claim after local persistence failure. Related regression suite ran 87 tests with 84 passing and three unrelated simulation-dependent skips. MySQL locking was not exercised.
+    source: tests/test_china_southern_air_direct_change.py; app/api/bookings.py
+    updated_at: "2026-11-10"
+  - id: live-csa-change-acceptance
+    status: unknown
+    claim: Real CSA accepts the complete change context built by this integration for all supported single-segment booking forms.
+    reason: Final goods/check/create shapes and success semantics come from user-provided captures. Order identity and animal-query shapes also appear in the supplied HAR. The HAR did not include forward or change price/calculation traffic, so those requests were checked against public website JavaScript rather than a live transaction. No provider-owned Postman mock was discovered; local synthetic responses model the reviewed shapes, not airline acceptance.
+    verification: Reviewed public app.3180677e.js and chunk-1934c426.3180677e.js; axios sends forward data as an ordinary JSON object. No authenticated airline endpoint or real change submission was called. Live acceptance, provider-side races and specialized shipment requirements still need authorized integration validation.
+    source: API_DOCS.md; app/services/china_southern_air_direct_change.py; public CSA super-change JavaScript
+    updated_at: "2026-11-10"
+fingerprints:
+  - id: csa-change-20261110
+    date: "2026-11-10"
+    commit: "b8c5e40 (working tree: direct invoice-with-data implementation)"
+    cli: "1.74.0"

@@ -48,10 +48,19 @@ class RpaTaskPriorityTests(unittest.TestCase):
                 )
                 self.assertEqual(task.priority, settings.RPA_QUEUE_WAYBILL_PRIORITY)
 
-    def test_booking_and_cancel_tasks_keep_default_priority(self):
+    def test_cancel_task_uses_same_priority_as_waybill(self):
+        task = rpa_task_service.create_task(
+            db=_FakeDB(),
+            task_type=RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_CANCEL.value,
+            target_type="booking",
+            target_id=1,
+            params={},
+        )
+        self.assertEqual(task.priority, settings.RPA_QUEUE_WAYBILL_PRIORITY)
+
+    def test_booking_tasks_keep_default_priority(self):
         for task_type in (
             RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_EXECUTE.value,
-            RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_CANCEL.value,
         ):
             with self.subTest(task_type=task_type):
                 self.assertNotIn(task_type, TASK_PRIORITY_MAP)

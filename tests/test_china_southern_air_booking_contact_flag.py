@@ -49,6 +49,7 @@ class BookingContactFlagTests(unittest.IsolatedAsyncioTestCase):
         self.config = BusinessConfig(config_data=json.dumps(config, ensure_ascii=False))
         settings_patch = patch.multiple(
             api.settings, CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE="direct",
+            CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_EXECUTION_MODE="rpa",
             CHINA_SOUTHERN_AIR_DIRECT_BOOKING_QUEUE_ENABLED=True,
         )
         settings_patch.start()
@@ -209,6 +210,11 @@ class BookingContactFlagTests(unittest.IsolatedAsyncioTestCase):
             result = await self.client.post(f"/api/v1/bookings/101/{path}")
             self.assertEqual(result.status_code, 200, result.text)
             self.assertIs(result.json()["data"]["has_complete_contact_info"], True)
+            if path == "cancel":
+                cancel_task = self.db.query(RPATask).filter(
+                    RPATask.task_type == RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_CANCEL.value,
+                ).one()
+                self.assertEqual(cancel_task.priority, api.settings.RPA_QUEUE_WAYBILL_PRIORITY)
         self.db.query(RPATask).delete()
         self.db.commit()
         result = await self.client.post("/api/v1/bookings/101/invoice-with-data", json=_direct_order_form("1.2"))

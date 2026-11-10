@@ -1,0 +1,103 @@
+{
+  "forward": {
+    "totalOrderDetail": {
+      "orderDetailDto": {
+        "orderId": "B-SYNTHETIC",
+        "awbPrefix": "784",
+        "awbNo": "12345670",
+        "awbPostfix": "00000000",
+        "agentCode": "SZXFED",
+        "version": 17,
+        "directTransfer": "D",
+        "rateTypeEn": "SPY",
+        "orderStatusCName": "待审批",
+        "piece": 9,
+        "weight": 99,
+        "volume": 0.6,
+        "cweight": 100,
+        "handlingInfo": "原始储运注意事项",
+        "orderShipmentContact": {
+          "notifyName": "原通知人",
+          "driverName": "原司机"
+        },
+        "orderDetailFlightInfo": [
+          {
+            "bookId": 987654,
+            "segmentId": 1,
+            "bookStatus": "KK",
+            "dep": "SZX",
+            "dest": "TAO",
+            "flightNo": "CZ8735",
+            "flightDate": "2026-08-31 00:00:00",
+            "acType": "32N",
+            "bookMemo": "原备注",
+            "resPlateDtos": null
+          }
+        ]
+      },
+      "extendsShipmentInfo": {
+        "awbDangerouscheckDto": {
+          "version": 4,
+          "agentcheckname": "原检查人"
+        }
+      },
+      "extendsChargeInfo": null
+    },
+    "changeCharge": {
+      "rateCharge": 50,
+      "weightCharge": 50,
+      "norRate": 6,
+      "oldTotalCharge": 206,
+      "diffTotalCharge": -154.55,
+      "otherChargeFee": 1.45,
+      "flightPriceCalculateResult": {
+        "oilFee": 1
+      },
+      "additionalMainCharges": [],
+      "additionalCharges": [],
+      "extensionMainCharges": [],
+      "extensionCharges": [
+        {
+          "newChecked": "Y",
+          "chargeAmount": 0.45
+        }
+      ]
+    },
+    "changeType": "S",
+    "version": 8
+  },
+  "queryChangePrice": {
+    "charge": [
+      {
+        "parentProductionName": "南航标运",
+        "flightPriceCalculateResult": {
+          "spaceClass": "A",
+          "subSpaceClass": "A7",
+          "rateCharge": 50,
+          "weightCharge": 50,
+          "rateClass": "M"
+        }
+      }
+    ]
+  },
+  "calculateCharge": {
+    "rateCharge": 50,
+    "weightCharge": 50,
+    "norRate": 6,
+    "oldTotalCharge": 206,
+    "diffTotalCharge": -154.55,
+    "otherChargeFee": 1.45,
+    "flightPriceCalculateResult": {
+      "oilFee": 1
+    },
+    "additionalMainCharges": [],
+    "additionalCharges": [],
+    "extensionMainCharges": [],
+    "extensionCharges": [
+      {
+        "newChecked": "Y",
+        "chargeAmount": 0.45
+      }
+    ]
+  }
+}

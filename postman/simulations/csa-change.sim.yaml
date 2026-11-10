@@ -1,0 +1,5 @@
+simulation: csa-change
+routing: path
+mocks:
+  - routeKey: csa
+    path: ../mocks/csa-change/config.yaml

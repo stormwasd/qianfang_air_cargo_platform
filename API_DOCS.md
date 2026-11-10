@@ -1555,16 +1555,17 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 - 深航、南航的制单及打单开关相互独立，修改 `.env` 后需要重启应用服务生效。
 - `POST /api/v1/waybills/{waybill_id}/print-document` 手动打印接口不受影响。
 
-## RPA 开单任务优先级
+## RPA 开单及南航退舱任务优先级
 
-`rpa_tasks` 按 `priority` 降序、创建时间升序取待执行任务。为减少抓取类任务对用户点击开单的等待，以下任务类型使用专用优先级配置 `RPA_QUEUE_WAYBILL_PRIORITY`：
+`rpa_tasks` 按 `priority` 降序、创建时间升序取待执行任务。为减少抓取类任务对用户点击开单或南航退舱的等待，以下任务类型使用专用优先级配置 `RPA_QUEUE_WAYBILL_PRIORITY`：
 
 - `SHENZHEN_AIR_WAYBILL_EXECUTE`：深航开单
 - `CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE`：南航新增运单（兼容历史 RPA 开单链路）
 - `CHINA_SOUTHERN_AIR_DIRECT_INVOICE`：南航直接开单
 - `CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA`：南航修改数据后开单
+- `CHINA_SOUTHERN_AIR_BOOKING_CANCEL`：南航退舱（由默认 `1` 提升为 `10`，与开单同级）
 
-配置项默认值为 `10`，高于普通任务默认优先级 `1`、保持登录任务优先级 `3` 和重启任务优先级 `4`。南航订舱、取消、出港跟踪、审批、抓取等其他任务优先级不受影响。优先级只影响尚未开始执行的任务，已经处于 `running` 的任务不会被中断；修改 `.env` 后需要重启服务生效。
+配置项默认值为 `10`，高于普通任务默认优先级 `1`、保持登录任务优先级 `3` 和重启任务优先级 `4`。南航订舱、出港跟踪、审批、抓取等其他任务优先级不受影响。南航退舱接口和任务服务默认映射均使用此配置；与开单同级时按创建时间先后执行。部署重启后新建的任务使用新优先级，已有任务保存的 `priority` 不会自动调整，已经处于 `running` 的任务不会被中断；修改 `.env` 后需要重启服务生效。接口请求和响应结构不变。
 
 ## 深航获取 HAR 周期任务
 
@@ -2006,7 +2007,7 @@ python -m unittest tests.test_shenzhen_air_direct_waybill -v
 
 前端将此字段作为订舱后“直接开单”按钮的额外可用条件：只有 `has_complete_contact_info === true` 才满足联系人条件；`false` 时置灰，可提示“订舱时未提交完整收发货人信息，请选择修改数据后开单”。同时沿用原有订舱成功、主单号、开单中/已开单、退舱等按钮条件。
 
-`POST /api/v1/bookings/{booking_id}/direct-invoice` **取消此前新增的联系人完整性拦截**，不再根据 booking 表单、当前托运人配置或该标记额外返回联系人缺失错误。原有航司、主单号、登录配置和重复任务校验继续有效；成功入队仍返回 `data.task_id`，不代表开单已完成。`invoice-with-data` 的修改数据后开单逻辑及开单自身校验保持不变。
+`POST /api/v1/bookings/{booking_id}/direct-invoice` **取消此前新增的联系人完整性拦截**，不再根据 booking 表单、当前托运人配置或该标记额外返回联系人缺失错误。原有航司、主单号、登录配置和重复任务校验继续有效；成功入队仍返回 `data.task_id`，不代表开单已完成。修改数据后开单支持下文的 direct/RPA 两种方式。
 
 部署前执行 `sql/migration_add_booking_complete_contact_info.sql`（MySQL，一次性执行）：
 
@@ -2020,6 +2021,113 @@ ALTER TABLE `bookings`
 数据库存储 `0/1`，API 序列化为 `false/true`；必须先加列再部署后端，不需要修改 Excel 模板或前端订舱请求字段。
 
 ## 南航开单
+
+### 订舱后修改数据开单（默认 direct，保留 RPA）
+
+`POST /api/v1/bookings/{booking_id}/invoice-with-data`
+
+本接口使用订舱记录已有的 `master_airwaybill_number` 修改原南航订单并完成开单，不调用新建订单 `createOrder`，也不领取或再次占用单号库。只有南航订舱且已有主单号才能调用。
+
+在 `app/config.py` 中配置独立开关（也支持同名环境变量，值区分大小写）：
+
+```python
+CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_EXECUTION_MODE: Literal["direct", "rpa"] = Field(default="direct")
+```
+
+| 模式 | 执行和认证 | 返回语义 |
+| --- | --- | --- |
+| `direct`（默认） | 使用 `nanhang_tokens` 中最新的非空 Token、现有 `china_southern_air.booking_and_create.direct_order` 代理配置，等待变更接口完成 | 成功代表南航 `createChange` 已确认 `changeStatus=F`，且本地运单和 booking 成功状态已同步；`task_id=null` |
+| `rpa` | 保留原 RPA 登录配置、通用任务队列和 Worker，不依赖南航 Token | 返回原 `task_id` 仅表示入队，通过 `/api/v1/rpa-tasks/{task_id}` 查询最终结果 |
+
+此开关独立于订舱 `CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE`，不改变订舱后的 `direct-invoice` 路线或普通运单新建开单的执行方式。direct 失败不会自动降级为 RPA，最终提交不自动重试。无需新增数据库字段或 SQL。
+
+请求体仍是回显后修改的运单表单，兼容直接提交该对象或包装为 `{"form_data": {...}}`。示例（使用合成数据）：
+
+```json
+{
+  "airline": "2",
+  "flight_info": {
+    "origin_station": "SZX", "destination": "TAO",
+    "flight_date": "2026-11-28", "flight_number": "CZ3963",
+    "booking_remark": "订舱备注",
+    "booking_remark_wide": "宽体机备注", "booking_remark_narrow": "窄体机备注"
+  },
+  "cargo_info": {
+    "cargo_type": "普通货物", "cargo_type_code": "3006", "cargo_code": "9000",
+    "cargo_name": "衣服裤子", "quantity": 3, "weight": 0.5,
+    "booking_volume": "0.2", "product_name": "南航快运", "oversized_cargo": "0",
+    "special_cargo_code": "XPS", "storage_and_transportation_precautions": "储运说明"
+  },
+  "contact_info": {
+    "consignee": "收货人甲", "consignee_phone": "13800138000", "shipper_unit": "客户公司",
+    "shipper": "托运公司甲", "shipper_phone": "13800138001",
+    "address": {"region": "广东省/深圳市/宝安区", "detail": "国内货站"}
+  },
+  "dangerous_goods_declaration": {
+    "no_hidden_dangerous_goods": "0", "agent_checker_signature": "检查人甲",
+    "agent_consignor_signature": "交运人甲"
+  },
+  "other_info": {"order_contact": "订单联系人甲/13800138002", "contact_phone": "", "settlement_file_number": "配置中的结算文件号"},
+  "other_fees": {"packaging_fee": "", "pickup_fee": "", "delivery_fee": ""}
+}
+```
+
+direct 参数和处理规则：
+
+| 来源 | 南航映射/约束 |
+| --- | --- |
+| 原主单号 | 查询唯一有效 B2B 订单，再调用 `b2e-change/b2bChangeFlightWeight/forward` 获取完整实时上下文；订单号、代理、主单号、版本必须匹配。`orderId`、`bookId`、`segmentId`、原订单及变更版本沿用实时结果，前端不用传入 |
+| `flight_info` | 实时查询实际航班机型，构建 `flights[]`、货名检测 `flightInfos[]`；日期为 `YYYY-MM-DD`，最终航班日期仅追加一次 `00:00:00`。按宽窄体规则选择备注，未传宽窄体备注时回退到 `booking_remark` |
+| `cargo_type` / `cargo_type_code` | 沿用货物类型默认值和字典补码规则；仍无法得到代码时提示重新选择，不能把其他货物名称静默当作普通货物 |
+| 件重体 | 件数为正整数，重量/已填体积为正有限数字；调用 `calculateCWeight`（`change=true`）取得最终体积和计费重量，再调用变更 `queryChangePrice` 获取匹配产品的唯一运价舱位。保留原订单尺寸数据 |
+| 货名、货物代码、产品、特货码 | 分别映射 `changeOtherDto.goods/goodsCode`、实时运价产品/舱位；按现有默认特货码查询规则合并用户特货码，`specialCodes` 使用 `/` 分隔，`productionCode` 使用产品默认码 |
+| 收发货人 | `consignee/consignee_phone` → `consigneeName/consigneeMobile`，`shipper/shipper_phone` → `shipperName/shipperMobile`，地址省市区/详细地址 → `shipperState/shipperCity/shipperDistrict/shipperAddress`。修改开单表单需填写完整收发货人信息；原订单其他司机、证件、通知人字段保留 |
+| `other_info` | `order_contact/contact_phone` → `contactName/contactPhone`；本接口 direct 兼容 `姓名/手机号` 合并格式：只在独立电话为空时拆出手机号。`settlement_file_number` → `accountingRule` |
+| 危险品声明、储运说明 | 沿用普通 direct 开单的声明字段映射；声明勾选时需提供两项签名。未传声明时保留原声明；未提供储运说明字段时保留原订单值，显式空值则清空。原活体动物声明通过 `b2e-order/b2eOrder/querylivingAnimalProofByorderId` 实时查询并映射为 `orderShipmentLiveanimals`，原锂电池信息从原订单扩展详情保留 |
+| 扩展费用 | 使用变更 `calculateCharge` 的完整费用列表、旧费用和差额，执行南航网页的必选单项勾选及重新计费；支持既有 `outbound_cargo_and_mail_handling_fee_options` 对象选择，不擅自重置其他可选费用 |
+
+当前表单支持单航段；遇到多航段或缺少原航段标识会明确拒绝 direct，需切换 RPA 处理。产品无唯一可用报价、无效 Token、上游前置查询或计费失败时停止，不再进入最终提交。
+
+前置上下文准备完成后，严格顺序执行：
+
+1. `b2e-support/goodsNameCheck/allowedGoodsNameCheck`：`needCheck=false`，或 `needCheck=true && checkPass=true` 才继续。
+2. `b2e-change/b2bChangeFlightWeight/checkChange`：`result=true` 才继续。
+3. `b2e-change/b2bChangeFlightWeight/createChange`：与第 2 步发送相同完整 JSON，只有 `result.changeStatus=F` 且无 `errorMsg` 才算已完成；仅 `code=0000` 或有 `changeId` 不算成功。
+
+direct 成功响应（省略其他原有 booking 字段）：
+
+```json
+{
+  "code": 200,
+  "msg": "南航修改数据后开单成功",
+  "data": {
+    "id": "123456789012345678", "execution_mode": "direct", "invoice_status": "3",
+    "master_airwaybill_number": "784-12345670", "has_complete_contact_info": false,
+    "form_data": {"airline": "2", "bookings": []},
+    "submitted_form_data": {"airline": "2", "flight_info": {}, "cargo_info": {}, "contact_info": {}, "other_info": {}},
+    "task_id": null, "waybill_id": "123456789012345679",
+    "change_id": "S-SYNTHETIC", "change_status": "F", "warnings": []
+  }
+}
+```
+
+`form_data` 保留原订舱表单，`submitted_form_data` 为实际开单规范化表单（包括最终体积、合并特货码、拆分的订单联系人）。成功创建/同步同主单号的 `waybills` 记录、设 `airline_record_status=3`，booking 设 `invoice_status=3`；不修改订舱成功时的 `has_complete_contact_info` 快照。结算及自动制单、打印继续受原南航开单后自动处理开关控制；关闭时仍同步核心运单和成功状态。
+
+结算单使用最终费用：`oldTotalCharge + diffTotalCharge` 为最终总成本，绝不能把 `diffTotalCharge` 单独作为总成本；延伸费使用新计费金额，计费重量使用南航计算结果。结算同步失败仍返回开单成功，在 `warnings` 中提示补录，不能触发重新开单。
+
+错误及重试约定：
+
+| 情况 | HTTP / 状态 | 调用方处理 |
+| --- | --- | --- |
+| 本地缺字段、缺 Token、无主单号、航司不符 | 400；不占用开单状态 | 补齐后重新提交 |
+| 前置查询、计费、货名/变化项检查失败，或最终提交明确业务拒绝 | 400；已开始执行则 `invoice_status=2`、`data.outcome_unknown=false` | 根据提示修正后可重新提交 |
+| `createChange` 网络超时、HTTP 5xx、返回非 JSON、未确认 F 等 | 400；`invoice_status=1`、`data.outcome_unknown=true`，可能附 `changeId/changeStatus` | 先核查南航订单；不得自动重试或切 RPA 重复提交 |
+| 南航确认完成但本地运单/状态事务失败 | 500；保留 `invoice_status=1`，`data.upstream_completed=true`、`change_id` | 核查并补录本地数据，不得再次调用南航提交 |
+| 已开单、开单中（含结果待核查）、已有两类开单任务、正在/已退舱或待退舱任务 | 400 | 禁止重复/冲突操作 |
+
+执行前通过短事务锁定 booking 并占用 `invoice_status=1`，随后释放数据库锁再请求南航。为避免另一条路线绕过占用，`direct-invoice` 增加开单中/已完成及另一类待执行任务互斥检查，仍保留原 RPA 执行方式、请求和成功响应；`cancel` 对 `invoice_status=1` 增加拦截，避免开单与退舱并发。结果未知或进程中断后状态可能持续为 1，应由人工核查南航实际状态后补录/恢复，本接口不会自动重置状态。
+
+本地协议依据为用户提供的货名/检查/提交请求响应、HAR 订单详情，以及南航公开 super-change 前端（`chunk-1934c426.3180677e.js`）。HAR 本身未覆盖变更计费请求；前置 forward/queryChangePrice/calculateCharge 的构造从公开前端逻辑核对，最终能否被线上南航接受仍需授权后的真实联调确认，测试不使用附件中的认证信息或真实交易数据。
 
 ### 查询南航出港货邮处理费选项
 

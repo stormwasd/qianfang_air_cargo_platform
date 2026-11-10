@@ -290,7 +290,7 @@ class Settings(BaseSettings):
         default=10,
         ge=1,
         le=100,
-        description="深航/南航开单任务优先级，数值越大越优先，默认10"
+        description="深航/南航开单及南航退舱任务优先级，数值越大越优先，默认10"
     )
     RPA_QUEUE_WORKER_COUNT: int = Field(default=1, ge=1, le=10, description="Worker数量（对应RPA机器人数量），默认1")
     RPA_QUEUE_TASK_TIMEOUT: int = Field(default=30, ge=10, le=300, description="RPA接口调用超时时间（秒），默认30秒，超时则任务失败")
@@ -350,6 +350,11 @@ class Settings(BaseSettings):
         ),
     )
     
+    CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="南航订舱后修改数据开单执行方式：direct=接口直连，rpa=原RPA队列",
+    )
+
     WECHAT_WEBHOOK_URL: str = Field(
         default="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=05b6c4d8-5058-4706-8a96-27724683e46e",
         description="企业微信群机器人Webhook地址"
