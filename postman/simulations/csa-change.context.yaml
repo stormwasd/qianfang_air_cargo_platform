@@ -23,8 +23,19 @@ assumptions:
     verification: Reviewed public app.3180677e.js and chunk-1934c426.3180677e.js; axios sends forward data as an ordinary JSON object. No authenticated airline endpoint or real change submission was called. Live acceptance, provider-side races and specialized shipment requirements still need authorized integration validation.
     source: API_DOCS.md; app/services/china_southern_air_direct_change.py; public CSA super-change JavaScript
     updated_at: "2026-11-10"
+  - id: fee-recalculation-ignores-group-metadata
+    status: supported
+    claim: In the tested scenarios, omitted group newChecked or string versus numeric quantities do not cause repeated calculation when the flat fee inputs are already calculated; a genuinely unpriced mandatory single fee still blocks final submission.
+    reason: The previous implementation reproduced the reported non-convergence error with a priced fee whose group marker was omitted. The public website helper treats that marker as display state. The corrected implementation compares actual flat fee inputs, synchronizes group display values and preserves optional fee quantities.
+    verification: On 2026-11-10, the regression suite ran 102 tests with 99 passing and three unrelated simulation-dependent skips. Seven local real-HTTP scenarios made 52 airline-shaped requests: the two new metadata/number-format scenarios each calculated once then submitted successfully, while the unpriced-fee scenario calculated three times and never called goods check/checkChange/createChange. Additional tests verified diagnostic 400 responses, invoice_status=2 and outcome_unknown=false, deleted-row handling, explicit selection changes, optional quantities and preservation of required-fee recalculation. The previously supplied final-change fee context was also normalized without requesting another calculation. The failing user's live calculateCharge response was not available, so this proves the reproduced defect and local fix, not the exact live response shape or live airline acceptance.
+    source: tests/test_china_southern_air_direct_change.py; app/services/china_southern_air_direct_change.py; postman/mocks/csa-change/default.js; public CSA chunk-1934c426.3180677e.js module 9b68
+    updated_at: "2026-11-10"
 fingerprints:
   - id: csa-change-20261110
     date: "2026-11-10"
     commit: "b8c5e40 (working tree: direct invoice-with-data implementation)"
+    cli: "1.74.0"
+  - id: csa-change-fee-recalculation-fix-20261110
+    date: "2026-11-10"
+    commit: "676b63e (working tree: fee recalculation fix)"
     cli: "1.74.0"

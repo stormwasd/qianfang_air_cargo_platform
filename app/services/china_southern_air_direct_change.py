@@ -7,6 +7,7 @@ from copy import deepcopy
 from datetime import date
 from decimal import Decimal, InvalidOperation
 import math
+import logging
 from typing import Any
 from urllib.parse import urlencode
 
@@ -16,6 +17,8 @@ from app.services.china_southern_air_service_client import ChinaSouthernAirServi
 from app.services.china_southern_air_service_client import china_southern_air_service
 from app.services.china_southern_air_direct_order import ChinaSouthernAirDirectOrderService as Order
 from app.services.china_southern_air_direct_booking import china_southern_air_direct_booking_service
+
+logger = logging.getLogger(__name__)
 
 
 class ChinaSouthernAirDirectChangeError(Exception):
@@ -160,9 +163,25 @@ class ChinaSouthernAirDirectChangeService:
         return candidates[0]
 
     @staticmethod
-    def _apply_fee_selection(charge: dict, selected: dict | None) -> bool:
-        """同步分组与扁平费用明细；沿用网页必填单项勾选规则。"""
-        changed = False
+    def _apply_fee_selection(
+        charge: dict, selected: dict | None, *, issues: list[dict] | None = None,
+    ) -> bool:
+        """同步展示分组，仅实际计费输入变化或必选项未计价时重算。
+
+        南航分组字段可能每次由服务端重建；计费输入以扁平费用明细为准。
+        分组 newChecked 不是计费开关，补齐它不能触发重算。
+        """
+        pending = issues if issues is not None else []
+
+        def number(value):
+            if value is None or isinstance(value, bool):
+                return None
+            try:
+                result = Decimal(str(value))
+            except InvalidOperation:
+                return None
+            return result if result.is_finite() else None
+
         target_group_found = False
         selected_names = None
         if selected is not None:
@@ -176,6 +195,10 @@ class ChinaSouthernAirDirectChangeService:
                                      ("extensionMainCharges", "extensionCharges")):
             groups = charge.get(group_key) or []
             flat = charge.get(flat_key) or []
+            indexed = {}
+            for item in flat:
+                identity = (item.get("serviceMainName"), item.get("otherChargeCode"), item.get("changeType"))
+                indexed.setdefault(identity, []).append(item)
             for group in groups:
                 rows = group.get("subCharges") or []
                 selectable = [row for row in rows if row.get("changeType") != "D"]
@@ -186,28 +209,47 @@ class ChinaSouthernAirDirectChangeService:
                     if not selected_names <= available:
                         raise ChinaSouthernAirDirectChangeError("所选出港货邮处理费不在南航变更费用列表中", stage="calculate_change_charge")
                 for row in selectable:
-                    checked = row.get("newChecked")
+                    identity = (group.get("serviceMainName"), row.get("otherChargeCode"), row.get("changeType"))
+                    matches = indexed.get(identity, [])
+                    if len(matches) != 1:
+                        raise ChinaSouthernAirDirectChangeError(
+                            "南航计费分组与费用明细不匹配，请刷新费用后重试", stage="calculate_change_charge",
+                            details={"fee_category": flat_key, "service_main_name": identity[0],
+                                     "other_charge_code": identity[1], "change_type": identity[2]},
+                        )
+                    item = matches[0]
+                    checked = item.get("newChecked")
                     auto_required = group.get("mandatory") == "Y" and len(selectable) == 1
                     if is_selected_group:
                         checked = "Y" if row.get("otherChargeName") in selected_names else "N"
                     elif auto_required:
                         checked = "Y"
-                    amount = row.get("newAmount")
-                    if (checked == "Y" and row.get("rateUnit") == "TC"
-                            and (auto_required or (is_selected_group and row.get("newChecked") != "Y"))):
+                    amount = item.get("newAmount")
+                    unit = item.get("rateUnit") or row.get("rateUnit")
+                    if (checked == "Y" and unit == "TC"
+                            and (auto_required or (is_selected_group and item.get("newChecked") != "Y"))):
                         amount = 1
-                    for item in [row, *[v for v in flat if v.get("otherChargeCode") == row.get("otherChargeCode")
-                                       and v.get("serviceMainName") == group.get("serviceMainName")
-                                       and v.get("changeType") == row.get("changeType")]]:
-                        if item.get("newChecked") != checked or item.get("newAmount") != amount:
-                            item.update(newChecked=checked, newAmount=amount)
-                            changed = True
+                    if is_selected_group and checked == "N" and item.get("newChecked") == "Y":
+                        amount = None
+                    reason = None
+                    if item.get("newChecked") != checked:
+                        reason = "selection_changed"
+                    elif checked == "Y" and unit != "KG" and number(item.get("newAmount")) != number(amount):
+                        reason = "amount_changed"
+                    elif (checked == "Y" and auto_required and unit in {"KG", "TC"}
+                          and (number(item.get("chargeAmount")) is None or number(item.get("chargeAmount")) <= 0)):
+                        # 与网页一致：必选按重量/按次费用尚未计价时必须先重算。
+                        reason = "required_fee_not_priced"
+                    if reason:
+                        pending.append({"fee_category": flat_key, "service_main_name": identity[0],
+                                        "other_charge_code": identity[1], "change_type": identity[2], "reason": reason})
+                    row.update(newChecked=checked, newAmount=amount)
+                    item.update(newChecked=checked, newAmount=amount)
                 if group.get("mandatory") == "Y":
-                    changed = changed or group.get("newChecked") != "Y"
                     group["newChecked"] = "Y"
         if selected_names is not None and not target_group_found:
             raise ChinaSouthernAirDirectChangeError("南航变更费用列表缺少出港货邮处理费", stage="calculate_change_charge")
-        return changed
+        return bool(pending)
 
     async def prepare(self, *, token: str, awb_number: str, form_data: dict,
                       business_config: dict) -> tuple[dict, dict, dict]:
@@ -328,10 +370,19 @@ class ChinaSouthernAirDirectChangeService:
                     raise ChinaSouthernAirDirectChangeError("南航变更计费缺少运价、运费或差额", stage="calculate_change_charge")
                 payload.update(changeCharge=charge, rateCharge=charge["rateCharge"], weightCharge=charge["weightCharge"])
                 payload["isChangeWeight"] = "N"
-                if not self._apply_fee_selection(charge, values["selected_fee"]):
+                fee_issues = []
+                if not self._apply_fee_selection(charge, values["selected_fee"], issues=fee_issues):
                     break
             else:
-                raise ChinaSouthernAirDirectChangeError("南航变更费用勾选重新计费未收敛", stage="calculate_change_charge")
+                logger.warning(
+                    "南航变更费用重新计费未完成，尚未提交开单：attempts=%s, issues=%s",
+                    3, fee_issues,
+                )
+                raise ChinaSouthernAirDirectChangeError(
+                    "南航重新计费后仍未确认所选费用，请核对费用选项后重试（尚未提交开单）",
+                    stage="calculate_change_charge",
+                    details={"calculation_attempts": 3, "fee_selection_issues": fee_issues},
+                )
             order_payload = Order._build_order_payload(values, config, [])
             contacts = order_payload["orderInfo"]["orderShipmentContact"]
             dangerous = deepcopy((total.get("extendsShipmentInfo") or {}).get("awbDangerouscheckDto") or {})

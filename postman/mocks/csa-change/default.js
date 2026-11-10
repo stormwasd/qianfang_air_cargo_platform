@@ -50,6 +50,19 @@ http.createServer(async (req, res) => {
       checkChange: scenario !== "check-rejected",
       createChange: { changeStatus: "F", changeId: "S-SYNTHETIC", errorMsg: null },
     };
+    if (["group-marker-omitted", "tc-string-amount", "required-fee-unpriced"].includes(scenario)) {
+      const priced = scenario !== "required-fee-unpriced";
+      const tc = scenario === "tc-string-amount";
+      const row = {
+        serviceMainName: "出港货邮处理费", otherChargeCode: "PU", otherChargeName: "普货",
+        changeType: "U", newChecked: "Y", rateUnit: tc ? "TC" : "KG",
+        newAmount: tc ? 1 : null, chargeAmount: priced ? 0.45 : null,
+      };
+      const fee = structuredClone(fixtures.calculateCharge);
+      fee.extensionMainCharges = [{ serviceMainName: row.serviceMainName, mandatory: "Y", subCharges: [{ ...row, newAmount: tc ? "1.00" : null }] }];
+      fee.extensionCharges = [row];
+      results.calculateCharge = fee;
+    }
     return send(200, { code: "0000", result: results[name] });
   } catch (_err) {
     return send(400, { error: "Malformed synthetic request" });

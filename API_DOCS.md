@@ -2086,6 +2086,10 @@ direct 参数和处理规则：
 | 危险品声明、储运说明 | 沿用普通 direct 开单的声明字段映射；声明勾选时需提供两项签名。未传声明时保留原声明；未提供储运说明字段时保留原订单值，显式空值则清空。原活体动物声明通过 `b2e-order/b2eOrder/querylivingAnimalProofByorderId` 实时查询并映射为 `orderShipmentLiveanimals`，原锂电池信息从原订单扩展详情保留 |
 | 扩展费用 | 使用变更 `calculateCharge` 的完整费用列表、旧费用和差额，执行南航网页的必选单项勾选及重新计费；支持既有 `outbound_cargo_and_mail_handling_fee_options` 对象选择，不擅自重置其他可选费用 |
 
+费用重算判断以 `additionalCharges/extensionCharges` 的实际费用输入为准；分组 `additionalMainCharges/extensionMainCharges` 是展示结构，其 `newChecked` 缺失或与扁平明细不同步，不单独触发重算。按 `serviceMainName + otherChargeCode + changeType` 对齐分组子项与扁平明细；明细唯一匹配后同步展示值，匹配缺失或重复则停止并提示刷新费用。数量 `1`、`1.0`、`"1.00"` 按相同数值处理；按重量（KG）项目不因无关数量字段的 `null/空串` 差异重算。必选单项沿用页面自动勾选规则；用户选择发生变化、有效计费数量变化或必选单项 KG/TC 费用尚未计价时才重新调用 `calculateCharge`，最多计算 3 次。原可选费用的数量保留。
+
+若 3 次后仍有真实费用变化/缺少计价，返回 HTTP 400，`msg="南航重新计费后仍未确认所选费用，请核对费用选项后重试（尚未提交开单）"`，`data.stage="calculate_change_charge"`、`invoice_status="2"`、`outcome_unknown=false`。新增诊断字段 `data.calculation_attempts=3`、`data.fee_selection_issues[]`，每项含 `fee_category`（`additionalCharges/extensionCharges`）、`service_main_name`、`other_charge_code`、`change_type`、`reason`（`selection_changed/amount_changed/required_fee_not_priced`）。服务端 warning 日志同样记录这些费用诊断字段，不含 Token 或收发货人信息。此时未调用最终 `createChange`，可修正费用后重试，不会把缺少计价的费用直接提交。
+
 当前表单支持单航段；遇到多航段或缺少原航段标识会明确拒绝 direct，需切换 RPA 处理。产品无唯一可用报价、无效 Token、上游前置查询或计费失败时停止，不再进入最终提交。
 
 前置上下文准备完成后，严格顺序执行：

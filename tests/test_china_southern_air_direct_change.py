@@ -55,6 +55,19 @@ def charge():
     }
 
 
+def fee_charge(*, unit="KG", checked="Y", amount=None, charge_amount=0.45):
+    result = charge()
+    row = {
+        "serviceMainName": "出港货邮处理费", "otherChargeCode": "PU", "otherChargeName": "普货",
+        "rateUnit": unit, "changeType": "U", "newChecked": checked, "newAmount": amount,
+        "chargeAmount": charge_amount,
+    }
+    # CSA's group newChecked is a UI-only marker and need not be returned.
+    result["extensionMainCharges"] = [{"serviceMainName": "出港货邮处理费", "mandatory": "Y", "subCharges": [deepcopy(row)]}]
+    result["extensionCharges"] = [deepcopy(row)]
+    return result
+
+
 def forward():
     return {
         "totalOrderDetail": {
@@ -213,6 +226,45 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([body["isChangeWeight"] for body in calls], ["Y", "N"])
         self.assertEqual(payload["changeCharge"]["extensionCharges"][0]["newChecked"], "Y")
 
+    async def test_calculated_fee_without_group_marker_does_not_recalculate(self):
+        fixture = ProtocolFixture()
+        fixture.charge = fee_charge()
+        payload, _, _ = await self.prepare(fixture)
+        self.assertEqual(sum(name == "calculateCharge" for name, _ in fixture.requests), 1)
+        self.assertEqual(payload["changeCharge"]["extensionMainCharges"][0]["newChecked"], "Y")
+        self.assertEqual(payload["changeCharge"]["extensionCharges"][0]["chargeAmount"], 0.45)
+
+    async def test_calculated_tc_string_and_numeric_amounts_are_equivalent(self):
+        fixture = ProtocolFixture()
+        fixture.charge = fee_charge(unit="TC", amount=1)
+        fixture.charge["extensionMainCharges"][0]["subCharges"][0]["newAmount"] = "1.00"
+        payload, _, _ = await self.prepare(fixture)
+        self.assertEqual(sum(name == "calculateCharge" for name, _ in fixture.requests), 1)
+        self.assertEqual(payload["changeCharge"]["extensionCharges"][0]["newAmount"], 1)
+
+    async def test_group_only_stale_child_flag_uses_calculated_flat_selection(self):
+        fixture = ProtocolFixture()
+        fixture.charge = fee_charge(unit="TC", amount=7)
+        group = fixture.charge["extensionMainCharges"][0]
+        group["mandatory"] = "N"
+        group["subCharges"][0].update(newChecked="N", newAmount=None)
+        payload, _, _ = await self.prepare(fixture)
+        self.assertEqual(sum(name == "calculateCharge" for name, _ in fixture.requests), 1)
+        self.assertEqual(payload["changeCharge"]["extensionCharges"][0]["newAmount"], 7)
+        self.assertEqual(payload["changeCharge"]["extensionMainCharges"][0]["subCharges"][0]["newChecked"], "Y")
+
+    async def test_required_selected_but_unpriced_fee_stops_before_submit_with_diagnostics(self):
+        fixture = ProtocolFixture()
+        fixture.charge = fee_charge(charge_amount=None)
+        fixture.charge["extensionMainCharges"][0]["newChecked"] = "Y"
+        with self.assertRaises(Error) as ctx:
+            await self.prepare(fixture)
+        self.assertEqual(ctx.exception.stage, "calculate_change_charge")
+        self.assertFalse(ctx.exception.outcome_unknown)
+        self.assertEqual(sum(name == "calculateCharge" for name, _ in fixture.requests), 3)
+        self.assertEqual(ctx.exception.details["fee_selection_issues"][0]["other_charge_code"], "PU")
+        self.assertNotIn("createChange", [name for name, _ in fixture.requests])
+
     async def test_reject_mismatched_identity_and_multiple_segments_and_product(self):
         for mutate in (
             lambda f: f.forward["totalOrderDetail"]["orderDetailDto"].update(awbNo="87654321"),
@@ -264,7 +316,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["other_info"]["contact_phone"], "")
 
     def test_fee_selection_normalizes_only_required_and_explicit_items(self):
-        fee = {"otherChargeCode": "PU", "otherChargeName": "普货", "rateUnit": "TC", "changeType": "N", "newChecked": "N"}
+        fee = {"otherChargeCode": "PU", "otherChargeName": "普货", "rateUnit": "TC", "changeType": "N", "newChecked": "N", "chargeAmount": 0.45}
         result = charge()
         result["extensionMainCharges"] = [{"serviceMainName": "出港货邮处理费", "mandatory": "Y", "subCharges": [deepcopy(fee)]}]
         result["extensionCharges"] = [{**fee, "serviceMainName": "出港货邮处理费"}]
@@ -275,6 +327,42 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((result["extensionCharges"][0]["newChecked"], result["extensionCharges"][0]["newAmount"]), ("Y", 1))
         self.assertEqual(result["extensionCharges"][1]["newAmount"], 7)
         self.assertFalse(Client._apply_fee_selection(result, None))
+
+    def test_deleted_fees_are_untouched_and_not_counted_as_selectable(self):
+        result = fee_charge()
+        deleted = {**result["extensionCharges"][0], "otherChargeCode": "OLD", "changeType": "D", "newChecked": "N"}
+        result["extensionMainCharges"][0]["subCharges"].insert(0, deepcopy(deleted))
+        result["extensionCharges"].insert(0, deepcopy(deleted))
+        self.assertFalse(Client._apply_fee_selection(result, None))
+        self.assertEqual(result["extensionCharges"][0], deleted)
+
+    def test_selected_fee_toggle_requires_calculation_and_keeps_other_optional_amounts(self):
+        result = fee_charge(checked="N", charge_amount=None)
+        group = result["extensionMainCharges"][0]
+        alternative = {**result["extensionCharges"][0], "otherChargeName": "加急", "otherChargeCode": "FAST", "newChecked": "Y", "chargeAmount": 2}
+        group["subCharges"].append(deepcopy(alternative))
+        result["extensionCharges"].append(deepcopy(alternative))
+        selected = {"serviceCharges": [{"otherChargeName": "普货", "checked": "Y"}]}
+        issues = []
+        self.assertTrue(Client._apply_fee_selection(result, selected, issues=issues))
+        self.assertEqual([row["newChecked"] for row in result["extensionCharges"]], ["Y", "N"])
+        self.assertEqual([row["reason"] for row in issues], ["selection_changed", "selection_changed"])
+
+    def test_group_without_matching_flat_fee_fails_instead_of_submitting_unpriced_choice(self):
+        result = fee_charge()
+        result["extensionCharges"] = []
+        with self.assertRaises(Error) as ctx:
+            Client._apply_fee_selection(result, None)
+        self.assertEqual(ctx.exception.details["other_charge_code"], "PU")
+
+    def test_optional_group_missing_marker_and_kg_null_amount_do_not_trigger_calculation(self):
+        result = fee_charge(amount=None)
+        result["extensionCharges"][0]["newAmount"] = ""
+        group = result["extensionMainCharges"][0]
+        group["subCharges"][0]["newAmount"] = 0
+        group["mandatory"] = "N"
+        self.assertFalse(Client._apply_fee_selection(result, None))
+        self.assertEqual(group["subCharges"][0]["newAmount"], "")
 
 
 class ChangeAPITests(unittest.IsolatedAsyncioTestCase):
@@ -373,6 +461,26 @@ class ChangeAPITests(unittest.IsolatedAsyncioTestCase):
         self.fixture.overrides.clear()
         self.assertEqual((await self.call()).status_code, 200)
 
+    async def test_missing_group_marker_completes_instead_of_returning_400(self):
+        self.fixture.charge = fee_charge()
+        response = await self.call()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(sum(name == "calculateCharge" for name, _ in self.fixture.requests), 1)
+        self.assertEqual(response.json()["data"]["invoice_status"], "3")
+
+    async def test_real_fee_not_priced_returns_diagnostics_and_failed_state_without_submit(self):
+        self.fixture.charge = fee_charge(charge_amount=None)
+        response = await self.call()
+        self.assertEqual(response.status_code, 400, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["stage"], "calculate_change_charge")
+        self.assertFalse(data["outcome_unknown"])
+        self.assertEqual(data["fee_selection_issues"][0]["reason"], "required_fee_not_priced")
+        self.assertEqual(data["calculation_attempts"], 3)
+        self.db.refresh(self.booking)
+        self.assertEqual(self.booking.invoice_status, "2")
+        self.assertNotIn("createChange", [name for name, _ in self.fixture.requests])
+
     async def test_no_token_or_bad_form_does_not_claim_or_call_upstream(self):
         self.db.query(NanHangToken).delete()
         self.db.commit()
@@ -463,6 +571,28 @@ class ChangeAPITests(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(os.environ.get("CSA_CHANGE_SIMULATION_URL"), "Local Postman simulation required")
 class ChangeHTTPSimulationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_group_marker_and_amount_representation_over_real_http(self):
+        base = os.environ["CSA_CHANGE_SIMULATION_URL"].rstrip("/")
+        async with REAL_ASYNC_CLIENT() as control:
+            for scenario in ("group-marker-omitted", "tc-string-amount", "required-fee-unpriced"):
+                await control.post(base + "/__reset", json={"scenario": scenario})
+                with ExitStack() as stack:
+                    patch_prerequisites(stack)
+                    for attr in ("FORWARD_URL", "LIVING_ANIMAL_URL", "CHANGE_PRICE_URL", "CALCULATE_CHARGE_URL", "GOODS_NAME_CHECK_URL", "CHECK_CHANGE_URL", "CREATE_CHANGE_URL"):
+                        stack.enter_context(patch.object(Client, attr, base + httpx.URL(getattr(Client, attr)).path))
+                    stack.enter_context(patch.object(change.ChinaSouthernAirService, "CALCULATE_CWEIGHT_URL", base + "/calculateCWeight"))
+                    if scenario == "required-fee-unpriced":
+                        with self.assertRaises(Error) as ctx:
+                            await Client().prepare(token="synthetic-token", awb_number="784-12345670", form_data=form(), business_config=_business_config())
+                        self.assertEqual(ctx.exception.details["fee_selection_issues"][0]["reason"], "required_fee_not_priced")
+                    else:
+                        payload, goods, _ = await Client().prepare(token="synthetic-token", awb_number="784-12345670", form_data=form(), business_config=_business_config())
+                        result = await Client().validate_and_submit(token="synthetic-token", agent_code="SZXFED", goods_check_payload=goods, change_payload=payload)
+                        self.assertEqual(result["changeStatus"], "F")
+                trace = (await control.get(base + "/__requests")).json()
+                self.assertEqual(sum(row["name"] == "calculateCharge" for row in trace), 3 if scenario == "required-fee-unpriced" else 1)
+                self.assertEqual(sum(row["name"] == "createChange" for row in trace), 0 if scenario == "required-fee-unpriced" else 1)
+
     async def test_real_http_sequence_success_and_failure_boundaries(self):
         base = os.environ["CSA_CHANGE_SIMULATION_URL"].rstrip("/")
         async with REAL_ASYNC_CLIENT() as control:
