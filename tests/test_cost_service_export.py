@@ -110,13 +110,13 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
         worksheet = workbook.active
         self.addCleanup(workbook.close)
 
-        self.assertEqual(worksheet.max_column, 115)
+        self.assertEqual(worksheet.max_column, 118)
         self.assertEqual(worksheet.max_row, 4)
         self.assertEqual([worksheet.cell(row, 1).value for row in range(2, 5)], [1, 2, 3])
         self.assertEqual(worksheet["B2"].value, "未提交")
         self.assertEqual(worksheet["B3"].value, "已提交")
         # 独立坐标校验每个分组末尾，避免同名“应付小计”串列。
-        for column, expected in ((56, 101.25), (64, 404), (76, 505.25), (91, 202.5), (106, 303.75)):
+        for column, expected in ((59, 101.25), (67, 404), (79, 505.25), (94, 202.5), (109, 303.75)):
             with self.subTest(column=column):
                 self.assertEqual(worksheet.cell(1, column).value, "应付小计")
                 self.assertEqual(worksheet.cell(2, column).value, expected)
@@ -124,23 +124,23 @@ class CostServiceExportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(worksheet.cell(3, column).value, 0)
                 self.assertIsNone(worksheet.cell(4, column).value)
         expected_values = {
-            34: "international", 35: "removed intl origin", 36: "removed intl destination",
-            37: "removed intl document", 38: "removed intl flight", 39: "2026-09-16", 40: 901,
-            55: "removed international remark", 57: "customs agent", 58: "2026-09-19",
-            62: 904.25, 63: "customs remark", 65: "ground unit", 66: "2026-09-20",
-            68: 120, 69: 35.5, 70: 20.75, 74: 905.25, 75: "ground remark",
-            77: "trucking unit", 78: "2026-09-17", 82: 902, 84: 902.25,
-            90: "removed trucking remark", 92: "domestic unit", 93: "removed domestic origin",
-            94: "removed domestic destination", 95: "removed domestic document",
-            96: "removed domestic flight", 97: "2026-09-21", 98: 903,
-            105: "removed domestic remark", 107: "discount person", 108: 7.25,
-            109: 88.5, 110: "salesperson", 111: 171.39, 113: 1516.75, 114: 1428.25,
+            37: "international", 38: "removed intl origin", 39: "removed intl destination",
+            40: "removed intl document", 41: "removed intl flight", 42: "2026-09-16", 43: 901,
+            58: "removed international remark", 60: "customs agent", 61: "2026-09-19",
+            65: 904.25, 66: "customs remark", 68: "ground unit", 69: "2026-09-20",
+            71: 120, 72: 35.5, 73: 20.75, 77: 905.25, 78: "ground remark",
+            80: "trucking unit", 81: "2026-09-17", 85: 902, 87: 902.25,
+            93: "removed trucking remark", 95: "domestic unit", 96: "removed domestic origin",
+            97: "removed domestic destination", 98: "removed domestic document",
+            99: "removed domestic flight", 100: "2026-09-21", 101: 903,
+            108: "removed domestic remark", 110: "discount person", 111: 7.25,
+            112: 88.5, 113: "salesperson", 114: 171.39, 116: 1516.75, 117: 1428.25,
         }
         for column, expected in expected_values.items():
             with self.subTest(column=column):
                 self.assertEqual(worksheet.cell(2, column).value, expected)
-        self.assertEqual(worksheet.cell(1, 86).value, "运费计算方式")
-        self.assertEqual(worksheet.cell(2, 86).value, "体积重")
+        self.assertEqual(worksheet.cell(1, 89).value, "运费计算方式")
+        self.assertEqual(worksheet.cell(2, 89).value, "体积重")
         exported_values = {cell.value for cell in worksheet[2]}
         for excluded in ("2026-09-18", "removed domestic airline", "must not export",
                          "removed intl freight method", "removed domestic freight method", 12.5):

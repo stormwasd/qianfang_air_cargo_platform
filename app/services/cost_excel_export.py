@@ -108,13 +108,13 @@ def _columns(group, fields):
 
 
 _BASIC = _columns("", (
-    ("序号", "sequence"), ("状态", "status"), ("客户名称", "customer_name"),
-    ("进仓日期", "warehouse_entry_date"), ("航班日期", "flight_date"),
-    ("主单号", "flight_doc_no"),
-    ("始发站-目的站", "origin_destination"), ("件数", "pieces"),
+    ("序号", "sequence"), ("状态", "status"),
+    ("进仓日期", "warehouse_entry_date"), ("客户名称", "customer_name"),
+    ("始发站-目的站", "origin_destination"), ("报关", "customs_declaration"),
+    ("提单", "bill_of_lading"), ("航班日期", "flight_date"),
+    ("航班号", "flight_no"), ("主单号", "flight_doc_no"), ("件数", "pieces"),
     ("实际重量", "actual_weight"), ("计费重量", "chargeable_weight"),
-    ("体积", "volume"), ("报关", "customs_declaration"),
-    ("提单", "bill_of_lading"), ("备注", "remark"),
+    ("体积", "volume"), ("一程重量", "first_leg_weight"), ("备注", "remark"),
 ))
 _RECEIVABLES = _columns("receivables", (
     ("应收提单费/信息录入费", "lading_info_fee"),
@@ -127,6 +127,7 @@ _RECEIVABLES = _columns("receivables", (
     ("应收制单分单费", "doc_split_fee"), ("应收垫板费", "skid_fee"),
     ("应收打板/装箱费", "pallet_packing_fee"), ("应收探板费", "probe_fee"),
     ("应收耗材费", "consumables_fee"),
+    ("一程费用", "first_leg_fee"),
 ))
 _INTL_AIR = _columns("payables.intl_air", (
     ("国际空运代理名称", "outsource_unit"), ("始发站", "origin"),

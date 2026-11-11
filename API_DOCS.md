@@ -9733,7 +9733,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 | 操作记录 | GET | `/api/v1/cost-service/consignments/{consignment_id}/operation-logs` | 单据跨台完整操作记录（详见 23.7） |
 | 单据信息 | DELETE | `/api/v1/cost-service/consignments/{consignment_id}` | 单据信息-删除（单个） |
 | 单据信息 | POST/DELETE | `/api/v1/cost-service/consignments/batch-delete` | 单据信息-批量删除 |
-| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（115列、单行表头，第1列序号、第2列状态；详见23.11.9） |
+| 单据信息 | POST | `/api/v1/cost-service/consignments/export-excel` | 单据信息-选中下载为 Excel（118列、单行表头，第1列序号、第2列状态；详见23.11.9） |
 
 #### 23.2 数据结构规范说明
 
@@ -9834,12 +9834,12 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - 存量数据库分别通过 `sql/migration_drop_cost_intl_air_date.sql` 和 `sql/migration_drop_cost_intl_air_airline.sql` 删除对应历史列；全新建表脚本不再创建这两个字段。
 
 6. **Excel 导出规范（2026-11-02更新）**：
-   - 两台均改为单行表头，第1列“序号”、第2列“状态”，数据从第2行开始，无合并单元格和空白占位列。客服91列（A至CM），费用115列（A至DK）。完整入参、响应及逐列字段来源以23.11.9为准。
+   - 两台均改为单行表头，第1列“序号”、第2列“状态”，数据从第2行开始，无合并单元格和空白占位列。客服94列（A至CP），费用118列（A至DN）。完整入参、响应及逐列字段来源以23.11.9为准。
    - 状态读取本台单据status，0/1/2显示未提交/已提交/作废。客服导出按制单时间倒序；序号按导出结果从1连续生成。
    - 应收金额表头使用客户原文，如“应收提单费/信息录入费”“应收分单费 电报费/底账费”；基础“航班单号”改称“主单号”，金额不重算，0保留为数值，null留空。
    - 费用保留应收运费费率、运费计算方式和运费；五个应付分组末尾均为“应付小计”。业务员和提成金额位于第110-111列；末尾为应收合计、应付合计、利润、利润率%。
-   - 客服不导出应收运费费率/应收运费计算方式/运费、各分组单价与小计、各项合计、折让及销售提成；汽运运费计算方式单独导出。两台都不导出内部单据ID、制单时间、一程重量等新表头未列出的字段，CRUD保存/查询字段不变。
-   - 费用应收 `freight_method` 仅在第16列导出时转换：1=实际重量、2=计费重量；国际和国内空运同名字段不再导出，燃油取重方式也不导出。
+   - 客服不导出应收运费费率/应收运费计算方式/运费、各分组单价与小计、各项合计、折让及销售提成；汽运运费计算方式单独导出。两台都不导出内部单据ID、制单时间等新表头未列出的字段，CRUD保存/查询字段不变。
+   - 费用应收 `freight_method` 仅在第18列导出时转换：1=实际重量、2=计费重量；国际和国内空运同名字段不再导出，燃油取重方式也不导出。
    - “提单”列不会直接输出前端保存的编码，而是按页面展示语义转换：
      - 一主多分：`1-0 → 一主`、`1-1 → 一主（一）分`、`1-2 → 一主（二）分`、`1-3 → 一主（三）分`、`1-4 → 一主（四）分`、`1-5 → 一主（五）分`、`1-6 → 一主（六）分`、`1-7 → 一主（七）分`、`1-8 → 一主（八）分`、`1-9 → 一主（九）分`。
      - 直单：`2-0 → 直单`；`2-1`不再作为提单类型编码；`2-2`至`2-9`继续分别映射为`直单（虚拟分单*2）`至`直单（虚拟分单*9）`。
@@ -9941,7 +9941,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 可传新字段 | `data` 中新增两个字段 |
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 可传新字段 | `data` 中新增两个字段 |
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 无；作废不改金额 | `data` 中新增两个字段 |
-     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 单行表头115列，地面前置仓费/TC费/提货费及完整顺序详见23.11.9 |
+     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 单行表头118列，地面前置仓费/TC费/提货费及完整顺序详见23.11.9 |
 
    - 上线代码前，存量数据库需执行 `sql/migration_add_cost_ground_fees.sql`，为 `cost_registrations` 和 `cost_consignments` 同时增加两个可空金额列；历史记录默认 `NULL`。全新建表脚本 `sql/migration_create_cost_service_consignments.sql` 已包含新列，新库不再重复执行增量脚本。
    - 地面TC费及提货费原先仅属于费用台；2026-10-30起客服也可通过payables.ground录入和提交。客服未录入这些字段时，仍不覆盖费用台已有金额，详见23.11。
@@ -9988,9 +9988,9 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | `sales_commission.salesperson` 触发后台匹配；无新增请求字段 | `data.sales_commission.commission_percentage` |
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | `sales_commission.salesperson` 触发后台匹配；无新增请求字段 | `data.sales_commission.commission_percentage` |
      | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 无；作废不修改提成数据 | `data.sales_commission.commission_percentage` |
-     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 不导出提成百分比；单行表头115列，详见23.11.9 |
+     | POST | `/api/v1/cost-service/consignments/export-excel` | `ids` 入参不变 | 不导出提成百分比；单行表头118列，详见23.11.9 |
 
-   - `commission_percentage` 仅供接口返回给前端计算，不作为页面展示字段，也不进入 Excel。Excel 第110-111列（DF-DG）依次为业务员、提成金额；第111-115列依次为应收合计、应付合计、利润、利润率%，单行表头共115列。
+   - `commission_percentage` 仍由接口返回供前端计算，不导出 Excel。当前Excel第113-114列（DI-DJ）依次为业务员、提成金额；第115-118列（DK-DN）依次为应收合计、应付合计、利润、利润率%；单行表头共118列。
    - 存量数据库上线前需执行 `sql/migration_add_cost_sales_commission_percentage.sql`，同时为 `cost_registrations` 和 `cost_consignments` 增加可空的 `decimal(5,2)` 字段；全新建表脚本已包含该字段。
 
 #### 23.3 客服接单台与费用登记台提交同步规范
@@ -10032,7 +10032,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    | `volume`（体积） | `payables.intl_air.volume` | `pay_intl_air_volume` |
    | `flight_doc_no`（航班单号） | `payables.intl_air.flight_doc_no` | `pay_intl_air_flight_doc_no` |
 
-   - 上述字段采用覆盖语义；客服草稿提交时，会使用保存后货主委托信息中的当前值预填费用登记台对应国际空运字段；分组中明确填写的字段（含null）优先于预填值。客服editable=true时可重复保存，费用保存提交锁定后不得再次保存。同步时当前值为 `null` 或空值的，目标字段也写入对应空值。
+   - 上述字段采用覆盖语义；客服草稿提交时，会使用保存后货主委托信息中的当前值预填费用登记台对应国际空运字段；分组中明确填写的字段（含null）优先于预填值；航班号例外：本次明确填写委托flight_no时，先同步客服国际空运快照，同次请求以委托航班号为准（23.25节）。客服editable=true时可重复保存，费用保存提交锁定后不得再次保存。同步时当前值为 `null` 或空值的，目标字段也写入对应空值。
    - 原7字段预填规则保留，新增财务分组覆盖优先级与提交锁定以23.11为准。
 
 #### 23.4 客服接单台委托列表排序规范
@@ -10333,7 +10333,7 @@ Authorization: Bearer <token>
 | PUT | `/customer-service/consignments/{consignment_id}` | 同客服请求，可只传变更字段；仅 editable=true 可执行 | S，status=1、editable=true；同步费用status=0；费用提交锁定或作废返回409 |
 | PUT | `/customer-service/consignments/{consignment_id}/draft` | 同上；仅 editable=true 可执行 | S，status=0、editable=true；不写费用；费用提交锁定或作废返回409 |
 | PUT | `/customer-service/consignments/{consignment_id}/void` | 无请求体 | S，status=2；新增分组随业务数据保留 |
-| POST | `/customer-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；91列，单行表头，第2行开始为数据 |
+| POST | `/customer-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；94列，单行表头，第2行开始为数据 |
 | GET | `/cost-service/cost-registration` | 无 | C；无模板时仍为 null |
 | PUT | `/cost-service/cost-registration` | 既有费用请求增加20个叶字段 | C；只更新模板 |
 | POST | `/cost-service/consignments` | 同费用请求 | C，status=1；回写客服基本信息及应收/应付快照，客服锁定 |
@@ -10343,7 +10343,7 @@ Authorization: Bearer <token>
 | PUT | `/cost-service/consignments/{consignment_id}` | 同费用请求，可只传变更字段 | C，status=1；回写客服基本信息及应收/应付快照 |
 | PUT | `/cost-service/consignments/{consignment_id}/draft` | 同费用请求 | C，status=0；不回写客服，也不改变客服现有editable（费用曾保存后不会解锁） |
 | PUT | `/cost-service/consignments/{consignment_id}/void` | 无请求体 | C，status=2；新增业务字段保留 |
-| POST | `/cost-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；115列，单行表头，第2行开始为数据 |
+| POST | `/cost-service/consignments/export-excel` | `{ids:[string]}` 不变 | xlsx 二进制；118列，单行表头，第2行开始为数据 |
 
 路径参数 `consignment_id` 为列表返回的 `id`；非法数字返回400，不存在返回404。
 列表仍支持原有分页、状态、日期、航班及排序条件，响应分页键名称不变；操作记录、删除接口的请求及响应结构不变。
@@ -10412,7 +10412,7 @@ Authorization: Bearer <token>
    此规则也适用于客服唯一登记模板的新增分组；模板原有顶层委托信息继续按原整体保存规则处理。
 2. 客服顶层既有字段保留原语义：修改时数值字段省略保留、null清空；日期和文本null保持原值。保存只允许未提交单据。
 3. 费用台本次新增20个叶字段：修改时省略保留、null清空；新增时省略或null保存NULL。既有费用字段沿用“省略或null均保留旧值”的规则，不能将新字段规则误用于旧金额。
-4. 客服提交顺序：先同步原顶层委托信息，再按原规则预填国际空运7个字段，再覆盖客服明确录入的应收及应付字段。
+4. 客服提交顺序：先同步原顶层委托信息，再按原规则预填国际空运7个字段，再覆盖客服明确录入的应收及应付字段。本次请求填写委托flight_no时，先将它同步到客服国际空运快照，航班号按23.25节以委托值优先；其他6个预填字段保持原规则。
    例如顶层 `actual_weight=100`、`payables.intl_air.weight=105`，费用台货主重量为100，国际空运重量为105；若分组未明确填weight则仍按100预填。
    在此前暂存请求中明确保存过的字段也属于已录入字段；叶字段null同样有覆盖效力；未录入的费用字段不被清空。
 5. 客服提交与费用同步、操作记录在同一事务完成。成功后客服1、费用0。客服两个修改接口使用行锁后校验状态，防止并发暂存把已提交状态退回0。
@@ -11241,12 +11241,12 @@ GET列表 `GET /api/v1/cost-service/consignments?page=1&pageSize=10` 返回
 
 ##### 23.11.9 Excel导出契约（2026-11-09更新）
 
-两个现有导出接口仅调整下载文件的表头、列顺序与取值范围，不新增路由。2026-11-01改为单行表头；2026-11-02两台汽运分组补充“运费计算方式”；2026-11-09委托信息区在进仓日期后恢复“航班日期”，当前契约如下。
+两个现有导出接口仅调整下载文件的表头、列顺序与取值范围，不新增路由。2026-11-01改为单行表头；2026-11-02两台汽运分组补充“运费计算方式”；2026-11-09委托信息区在进仓日期后恢复“航班日期”；2026-11-11应收耗材费后增加“一程费用”，当前契约如下。
 
 | 方法 | 完整接口路径 | 总列数 | 表头行 | 首条数据行 |
 |---|---|---|---|---|
-| POST | `/api/v1/customer-service/consignments/export-excel` | 91（A至CM） | 第1行 | 第2行 |
-| POST | `/api/v1/cost-service/consignments/export-excel` | 115（A至DK） | 第1行 | 第2行 |
+| POST | `/api/v1/customer-service/consignments/export-excel` | 94（A至CP） | 第1行 | 第2行 |
+| POST | `/api/v1/cost-service/consignments/export-excel` | 118（A至DN） | 第1行 | 第2行 |
 
 **请求**：沿用当前登录认证（`Authorization: Bearer <token>`），`Content-Type: application/json`。两台相同：
 
@@ -11272,11 +11272,11 @@ Access-Control-Expose-Headers: Content-Disposition
 
 - 两台均第1列“序号”、第2列“状态”。序号按最终导出结果从1连续编号，状态读取本台单据自身的status：0=未提交、1=已提交、2=作废。
 - 仅一行表头，无分组标题行、合并单元格或空白占位列，客户表格中的空白项全部忽略。下方表头文字及顺序为完整契约，重复名称按所在列区分。
-- 客服排序仍为制单时间 `create_time` 倒序；费用仍按货主航班日期 `consignor_info.flight_date` 升序，空日期最后，同日期按主键ID升序。委托航班日期在第5列（E）展示，费用排序继续使用该字段。
-- 客服财务列读取客服自身财务快照；费用列读取费用自身保存值。标签不增加列，也不裁剪数据。只导出新表头列出的字段：内部单据ID、制单时间、一程重量、基础代理等不再进入Excel；未列出的费率、取重方式等字段仍按原接口保存和查询。
+- 客服排序仍为制单时间 `create_time` 倒序；费用仍按货主航班日期 `consignor_info.flight_date` 升序，空日期最后，同日期按主键ID升序。委托航班日期在第8列（H）展示，费用排序继续使用该字段。
+- 客服财务列读取客服自身财务快照；费用列读取费用自身保存值。标签不增加列，也不裁剪数据。只导出新表头列出的字段：内部单据ID、制单时间、基础代理等不再进入Excel；未列出的费率、取重方式等字段仍按原接口保存和查询。
 - 金额、重量、体积、件数、费率均为数值（含0），null/未填写为空单元格；日期显示YYYY-MM-DD。“提单”按23.2规则转中文，未知值原样保留。
-- 费用第16列应收“运费计算方式”继续转换1=实际重量、2=计费重量，未知值原样保留。两台新增汽运“运费计算方式”：客服第76列（BX），费用第86列（CH），均读取 `payables.trucking.freight_method` 原样输出字符串，不转换1/2，不推断“计费重/体积重”；null或空字符串为空单元格。费用该列位于汽运单价与运费之间，客服位于汽运体积与制单费之间，后续列顺延1列。两台仍不导出燃油取重方式及国际/国内空运的运费计算方式。
-- 费用第33列（AG）和第112列（DH）均为“应收合计”，都读取 `receivables.total`，按客户模板保留两次。五个“应付小计”依次位于第56（BD）、64（BL）、76（BX）、91（CM）、106（DB）列，分别来自国际空运、报关、地面操作、汽运、国内空运的subtotal。第113列“应付合计”读取 `payables.pay_total`。
+- 费用第18列应收“运费计算方式”继续转换1=实际重量、2=计费重量，未知值原样保留。两台新增汽运“运费计算方式”：客服第79列（CA），费用第89列（CK），均读取 `payables.trucking.freight_method` 原样输出字符串，不转换1/2，不推断“计费重/体积重”；null或空字符串为空单元格。费用该列位于汽运单价与运费之间，客服位于汽运体积与制单费之间，后续列顺延1列。两台仍不导出燃油取重方式及国际/国内空运的运费计算方式。
+- 费用第36列（AJ）和第115列（DK）均为“应收合计”，都读取 `receivables.total`，按客户模板保留两次。五个“应付小计”依次位于第59（BG）、67（BO）、79（CA）、94（CP）、109（DE）列，分别来自国际空运、报关、地面操作、汽运、国内空运的subtotal。第116列“应付合计”读取 `payables.pay_total`。
 - 汽运“计费重量”读取 `payables.trucking.weight`；地面操作“前置仓费”读取 `payables.ground.freight`、“提单费”读取 `payables.ground.lading_express_fee`；国际空运“燃油费”读取 `borrow_magnetic_fuel_pickup_fee`、“TC费”读取 `tc_network_disposal_fee`，不新增同义字段。
 - 所有运费、报关费、小计、总计、利润、利润率直接使用已保存值，不重算、不写Excel计算公式；修改导出格式不会修改业务记录、提交状态或操作记录。
 - 没有匹配记录时仍成功返回完整第1行表头，不生成空白数据行。已有暂存、提交锁定、两台同步及标签覆盖逻辑不变。导出布局调整本身无需额外迁移；汽运新增字段的存储列仍需按23.15执行数据库迁移。
@@ -11287,221 +11287,227 @@ Access-Control-Expose-Headers: Content-Disposition
 {"code":400,"data":null,"msg":"ID 'abc' 格式无效"}
 ```
 
-**客服完整列顺序（91列）**：路径均相对客服详情 `data`。序号由导出生成。
+**客服完整列顺序（94列）**：路径均相对客服详情 `data`。序号由导出生成。
 
 | 列号（1起） | Excel列 | 表头原文 | 对应详情data中的字段 / 来源 |
 |---|---|---|---|
 | 1 | A | 序号 | 按最终导出顺序从1连续生成 |
 | 2 | B | 状态 | `status` |
-| 3 | C | 客户名称 | `customer_name` |
-| 4 | D | 进仓日期 | `warehouse_entry_date` |
-| 5 | E | 航班日期 | `flight_date` |
-| 6 | F | 主单号 | `flight_doc_no` |
-| 7 | G | 始发站-目的站 | `origin_destination` |
-| 8 | H | 件数 | `pieces` |
-| 9 | I | 实际重量 | `actual_weight` |
-| 10 | J | 计费重量 | `chargeable_weight` |
-| 11 | K | 体积 | `volume` |
-| 12 | L | 报关 | `customs_declaration` |
-| 13 | M | 提单 | `bill_of_lading` |
-| 14 | N | 备注 | `remark` |
-| 15 | O | 应收提单费/信息录入费 | `receivables.lading_info_fee` |
-| 16 | P | 应收分单费 电报费/底账费 | `receivables.split_offset_telex_fee` |
-| 17 | Q | 应收报关费 | `receivables.customs_fee` |
-| 18 | R | 应收续页费 | `receivables.continuation_sheet_fee` |
-| 19 | S | 应收海关查验费 | `receivables.customs_inspection_fee` |
-| 20 | T | 应收磁检费/安检费 | `receivables.magnetic_security_fee` |
-| 21 | U | 应收燃油费 | `receivables.receivable_fuel_fee` |
-| 22 | V | 应收TC费 | `receivables.tc_express_fee` |
-| 23 | W | 应收前置仓费 | `receivables.warehouse_ground_fee` |
-| 24 | X | 应收制单费 | `receivables.doc_make_fee` |
-| 25 | Y | 应收制单分单费 | `receivables.doc_split_fee` |
-| 26 | Z | 应收垫板费 | `receivables.skid_fee` |
-| 27 | AA | 应收打板/装箱费 | `receivables.pallet_packing_fee` |
-| 28 | AB | 应收探板费 | `receivables.probe_fee` |
-| 29 | AC | 应收耗材费 | `receivables.consumables_fee` |
-| 30 | AD | 国际空运代理名称 | `payables.intl_air.outsource_unit` |
-| 31 | AE | 始发站 | `payables.intl_air.origin` |
-| 32 | AF | 到达站 | `payables.intl_air.destination` |
-| 33 | AG | 主单号 | `payables.intl_air.flight_doc_no` |
-| 34 | AH | 航班号 | `payables.intl_air.flight_no` |
-| 35 | AI | 航班日期 | `payables.intl_air.flight_date` |
-| 36 | AJ | 件数 | `payables.intl_air.pieces` |
-| 37 | AK | 实际重量 | `payables.intl_air.weight` |
-| 38 | AL | 体积 | `payables.intl_air.volume` |
-| 39 | AM | 计费重量 | `payables.intl_air.chargeable_weight` |
-| 40 | AN | 提单费 | `payables.intl_air.lading_fee` |
-| 41 | AO | 分单 | `payables.intl_air.split_fee` |
-| 42 | AP | 燃油费 | `payables.intl_air.borrow_magnetic_fuel_pickup_fee` |
-| 43 | AQ | TC费 | `payables.intl_air.tc_network_disposal_fee` |
-| 44 | AR | 报关费 | `payables.intl_air.customs_fee` |
-| 45 | AS | 续页费 | `payables.intl_air.continuation_sheet_fee` |
-| 46 | AT | 耗材费 | `payables.intl_air.consumables_fee` |
-| 47 | AU | 前置仓费 | `payables.intl_air.front_warehouse` |
-| 48 | AV | 其他费用 | `payables.intl_air.other_fee` |
-| 49 | AW | 备注 | `payables.intl_air.remark` |
-| 50 | AX | 报关代理名称 | `payables.customs.agent` |
-| 51 | AY | 报关日期 | `payables.customs.date` |
-| 52 | AZ | 报关费 | `payables.customs.customs_fee` |
-| 53 | BA | 续页费 | `payables.customs.continuation_sheet_fee` |
-| 54 | BB | 查验费/删单费 | `payables.customs.inspection_delete_fee` |
-| 55 | BC | 其他费用 | `payables.customs.other_fee` |
-| 56 | BD | 备注 | `payables.customs.remark` |
-| 57 | BE | 地面操作代理名称 | `payables.ground.outsource_unit` |
-| 58 | BF | 操作日期 | `payables.ground.date` |
-| 59 | BG | 计费重量 | `payables.ground.chargeable_weight` |
-| 60 | BH | 前置仓费 | `payables.ground.freight` |
-| 61 | BI | TC费 | `payables.ground.tc_fee` |
-| 62 | BJ | 提货费 | `payables.ground.pickup_fee` |
-| 63 | BK | 提单费 | `payables.ground.lading_express_fee` |
-| 64 | BL | 安检费/报关费 | `payables.ground.security_customs_fee` |
-| 65 | BM | 打板费/退场费 | `payables.ground.pallet_exit_fee` |
-| 66 | BN | 其他费用 | `payables.ground.other_fee` |
-| 67 | BO | 备注 | `payables.ground.remark` |
-| 68 | BP | 汽运代理名称 | `payables.trucking.outsource_unit` |
-| 69 | BQ | 托运日期 | `payables.trucking.date` |
-| 70 | BR | 主单号 | `payables.trucking.flight_doc_no` |
-| 71 | BS | 始发城市 | `payables.trucking.origin_city` |
-| 72 | BT | 目的城市 | `payables.trucking.destination_city` |
-| 73 | BU | 件数 | `payables.trucking.pieces` |
-| 74 | BV | 计费重量 | `payables.trucking.weight` |
-| 75 | BW | 体积 | `payables.trucking.volume` |
-| 76 | BX | 运费计算方式 | `payables.trucking.freight_method` |
-| 77 | BY | 制单费 | `payables.trucking.doc_fee` |
-| 78 | BZ | 其他费用 | `payables.trucking.other_fee` |
-| 79 | CA | 备注 | `payables.trucking.remark` |
-| 80 | CB | 国内空运代理名称 | `payables.dom_air.outsource_unit` |
-| 81 | CC | 始发站 | `payables.dom_air.origin` |
-| 82 | CD | 到达站 | `payables.dom_air.destination` |
-| 83 | CE | 主单号 | `payables.dom_air.flight_doc_no` |
-| 84 | CF | 航班号 | `payables.dom_air.flight_no` |
-| 85 | CG | 航班日期 | `payables.dom_air.flight_date` |
-| 86 | CH | 件数 | `payables.dom_air.pieces` |
-| 87 | CI | 实际重量 | `payables.dom_air.weight` |
-| 88 | CJ | 计费重量 | `payables.dom_air.chargeable_weight` |
-| 89 | CK | 体积 | `payables.dom_air.volume` |
-| 90 | CL | 其他费用 | `payables.dom_air.other_fee` |
-| 91 | CM | 备注 | `payables.dom_air.remark` |
+| 3 | C | 进仓日期 | `warehouse_entry_date` |
+| 4 | D | 客户名称 | `customer_name` |
+| 5 | E | 始发站-目的站 | `origin_destination` |
+| 6 | F | 报关 | `customs_declaration` |
+| 7 | G | 提单 | `bill_of_lading` |
+| 8 | H | 航班日期 | `flight_date` |
+| 9 | I | 航班号 | `flight_no` |
+| 10 | J | 主单号 | `flight_doc_no` |
+| 11 | K | 件数 | `pieces` |
+| 12 | L | 实际重量 | `actual_weight` |
+| 13 | M | 计费重量 | `chargeable_weight` |
+| 14 | N | 体积 | `volume` |
+| 15 | O | 一程重量 | `first_leg_weight` |
+| 16 | P | 备注 | `remark` |
+| 17 | Q | 应收提单费/信息录入费 | `receivables.lading_info_fee` |
+| 18 | R | 应收分单费 电报费/底账费 | `receivables.split_offset_telex_fee` |
+| 19 | S | 应收报关费 | `receivables.customs_fee` |
+| 20 | T | 应收续页费 | `receivables.continuation_sheet_fee` |
+| 21 | U | 应收海关查验费 | `receivables.customs_inspection_fee` |
+| 22 | V | 应收磁检费/安检费 | `receivables.magnetic_security_fee` |
+| 23 | W | 应收燃油费 | `receivables.receivable_fuel_fee` |
+| 24 | X | 应收TC费 | `receivables.tc_express_fee` |
+| 25 | Y | 应收前置仓费 | `receivables.warehouse_ground_fee` |
+| 26 | Z | 应收制单费 | `receivables.doc_make_fee` |
+| 27 | AA | 应收制单分单费 | `receivables.doc_split_fee` |
+| 28 | AB | 应收垫板费 | `receivables.skid_fee` |
+| 29 | AC | 应收打板/装箱费 | `receivables.pallet_packing_fee` |
+| 30 | AD | 应收探板费 | `receivables.probe_fee` |
+| 31 | AE | 应收耗材费 | `receivables.consumables_fee` |
+| 32 | AF | 一程费用 | `receivables.first_leg_fee` |
+| 33 | AG | 国际空运代理名称 | `payables.intl_air.outsource_unit` |
+| 34 | AH | 始发站 | `payables.intl_air.origin` |
+| 35 | AI | 到达站 | `payables.intl_air.destination` |
+| 36 | AJ | 主单号 | `payables.intl_air.flight_doc_no` |
+| 37 | AK | 航班号 | `payables.intl_air.flight_no` |
+| 38 | AL | 航班日期 | `payables.intl_air.flight_date` |
+| 39 | AM | 件数 | `payables.intl_air.pieces` |
+| 40 | AN | 实际重量 | `payables.intl_air.weight` |
+| 41 | AO | 体积 | `payables.intl_air.volume` |
+| 42 | AP | 计费重量 | `payables.intl_air.chargeable_weight` |
+| 43 | AQ | 提单费 | `payables.intl_air.lading_fee` |
+| 44 | AR | 分单 | `payables.intl_air.split_fee` |
+| 45 | AS | 燃油费 | `payables.intl_air.borrow_magnetic_fuel_pickup_fee` |
+| 46 | AT | TC费 | `payables.intl_air.tc_network_disposal_fee` |
+| 47 | AU | 报关费 | `payables.intl_air.customs_fee` |
+| 48 | AV | 续页费 | `payables.intl_air.continuation_sheet_fee` |
+| 49 | AW | 耗材费 | `payables.intl_air.consumables_fee` |
+| 50 | AX | 前置仓费 | `payables.intl_air.front_warehouse` |
+| 51 | AY | 其他费用 | `payables.intl_air.other_fee` |
+| 52 | AZ | 备注 | `payables.intl_air.remark` |
+| 53 | BA | 报关代理名称 | `payables.customs.agent` |
+| 54 | BB | 报关日期 | `payables.customs.date` |
+| 55 | BC | 报关费 | `payables.customs.customs_fee` |
+| 56 | BD | 续页费 | `payables.customs.continuation_sheet_fee` |
+| 57 | BE | 查验费/删单费 | `payables.customs.inspection_delete_fee` |
+| 58 | BF | 其他费用 | `payables.customs.other_fee` |
+| 59 | BG | 备注 | `payables.customs.remark` |
+| 60 | BH | 地面操作代理名称 | `payables.ground.outsource_unit` |
+| 61 | BI | 操作日期 | `payables.ground.date` |
+| 62 | BJ | 计费重量 | `payables.ground.chargeable_weight` |
+| 63 | BK | 前置仓费 | `payables.ground.freight` |
+| 64 | BL | TC费 | `payables.ground.tc_fee` |
+| 65 | BM | 提货费 | `payables.ground.pickup_fee` |
+| 66 | BN | 提单费 | `payables.ground.lading_express_fee` |
+| 67 | BO | 安检费/报关费 | `payables.ground.security_customs_fee` |
+| 68 | BP | 打板费/退场费 | `payables.ground.pallet_exit_fee` |
+| 69 | BQ | 其他费用 | `payables.ground.other_fee` |
+| 70 | BR | 备注 | `payables.ground.remark` |
+| 71 | BS | 汽运代理名称 | `payables.trucking.outsource_unit` |
+| 72 | BT | 托运日期 | `payables.trucking.date` |
+| 73 | BU | 主单号 | `payables.trucking.flight_doc_no` |
+| 74 | BV | 始发城市 | `payables.trucking.origin_city` |
+| 75 | BW | 目的城市 | `payables.trucking.destination_city` |
+| 76 | BX | 件数 | `payables.trucking.pieces` |
+| 77 | BY | 计费重量 | `payables.trucking.weight` |
+| 78 | BZ | 体积 | `payables.trucking.volume` |
+| 79 | CA | 运费计算方式 | `payables.trucking.freight_method` |
+| 80 | CB | 制单费 | `payables.trucking.doc_fee` |
+| 81 | CC | 其他费用 | `payables.trucking.other_fee` |
+| 82 | CD | 备注 | `payables.trucking.remark` |
+| 83 | CE | 国内空运代理名称 | `payables.dom_air.outsource_unit` |
+| 84 | CF | 始发站 | `payables.dom_air.origin` |
+| 85 | CG | 到达站 | `payables.dom_air.destination` |
+| 86 | CH | 主单号 | `payables.dom_air.flight_doc_no` |
+| 87 | CI | 航班号 | `payables.dom_air.flight_no` |
+| 88 | CJ | 航班日期 | `payables.dom_air.flight_date` |
+| 89 | CK | 件数 | `payables.dom_air.pieces` |
+| 90 | CL | 实际重量 | `payables.dom_air.weight` |
+| 91 | CM | 计费重量 | `payables.dom_air.chargeable_weight` |
+| 92 | CN | 体积 | `payables.dom_air.volume` |
+| 93 | CO | 其他费用 | `payables.dom_air.other_fee` |
+| 94 | CP | 备注 | `payables.dom_air.remark` |
 
-**费用完整列顺序（115列）**：路径均相对费用详情 `data`。重复表头对应的分组、列号见下表，勿按表头名称去重。
+**费用完整列顺序（118列）**：路径均相对费用详情 `data`。重复表头对应的分组、列号见下表，勿按表头名称去重。
 
 | 列号（1起） | Excel列 | 表头原文 | 对应详情data中的字段 / 来源 |
 |---|---|---|---|
 | 1 | A | 序号 | 按最终导出顺序从1连续生成 |
 | 2 | B | 状态 | `status` |
-| 3 | C | 客户名称 | `consignor_info.customer_name` |
-| 4 | D | 进仓日期 | `consignor_info.warehouse_entry_date` |
-| 5 | E | 航班日期 | `consignor_info.flight_date` |
-| 6 | F | 主单号 | `consignor_info.flight_doc_no` |
-| 7 | G | 始发站-目的站 | `consignor_info.origin_destination` |
-| 8 | H | 件数 | `consignor_info.pieces` |
-| 9 | I | 实际重量 | `consignor_info.actual_weight` |
-| 10 | J | 计费重量 | `consignor_info.chargeable_weight` |
-| 11 | K | 体积 | `consignor_info.volume` |
-| 12 | L | 报关 | `consignor_info.customs_declaration` |
-| 13 | M | 提单 | `consignor_info.bill_of_lading` |
-| 14 | N | 备注 | `consignor_info.remark` |
-| 15 | O | 运费费率 | `receivables.unit_price` |
-| 16 | P | 运费计算方式 | `receivables.freight_method` |
-| 17 | Q | 运费 | `receivables.freight` |
-| 18 | R | 应收提单费/信息录入费 | `receivables.lading_info_fee` |
-| 19 | S | 应收分单费 电报费/底账费 | `receivables.split_offset_telex_fee` |
-| 20 | T | 应收报关费 | `receivables.customs_fee` |
-| 21 | U | 应收续页费 | `receivables.continuation_sheet_fee` |
-| 22 | V | 应收海关查验费 | `receivables.customs_inspection_fee` |
-| 23 | W | 应收磁检费/安检费 | `receivables.magnetic_security_fee` |
-| 24 | X | 应收燃油费 | `receivables.receivable_fuel_fee` |
-| 25 | Y | 应收TC费 | `receivables.tc_express_fee` |
-| 26 | Z | 应收前置仓费 | `receivables.warehouse_ground_fee` |
-| 27 | AA | 应收制单费 | `receivables.doc_make_fee` |
-| 28 | AB | 应收制单分单费 | `receivables.doc_split_fee` |
-| 29 | AC | 应收垫板费 | `receivables.skid_fee` |
-| 30 | AD | 应收打板/装箱费 | `receivables.pallet_packing_fee` |
-| 31 | AE | 应收探板费 | `receivables.probe_fee` |
-| 32 | AF | 应收耗材费 | `receivables.consumables_fee` |
-| 33 | AG | 应收合计 | `receivables.total` |
-| 34 | AH | 国际空运代理名称 | `payables.intl_air.outsource_unit` |
-| 35 | AI | 始发站 | `payables.intl_air.origin` |
-| 36 | AJ | 到达站 | `payables.intl_air.destination` |
-| 37 | AK | 主单号 | `payables.intl_air.flight_doc_no` |
-| 38 | AL | 航班号 | `payables.intl_air.flight_no` |
-| 39 | AM | 航班日期 | `payables.intl_air.flight_date` |
-| 40 | AN | 件数 | `payables.intl_air.pieces` |
-| 41 | AO | 实际重量 | `payables.intl_air.weight` |
-| 42 | AP | 体积 | `payables.intl_air.volume` |
-| 43 | AQ | 计费重量 | `payables.intl_air.chargeable_weight` |
-| 44 | AR | 提单费 | `payables.intl_air.lading_fee` |
-| 45 | AS | 单价 | `payables.intl_air.rate` |
-| 46 | AT | 运费 | `payables.intl_air.freight` |
-| 47 | AU | 分单 | `payables.intl_air.split_fee` |
-| 48 | AV | 燃油费 | `payables.intl_air.borrow_magnetic_fuel_pickup_fee` |
-| 49 | AW | TC费 | `payables.intl_air.tc_network_disposal_fee` |
-| 50 | AX | 报关费 | `payables.intl_air.customs_fee` |
-| 51 | AY | 续页费 | `payables.intl_air.continuation_sheet_fee` |
-| 52 | AZ | 耗材费 | `payables.intl_air.consumables_fee` |
-| 53 | BA | 前置仓费 | `payables.intl_air.front_warehouse` |
-| 54 | BB | 其他费用 | `payables.intl_air.other_fee` |
-| 55 | BC | 备注 | `payables.intl_air.remark` |
-| 56 | BD | 应付小计 | `payables.intl_air.subtotal` |
-| 57 | BE | 报关代理名称 | `payables.customs.agent` |
-| 58 | BF | 报关日期 | `payables.customs.date` |
-| 59 | BG | 报关费 | `payables.customs.customs_fee` |
-| 60 | BH | 续页费 | `payables.customs.continuation_sheet_fee` |
-| 61 | BI | 查验费/删单费 | `payables.customs.inspection_delete_fee` |
-| 62 | BJ | 其他费用 | `payables.customs.other_fee` |
-| 63 | BK | 备注 | `payables.customs.remark` |
-| 64 | BL | 应付小计 | `payables.customs.subtotal` |
-| 65 | BM | 地面操作代理名称 | `payables.ground.outsource_unit` |
-| 66 | BN | 操作日期 | `payables.ground.date` |
-| 67 | BO | 计费重量 | `payables.ground.chargeable_weight` |
-| 68 | BP | 前置仓费 | `payables.ground.freight` |
-| 69 | BQ | TC费 | `payables.ground.tc_fee` |
-| 70 | BR | 提货费 | `payables.ground.pickup_fee` |
-| 71 | BS | 提单费 | `payables.ground.lading_express_fee` |
-| 72 | BT | 安检费/报关费 | `payables.ground.security_customs_fee` |
-| 73 | BU | 打板费/退场费 | `payables.ground.pallet_exit_fee` |
-| 74 | BV | 其他费用 | `payables.ground.other_fee` |
-| 75 | BW | 备注 | `payables.ground.remark` |
-| 76 | BX | 应付小计 | `payables.ground.subtotal` |
-| 77 | BY | 汽运代理名称 | `payables.trucking.outsource_unit` |
-| 78 | BZ | 托运日期 | `payables.trucking.date` |
-| 79 | CA | 主单号 | `payables.trucking.flight_doc_no` |
-| 80 | CB | 始发城市 | `payables.trucking.origin_city` |
-| 81 | CC | 目的城市 | `payables.trucking.destination_city` |
-| 82 | CD | 件数 | `payables.trucking.pieces` |
-| 83 | CE | 计费重量 | `payables.trucking.weight` |
-| 84 | CF | 体积 | `payables.trucking.volume` |
-| 85 | CG | 单价 | `payables.trucking.unit_price` |
-| 86 | CH | 运费计算方式 | `payables.trucking.freight_method` |
-| 87 | CI | 运费 | `payables.trucking.freight` |
-| 88 | CJ | 制单费 | `payables.trucking.doc_fee` |
-| 89 | CK | 其他费用 | `payables.trucking.other_fee` |
-| 90 | CL | 备注 | `payables.trucking.remark` |
-| 91 | CM | 应付小计 | `payables.trucking.subtotal` |
-| 92 | CN | 国内空运代理名称 | `payables.dom_air.outsource_unit` |
-| 93 | CO | 始发站 | `payables.dom_air.origin` |
-| 94 | CP | 到达站 | `payables.dom_air.destination` |
-| 95 | CQ | 主单号 | `payables.dom_air.flight_doc_no` |
-| 96 | CR | 航班号 | `payables.dom_air.flight_no` |
-| 97 | CS | 航班日期 | `payables.dom_air.flight_date` |
-| 98 | CT | 件数 | `payables.dom_air.pieces` |
-| 99 | CU | 实际重量 | `payables.dom_air.weight` |
-| 100 | CV | 计费重量 | `payables.dom_air.chargeable_weight` |
-| 101 | CW | 体积 | `payables.dom_air.volume` |
-| 102 | CX | 单价 | `payables.dom_air.rate` |
-| 103 | CY | 运费 | `payables.dom_air.freight` |
-| 104 | CZ | 其他费用 | `payables.dom_air.other_fee` |
-| 105 | DA | 备注 | `payables.dom_air.remark` |
-| 106 | DB | 应付小计 | `payables.dom_air.subtotal` |
-| 107 | DC | 折让人 | `discount_info.discount_person` |
-| 108 | DD | 费率 | `discount_info.discount_rate` |
-| 109 | DE | 折让费 | `discount_info.discount_fee` |
-| 110 | DF | 业务员 | `sales_commission.salesperson` |
-| 111 | DG | 提成金额 | `sales_commission.commission_amount` |
-| 112 | DH | 应收合计 | `receivables.total` |
-| 113 | DI | 应付合计 | `payables.pay_total` |
-| 114 | DJ | 利润 | `operating_info.profit` |
-| 115 | DK | 利润率% | `operating_info.profit_margin` |
+| 3 | C | 进仓日期 | `consignor_info.warehouse_entry_date` |
+| 4 | D | 客户名称 | `consignor_info.customer_name` |
+| 5 | E | 始发站-目的站 | `consignor_info.origin_destination` |
+| 6 | F | 报关 | `consignor_info.customs_declaration` |
+| 7 | G | 提单 | `consignor_info.bill_of_lading` |
+| 8 | H | 航班日期 | `consignor_info.flight_date` |
+| 9 | I | 航班号 | `consignor_info.flight_no` |
+| 10 | J | 主单号 | `consignor_info.flight_doc_no` |
+| 11 | K | 件数 | `consignor_info.pieces` |
+| 12 | L | 实际重量 | `consignor_info.actual_weight` |
+| 13 | M | 计费重量 | `consignor_info.chargeable_weight` |
+| 14 | N | 体积 | `consignor_info.volume` |
+| 15 | O | 一程重量 | `consignor_info.first_leg_weight` |
+| 16 | P | 备注 | `consignor_info.remark` |
+| 17 | Q | 运费费率 | `receivables.unit_price` |
+| 18 | R | 运费计算方式 | `receivables.freight_method` |
+| 19 | S | 运费 | `receivables.freight` |
+| 20 | T | 应收提单费/信息录入费 | `receivables.lading_info_fee` |
+| 21 | U | 应收分单费 电报费/底账费 | `receivables.split_offset_telex_fee` |
+| 22 | V | 应收报关费 | `receivables.customs_fee` |
+| 23 | W | 应收续页费 | `receivables.continuation_sheet_fee` |
+| 24 | X | 应收海关查验费 | `receivables.customs_inspection_fee` |
+| 25 | Y | 应收磁检费/安检费 | `receivables.magnetic_security_fee` |
+| 26 | Z | 应收燃油费 | `receivables.receivable_fuel_fee` |
+| 27 | AA | 应收TC费 | `receivables.tc_express_fee` |
+| 28 | AB | 应收前置仓费 | `receivables.warehouse_ground_fee` |
+| 29 | AC | 应收制单费 | `receivables.doc_make_fee` |
+| 30 | AD | 应收制单分单费 | `receivables.doc_split_fee` |
+| 31 | AE | 应收垫板费 | `receivables.skid_fee` |
+| 32 | AF | 应收打板/装箱费 | `receivables.pallet_packing_fee` |
+| 33 | AG | 应收探板费 | `receivables.probe_fee` |
+| 34 | AH | 应收耗材费 | `receivables.consumables_fee` |
+| 35 | AI | 一程费用 | `receivables.first_leg_fee` |
+| 36 | AJ | 应收合计 | `receivables.total` |
+| 37 | AK | 国际空运代理名称 | `payables.intl_air.outsource_unit` |
+| 38 | AL | 始发站 | `payables.intl_air.origin` |
+| 39 | AM | 到达站 | `payables.intl_air.destination` |
+| 40 | AN | 主单号 | `payables.intl_air.flight_doc_no` |
+| 41 | AO | 航班号 | `payables.intl_air.flight_no` |
+| 42 | AP | 航班日期 | `payables.intl_air.flight_date` |
+| 43 | AQ | 件数 | `payables.intl_air.pieces` |
+| 44 | AR | 实际重量 | `payables.intl_air.weight` |
+| 45 | AS | 体积 | `payables.intl_air.volume` |
+| 46 | AT | 计费重量 | `payables.intl_air.chargeable_weight` |
+| 47 | AU | 提单费 | `payables.intl_air.lading_fee` |
+| 48 | AV | 单价 | `payables.intl_air.rate` |
+| 49 | AW | 运费 | `payables.intl_air.freight` |
+| 50 | AX | 分单 | `payables.intl_air.split_fee` |
+| 51 | AY | 燃油费 | `payables.intl_air.borrow_magnetic_fuel_pickup_fee` |
+| 52 | AZ | TC费 | `payables.intl_air.tc_network_disposal_fee` |
+| 53 | BA | 报关费 | `payables.intl_air.customs_fee` |
+| 54 | BB | 续页费 | `payables.intl_air.continuation_sheet_fee` |
+| 55 | BC | 耗材费 | `payables.intl_air.consumables_fee` |
+| 56 | BD | 前置仓费 | `payables.intl_air.front_warehouse` |
+| 57 | BE | 其他费用 | `payables.intl_air.other_fee` |
+| 58 | BF | 备注 | `payables.intl_air.remark` |
+| 59 | BG | 应付小计 | `payables.intl_air.subtotal` |
+| 60 | BH | 报关代理名称 | `payables.customs.agent` |
+| 61 | BI | 报关日期 | `payables.customs.date` |
+| 62 | BJ | 报关费 | `payables.customs.customs_fee` |
+| 63 | BK | 续页费 | `payables.customs.continuation_sheet_fee` |
+| 64 | BL | 查验费/删单费 | `payables.customs.inspection_delete_fee` |
+| 65 | BM | 其他费用 | `payables.customs.other_fee` |
+| 66 | BN | 备注 | `payables.customs.remark` |
+| 67 | BO | 应付小计 | `payables.customs.subtotal` |
+| 68 | BP | 地面操作代理名称 | `payables.ground.outsource_unit` |
+| 69 | BQ | 操作日期 | `payables.ground.date` |
+| 70 | BR | 计费重量 | `payables.ground.chargeable_weight` |
+| 71 | BS | 前置仓费 | `payables.ground.freight` |
+| 72 | BT | TC费 | `payables.ground.tc_fee` |
+| 73 | BU | 提货费 | `payables.ground.pickup_fee` |
+| 74 | BV | 提单费 | `payables.ground.lading_express_fee` |
+| 75 | BW | 安检费/报关费 | `payables.ground.security_customs_fee` |
+| 76 | BX | 打板费/退场费 | `payables.ground.pallet_exit_fee` |
+| 77 | BY | 其他费用 | `payables.ground.other_fee` |
+| 78 | BZ | 备注 | `payables.ground.remark` |
+| 79 | CA | 应付小计 | `payables.ground.subtotal` |
+| 80 | CB | 汽运代理名称 | `payables.trucking.outsource_unit` |
+| 81 | CC | 托运日期 | `payables.trucking.date` |
+| 82 | CD | 主单号 | `payables.trucking.flight_doc_no` |
+| 83 | CE | 始发城市 | `payables.trucking.origin_city` |
+| 84 | CF | 目的城市 | `payables.trucking.destination_city` |
+| 85 | CG | 件数 | `payables.trucking.pieces` |
+| 86 | CH | 计费重量 | `payables.trucking.weight` |
+| 87 | CI | 体积 | `payables.trucking.volume` |
+| 88 | CJ | 单价 | `payables.trucking.unit_price` |
+| 89 | CK | 运费计算方式 | `payables.trucking.freight_method` |
+| 90 | CL | 运费 | `payables.trucking.freight` |
+| 91 | CM | 制单费 | `payables.trucking.doc_fee` |
+| 92 | CN | 其他费用 | `payables.trucking.other_fee` |
+| 93 | CO | 备注 | `payables.trucking.remark` |
+| 94 | CP | 应付小计 | `payables.trucking.subtotal` |
+| 95 | CQ | 国内空运代理名称 | `payables.dom_air.outsource_unit` |
+| 96 | CR | 始发站 | `payables.dom_air.origin` |
+| 97 | CS | 到达站 | `payables.dom_air.destination` |
+| 98 | CT | 主单号 | `payables.dom_air.flight_doc_no` |
+| 99 | CU | 航班号 | `payables.dom_air.flight_no` |
+| 100 | CV | 航班日期 | `payables.dom_air.flight_date` |
+| 101 | CW | 件数 | `payables.dom_air.pieces` |
+| 102 | CX | 实际重量 | `payables.dom_air.weight` |
+| 103 | CY | 计费重量 | `payables.dom_air.chargeable_weight` |
+| 104 | CZ | 体积 | `payables.dom_air.volume` |
+| 105 | DA | 单价 | `payables.dom_air.rate` |
+| 106 | DB | 运费 | `payables.dom_air.freight` |
+| 107 | DC | 其他费用 | `payables.dom_air.other_fee` |
+| 108 | DD | 备注 | `payables.dom_air.remark` |
+| 109 | DE | 应付小计 | `payables.dom_air.subtotal` |
+| 110 | DF | 折让人 | `discount_info.discount_person` |
+| 111 | DG | 费率 | `discount_info.discount_rate` |
+| 112 | DH | 折让费 | `discount_info.discount_fee` |
+| 113 | DI | 业务员 | `sales_commission.salesperson` |
+| 114 | DJ | 提成金额 | `sales_commission.commission_amount` |
+| 115 | DK | 应收合计 | `receivables.total` |
+| 116 | DL | 应付合计 | `payables.pay_total` |
+| 117 | DM | 利润 | `operating_info.profit` |
+| 118 | DN | 利润率% | `operating_info.profit_margin` |
 
 ##### 23.11.10 数据库部署与兼容说明
 
@@ -11865,12 +11871,12 @@ Authorization: Bearer <access_token>
 
 ##### 23.13.4 Excel下载变化
 
-两个导出接口继续不输出内部单据ID（表头及值均不输出）。2026-11-01客户重新确认完整列顺序后，两台均改为单行表头；2026-11-09恢复委托航班日期后，客服91列、费用115列，数据从第2行开始，不保留空白占位列。
+两个导出接口继续不输出内部单据ID（表头及值均不输出）。2026-11-01客户重新确认完整列顺序后，两台均改为单行表头；按当前含委托航班日期、一程费用及一程重量的布局，客服94列、费用118列，数据从第2行开始，不保留空白占位列。
 
 | 方法与路径（含 `/api/v1` 前缀） | 入参 | 下载结果 |
 |---|---|---|
-| `POST /api/v1/customer-service/consignments/export-excel` | `{"ids":["358000000000000001"]}`，必填数字字符串数组 | 91列、单行表头、A列序号、B列状态 |
-| `POST /api/v1/cost-service/consignments/export-excel` | 同上 | 115列、单行表头、A列序号、B列状态 |
+| `POST /api/v1/customer-service/consignments/export-excel` | `{"ids":["358000000000000001"]}`，必填数字字符串数组 | 94列、单行表头、A列序号、B列状态 |
+| `POST /api/v1/cost-service/consignments/export-excel` | 同上 | 118列、单行表头、A列序号、B列状态 |
 
 逐列顺序、字段路径、重复表头规则、下载响应示例及校验规则详见23.11.9。仍返回xlsx二进制，下载文件名、排序及中文转换规则延续。前端继续传入隐藏的内部编号，操作记录展示逻辑不受导出变更影响。
 
@@ -12069,8 +12075,8 @@ intl_air=国际空运，customs=报关，ground=地面操作，trucking=汽运�
 
 | 方法 | 完整路径 | 入参 | 返回变化 |
 |---|---|---|---|
-| POST | `/api/v1/cost-service/consignments/export-excel` | `{"ids":["358000000000000001"]}`，必填数字字符串数组 | xlsx文件二进制，115列；汽运第86列“运费计算方式”取本费用单据保存值 |
-| POST | `/api/v1/customer-service/consignments/export-excel` | 同上 | xlsx文件二进制，91列；汽运第76列“运费计算方式”取本客服单据财务快照 |
+| POST | `/api/v1/cost-service/consignments/export-excel` | `{"ids":["358000000000000001"]}`，必填数字字符串数组 | xlsx文件二进制，118列；汽运第89列“运费计算方式”取本费用单据保存值 |
+| POST | `/api/v1/customer-service/consignments/export-excel` | 同上 | xlsx文件二进制，94列；汽运第79列“运费计算方式”取本客服单据财务快照 |
 
 两个导出均继续单行表头，第2行开始写数据；认证、文件名、Content-Type、排序、错误规则不变，成功响应没有JSON包裹。完整下载请求/响应示例及全列路径见23.11.9。
 
@@ -12148,7 +12154,7 @@ Content-Type: application/json
 
 - 客服保存提交时，若汽运快照实际包含该字段，则按原同步规则写入费用列，显式null/空字符串也一并同步；客服未传此字段时不覆盖费用已有值。客服暂存不流转。
 - 费用保存提交时，按原逻辑将该值写入客服财务快照；费用暂存只保存费用自身。两台提交、作废及锁定规则不变。
-- **Excel同步增加汽运运费计算方式**：客服共91列（A至CM），新字段在第76列（BX）；费用共115列（A至DK），新字段在第86列（CH），位于汽运单价和运费之间。均为单行表头，数据从第2行开始。新增列直接读取 `payables.trucking.freight_method` 原样展示，不转换字符串编码、不参与运费计算；后续列顺延1列，完整列映射见23.11.9。
+- **Excel同步增加汽运运费计算方式**：客服共94列（A至CP），该字段在第79列（CA）；费用共118列（A至DN），该字段在第89列（CK），位于汽运单价和运费之间。均为单行表头，数据从第2行开始。新增列直接读取 `payables.trucking.freight_method` 原样展示，不转换字符串编码、不参与运费计算；后续列顺延1列，完整列映射见23.11.9。
 - 存量数据库须在发布代码前执行 `sql/migration_add_cost_trucking_freight_method.sql` 一次，分别为 `cost_registrations` 和 `cost_consignments` 新增可空 `varchar(50)` 列 `pay_trucking_freight_method`。历史记录默认为NULL，不推断或回填计算方式，不回算金额。
 - 客服继续使用已有 `financial_data` JSON，无需新增数据库列。全新库使用已更新的 `sql/migration_create_cost_service_consignments.sql` 或ORM建表，已包含该字段，不再执行此增量加列。
 - 本次未连接生产数据库执行迁移；既有财务快照、标签、状态及操作记录表等历史迁移仍需按数据库现状执行。
@@ -12304,7 +12310,7 @@ Authorization: Bearer <token>
 
 #### 23.18 恢复委托信息航班日期及Excel基础列（2026-11-09）
 
-两台编辑区、列表区的委托信息“航班日期”放在“进仓日期”之后。后端原字段始终保留，前端恢复原字段的填写和回显即可；本仓库不包含两台前端页面。两台Excel同步在第5列（E）恢复“航班日期”，取原委托信息日期，原第5列及后续列统一后移1列。仍为单行表头，第2行起为数据，不增加分组标题或空白列。
+两台编辑区、列表区的委托信息“航班日期”放在“进仓日期”之后。后端原字段始终保留，前端恢复原字段的填写和回显即可；本仓库不包含两台前端页面。两台Excel当前第8列（H）输出“航班日期”，取原委托信息日期；委托段落顺序以23.26节为准。仍为单行表头，第2行起为数据，不增加分组标题或空白列。
 
 ##### 23.18.1 编辑、列表与详情字段
 
@@ -12363,15 +12369,15 @@ Content-Type: application/json
 - 客服暂存仍只写客服，不同步费用；客服确认提交时，委托 `flight_date` 同步到费用 `consignor_info.flight_date`，并按既有规则预填费用 `payables.intl_air.flight_date`。
 - 若客服明确录入了 `payables.intl_air.flight_date`（含显式null），该分组值继续优先于委托日期预填，保留此前扩展录入规则。本次不新增强制双向覆盖规则。
 - 费用暂存不回写客服；费用保存时将费用委托日期回写客服顶层日期，财务快照按原逻辑回写。仅编辑费用委托日期不会强制覆盖费用国际空运日期；两个字段的实际保存值分别展示。
-- 直接读取历史委托日期，无需将其搬运到国际空运或国内空运日期，不回填或改写历史数据。即使客服 `financial_data` 为NULL、费用国际空运日期为空，只要原委托日期有值，新版Excel第5列就会正常显示。
+- 直接读取历史委托日期，无需将其搬运到国际空运或国内空运日期，不回填或改写历史数据。即使客服 `financial_data` 为NULL、费用国际空运日期为空，只要原委托日期有值，新版Excel第8列就会正常显示。
 - 费用列表搜索参数 `start_flight_date`、`end_flight_date` 已按23.20改为筛选委托信息航班日期 `consignor_info.flight_date`。费用Excel继续按委托航班日期升序排列，客服Excel继续按制单时间倒序排列。
 
 ##### 23.18.3 修改的Excel接口及新列位置
 
 | 方法 | 接口 | 请求body | 成功响应 |
 |---|---|---|---|
-| POST | `/api/v1/customer-service/consignments/export-excel` | `{"ids":["358000000000000001"]}` | xlsx二进制，91列（A至CM） |
-| POST | `/api/v1/cost-service/consignments/export-excel` | 同上 | xlsx二进制，115列（A至DK） |
+| POST | `/api/v1/customer-service/consignments/export-excel` | `{"ids":["358000000000000001"]}` | xlsx二进制，94列（A至CP） |
+| POST | `/api/v1/cost-service/consignments/export-excel` | 同上 | xlsx二进制，118列（A至DN） |
 
 `ids` 必填string[]，至少一项，元素为数字形式的单据主键。认证、校验、文件名规则及媒体类型延续23.11.9，成功HTTP200无JSON包裹：
 
@@ -12385,9 +12391,9 @@ Access-Control-Expose-Headers: Content-Disposition
 
 | 分组 | 客服Excel位置及来源 | 费用Excel位置及来源 |
 |---|---|---|
-| 委托信息航班日期 | 第5列E，`flight_date` | 第5列E，`consignor_info.flight_date` |
-| 国际空运航班日期 | 第35列AI，`payables.intl_air.flight_date` | 第39列AM，同名国际空运字段 |
-| 国内空运航班日期 | 第85列CG，`payables.dom_air.flight_date` | 第97列CS，同名国内空运字段 |
+| 委托信息航班日期 | 第8列H，`flight_date` | 第8列H，`consignor_info.flight_date` |
+| 国际空运航班日期 | 第38列AL，`payables.intl_air.flight_date` | 第42列AP，同名国际空运字段 |
+| 国内空运航班日期 | 第88列CJ，`payables.dom_air.flight_date` | 第100列CV，同名国内空运字段 |
 
 同名表头按所在列区分，不可按名称去重。完整列号和取值表已同步更新23.11.9。本次复用原数据库日期列，无需新迁移、不重算金额；此前版本所需的字段迁移仍须完成。
 
@@ -12673,3 +12679,534 @@ HTTP200响应片段（其余原业务字段省略，实际仍返回完整对象�
 ```
 
 错误格式不变：非法status、排序枚举或分页值仍HTTP422，认证沿用原规则。本次无需数据库迁移，保存、详情、同步、Excel及费用登记台查询保持既有实现。费用登记台的同名参数仍查询国际空运主单号（见23.16），不要与本客服接口的顶层主单号混用。
+
+
+#### 23.22 两台应收款项“一程费用”展示及Excel导出（2026-11-11）
+
+客服接单台、费用登记台编辑区在应收“耗材费”后展示“一程费用”，继续绑定既有字段 `receivables.first_leg_fee`。该字段原本已支持保存、查询及两台同步；本次补齐两台Excel导出列，不另起同义字段，不复用基础信息中的一程重量。仓库不含前端页面，前端需在两台应收编辑区补上对应输入框。
+
+##### 23.22.1 字段及更新语义
+
+| 字段 | 位置 | 类型 | 必填 | 说明 |
+|---|---|---|---|---|
+| `receivables.first_leg_fee` | 两台写入body/单条响应data | number/null | 否 | 应收一程费用，金额。费用表持久化为receivable_first_leg_fee，decimal(10,2)；建议前端传两位小数，范围遵循该数据库列，不新增请求精度校验 |
+| `receivables.first_leg_fee` | 两台列表data.items[]中 | number/null | 响应字段 | 同一单据已保存的一程费用，历史未填为null；费用模板未创建时整个data仍按原规则为null |
+| `receivables.total` | 原位置 | number/null | 否 | 原应收合计，后台不根据一程费用重新计算，前端计算后按原接口传入 |
+
+`first_leg_fee`与基础 `first_leg_weight`（一程重量）是不同字段。后端保存传入金额，不将其乘以重量、费率或纳入自动合计，不重算利润和提成。
+
+| 场景 | 不传first_leg_fee | 显式null | 传0 |
+|---|---|---|---|
+| 客服模板/单据更新 | 保留已有值 | 清空客服财务快照；下次客服正常保存会将清空同步至费用 | 保存为0，正常流转和导出 |
+| 费用模板/单据更新 | 保留已有值 | 沿用费用已有数值字段规则，保留已有值；如要置零传0 | 保存为0 |
+| 两台新增 | 未填为null | 初始为空 | 保存为0 |
+
+整个receivables未传或传null沿用原规则，不清空已有分组。客服只暂存时不流转；客服正常保存将明确填写的一程费用同步至同ID费用记录，未明确填写则不覆盖费用已有值。费用正常保存时把一程费用随财务快照回写客服并锁定客服，费用暂存不回写、不改变客服锁定。客服能否编辑仍按23.19的editable控制。
+
+##### 23.22.2 接口范围
+
+以下接口原本就支持该字段，本次不新增路由/请求字段，明确供前端编辑和回显使用。路径均以 `/api/v1` 开头，认证继续使用Bearer token；写入JSON请求使用Content-Type: application/json。
+
+| 方法 | 路径（相对/api/v1） | 字段行为 |
+|---|---|---|
+| GET、PUT | `/customer-service/consignment-registration` | 客服模板读取/保存，data.receivables.first_leg_fee |
+| POST | `/customer-service/consignments`、`/customer-service/consignments/draft` | 客服保存新增/暂存新增，可提交receivables.first_leg_fee，响应同路径回显 |
+| PUT | `/customer-service/consignments/{id}`、`/customer-service/consignments/{id}/draft` | 客服保存/暂存修改，费用提交锁定或作废后仍拒绝修改 |
+| GET | `/customer-service/consignments/{id}` | 客服详情data.receivables.first_leg_fee |
+| GET | `/customer-service/consignments` | 客服列表data.items[].receivables.first_leg_fee |
+| GET、PUT | `/cost-service/cost-registration` | 费用模板读取/保存，data.receivables.first_leg_fee |
+| POST | `/cost-service/consignments`、`/cost-service/consignments/draft` | 费用保存新增/暂存新增，可提交该字段并回显 |
+| PUT | `/cost-service/consignments/{id}`、`/cost-service/consignments/{id}/draft` | 费用保存/暂存修改，遵循原同步规则 |
+| GET | `/cost-service/consignments/{id}` | 费用详情data.receivables.first_leg_fee |
+| GET | `/cost-service/consignments` | 费用列表data.items[].receivables.first_leg_fee |
+| PUT | 两台 `/consignments/{id}/void` | 作废响应保留已有金额，不因作废改写该字段 |
+| POST | 两台 `/consignments/export-excel` | 本次实际变更：应收耗材费后补一程费用列，后续列顺延 |
+
+`{id}`/`ids[]`继续使用单据数字字符串主键，不是内部单据ID。GET无body，列表其他筛选、状态、分页规则不变。
+
+##### 23.22.3 前端请求与响应示例
+
+客服正常保存（新增同样可带该应收对象）：
+
+```http
+PUT /api/v1/customer-service/consignments/358000000000000001
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"receivables":{"first_leg_fee":123.45,"total":1000}}
+```
+
+成功HTTP200响应片段，实际保留原完整业务字段：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":1,"editable":true,"receivables":{"first_leg_fee":123.45,"total":1000}},"msg":"委托信息更新成功"}
+```
+
+费用正常保存覆盖该金额：
+
+```http
+PUT /api/v1/cost-service/consignments/358000000000000001
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"receivables":{"first_leg_fee":200,"total":1076.55}}
+```
+
+成功HTTP200响应片段：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":1,"receivables":{"first_leg_fee":200,"total":1076.55}},"msg":"单据信息更新成功"}
+```
+
+此时客服详情响应片段：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":1,"editable":false,"receivables":{"first_leg_fee":200,"total":1076.55}},"msg":"查询成功"}
+```
+
+两台列表的已保存金额在items中读取，例如费用 `GET /api/v1/cost-service/consignments?page=1&pageSize=10`，HTTP200片段：
+
+```json
+{"code":0,"data":{"total":1,"items":[{"id":"358000000000000001","status":1,"receivables":{"first_leg_fee":200,"total":1076.55}}],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+金额置零请求为 `{"receivables":{"first_leg_fee":0}}`。客服明确清空用 `{"receivables":{"first_leg_fee":null}}`；费用传null沿用保留旧值规则。金额类型错误仍HTTP422、客服锁定/作废仍HTTP409、不存在单据404，其他原错误格式不变。
+
+##### 23.22.4 Excel变更
+
+| 接口 | 请求body | 新列位置及表头 | 总列数 |
+|---|---|---|---|
+| `POST /api/v1/customer-service/consignments/export-excel` | `{"ids":["358000000000000001"]}` | 第32列AF“一程费用”，前一列AE“应收耗材费”，后一列AG“国际空运代理名称” | 94，A至CP |
+| `POST /api/v1/cost-service/consignments/export-excel` | 同上 | 第35列AI“一程费用”，前一列AH“应收耗材费”，后一列AJ“应收合计” | 118，A至DN |
+
+成功HTTP200直接返回xlsx二进制，无JSON包裹，媒体类型为application/vnd.openxmlformats-officedocument.spreadsheetml.sheet。继续单行表头、数据从第2行开始，文件名及排序沿用原规则。金额读取本台已保存值，客服取自己的财务快照，费用取receivable_first_leg_fee；0为数值0，null/历史未填为空单元格，不写Excel公式。后续所有列顺延1列，委托航班日期仍第8列H，完整列映射同步更新23.11.9。
+
+##### 23.22.5 数据库与部署
+
+现有ORM及 `sql/migration_create_cost_service_consignments.sql` 已包含两张费用表的receivable_first_leg_fee，因此本次不新增字段、不重复ALTER TABLE；客服沿用financial_data JSON，不新增列。若需核查生产结构，可执行只读SQL：
+
+```sql
+SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME IN ('cost_registrations', 'cost_consignments')
+  AND COLUMN_NAME = 'receivable_first_leg_fee';
+```
+
+应分别返回两张表该列，类型decimal(10,2)、可空。没有做生产数据库操作；历史金额不做回填或清空。先前锁定字段、财务快照等版本迁移仍须按对应发布说明完成，本次导出补列不替代那些迁移。
+
+
+#### 23.23 客服新增及修改时国际空运主单号近30天查重（2026-11-11）
+
+客服新增运单，在国际空运区录入主单号后点击“暂存”或“保存”，后端检查近30天客服运单的国际空运主单号；重复时拒绝写入并返回msg“该运单已存在”。按已确认口径，近30天使用系统创建时间；客服暂存后补填/更换号码也校验，排除当前运单自身。不新增单独查重接口，四个既有写入接口直接校验。
+
+##### 23.23.1 受影响接口及请求参数
+
+以下路径均包含 `/api/v1` 前缀，使用 `Authorization: Bearer <token>`，JSON请求使用 `Content-Type: application/json`。
+
+| 方法 | 完整路径 | 本次变化 |
+|---|---|---|
+| POST | `/api/v1/customer-service/consignments` | 新增保存前检查国际空运主单号；不重复才创建客服并同步费用草稿 |
+| POST | `/api/v1/customer-service/consignments/draft` | 新增暂存前同样检查；不重复才创建客服草稿 |
+| PUT | `/api/v1/customer-service/consignments/{consignment_id}` | 明确提交非空国际空运主单号时校验，排除本ID；不重复才更新并同步费用 |
+| PUT | `/api/v1/customer-service/consignments/{consignment_id}/draft` | 明确提交非空国际空运主单号时校验，排除本ID；不重复才更新客服草稿 |
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+|---|---|---|---|---|
+| `payables` | body第一层 | object/null | 否 | 原应付款项分组 |
+| `payables.intl_air` | body分组 | object/null | 否 | 原国际空运分组 |
+| `payables.intl_air.flight_doc_no` | body分组叶字段 | string/null | 否 | 本次查重对象，国际空运主单号；不是顶层flight_doc_no，也不是提单或内部单据ID |
+| `consignment_id` | path | string | PUT必填 | 当前客服运单数字字符串主键，用于排除自己；非数字、不存在沿用原400/404 |
+
+其他请求字段保持原定义；不新增请求字段、前端时间参数、跳过校验开关或成功响应字段。未传号码时不将顶层委托主单号作为查重输入。
+
+##### 23.23.2 匹配、时间和范围
+
+- 以校验时的中国时间UTC+8计算 `[当前时间-30×24小时, 当前时间]` 闭区间，比较客服记录 `consignment_infos.created_at`。起点当天的具体时刻包含在内，不是自然月，也不按制单时间create_time、航班日期flight_date、进仓日期或最后修改时间updated_at判断。
+- 检查客服接单台已有运单，跨账号，不按创建人过滤。包括暂存0、已保存1、作废2的仍存在记录；物理删除的记录不参与。费用保存后回写形成的客服记录也属于已有客服运单；只有费用草稿、没有客服记录的独立费用单不在本次范围内。模板不作为运单查重。
+- 比较已有客服财务快照 `financial_data.payables.intl_air.flight_doc_no`。顶层委托主单号flight_doc_no、提单bill_of_lading、内部单据ID、国内空运/汽运主单号都不参与匹配，不查询费用表替代该字段。
+- 采用完整号码相等判断，忽略首尾半角空格，英文字母不区分大小写。中间空格、连字符、前导0保留；百分号和下划线按普通字符参与相等比较，不是模糊查询通配符。例如784-001与784001、784-1是不同号码。
+- 原始输入仍按原接口保存，不为查重改写用户填写的号码。未传、null、空字符串、仅半角空格时不触发号码查重；其保存/清空/保留语义沿用原接口。此规则不将国际空运主单号改为必填。
+- PUT请求明确携带非空号码时触发检查（即使与当前值相同），排除当前单据ID。自己重存不冲突；其他近30天记录有同号则409。因此暂存后补填/更换同号也无法绕过。仅修改其他字段、未传该号码时不新加查重，以保留原部分更新行为；历史已有重复不做批量清理。
+- 近30天以外的同号记录不阻止本次写入；旧记录今天编辑过也不会因此重新进入30天窗口。当前运单本身是否超过30天不影响“检查其他近30天记录”的规则。
+
+##### 23.23.3 新增暂存、保存及修改请求示例
+
+新增暂存：
+
+```http
+POST /api/v1/customer-service/consignments/draft
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"customer_name":"客户A","payables":{"intl_air":{"flight_doc_no":"784-12345678"}}}
+```
+
+新增保存使用完全相同的body，路径改为 `POST /api/v1/customer-service/consignments`。此处填写的是国际空运区主单号，如同时传顶层flight_doc_no，顶层值不影响本次校验。
+
+暂存新增后再次编辑/保存，使用返回的id调用PUT，不要再次POST创建另一条：
+
+```http
+PUT /api/v1/customer-service/consignments/358000000000000001
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"payables":{"intl_air":{"flight_doc_no":"784-12345678"}}}
+```
+
+修改暂存使用 `PUT /api/v1/customer-service/consignments/358000000000000001/draft`。两种修改均排除当前ID。
+
+##### 23.23.4 重复失败响应：前端弹窗契约
+
+只要上述四个接口检测到重复，均返回 **HTTP 409 Conflict**，完整JSON如下（不是HTTP200，也不返回成功id）：
+
+```json
+{
+  "code": 409,
+  "data": null,
+  "msg": "该运单已存在"
+}
+```
+
+前端收到该响应后显示msg弹窗“该运单已存在”，本次暂存/保存失败，保留用户输入，不执行成功回调、不切换为已保存状态、不清空表单。PUT失败时已有数据、状态、客服editable、费用数据及操作记录均保持原值；POST失败时不新增客服/费用单据或操作记录。没有“一次修改机会”的消耗，修正号码后可再次提交。
+
+409也可能是原有客服锁定或作废错误，前端应展示实际msg，不能把所有409都替换为“该运单已存在”。未找到单据404、数字ID错误400、请求类型校验422、认证错误均保留。费用已提交锁定或客服作废时仍优先返回原禁止编辑提示。
+
+##### 23.23.5 不重复的成功响应
+
+成功仍HTTP200、code=0，保留原完整业务字段。以下均为响应片段：
+
+新增暂存成功：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":0,"editable":true,"customer_name":"客户A","payables":{"intl_air":{"flight_doc_no":"784-12345678"}}},"msg":"委托信息暂存成功"}
+```
+
+新增保存成功：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":1,"editable":true,"customer_name":"客户A","payables":{"intl_air":{"flight_doc_no":"784-12345678"}}},"msg":"委托信息创建成功"}
+```
+
+修改保存成功仍msg“委托信息更新成功”；修改暂存成功仍msg“委托信息暂存成功”。客服保存仍可编辑，费用保存提交后才锁定，查重不改变23.19的锁定时机。详情、列表、搜索及Excel响应结构不增加字段。
+
+##### 23.23.6 并发、事务及数据库发布
+
+同号客服写入使用数据库事务互斥键，覆盖多个服务进程；业务校验前结束认证/预检查产生的只读快照，获锁后重新查询近30天数据，避免MySQL默认REPEATABLE READ漏掉刚提交的同号运单。查重不锁历史运单或整段日期范围。号码检查、客服写入、费用同步及操作记录处在同一业务事务内；校验/数据库保存失败回滚，不留下运单或号码占用。数据库实际提交后网络响应丢失，仍需按已有id查询结果，不能按网络报错推断数据库已回滚。
+
+范围为上述客服写入接口，费用接口和模板接口不新增查重拦截，不把这条规则扩展为系统所有写入口的永久唯一约束。历史有重复的数据仍保留；近30天之外同号可以重新录入。
+
+**存量库上线前执行** `sql/migration_add_customer_intl_number_duplicate_check.sql`：
+
+1. 创建 `consignment_number_guards` 事务互斥键表；该表仅保存规范化号码的SHA256用于事务行锁，不是运单数据，不会永久占用号码。
+2. 在 `consignment_infos.created_at` 增加 `ix_consignment_infos_created_at` 索引，让服务器只在近30天范围内查JSON号码；不加载全部历史运单到应用内比较。
+
+脚本CREATE TABLE可重跑；ALTER ADD INDEX仅执行一次。执行前可 `SHOW INDEX FROM consignment_infos`，若已有同名索引或以created_at为首列的索引，则跳过脚本中的ALTER。新库通过已更新建表SQL/ORM包含该表和索引，不再重复执行增量加索引。无需新增业务字段，不回填或覆盖financial_data、创建时间、历史状态及已有重复数据。本次没有执行生产SQL。
+
+
+#### 23.24 两台委托信息区“一程重量”、列表回显及Excel（2026-11-11）
+
+客服接单台、费用登记台的委托信息编辑区与列表区展示“一程重量”，两台Excel在委托信息区补列。复用已有 `first_leg_weight`；现有四张业务表、请求模型、保存/暂存、详情、列表及两台同步原本均已支持该字段，本次不新增同义字段，不迁移或改写历史重量。仓库没有前端页面代码，前端需按下方路径增加编辑输入框与列表列；后端补齐Excel导出并完善OpenAPI字段说明。
+
+##### 23.24.1 参数、响应位置与保存规则
+
+| 场景 | 参数或响应路径 | 类型 | 必填 | 说明 |
+|---|---|---|---|---|
+| 客服模板、新增、暂存、修改请求 | `first_leg_weight` | number/null | 否 | JSON body顶层的委托信息一程重量，例如120.5；不是应收一程费用 |
+| 客服模板、单据写入与详情响应 | `data.first_leg_weight` | number/null | — | 数据库存储数值原样回显；历史未填写返回null；0返回数值0 |
+| 客服列表响应 | `data.items[].first_leg_weight` | number/null | — | 每条客服记录自己的重量，前端增加“一程重量”列 |
+| 费用模板、新增、暂存、修改请求 | `consignor_info.first_leg_weight` | number/null | 否 | 位于body的货主委托信息对象内，不接收为费用body顶层字段 |
+| 费用模板、单据写入与详情响应 | `data.consignor_info.first_leg_weight` | number/null | — | 每条费用记录自己的重量，类型、精度同客服 |
+| 费用列表响应 | `data.items[].consignor_info.first_leg_weight` | number/null | — | 前端按该嵌套路径渲染列表列 |
+
+数据库沿用 `decimal(10,2)`，最多两位小数；前端按该存储精度录入和展示。后端不据此计算运费、一程费用、合计、利润或提成，也不将实际重量或计费重量自动写入本字段。`receivables.first_leg_fee`（一程费用）仍为另一个独立字段。
+
+- 客服单据修改：未传 `first_leg_weight` 保留原值；显式null清空；0有效。客服唯一登记模板PUT沿用完整覆盖基础字段语义，未传该字段会置空，不等同于单据的部分修改。
+- 费用模板/单据修改：未传 `consignor_info`、未传其中的 `first_leg_weight` 或显式null，均沿用原逻辑保留已存重量；0可保存覆盖。新建时未填或null保存为空。不因本次导出补列改变原数值字段的null规则。
+- 客服正常保存同步到同ID费用单据；客服暂存只写客服。费用正常保存将该重量回写客服并锁定客服编辑；费用暂存只写费用。客服保存后仍可编辑，费用保存提交后才锁定；查重与作废规则继续有效。
+- 详情、列表、导出均读取本台已保存值；费用暂存后两台重量可以暂时不同，不在读取或导出时强制覆盖。历史已存重量直接显示和导出；历史空值仍为空，不以其他重量回填。
+
+##### 23.24.2 接口范围
+
+下列路径均含 `/api/v1`，继续使用Bearer认证。JSON写入使用 `Content-Type: application/json`，不新增必填参数、独立接口或成功/失败码。
+
+| 方法 | 客服接单台 | 费用登记台 | 本字段的使用 |
+|---|---|---|---|
+| GET、PUT | `/api/v1/customer-service/consignment-registration` | `/api/v1/cost-service/cost-registration` | 已有唯一编辑模板读取/保存支持本字段 |
+| POST | `/api/v1/customer-service/consignments` | `/api/v1/cost-service/consignments` | 已有新增保存接收重量并按原流程同步 |
+| POST | `/api/v1/customer-service/consignments/draft` | `/api/v1/cost-service/consignments/draft` | 已有新增暂存接收重量，只保存本台 |
+| PUT | `/api/v1/customer-service/consignments/{consignment_id}` | `/api/v1/cost-service/consignments/{consignment_id}` | 已有修改保存覆盖重量并同步 |
+| PUT | `/api/v1/customer-service/consignments/{consignment_id}/draft` | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 已有修改暂存覆盖本台重量 |
+| GET | `/api/v1/customer-service/consignments/{consignment_id}` | `/api/v1/cost-service/consignments/{consignment_id}` | 已有详情响应含本字段，供编辑区回显 |
+| GET | `/api/v1/customer-service/consignments` | `/api/v1/cost-service/consignments` | 已有列表items含本字段；本次不新增按一程重量筛选/排序参数 |
+| POST | `/api/v1/customer-service/consignments/export-excel` | `/api/v1/cost-service/consignments/export-excel` | 本次导出增加“一程重量”列，详见23.24.4 |
+
+`consignment_id`仍为path中的数字字符串运单ID，既有未找到、作废、锁定、查重、认证、参数错误等响应不变。写入成功仍HTTP200、code=0；GET成功仍msg“查询成功”。
+
+##### 23.24.3 前端请求和响应示例
+
+客服新增暂存请求：
+
+```http
+POST /api/v1/customer-service/consignments/draft
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"customer_name":"客户A","first_leg_weight":120.5,"actual_weight":180,"chargeable_weight":200,"receivables":{"first_leg_fee":123.45}}
+```
+
+HTTP200响应片段（实际保留原完整业务字段）：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":0,"editable":true,"customer_name":"客户A","first_leg_weight":120.5,"actual_weight":180,"chargeable_weight":200,"receivables":{"first_leg_fee":123.45}},"msg":"委托信息暂存成功"}
+```
+
+客服后续保存使用 `PUT /api/v1/customer-service/consignments/358000000000000001`，例如body `{"first_leg_weight":0}`。修改成功msg“委托信息更新成功”，status=1、editable=true；相同ID费用详情中的 `consignor_info.first_leg_weight` 变为0。未传保持原值；客服body `{"first_leg_weight":null}` 可清空该重量。
+
+费用修改暂存请求：
+
+```http
+PUT /api/v1/cost-service/consignments/358000000000000001/draft
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"consignor_info":{"first_leg_weight":321.09}}
+```
+
+HTTP200响应片段：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":0,"consignor_info":{"first_leg_weight":321.09}},"msg":"单据信息暂存成功"}
+```
+
+费用正常保存使用不带 `/draft` 的PUT，body结构相同；成功msg“单据信息更新成功”，status=1，回写并锁定客服。费用body `{"consignor_info":{"first_leg_weight":null}}` 沿用保留原值，不能作为清空指令；0可覆盖。
+
+列表响应片段（分页字段与完整业务对象保持原定义）：
+
+```json
+{"code":0,"data":{"total":1,"items":[{"id":"358000000000000001","first_leg_weight":120.5}],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+```json
+{"code":0,"data":{"total":1,"items":[{"id":"358000000000000001","consignor_info":{"first_leg_weight":321.09}}],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+##### 23.24.4 Excel位置、数据及SQL
+
+两个导出请求仍为 `{"ids":["358000000000000001"]}`，成功仍HTTP200、xlsx文件二进制，没有JSON包装；单行表头，第2行开始为数据。两台当前第7列G“提单”、第15列O“一程重量”、第16列P“备注”；完整委托段落按23.26节的新顺序排列。
+
+| 导出 | 完整列数/范围 | 一程重量来源 | 应收一程费用的新坐标 |
+|---|---|---|---|
+| 客服 | 94列，A至CP | 本客服记录 `first_leg_weight`，对应 `data.first_leg_weight` | 第32列AF，`receivables.first_leg_fee` |
+| 费用 | 118列，A至DN | 本费用记录 `first_leg_weight`，对应 `data.consignor_info.first_leg_weight` | 第35列AI，`receivables.first_leg_fee` |
+
+历史120.5直接输出数值120.5；0输出数值0；null/未填写输出空单元格。不写公式、不重新计算、不修改单据或操作记录。完整列顺序及所有后续字段坐标已同步23.11.9节。
+
+**本字段无需执行新增迁移SQL**：`consignment_registrations`、`consignment_infos`、`cost_registrations`、`cost_consignments` 及既有两台建表SQL均已有可空 `first_leg_weight decimal(10,2)`。可在发布前只读核对：
+
+```sql
+SHOW COLUMNS FROM `consignment_registrations` LIKE 'first_leg_weight';
+SHOW COLUMNS FROM `consignment_infos` LIKE 'first_leg_weight';
+SHOW COLUMNS FROM `cost_registrations` LIKE 'first_leg_weight';
+SHOW COLUMNS FROM `cost_consignments` LIKE 'first_leg_weight';
+```
+
+四条各应返回对应的decimal(10,2)、可空列；不要重复ADD COLUMN或回填历史重量。本次未执行生产数据库操作。此前国际空运主单号查重的独立迁移仍按23.23节执行，不能用本字段“无需迁移”替代其他版本的发布步骤。
+
+
+#### 23.25 两台委托航班号、国际空运联动及Excel（2026-11-11）
+
+客服接单台、费用登记台的委托编辑区和列表展示“航班号”，位置在委托“航班日期”之后。复用现有基础字段 `flight_no`，两台Excel新增同名列。本次补齐客服本台国际空运快照及费用本台国际空运航班号的写入联动，覆盖模板、新增、暂存和保存。基础字段及国际空运字段已有数据库列，不新增业务字段，不批量改写历史数据。
+
+##### 23.25.1 请求和返回字段
+
+| 场景 | JSON路径 | 类型 | 必填 | 描述 |
+|---|---|---|---|---|
+| 客服模板、新增、暂存、修改请求 | `flight_no` | string/null | 否 | body顶层委托航班号，例如CZ1001；填写后同步本台国际空运航班号 |
+| 客服详情及写入响应 | `data.flight_no` | string | — | 委托航班号，数据库未填/null沿用空字符串返回 |
+| 客服列表 | `data.items[].flight_no` | string | — | 前端委托列表新增“航班号”列读取位置 |
+| 费用模板、新增、暂存、修改请求 | `consignor_info.flight_no` | string/null | 否 | body货主委托分组中的航班号；不新增费用body顶层flight_no参数 |
+| 费用详情及写入响应 | `data.consignor_info.flight_no` | string | — | 委托航班号，数据库未填/null沿用空字符串返回 |
+| 费用列表 | `data.items[].consignor_info.flight_no` | string | — | 前端费用列表新增“航班号”列读取位置 |
+| 两台国际空运请求/返回 | `payables.intl_air.flight_no` / `data.payables.intl_air.flight_no` | string/null | 否 | 同步目标；列表返回在 `data.items[].payables.intl_air.flight_no` |
+
+沿用已有varchar(50)存储，前端按字段长度录入；不增加新的必填约束或改变错误响应格式。委托主单号flight_doc_no、航班日期flight_date、国内空运航班号及国际空运主单号均保持各自含义，不因本次航班号联动互相覆盖。
+
+##### 23.25.2 联动、优先级及部分更新
+
+1. **本次明确填写委托航班号时，委托值优先。** 客服请求 `flight_no="CZ1001"` 或费用请求 `consignor_info.flight_no="CZ1001"`，本台委托及国际空运航班号都保存为CZ1001。同一body还携带不同的 `payables.intl_air.flight_no` 时，仍以委托值为准，避免旧页面分组值把刚填写的委托值覆盖。
+2. **空字符串也是明确输入。** 委托传 `""` 时，委托和本台国际空运航班号一并清空为 `""`；同次国际空运旧值或null均不能覆盖该清空。只存原始字符串，不擅自拆分、转换大小写或清洗航班号。
+3. **未传或显式null不触发委托联动。** 单据修改未传委托航班号或传null，沿用原“保留委托原值”规则；本次仅改国际空运航班号时按原分组规则保存，允许与委托值不同。即使前端重复传入与当前值相同的非null委托值，也触发同步；如只希望修改国际空运，请不要同时传委托字段。
+4. 客服唯一模板PUT仍完整覆盖基础字段：未传/null会将模板委托航班号置null，但不因该空值触发国际空运同步；国际分组按原快照合并规则处理。费用模板PUT仍按原部分更新语义，未传/null保留。前端不要将模板PUT与列表单据修改PUT混用。
+5. 客服模板和客服暂存均同步本台国际空运快照；客服暂存不流转费用。客服正常保存仍同步同ID费用的委托和国际空运字段，费用仍待提交。费用模板和费用暂存同步本台国际空运；费用暂存不回写客服。费用正常保存将两处实际保存值回写客服并锁定客服编辑，后续费用暂存不解锁。
+6. 只在写入时处理本次输入；GET详情、列表、Excel不补值、不做两字段强制一致。历史两处航班号不同或一处为空仍分别展示，未传委托的修改不会触发新的强制联动；客服保存原有国际空运预填规则仍保留。其他重量、日期、费用、标签、查重、作废、权限和操作记录规则不变。
+
+**前端即时联动**：仓库没有前端页面代码，前端需在两台增加委托航班号输入框/列表列，并在该输入框变化时同步表单的 `payables.intl_air.flight_no`。后端在上述写入接口做同样的保存兜底；仅调用GET无法实现用户键入时的实时页面联动。
+
+##### 23.25.3 涉及接口
+
+全部使用原Bearer认证和JSON body，不新增URL。以下既有接口新增上述委托航班号联动行为：
+
+| 方法 | 客服接口 | 费用接口 |
+|---|---|---|
+| PUT | `/api/v1/customer-service/consignment-registration` | `/api/v1/cost-service/cost-registration` |
+| POST | `/api/v1/customer-service/consignments` | `/api/v1/cost-service/consignments` |
+| POST | `/api/v1/customer-service/consignments/draft` | `/api/v1/cost-service/consignments/draft` |
+| PUT | `/api/v1/customer-service/consignments/{consignment_id}` | `/api/v1/cost-service/consignments/{consignment_id}` |
+| PUT | `/api/v1/customer-service/consignments/{consignment_id}/draft` | `/api/v1/cost-service/consignments/{consignment_id}/draft` |
+
+原GET模板、`GET /api/v1/{customer-service或cost-service}/consignments/{consignment_id}` 详情和不带ID的GET列表，继续返回上述既有字段及相同分页结构。新增/暂存的请求字段位置相同，数字字符串path参数consignment_id沿用原规则。锁定/作废409、近30天国际空运主单号重复409、找不到404、非法数字ID400、认证与类型校验错误均不变。
+
+两个 `POST /api/v1/customer-service/consignments/export-excel`、`POST /api/v1/cost-service/consignments/export-excel` 变更Excel布局，见23.25.5。
+
+##### 23.25.4 请求与响应示例
+
+客服新增暂存，同次国际空运值不同时委托值优先：
+
+```http
+POST /api/v1/customer-service/consignments/draft
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"customer_name":"客户A","flight_no":"CZ1001","payables":{"intl_air":{"flight_no":"旧国际航班号"}}}
+```
+
+HTTP200响应片段；实际保留原完整业务字段：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":0,"editable":true,"flight_no":"CZ1001","payables":{"intl_air":{"flight_no":"CZ1001"}}},"msg":"委托信息暂存成功"}
+```
+
+客服后续保存使用 `PUT /api/v1/customer-service/consignments/358000000000000001`，body可为 `{"flight_no":"CZ1002"}`；成功status=1、editable=true、msg“委托信息更新成功”，本台及费用两处航班号均变为CZ1002。
+
+费用修改暂存：
+
+```http
+PUT /api/v1/cost-service/consignments/358000000000000001/draft
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"consignor_info":{"flight_no":"CZ1003"},"payables":{"intl_air":{"flight_no":"CZ1002"}}}
+```
+
+HTTP200响应片段：
+
+```json
+{"code":0,"data":{"id":"358000000000000001","status":0,"consignor_info":{"flight_no":"CZ1003"},"payables":{"intl_air":{"flight_no":"CZ1003"}}},"msg":"单据信息暂存成功"}
+```
+
+该费用暂存不改客服原值或编辑权限。费用使用不带 `/draft` 的PUT正常保存时，两处实际值回写客服并锁定，成功status=1、msg“单据信息更新成功”。新建保存成功msg仍分别为“委托信息创建成功”和“单据信息创建成功”；暂存成功msg沿用原定义。
+
+客服和费用列表HTTP200响应片段分别为：
+
+```json
+{"code":0,"data":{"total":1,"items":[{"id":"358000000000000001","flight_no":"CZ1002","payables":{"intl_air":{"flight_no":"CZ1002"}}}],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+```json
+{"code":0,"data":{"total":1,"items":[{"id":"358000000000000001","consignor_info":{"flight_no":"CZ1003"},"payables":{"intl_air":{"flight_no":"CZ1003"}}}],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+##### 23.25.5 Excel、历史数据和SQL
+
+两台第8列H“航班日期”、**第9列I“航班号”**、第10列J“主单号”；第9列读取本台基础委托flight_no。保留国际空运与国内空运原“航班号”列，各读自身分组字段；不按同名表头去重，不用国际空运值替代历史委托值。
+
+| 导出 | 总列数/范围 | 委托航班号 | 国际空运航班号 | 国内空运航班号 |
+|---|---|---|---|---|
+| 客服 | 94，A至CP | 第9列I，`flight_no` | 第37列AK，`payables.intl_air.flight_no` | 第87列CI，`payables.dom_air.flight_no` |
+| 费用 | 118，A至DN | 第9列I，`consignor_info.flight_no` | 第41列AO，`payables.intl_air.flight_no` | 第99列CU，`payables.dom_air.flight_no` |
+
+委托段落按23.26节的新顺序排列，单行表头、数据从第2行开始。委托“一程重量”顺延至第15列O；应收“一程费用”顺延至客服第32列AF、费用第35列AI，完整列顺序及所有列号已更新23.11.9节。历史已存委托航班号直接回显和导出，未填为空单元格，不从国际空运/国内空运回填。Excel导出请求仍 `{"ids":["358000000000000001"]}`，成功HTTP200、xlsx二进制，无JSON包装；导出不修改单据、状态或操作记录。
+
+**无需新增字段迁移SQL**。四张既有表均已有基础 `flight_no varchar(50)`，费用模板和单据表也已有 `pay_intl_air_flight_no varchar(50)`；客服国际空运仍存financial_data快照。可只读核对：
+
+```sql
+SHOW COLUMNS FROM `consignment_registrations` LIKE 'flight_no';
+SHOW COLUMNS FROM `consignment_infos` LIKE 'flight_no';
+SHOW COLUMNS FROM `cost_registrations` LIKE 'flight_no';
+SHOW COLUMNS FROM `cost_consignments` LIKE 'flight_no';
+SHOW COLUMNS FROM `cost_registrations` LIKE 'pay_intl_air_flight_no';
+SHOW COLUMNS FROM `cost_consignments` LIKE 'pay_intl_air_flight_no';
+```
+
+本次不重复ADD COLUMN、不回填历史差异、不执行生产数据库操作。此前版本独立迁移仍按各自发布说明执行。
+
+
+#### 23.26 两台Excel委托信息段落列顺序调整（2026-11-11）
+
+客服接单台、费用登记台导出Excel的前16列统一按本节排列。产品表中的空白项/`<br>`不作为一列，“序号”仍在最前。仅重新排列委托信息字段，列数不增加：客服仍94列A至CP、费用仍118列A至DN。第17列起的应收、各应付分组、费用汇总等字段及顺序保持当前完整列契约；23.11.9的两张完整映射表已同步更新。
+
+##### 23.26.1 接口、请求及响应
+
+| 方法 | 完整接口路径 | 变化 |
+|---|---|---|
+| POST | `/api/v1/customer-service/consignments/export-excel` | xlsx响应中委托信息前16列重排，字段对应数据一起移动 |
+| POST | `/api/v1/cost-service/consignments/export-excel` | 与客服采用相同的委托信息列顺序 |
+
+沿用 `Authorization: Bearer <token>` 和 `Content-Type: application/json`。请求仍为：
+
+```http
+POST /api/v1/customer-service/consignments/export-excel
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"ids":["358000000000000001","358000000000000002"]}
+```
+
+费用导出使用费用接口，body结构相同。
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+|---|---|---|---|---|
+| `ids` | JSON body顶层 | array of string | 是 | 选中的数字字符串运单ID数组，例如上例；不是内部单据ID。不新增查询/排序参数。非法参数继续沿用原400/422等响应 |
+
+成功仍为HTTP200的xlsx二进制文件，**没有JSON code/data/msg包装，也不是JSON数组**。响应头示例：
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+Content-Disposition: attachment; filename=consignment_export_20261111103000.xlsx
+Access-Control-Expose-Headers: Content-Disposition
+```
+
+费用文件名前缀仍为 `cost_consignment_export_`，实际时间由服务端生成。前端继续按blob下载，不需要构造本次列顺序；认证、参数错误等失败响应仍为原JSON格式。
+
+##### 23.26.2 两台统一的委托信息前16列
+
+| 列号 | Excel列 | 表头 | 客服详情data来源 | 费用详情data来源 |
+|---|---|---|---|---|
+| 1 | A | 序号 | 按最终导出行顺序从1生成 | 同左 |
+| 2 | B | 状态 | `status` | `status` |
+| 3 | C | 进仓日期 | `warehouse_entry_date` | `consignor_info.warehouse_entry_date` |
+| 4 | D | 客户名称 | `customer_name` | `consignor_info.customer_name` |
+| 5 | E | 始发站-目的站 | `origin_destination` | `consignor_info.origin_destination` |
+| 6 | F | 报关 | `customs_declaration` | `consignor_info.customs_declaration` |
+| 7 | G | 提单 | `bill_of_lading` | `consignor_info.bill_of_lading` |
+| 8 | H | 航班日期 | `flight_date` | `consignor_info.flight_date` |
+| 9 | I | 航班号 | `flight_no` | `consignor_info.flight_no` |
+| 10 | J | 主单号 | `flight_doc_no` | `consignor_info.flight_doc_no` |
+| 11 | K | 件数 | `pieces` | `consignor_info.pieces` |
+| 12 | L | 实际重量 | `actual_weight` | `consignor_info.actual_weight` |
+| 13 | M | 计费重量 | `chargeable_weight` | `consignor_info.chargeable_weight` |
+| 14 | N | 体积 | `volume` | `consignor_info.volume` |
+| 15 | O | 一程重量 | `first_leg_weight` | `consignor_info.first_leg_weight` |
+| 16 | P | 备注 | `remark` | `consignor_info.remark` |
+
+示例文件第1行前16个单元格：
+
+```text
+序号 | 状态 | 进仓日期 | 客户名称 | 始发站-目的站 | 报关 | 提单 | 航班日期 | 航班号 | 主单号 | 件数 | 实际重量 | 计费重量 | 体积 | 一程重量 | 备注
+```
+
+与之对应的第2行示例：
+
+```text
+1 | 已提交 | 2026-09-13 | 客户A | SZX-NRT | 1买单+3单证 | 直单 | 2026-09-16 | MF809 | 731-90064074 | 36 | 123.25 | 125 | 1.25 | 120.5 | 备注内容
+```
+
+##### 23.26.3 保留的业务行为与部署
+
+仍只有一行表头，第2行起为数据，无新增空白列或分组标题。表头和对应取值共用有序定义，两台均按上述顺序输出，避免只移动表头造成串列。状态继续显示未提交/已提交/作废，提单按原编码转中文；日期显示YYYY-MM-DD，数值0保留，未填留空。
+
+本次只重排列，不调整记录的导出排序：客服按原制单时间倒序，费用按委托航班日期升序、空日期最后、同日ID升序。两台读取各自已存值，委托与国际/国内空运的航班号、日期继续各取所属字段；财务各分组坐标不变，一程费用仍为客服第32列AF、费用第35列AI。
+
+保存、暂存、两台同步、委托航班号联动、编辑锁定、主单号查重、详情/列表及其筛选条件均不因本次Excel列重排改变。导出过程不改写历史单据或操作记录，**无需新增数据库迁移SQL**。此前版本独立迁移仍按各自说明执行；本次未执行生产数据库操作。

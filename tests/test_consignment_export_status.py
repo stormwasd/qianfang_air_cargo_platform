@@ -49,8 +49,8 @@ class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
             "remark": "remark",
         }
         expected_values = [
-            "customer", "2026-09-13", "2026-09-16", "731-90064074", "SZX-NRT", 36,
-            123.25, 125, 1.25, "customs", "直单", "remark",
+            "2026-09-13", "customer", "SZX-NRT", "customs", "直单",
+            "2026-09-16", "MF809", "731-90064074", 36, 123.25, 125, 1.25, 120.5, "remark",
         ]
         for endpoint, request_type, model, expected_headers, status in (
             (export_consignments_to_excel, ExportExcelRequest, ConsignmentInfo, EXPECTED_CUSTOMER_HEADERS, 1),
@@ -68,14 +68,14 @@ class ConsignmentExportStatusTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(sheet.cell(3, 1).value, 2)
                 self.assertEqual(sheet.cell(2, 2).value, "已提交" if status == 1 else "未提交")
                 self.assertEqual(sheet.cell(3, 2).value, "未提交" if status == 1 else "已提交")
-                self.assertEqual([sheet.cell(2, c).value for c in range(3, 15)], expected_values)
+                self.assertEqual([sheet.cell(2, c).value for c in range(3, 17)], expected_values)
                 self.assertEqual(sheet.cell(2, 1).alignment.horizontal, "center")
                 self.assertEqual(record.status, status)
 
     async def test_empty_result_still_exports_status_headers(self):
         for endpoint, request_type, column_count, header_rows in (
-            (export_consignments_to_excel, ExportExcelRequest, 91, 1),
-            (export_cost_consignments_to_excel, CostExportExcelRequest, 115, 1),
+            (export_consignments_to_excel, ExportExcelRequest, 94, 1),
+            (export_cost_consignments_to_excel, CostExportExcelRequest, 118, 1),
         ):
             with self.subTest(endpoint=endpoint.__name__):
                 sheet = await self.export(endpoint, request_type, [])

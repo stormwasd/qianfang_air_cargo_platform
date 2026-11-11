@@ -7,6 +7,7 @@ from app.models.dict_option import DictOption
 from app.models.customer_service import ConsignmentRegistration, ConsignmentInfo
 from app.models.cost_service import CostRegistration, CostConsignment
 from app.models.consignment_operation_log import ConsignmentOperationLog
+from app.models.consignment_number_guard import ConsignmentNumberGuard
 
 __all__ = [
     "User",
@@ -20,6 +21,7 @@ __all__ = [
     "CostRegistration",
     "CostConsignment",
     "ConsignmentOperationLog",
+    "ConsignmentNumberGuard",
 ]
 
 

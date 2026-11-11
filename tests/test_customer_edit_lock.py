@@ -165,7 +165,7 @@ class CustomerEditLockTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post("/customer/consignments/export-excel", json={"ids": ["2"]})
         workbook = load_workbook(io.BytesIO(response.content))
         self.addCleanup(workbook.close)
-        self.assertEqual(workbook.active.max_column, 91)
+        self.assertEqual(workbook.active.max_column, 94)
         self.assertEqual(workbook.active["B2"].value, "已提交")
         self.assertNotIn("editable", [c.value for c in workbook.active[1]])
 

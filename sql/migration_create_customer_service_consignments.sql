@@ -58,5 +58,12 @@ CREATE TABLE IF NOT EXISTS `consignment_infos` (
     KEY `idx_create_time` (`create_time`),
     KEY `idx_warehouse_entry_date` (`warehouse_entry_date`),
     KEY `idx_customer_name` (`customer_name`),
+    KEY `ix_consignment_infos_created_at` (`created_at`),
     KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='委托信息表';
+
+-- 同号校验写入共享事务行锁；不作为业务运单的永久唯一约束。
+CREATE TABLE IF NOT EXISTS `consignment_number_guards` (
+    `number_hash` varchar(64) NOT NULL COMMENT '规范化国际空运主单号的SHA256，用于事务行锁',
+    PRIMARY KEY (`number_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='客服国际空运主单号查重事务互斥键';

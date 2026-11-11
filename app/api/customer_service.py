@@ -43,8 +43,16 @@ from app.services.consignment_tags import apply_consignment_tags, format_consign
 from app.services.consignment_financial import (
     merge_financial_payload, format_financial_data, sync_financial_to_cost,
 )
+from app.services.consignment_duplicate import ensure_customer_intl_number_available, submitted_intl_number
 
 router = APIRouter()
+
+_INTL_NUMBER_CONFLICT_RESPONSES = {
+    409: {
+        "description": "近30天国际空运主单号重复；修改接口也可能因单据锁定或作废返回409",
+        "content": {"application/json": {"example": {"code": 409, "data": None, "msg": "该运单已存在"}}},
+    },
+}
 
 
 # 客服保存时，除同步费用登记台的货主委托信息外，还需为费用人员预填
@@ -250,7 +258,8 @@ def _sync_consignment_to_cost(db: Session, record: ConsignmentInfo) -> None:
     for source_field, target_field in _COST_INTL_AIR_SYNC_FIELD_MAP:
         setattr(cost_record, target_field, getattr(record, source_field))
 
-    # 客服显式填写的国际空运数据优先于旧版顶层字段预填。
+    # 客服显式填写的国际空运数据优先于旧版字段预填；本次委托航班号
+    # 已在录入快照时同步到国际空运，按委托航班号联动规则处理。
     sync_financial_to_cost(record, cost_record, _parse_date)
 
     # 客服提交只完成客服环节；费用登记台仍需费用人员核对并保存。
@@ -263,6 +272,19 @@ def _ensure_customer_consignment_editable(record: ConsignmentInfo) -> None:
         raise ConflictException("已作废的委托信息不能暂存或保存")
     if bool(getattr(record, "edit_locked", False)):
         raise ConflictException("费用登记台已保存提交，客服委托信息不能修改或暂存，请在费用登记台维护")
+
+
+def _ensure_updated_intl_number_available(db: Session, payload: ConsignmentBase, record_id: int) -> None:
+    if not submitted_intl_number(payload):
+        return
+    # 保留不存在/已锁定/作废的原错误优先级；查重仍须在获取单据行锁前执行。
+    current = db.query(ConsignmentInfo.id, ConsignmentInfo.status, ConsignmentInfo.edit_locked).filter(
+        ConsignmentInfo.id == record_id,
+    ).first()
+    if current is None:
+        raise NotFoundException(f"委托信息不存在 (ID: {record_id})")
+    _ensure_customer_consignment_editable(current)
+    ensure_customer_intl_number_available(db, payload, exclude_id=record_id)
 
 
 # ============================================================================
@@ -313,7 +335,7 @@ async def save_consignment_registration(
 # 2. 委托信息-新增
 # ============================================================================
 
-@router.post("/consignments", summary="委托信息-新增")
+@router.post("/consignments", summary="委托信息-新增", responses=_INTL_NUMBER_CONFLICT_RESPONSES)
 async def create_consignment(
     payload: ConsignmentInfoCreate,
     current_user: User = Depends(get_current_active_user),
@@ -322,6 +344,7 @@ async def create_consignment(
     """
     保存新增客服单据并同步费用草稿；客服仍可编辑，费用保存提交后锁定。
     """
+    ensure_customer_intl_number_available(db, payload)
     new_record = ConsignmentInfo(
         creator_id=current_user.id,
         status=ConsignmentSubmissionStatus.SUBMITTED.value,
@@ -342,13 +365,14 @@ async def create_consignment(
     return success_response(data=_format_record_dict(new_record), msg="委托信息创建成功")
 
 
-@router.post("/consignments/draft", summary="委托信息-暂存新增")
+@router.post("/consignments/draft", summary="委托信息-暂存新增", responses=_INTL_NUMBER_CONFLICT_RESPONSES)
 async def create_consignment_draft(
     payload: ConsignmentInfoCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """新增未提交委托，仅保存到客服接单台，不同步费用登记台。"""
+    ensure_customer_intl_number_available(db, payload)
     new_record = ConsignmentInfo(
         creator_id=current_user.id,
         status=ConsignmentSubmissionStatus.UNSUBMITTED.value,
@@ -548,7 +572,7 @@ async def get_consignment_operation_logs(
     return success_response(data=result.model_dump(), msg="查询成功")
 
 
-@router.put("/consignments/{consignment_id}", summary="委托信息-修改")
+@router.put("/consignments/{consignment_id}", summary="委托信息-修改", responses=_INTL_NUMBER_CONFLICT_RESPONSES)
 async def update_consignment(
     payload: ConsignmentInfoUpdate,
     consignment_id: str = Path(..., description="委托信息ID"),
@@ -563,6 +587,7 @@ async def update_consignment(
     except ValueError:
         raise BadRequestException("consignment_id 必须为合法数字格式")
         
+    _ensure_updated_intl_number_available(db, payload, c_id)
     record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).with_for_update().first()
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
@@ -582,7 +607,7 @@ async def update_consignment(
     return success_response(data=_format_record_dict(record), msg="委托信息更新成功")
 
 
-@router.put("/consignments/{consignment_id}/draft", summary="委托信息-暂存修改")
+@router.put("/consignments/{consignment_id}/draft", summary="委托信息-暂存修改", responses=_INTL_NUMBER_CONFLICT_RESPONSES)
 async def update_consignment_draft(
     payload: ConsignmentInfoUpdate,
     consignment_id: str = Path(..., description="委托信息ID"),
@@ -595,6 +620,7 @@ async def update_consignment_draft(
     except ValueError:
         raise BadRequestException("consignment_id 必须为合法数字格式")
 
+    _ensure_updated_intl_number_available(db, payload, c_id)
     record = db.query(ConsignmentInfo).filter(ConsignmentInfo.id == c_id).with_for_update().first()
     if not record:
         raise NotFoundException(f"委托信息不存在 (ID: {consignment_id})")
@@ -750,7 +776,7 @@ async def export_consignments_to_excel(
 ):
     """
     选中委托信息列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    单行表头，共 91 列，首列序号、第二列状态，第5列为委托航班日期，数据从第 2 行开始。
+    单行表头，共 94 列，首列序号、第二列状态，第8列为委托航班日期，第9列为委托航班号，第15列为一程重量，数据从第 2 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """

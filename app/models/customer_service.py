@@ -64,5 +64,5 @@ class ConsignmentInfo(Base):
     edit_locked = Column(Boolean, nullable=False, default=False, server_default=false(), comment="费用保存提交后锁定客服编辑，不随费用暂存解除")
     creator_id = Column(BigInteger, nullable=True, comment="创建者ID")
     financial_data = Column(JSON, nullable=True, comment="客服录入的应收及应付信息，保留显式录入字段")
-    created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
+    created_at = Column(DateTime(timezone=True), default=get_china_now, index=True, nullable=False, comment="创建时间")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")

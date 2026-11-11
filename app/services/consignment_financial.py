@@ -60,6 +60,12 @@ def merge_financial_payload(record, payload):
 
     patch = payload.model_dump(mode="json", exclude_unset=True, include={"receivables", "payables"})
     merge(data, patch)
+    # 本次填写委托航班号时，同步本台国际空运快照；包括暂存及空字符串清空。
+    # 未传/null保持原行为，不在读取历史记录时补值或覆盖国际空运的单独编辑。
+    if payload.flight_no is not None:
+        payables = data.get("payables") or {}
+        payables["intl_air"] = {**(payables.get("intl_air") or {}), "flight_no": payload.flight_no}
+        data["payables"] = payables
     record.financial_data = data
 
 

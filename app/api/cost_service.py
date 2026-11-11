@@ -487,6 +487,11 @@ def _apply_cost_payload(
         record.profit = op.profit if op.profit is not None else record.profit
         record.profit_margin = op.profit_margin if op.profit_margin is not None else record.profit_margin
 
+    # 委托区本次明确填写的航班号优先于同一请求的国际空运航班号。
+    # 放在分组赋值之后，确保模板、暂存、保存均采用同一同步规则。
+    if payload.consignor_info is not None and payload.consignor_info.flight_no is not None:
+        record.pay_intl_air_flight_no = payload.consignor_info.flight_no
+
 
 def _section(payload, path):
     section = payload
@@ -1085,7 +1090,7 @@ async def export_cost_consignments_to_excel(
 ):
     """
     选中费用单据列表中的某些项导出为 Excel (.xlsx) 表格文件。
-    导出文件采用单行表头，共 115 列，首列为序号、第二列为状态，第5列为委托航班日期，数据从第 2 行开始。
+    导出文件采用单行表头，共 118 列，首列为序号、第二列为状态，第8列为委托航班日期，第9列为委托航班号，第15列为一程重量，数据从第 2 行开始。
     
     传入选中的 ID 数组：`{"ids": ["123", "456"]}`
     """
