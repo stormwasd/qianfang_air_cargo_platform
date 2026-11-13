@@ -37,7 +37,17 @@ class ChinaSouthernAirDirectChangeService:
     FORWARD_URL = BASE_URL + "forward"
     CHANGE_PRICE_URL = BASE_URL + "queryChangePrice"
     CALCULATE_CHARGE_URL = BASE_URL + "calculateCharge"
+    SAVE_CONTACT_URL = "https://cargo.csair.com/order-center/b2e-order/b2eOrder/saveContactAndLiveAnimals"
     LIVING_ANIMAL_URL = "https://cargo.csair.com/order-center/b2e-order/b2eOrder/querylivingAnimalProofByorderId"
+    CONTACT_FIELDS = (
+        "shipperName", "shipperMobile", "shipperState", "shipperCity", "shipperDistrict",
+        "shipperAddress", "shipperCountryCode", "consigneeName", "consigneeMobile",
+        "consigneeAddress", "consigneeCountryCode", "selfPickUp",
+    )
+    REQUIRED_CONTACT_FIELDS = (
+        "consigneeName", "consigneeMobile", "shipperName", "shipperMobile",
+        "shipperState", "shipperCity", "shipperDistrict", "shipperAddress",
+    )
     GOODS_NAME_CHECK_URL = (
         "https://cargo.csair.com/order-center/b2e-support/goodsNameCheck/allowedGoodsNameCheck"
     )
@@ -141,6 +151,62 @@ class ChinaSouthernAirDirectChangeService:
         if not isinstance(value, dict) or not value:
             raise ChinaSouthernAirDirectChangeError(f"南航未返回有效{label}", stage=stage)
         return value
+
+    @classmethod
+    def _has_complete_contacts(cls, contact: Any) -> bool:
+        return isinstance(contact, dict) and all(
+            str(contact.get(key) or "").strip() for key in cls.REQUIRED_CONTACT_FIELDS
+        )
+
+    async def _query_change_context(self, client: httpx.AsyncClient, *, headers: dict,
+                                    order_id: str, prefix: str, suffix: str, agent: str,
+                                    stage: str = "forward_change") -> tuple[dict, dict, dict]:
+        forward = self._required_mapping(await self._post(
+            client, self.FORWARD_URL, headers=headers, payload={"orderId": order_id}, stage=stage,
+        ), stage, "变更订单上下文")
+        payload = deepcopy(forward)
+        total = self._required_mapping(payload.get("totalOrderDetail"), stage, "订单详情")
+        detail = self._required_mapping(total.get("orderDetailDto"), stage, "订单明细")
+        if (detail.get("orderId") != order_id or str(detail.get("awbPrefix")) != prefix
+                or str(detail.get("awbNo")) != suffix or detail.get("agentCode") != agent
+                or detail.get("version") is None):
+            raise ChinaSouthernAirDirectChangeError("南航订单编号、主单号、代理或版本不匹配", stage=stage)
+        flights = detail.get("orderDetailFlightInfo")
+        if not isinstance(flights, list) or len(flights) != 1:
+            raise ChinaSouthernAirDirectChangeError("当前表单仅支持单航段修改数据开单，请使用 RPA 处理多航段订单", stage=stage)
+        if not isinstance(flights[0], dict) or flights[0].get("bookId") is None or flights[0].get("segmentId") is None:
+            raise ChinaSouthernAirDirectChangeError("南航订单缺少航段标识", stage=stage)
+        contact = detail.get("orderShipmentContact")
+        if contact is not None and not isinstance(contact, dict):
+            raise ChinaSouthernAirDirectChangeError("南航订单联系人格式异常", stage=stage)
+        return payload, total, detail
+
+    async def _save_missing_contacts(self, client: httpx.AsyncClient, *, headers: dict,
+                                     order_id: str, existing: dict | None,
+                                     values: dict, config: dict) -> None:
+        """只补联系人，不提交变更；保留原司机、通知人和证件信息。"""
+        defaults = Order._build_order_payload(values, config, [])["orderInfo"]["orderShipmentContact"]
+        contact = {**deepcopy(defaults), **deepcopy(existing or {})}
+        contact.update({key: defaults[key] for key in self.CONTACT_FIELDS})
+        contact["orderId"] = order_id
+        contact_headers = {**headers, "Referer": "https://cargo.csair.com/tangb2gweb/edit-order-contacts?" + urlencode({
+            "orderId": order_id, "intDom": 0, "opModule": "填写联系人入口2",
+        })}
+        try:
+            result = await self._post(
+                client, self.SAVE_CONTACT_URL, headers=contact_headers,
+                payload={"orderShipmentContact": contact}, stage="save_change_contacts",
+            )
+        except ChinaSouthernAirDirectChangeError as exc:
+            # 保存可能已经生效，但最终开单尚未提交；下次执行会重新查询实际联系人。
+            raise ChinaSouthernAirDirectChangeError(
+                "南航联系人保存失败，尚未提交开单：" + str(exc),
+                stage="save_change_contacts", details=exc.details,
+            ) from exc
+        if not isinstance(result, dict) or result.get("MESSAGE") != "保存成功":
+            raise ChinaSouthernAirDirectChangeError(
+                "南航联系人保存未确认成功，尚未提交开单，请核查联系人后重试", stage="save_change_contacts",
+            )
 
     @staticmethod
     def _select_price(result: dict, product: str) -> dict:
@@ -270,16 +336,21 @@ class ChinaSouthernAirDirectChangeService:
         order_id = active[0]["orderId"]
         headers = self._headers(cleaned_token, agent, order_id, config.get("cookie"))
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
-            forward = self._required_mapping(await self._post(
-                client, self.FORWARD_URL, headers=headers, payload={"orderId": order_id}, stage="forward_change",
-            ), "forward_change", "变更订单上下文")
-            payload = deepcopy(forward)
-            total = self._required_mapping(payload.get("totalOrderDetail"), "forward_change", "订单详情")
-            detail = self._required_mapping(total.get("orderDetailDto"), "forward_change", "订单明细")
-            if (detail.get("orderId") != order_id or str(detail.get("awbPrefix")) != prefix
-                    or str(detail.get("awbNo")) != suffix or detail.get("agentCode") != agent
-                    or detail.get("version") is None):
-                raise ChinaSouthernAirDirectChangeError("南航订单编号、主单号、代理或版本不匹配", stage="forward_change")
+            context_args = {"headers": headers, "order_id": order_id, "prefix": prefix, "suffix": suffix, "agent": agent}
+            payload, total, detail = await self._query_change_context(client, **context_args)
+            if not self._has_complete_contacts(detail.get("orderShipmentContact")):
+                await self._save_missing_contacts(
+                    client, headers=headers, order_id=order_id, existing=detail.get("orderShipmentContact"),
+                    values=values, config=config,
+                )
+                # 保存会影响原订单状态/版本，不能沿用保存前的上下文计费或提交。
+                payload, total, detail = await self._query_change_context(
+                    client, **context_args, stage="refresh_change_context",
+                )
+                if not self._has_complete_contacts(detail.get("orderShipmentContact")):
+                    raise ChinaSouthernAirDirectChangeError(
+                        "南航保存后联系人信息仍不完整，尚未提交开单，请核查后重试", stage="verify_change_contacts",
+                    )
             animal_proof = await self._post(
                 client, self.LIVING_ANIMAL_URL, headers=headers, payload={"orderId": order_id}, stage="query_living_animal",
             )
@@ -291,13 +362,8 @@ class ChinaSouthernAirDirectChangeService:
                     {key: proof.get(f"{key}{i}") for key in ("packageNum", "animalTypeName", "animalNum", "containerNo")}
                     for i in range(1, 5) if proof.get(f"animalTypeName{i}")
                 ]
-            original_flights = detail.get("orderDetailFlightInfo")
-            if not isinstance(original_flights, list) or len(original_flights) != 1:
-                raise ChinaSouthernAirDirectChangeError("当前表单仅支持单航段修改数据开单，请使用 RPA 处理多航段订单", stage="forward_change")
-            old_flight = original_flights[0]
+            old_flight = detail["orderDetailFlightInfo"][0]
             dimensions = deepcopy(detail.get("dimensions") or [])
-            if old_flight.get("bookId") is None or old_flight.get("segmentId") is None:
-                raise ChinaSouthernAirDirectChangeError("南航订单缺少航段标识", stage="forward_change")
             memo_values = {**values, **{
                 key: form.get("flight_info", {}).get(key) or values.get("booking_remark") or ""
                 for key in ("booking_remark_wide", "booking_remark_narrow")
@@ -391,9 +457,7 @@ class ChinaSouthernAirDirectChangeService:
             extra = total.get("extendsShipmentInfo") or {}
             other = deepcopy(detail.get("orderShipmentContact") or {})
             # 表单只修改其承载的联系人字段，其余证件、通知人、司机信息保留原订单值。
-            for key in ("shipperName", "shipperMobile", "shipperState", "shipperCity", "shipperDistrict",
-                        "shipperAddress", "shipperCountryCode", "consigneeName", "consigneeMobile",
-                        "consigneeAddress", "consigneeCountryCode", "selfPickUp"):
+            for key in self.CONTACT_FIELDS:
                 other[key] = contacts[key]
             other.update(
                 agentCode=agent, flgihtDep=values["origin_station"], flightDest=values["destination"],

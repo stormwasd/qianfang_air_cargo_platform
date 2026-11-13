@@ -4,6 +4,7 @@ const http = require("http");
 const fixtures = require("./responses.json");
 let scenario = "success";
 let requests = [];
+let order = structuredClone(fixtures.forward);
 http.createServer(async (req, res) => {
   const send = (status, data) => {
     res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
@@ -21,15 +22,35 @@ http.createServer(async (req, res) => {
     if (path === "/__reset" && req.method === "POST") {
       scenario = body.scenario;
       requests = [];
+      order = structuredClone(fixtures.forward);
+      if (scenario.startsWith("contacts-")) {
+        delete order.totalOrderDetail.orderDetailDto.orderShipmentContact.consigneeMobile;
+      }
       return send(200, { ok: true });
     }
     const name = path.split("/").pop();
-    const known = ["forward", "querylivingAnimalProofByorderId", "calculateCWeight", "queryChangePrice", "calculateCharge", "allowedGoodsNameCheck", "checkChange", "createChange"];
+    const known = ["forward", "saveContactAndLiveAnimals", "querylivingAnimalProofByorderId", "calculateCWeight", "queryChangePrice", "calculateCharge", "allowedGoodsNameCheck", "checkChange", "createChange"];
     if (req.method !== "POST" || !known.includes(name)) return send(501, { error: "Endpoint not defined" });
     requests.push({ name, body });
+    if (name === "saveContactAndLiveAnimals") {
+      const contact = body.orderShipmentContact;
+      const fields = ["shipperName", "shipperMobile", "shipperState", "shipperCity", "shipperDistrict", "shipperAddress", "consigneeName", "consigneeMobile"];
+      if (Object.keys(body).length !== 1 || contact?.orderId !== "B-SYNTHETIC" || fields.some(key => !String(contact[key] || "").trim()) ||
+          contact.notifyName !== "原通知人" || contact.driverName !== "原司机" || contact.shipperIdno !== "synthetic-id") {
+        return send(400, { code: "fixture_contract_mismatch", message: "Saved contact fields lost" });
+      }
+      if (scenario === "contacts-save-rejected") return send(200, { code: "0001", message: "合成联系人保存拒绝" });
+      if (scenario !== "contacts-save-stale") {
+        order.totalOrderDetail.orderDetailDto.orderShipmentContact = structuredClone(contact);
+        order.totalOrderDetail.orderDetailDto.version = 18;
+        order.version = 9;
+      }
+      return send(200, { code: "0000", result: { MESSAGE: "保存成功" } });
+    }
     if (["calculateCharge", "checkChange", "createChange"].includes(name)) {
       const order = body.totalOrderDetail?.orderDetailDto;
-      if (order?.orderId !== "B-SYNTHETIC" || order.version !== 17 || body.flights?.[0]?.bookId !== 987654) {
+      const expectedVersion = scenario === "contacts-missing" ? 18 : 17;
+      if (order?.orderId !== "B-SYNTHETIC" || order.version !== expectedVersion || body.version !== (expectedVersion === 18 ? 9 : 8) || body.flights?.[0]?.bookId !== 987654) {
         return send(400, { code: "fixture_contract_mismatch", message: "Original order identity lost" });
       }
       if (name === "calculateCharge" && body.changeOtherDto !== null) {
@@ -44,7 +65,7 @@ http.createServer(async (req, res) => {
       if (scenario === "create-500") return send(500, { error: "Synthetic server failure" });
     }
     const results = {
-      ...fixtures, calculateCWeight: { volume: 0.01, cweight: 1 },
+      ...fixtures, forward: order, calculateCWeight: { volume: 0.01, cweight: 1 },
       querylivingAnimalProofByorderId: null,
       allowedGoodsNameCheck: { needCheck: true, checkPass: scenario !== "goods-rejected" },
       checkChange: scenario !== "check-rejected",

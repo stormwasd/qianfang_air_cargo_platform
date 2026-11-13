@@ -18,7 +18,17 @@
         "handlingInfo": "原始储运注意事项",
         "orderShipmentContact": {
           "notifyName": "原通知人",
-          "driverName": "原司机"
+          "driverName": "原司机",
+          "shipperName": "原托运人",
+          "shipperMobile": "13800138001",
+          "shipperState": "广东省",
+          "shipperCity": "深圳市",
+          "shipperDistrict": "宝安区",
+          "shipperAddress": "原货站",
+          "consigneeName": "原收货人",
+          "consigneeMobile": "13800138002",
+          "shipperCertType": "ID",
+          "shipperIdno": "synthetic-id"
         },
         "orderDetailFlightInfo": [
           {

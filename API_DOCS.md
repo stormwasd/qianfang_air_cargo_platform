@@ -2086,6 +2086,23 @@ direct 参数和处理规则：
 | 危险品声明、储运说明 | 沿用普通 direct 开单的声明字段映射；声明勾选时需提供两项签名。未传声明时保留原声明；未提供储运说明字段时保留原订单值，显式空值则清空。原活体动物声明通过 `b2e-order/b2eOrder/querylivingAnimalProofByorderId` 实时查询并映射为 `orderShipmentLiveanimals`，原锂电池信息从原订单扩展详情保留 |
 | 扩展费用 | 使用变更 `calculateCharge` 的完整费用列表、旧费用和差额，执行南航网页的必选单项勾选及重新计费；支持既有 `outbound_cargo_and_mail_handling_fee_options` 对象选择，不擅自重置其他可选费用 |
 
+**原订单缺少联系人时的前置补全（仅本接口 direct 模式）：**
+
+1. 以南航实时 `forward.totalOrderDetail.orderDetailDto.orderShipmentContact` 为准，检查 `consigneeName`、`consigneeMobile`、`shipperName`、`shipperMobile`、`shipperState`、`shipperCity`、`shipperDistrict`、`shipperAddress` 八项。对象不存在或任一项为空/仅空白时需补全；不使用本地 `has_complete_contact_info` 快照判断南航当前联系人，也不根据“当前状态的订单不允许修改”错误推断缺联系人。
+2. 若已完整，继续原有流程，不调用联系人保存接口。若不完整，先调用南航 `POST /order-center/b2e-order/b2eOrder/saveContactAndLiveAnimals`，请求为 `{"orderShipmentContact": {...}}`。`orderId` 使用实时查询出的原订单 ID，收发货人和托运地址使用**本次修改开单表单**按上表映射；国家代码、自提地址及 `selfPickUp` 沿用现有 direct 开单配置。保留原联系人中的司机、证件、通知人等字段；不向该接口额外提交活体声明字段，不在本次保存中主动改写声明。
+3. 只有南航返回成功业务码且 `result.MESSAGE="保存成功"` 后，才重新调用 `forward` 获取最新订单状态、订单版本、变更版本及费用上下文，重新验证订单身份/航段及联系人完整性，再继续原计费、货名检查、`checkChange`、`createChange`。不得使用保存前的版本提交。此分支比完整联系人路线增加一次保存和一次详情刷新，仍串行执行。
+4. 联系人保存与最终开单不是同一事务：联系人可能已经保存，但后续计费/校验/开单仍可能失败；不会回滚南航已保存的联系人，也不会将仅保存联系人视为开单成功。最终提交仍不自动重试，普通状态拒绝不会触发“补联系人再提交”的兜底重试。
+
+客户端请求字段及成功响应结构不变，无需新增数据库字段。此次补全不改变 booking 原始 `form_data` 和 `has_complete_contact_info` 订舱快照；原 `rpa` 模式、订舱后 `direct-invoice` 及普通新建运单开单不变。
+
+新增失败阶段均返回 HTTP 400、`data.execution_mode="direct"`、`invoice_status="2"`、`outcome_unknown=false`：
+
+| `data.stage` | 含义及处理 |
+| --- | --- |
+| `save_change_contacts` | 联系人保存被拒绝、超时、HTTP 错误或未确认“保存成功”；提示尚未提交开单，停止后续计费和提交。可附 `upstream_code` / `http_status`。保存超时不代表联系人一定没保存；这里 `outcome_unknown=false` 仅表示尚未提交最终开单，下次执行会先重新读取实际联系人 |
+| `refresh_change_context` | 保存后的详情查询失败，或刷新后的订单身份、版本、航段、联系人对象格式不合法；尚未提交开单，核查后重试 |
+| `verify_change_contacts` | 保存成功并刷新后，八项联系人信息仍不完整；提示核查联系人，停止后续计费和提交 |
+
 费用重算判断以 `additionalCharges/extensionCharges` 的实际费用输入为准；分组 `additionalMainCharges/extensionMainCharges` 是展示结构，其 `newChecked` 缺失或与扁平明细不同步，不单独触发重算。按 `serviceMainName + otherChargeCode + changeType` 对齐分组子项与扁平明细；明细唯一匹配后同步展示值，匹配缺失或重复则停止并提示刷新费用。数量 `1`、`1.0`、`"1.00"` 按相同数值处理；按重量（KG）项目不因无关数量字段的 `null/空串` 差异重算。必选单项沿用页面自动勾选规则；用户选择发生变化、有效计费数量变化或必选单项 KG/TC 费用尚未计价时才重新调用 `calculateCharge`，最多计算 3 次。原可选费用的数量保留。
 
 若 3 次后仍有真实费用变化/缺少计价，返回 HTTP 400，`msg="南航重新计费后仍未确认所选费用，请核对费用选项后重试（尚未提交开单）"`，`data.stage="calculate_change_charge"`、`invoice_status="2"`、`outcome_unknown=false`。新增诊断字段 `data.calculation_attempts=3`、`data.fee_selection_issues[]`，每项含 `fee_category`（`additionalCharges/extensionCharges`）、`service_main_name`、`other_charge_code`、`change_type`、`reason`（`selection_changed/amount_changed/required_fee_not_priced`）。服务端 warning 日志同样记录这些费用诊断字段，不含 Token 或收发货人信息。此时未调用最终 `createChange`，可修正费用后重试，不会把缺少计价的费用直接提交。

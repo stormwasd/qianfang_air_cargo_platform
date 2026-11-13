@@ -1,5 +1,5 @@
 purpose:
-  stands_in_for: CSA booking-change forward, original animal declaration, changed weight/price/charge, goods check, checkChange and createChange.
+  stands_in_for: CSA booking-change forward, missing-contact save and refreshed context, original animal declaration, changed weight/price/charge, goods check, checkChange and createChange.
   unblocks: Local HTTP verification without real airline transactions or captured credentials.
 assumptions:
   - id: changed-order-identity-and-submit-sequence
@@ -27,9 +27,23 @@ assumptions:
     status: supported
     claim: In the tested scenarios, omitted group newChecked or string versus numeric quantities do not cause repeated calculation when the flat fee inputs are already calculated; a genuinely unpriced mandatory single fee still blocks final submission.
     reason: The previous implementation reproduced the reported non-convergence error with a priced fee whose group marker was omitted. The public website helper treats that marker as display state. The corrected implementation compares actual flat fee inputs, synchronizes group display values and preserves optional fee quantities.
-    verification: On 2026-11-10, the regression suite ran 102 tests with 99 passing and three unrelated simulation-dependent skips. Seven local real-HTTP scenarios made 52 airline-shaped requests: the two new metadata/number-format scenarios each calculated once then submitted successfully, while the unpriced-fee scenario calculated three times and never called goods check/checkChange/createChange. Additional tests verified diagnostic 400 responses, invoice_status=2 and outcome_unknown=false, deleted-row handling, explicit selection changes, optional quantities and preservation of required-fee recalculation. The previously supplied final-change fee context was also normalized without requesting another calculation. The failing user's live calculateCharge response was not available, so this proves the reproduced defect and local fix, not the exact live response shape or live airline acceptance.
+    verification: "On 2026-11-10, the regression suite ran 102 tests with 99 passing and three unrelated simulation-dependent skips. Seven local real-HTTP scenarios made 52 airline-shaped requests: the two new metadata/number-format scenarios each calculated once then submitted successfully, while the unpriced-fee scenario calculated three times and never called goods check/checkChange/createChange. Additional tests verified diagnostic 400 responses, invoice_status=2 and outcome_unknown=false, deleted-row handling, explicit selection changes, optional quantities and preservation of required-fee recalculation. The previously supplied final-change fee context was also normalized without requesting another calculation. The failing user's live calculateCharge response was not available, so this proves the reproduced defect and local fix, not the exact live response shape or live airline acceptance."
     source: tests/test_china_southern_air_direct_change.py; app/services/china_southern_air_direct_change.py; postman/mocks/csa-change/default.js; public CSA chunk-1934c426.3180677e.js module 9b68
     updated_at: "2026-11-10"
+  - id: missing-contact-save-before-change
+    status: supported
+    claim: In local scenarios, incomplete live contacts are saved from the edited form before calculation; the client refreshes and validates the order context and uses the refreshed versions. Complete live contacts skip saving regardless of the booking snapshot.
+    reason: The HTTP mock checks the contact mapping and preserved driver/notify/identity fields, advances the order and change versions after saving, and rejects calculations using old versions. State-machine tests additionally exercise the real FastAPI handler and SQLite persistence.
+    verification: On 2026-11-13, eight related regression modules ran 95 tests with 93 passing and two unrelated simulation-dependent skips. Ten local HTTP scenarios made 67 airline-shaped requests. The three added scenarios covered a missing-contact successful invoice using versions 18/9, an explicit save rejection, and a reported successful save followed by incomplete contacts. The last two stopped before calculation and final submission. MockTransport/API tests also covered all eight missing fields, absent contacts, save timeout/500/non-JSON/unconfirmed success, refreshed identity mismatch, snapshot independence, unchanged booking snapshots, retry after an ambiguous contact save, and no fallback retry after a final business rejection.
+    source: tests/test_china_southern_air_direct_change.py; postman/mocks/csa-change/default.js; app/services/china_southern_air_direct_change.py; API_DOCS.md
+    updated_at: "2026-11-13"
+  - id: live-missing-contact-save-contract
+    status: unknown
+    claim: Saving orderShipmentContact through saveContactAndLiveAnimals makes all real missing-contact orders eligible for the existing change flow and preserves omitted live-animal declarations.
+    reason: The user supplied the contact-save request and a code 0000 result.MESSAGE success example, plus an observed change rejection on an order without contacts. This supports implementing a preflight contact save but does not establish every provider status transition or the semantics of omitted animal fields. Local mocks assume these semantics and cannot establish them for CSA. No provider-owned mock lookup was performed; the existing synthetic mock was extended from the supplied example.
+    verification: Reviewed the supplied request/response and the existing forward/contact mappings. Ran the real client against a local synthetic HTTP service only. No captured credentials, real order IDs or live airline writes were used. Actual refreshed detail shapes, status eligibility and preservation of specialized declarations still require authorized integration validation; an ordinary status rejection never triggers an automatic final-submission retry.
+    source: User-provided saveContactAndLiveAnimals request/response on 2026-11-13; app/services/china_southern_air_direct_change.py; postman/mocks/csa-change/default.js
+    updated_at: "2026-11-13"
 fingerprints:
   - id: csa-change-20261110
     date: "2026-11-10"
@@ -38,4 +52,8 @@ fingerprints:
   - id: csa-change-fee-recalculation-fix-20261110
     date: "2026-11-10"
     commit: "676b63e (working tree: fee recalculation fix)"
+    cli: "1.74.0"
+  - id: csa-change-missing-contact-save-20261113
+    date: "2026-11-13"
+    commit: "2b8a043 (working tree: missing-contact save before modified-data invoicing)"
     cli: "1.74.0"

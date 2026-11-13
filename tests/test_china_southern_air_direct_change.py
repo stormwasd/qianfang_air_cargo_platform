@@ -76,7 +76,12 @@ def forward():
                 "awbPostfix": "00000000", "agentCode": "SZXFED", "version": 17,
                 "directTransfer": "D", "rateTypeEn": "SPY", "orderStatusCName": "待审批",
                 "piece": 9, "weight": 99, "volume": 0.6, "cweight": 100,
-                "handlingInfo": "原始储运注意事项", "orderShipmentContact": {"notifyName": "原通知人", "driverName": "原司机"},
+                "handlingInfo": "原始储运注意事项", "orderShipmentContact": {
+                    "notifyName": "原通知人", "driverName": "原司机", "shipperCertType": "ID",
+                    "shipperIdno": "synthetic-id", "shipperName": "原托运人", "shipperMobile": "13800138001",
+                    "shipperState": "广东省", "shipperCity": "深圳市", "shipperDistrict": "宝安区",
+                    "shipperAddress": "原货站", "consigneeName": "原收货人", "consigneeMobile": "13800138002",
+                },
                 "orderDetailFlightInfo": [{
                     "bookId": 987654, "segmentId": 1, "bookStatus": "KK", "dep": "SZX", "dest": "TAO",
                     "flightNo": "CZ8735", "flightDate": "2026-08-31 00:00:00", "acType": "32N",
@@ -112,6 +117,12 @@ class ProtocolFixture:
             if isinstance(override, Exception):
                 raise override
             return httpx.Response(**override)
+        if name == "saveContactAndLiveAnimals":
+            self.forward["totalOrderDetail"]["orderDetailDto"].update(
+                orderShipmentContact=deepcopy(payload["orderShipmentContact"]), version=18,
+            )
+            self.forward["version"] = 9
+            return httpx.Response(200, json={"code": "0000", "result": {"MESSAGE": "保存成功"}})
         results = {
             "forward": self.forward, "calculateCWeight": {"volume": 0.01, "cweight": 1},
             "querylivingAnimalProofByorderId": None,
@@ -195,6 +206,104 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(Error):
                     await self.prepare(fixture)
                 self.assertEqual(fixture.requests[-1][0], stage)
+
+    async def test_missing_contacts_are_saved_from_edited_form_then_context_is_refreshed(self):
+        fixture = ProtocolFixture()
+        original = fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"]
+        original["consigneeMobile"] = " "
+        payload, _, _ = await self.prepare(fixture)
+        names = [name for name, _ in fixture.requests]
+        self.assertEqual(names[:3], ["forward", "saveContactAndLiveAnimals", "forward"])
+        saved = fixture.requests[1][1]
+        self.assertEqual(list(saved), ["orderShipmentContact"])
+        contact = saved["orderShipmentContact"]
+        self.assertEqual(contact["orderId"], "B-SYNTHETIC")
+        self.assertEqual((contact["consigneeName"], contact["consigneeMobile"]), ("李四", "13800138000"))
+        self.assertEqual((contact["shipperName"], contact["shipperMobile"]), ("张三", "18979681111"))
+        self.assertEqual((contact["shipperState"], contact["shipperCity"], contact["shipperDistrict"], contact["shipperAddress"]),
+                         ("江西省", "吉安市", "万安县", "科技园南区"))
+        self.assertEqual((contact["consigneeAddress"], contact["selfPickUp"]), ("机场自提", "Y"))
+        for key in ("notifyName", "driverName", "shipperCertType", "shipperIdno"):
+            self.assertEqual(contact[key], original[key])
+        self.assertEqual(payload["totalOrderDetail"]["orderDetailDto"]["version"], 18)
+        self.assertEqual(payload["version"], 9)
+        calc = next(body for name, body in fixture.requests if name == "calculateCharge")
+        self.assertEqual(calc["totalOrderDetail"]["orderDetailDto"]["version"], 18)
+        self.assertEqual((await self.submit(fixture, payload))["changeStatus"], "F")
+        self.assertEqual(sum(name == "saveContactAndLiveAnimals" for name, _ in fixture.requests), 1)
+
+    async def test_each_required_contact_field_and_absent_group_trigger_save(self):
+        for key in Client.REQUIRED_CONTACT_FIELDS:
+            with self.subTest(key=key):
+                fixture = ProtocolFixture()
+                fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"][key] = "  "
+                await self.prepare(fixture)
+                self.assertEqual(fixture.requests[1][0], "saveContactAndLiveAnimals")
+        for empty in (None, {}):
+            fixture = ProtocolFixture()
+            fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"] = empty
+            await self.prepare(fixture)
+            self.assertEqual(fixture.requests[1][0], "saveContactAndLiveAnimals")
+
+    async def test_contact_save_failures_stop_without_calculation_or_invoice(self):
+        failures = [
+            {"status_code": 200, "json": {"code": "0001", "message": "合成保存拒绝"}},
+            {"status_code": 500, "json": {}},
+            {"status_code": 200, "text": "not-json"},
+            {"status_code": 200, "json": {"code": "0000", "result": None}},
+            httpx.ReadTimeout("synthetic"),
+        ]
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__):
+                fixture = ProtocolFixture()
+                fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"] = None
+                fixture.overrides["saveContactAndLiveAnimals"] = failure
+                with self.assertRaises(Error) as ctx:
+                    await self.prepare(fixture)
+                self.assertEqual(ctx.exception.stage, "save_change_contacts")
+                self.assertFalse(ctx.exception.outcome_unknown)  # No invoice submission yet.
+                self.assertEqual([n for n, _ in fixture.requests], ["forward", "saveContactAndLiveAnimals"])
+
+    async def test_save_success_with_incomplete_refresh_stops_before_calculation(self):
+        fixture = ProtocolFixture()
+        fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"] = None
+        fixture.overrides["saveContactAndLiveAnimals"] = {"status_code": 200, "json": {"code": "0000", "result": {"MESSAGE": "保存成功"}}}
+        with self.assertRaises(Error) as ctx:
+            await self.prepare(fixture)
+        self.assertEqual(ctx.exception.stage, "verify_change_contacts")
+        self.assertEqual([n for n, _ in fixture.requests], ["forward", "saveContactAndLiveAnimals", "forward"])
+
+    async def test_refresh_revalidates_order_identity_after_save(self):
+        fixture = ProtocolFixture()
+        fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"] = None
+        handler = fixture.handler
+        def wrong_identity(request):
+            response = handler(request)
+            if request.url.path.endswith("/saveContactAndLiveAnimals"):
+                fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderId"] = "B-WRONG"
+            return response
+        fixture.handler = wrong_identity
+        with self.assertRaises(Error) as ctx:
+            await self.prepare(fixture)
+        self.assertEqual(ctx.exception.stage, "refresh_change_context")
+        self.assertEqual(fixture.requests[-1][0], "forward")
+
+    async def test_invalid_original_context_never_saves_contacts(self):
+        for invalid in ({"orderDetailFlightInfo": []}, {"orderShipmentContact": []}, {"version": None}):
+            fixture = ProtocolFixture()
+            fixture.forward["totalOrderDetail"]["orderDetailDto"].update(invalid)
+            with self.assertRaises(Error):
+                await self.prepare(fixture)
+            self.assertEqual([n for n, _ in fixture.requests], ["forward"])
+
+    async def test_state_rejection_does_not_trigger_contact_save_or_resubmit(self):
+        fixture = ProtocolFixture()
+        fixture.overrides["createChange"] = {"status_code": 200, "json": {"code": "0001", "message": "当前状态的订单不允许修改!"}}
+        with self.assertRaisesRegex(Error, "当前状态的订单不允许修改"):
+            await self.submit(fixture)
+        names = [n for n, _ in fixture.requests]
+        self.assertNotIn("saveContactAndLiveAnimals", names)
+        self.assertEqual(names.count("createChange"), 1)
 
     async def test_existing_animal_declaration_is_requeried_and_preserved(self):
         fixture = ProtocolFixture()
@@ -431,6 +540,39 @@ class ChangeAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 400, response.text)
         self.assertEqual(self.db.query(Waybill).count(), 0)
 
+    async def test_missing_live_contacts_are_saved_even_when_booking_snapshot_is_true(self):
+        self.booking.has_complete_contact_info = True
+        self.db.commit()
+        self.fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"] = None
+        response = await self.call()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["data"]["has_complete_contact_info"])
+        names = [n for n, _ in self.fixture.requests]
+        self.assertEqual(names[:3], ["forward", "saveContactAndLiveAnimals", "forward"])
+        self.assertEqual(names.count("createChange"), 1)
+        self.assertEqual(json.loads(self.booking.form_data), self.original)
+
+    async def test_save_failure_marks_invoice_failed_and_retry_checks_live_contacts_again(self):
+        self.fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"] = None
+        self.fixture.overrides["saveContactAndLiveAnimals"] = httpx.ReadTimeout("synthetic")
+        response = await self.call()
+        self.assertEqual(response.status_code, 400, response.text)
+        data = response.json()["data"]
+        self.assertEqual((data["stage"], data["invoice_status"], data["outcome_unknown"]), ("save_change_contacts", "2", False))
+        self.assertIn("尚未提交开单", response.json()["msg"])
+        self.db.refresh(self.booking)
+        self.assertEqual(self.booking.invoice_status, "2")
+        self.assertEqual(self.db.query(Waybill).count(), 0)
+        self.assertEqual(self.db.query(Settlement).count(), 0)
+        self.assertNotIn("createChange", [n for n, _ in self.fixture.requests])
+        # A timed-out contact save may have succeeded upstream; retry must read first.
+        self.fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"] = forward()["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"]
+        self.fixture.requests.clear()
+        self.fixture.overrides.clear()
+        self.assertEqual((await self.call()).status_code, 200)
+        self.assertNotIn("saveContactAndLiveAnimals", [n for n, _ in self.fixture.requests])
+        self.assertFalse(self.booking.has_complete_contact_info)
+
     async def test_claim_is_committed_before_network_and_competing_request_is_rejected(self):
         entered, release = asyncio.Event(), asyncio.Event()
         prepare = change.china_southern_air_direct_change_service.prepare
@@ -571,6 +713,37 @@ class ChangeAPITests(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(os.environ.get("CSA_CHANGE_SIMULATION_URL"), "Local Postman simulation required")
 class ChangeHTTPSimulationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_contacts_saved_and_refreshed_over_real_http(self):
+        base = os.environ["CSA_CHANGE_SIMULATION_URL"].rstrip("/")
+        async with REAL_ASYNC_CLIENT() as control:
+            for scenario, failure_stage in (("contacts-missing", None), ("contacts-save-rejected", "save_change_contacts"),
+                                             ("contacts-save-stale", "verify_change_contacts")):
+                await control.post(base + "/__reset", json={"scenario": scenario})
+                with ExitStack() as stack:
+                    patch_prerequisites(stack)
+                    for attr in ("FORWARD_URL", "SAVE_CONTACT_URL", "LIVING_ANIMAL_URL", "CHANGE_PRICE_URL", "CALCULATE_CHARGE_URL", "GOODS_NAME_CHECK_URL", "CHECK_CHANGE_URL", "CREATE_CHANGE_URL"):
+                        stack.enter_context(patch.object(Client, attr, base + httpx.URL(getattr(Client, attr)).path))
+                    stack.enter_context(patch.object(change.ChinaSouthernAirService, "CALCULATE_CWEIGHT_URL", base + "/calculateCWeight"))
+                    if failure_stage:
+                        with self.assertRaises(Error) as ctx:
+                            await Client().prepare(token="synthetic-token", awb_number="784-12345670", form_data=form(), business_config=_business_config())
+                        self.assertEqual(ctx.exception.stage, failure_stage)
+                        self.assertFalse(ctx.exception.outcome_unknown)
+                    else:
+                        payload, goods, _ = await Client().prepare(token="synthetic-token", awb_number="784-12345670", form_data=form(), business_config=_business_config())
+                        self.assertEqual((payload["totalOrderDetail"]["orderDetailDto"]["version"], payload["version"]), (18, 9))
+                        result = await Client().validate_and_submit(token="synthetic-token", agent_code="SZXFED", goods_check_payload=goods, change_payload=payload)
+                        self.assertEqual(result["changeStatus"], "F")
+                trace = (await control.get(base + "/__requests")).json()
+                names = [row["name"] for row in trace]
+                self.assertEqual(names[:2], ["forward", "saveContactAndLiveAnimals"])
+                self.assertEqual(names.count("saveContactAndLiveAnimals"), 1)
+                self.assertEqual(names.count("createChange"), 0 if failure_stage else 1)
+                if failure_stage:
+                    self.assertNotIn("calculateCharge", names)
+                else:
+                    self.assertEqual(names[:3], ["forward", "saveContactAndLiveAnimals", "forward"])
+
     async def test_group_marker_and_amount_representation_over_real_http(self):
         base = os.environ["CSA_CHANGE_SIMULATION_URL"].rstrip("/")
         async with REAL_ASYNC_CLIENT() as control:
@@ -578,7 +751,7 @@ class ChangeHTTPSimulationTests(unittest.IsolatedAsyncioTestCase):
                 await control.post(base + "/__reset", json={"scenario": scenario})
                 with ExitStack() as stack:
                     patch_prerequisites(stack)
-                    for attr in ("FORWARD_URL", "LIVING_ANIMAL_URL", "CHANGE_PRICE_URL", "CALCULATE_CHARGE_URL", "GOODS_NAME_CHECK_URL", "CHECK_CHANGE_URL", "CREATE_CHANGE_URL"):
+                    for attr in ("FORWARD_URL", "SAVE_CONTACT_URL", "LIVING_ANIMAL_URL", "CHANGE_PRICE_URL", "CALCULATE_CHARGE_URL", "GOODS_NAME_CHECK_URL", "CHECK_CHANGE_URL", "CREATE_CHANGE_URL"):
                         stack.enter_context(patch.object(Client, attr, base + httpx.URL(getattr(Client, attr)).path))
                     stack.enter_context(patch.object(change.ChinaSouthernAirService, "CALCULATE_CWEIGHT_URL", base + "/calculateCWeight"))
                     if scenario == "required-fee-unpriced":
@@ -601,7 +774,7 @@ class ChangeHTTPSimulationTests(unittest.IsolatedAsyncioTestCase):
                 await control.post(base + "/__reset", json={"scenario": scenario})
                 with ExitStack() as stack:
                     patch_prerequisites(stack)
-                    for attr in ("FORWARD_URL", "LIVING_ANIMAL_URL", "CHANGE_PRICE_URL", "CALCULATE_CHARGE_URL", "GOODS_NAME_CHECK_URL", "CHECK_CHANGE_URL", "CREATE_CHANGE_URL"):
+                    for attr in ("FORWARD_URL", "SAVE_CONTACT_URL", "LIVING_ANIMAL_URL", "CHANGE_PRICE_URL", "CALCULATE_CHARGE_URL", "GOODS_NAME_CHECK_URL", "CHECK_CHANGE_URL", "CREATE_CHANGE_URL"):
                         stack.enter_context(patch.object(Client, attr, base + httpx.URL(getattr(Client, attr)).path))
                     stack.enter_context(patch.object(change.ChinaSouthernAirService, "CALCULATE_CWEIGHT_URL", base + "/calculateCWeight"))
                     payload, goods, _ = await Client().prepare(token="synthetic-token", awb_number="784-12345670", form_data=form(), business_config=_business_config())
