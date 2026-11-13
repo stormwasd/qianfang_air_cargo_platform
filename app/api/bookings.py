@@ -2321,8 +2321,9 @@ async def _invoice_with_data_direct(
     data.update(id=str(booking.id), form_data=json.loads(booking.form_data), submitted_form_data=submitted,
                 has_complete_contact_info=bool(booking.has_complete_contact_info), execution_mode="direct",
                 task_id=None, waybill_id=str(waybill_id), change_id=result.get("changeId"),
-                change_status=result["changeStatus"], warnings=warnings)
-    return success_response(data=data, msg="南航修改数据后开单成功")
+                change_status=result["changeStatus"], change_status_name=result.get("changeStatusName"), warnings=warnings)
+    message = "南航修改数据后开单成功，待审批" if result["changeStatus"] == "S" else "南航修改数据后开单成功"
+    return success_response(data=data, msg=message)
 
 
 @router.post("/{booking_id}/invoice-with-data", summary="南航修改数据后开单")
@@ -2349,7 +2350,7 @@ async def invoice_with_data(
     - **form_data**: 修改后的表单数据（结构与回显接口返回的form_data相同）
     
     返回：
-    - direct: 等待南航确认完成，返回 invoice_status=3、waybill_id、change_id
+    - direct: 南航确认完成或已受理待审批后，返回 invoice_status=3、waybill_id、change_id
     - rpa: 返回 task_id，用于查询原 RPA 任务状态
     """
     from app.services.rpa_task_service import rpa_task_service

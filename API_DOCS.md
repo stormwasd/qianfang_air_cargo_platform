@@ -2036,7 +2036,7 @@ CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_EXECUTION_MODE: Literal["direct", "rpa"] = 
 
 | 模式 | 执行和认证 | 返回语义 |
 | --- | --- | --- |
-| `direct`（默认） | 使用 `nanhang_tokens` 中最新的非空 Token、现有 `china_southern_air.booking_and_create.direct_order` 代理配置，等待变更接口完成 | 成功代表南航 `createChange` 已确认 `changeStatus=F`，且本地运单和 booking 成功状态已同步；`task_id=null` |
+| `direct`（默认） | 使用 `nanhang_tokens` 中最新的非空 Token、现有 `china_southern_air.booking_and_create.direct_order` 代理配置，等待变更接口响应 | 成功代表南航 `createChange` 已确认 `changeStatus=F`（完成）或 `S`（已受理待审批），且无 `errorMsg`、本地运单和 booking 成功状态已同步；`task_id=null` |
 | `rpa` | 保留原 RPA 登录配置、通用任务队列和 Worker，不依赖南航 Token | 返回原 `task_id` 仅表示入队，通过 `/api/v1/rpa-tasks/{task_id}` 查询最终结果 |
 
 此开关独立于订舱 `CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE`，不改变订舱后的 `direct-invoice` 路线或普通运单新建开单的执行方式。direct 失败不会自动降级为 RPA，最终提交不自动重试。无需新增数据库字段或 SQL。
@@ -2113,7 +2113,7 @@ direct 参数和处理规则：
 
 1. `b2e-support/goodsNameCheck/allowedGoodsNameCheck`：`needCheck=false`，或 `needCheck=true && checkPass=true` 才继续。
 2. `b2e-change/b2bChangeFlightWeight/checkChange`：`result=true` 才继续。
-3. `b2e-change/b2bChangeFlightWeight/createChange`：与第 2 步发送相同完整 JSON，只有 `result.changeStatus=F` 且无 `errorMsg` 才算已完成；仅 `code=0000` 或有 `changeId` 不算成功。
+3. `b2e-change/b2bChangeFlightWeight/createChange`：与第 2 步发送相同完整 JSON；业务码成功、`result.changeStatus` 为 `F`（完成）或 `S`（已受理待审批），且无 `errorMsg` 时均按开单成功处理。仅 `code=0000`、只有 `changeId`、只有“待审批”名称而无有效状态码，均不能确认成功；其他状态仍保留结果未知保护。
 
 direct 成功响应（省略其他原有 booking 字段）：
 
@@ -2127,12 +2127,16 @@ direct 成功响应（省略其他原有 booking 字段）：
     "form_data": {"airline": "2", "bookings": []},
     "submitted_form_data": {"airline": "2", "flight_info": {}, "cargo_info": {}, "contact_info": {}, "other_info": {}},
     "task_id": null, "waybill_id": "123456789012345679",
-    "change_id": "S-SYNTHETIC", "change_status": "F", "warnings": []
+    "change_id": "S-SYNTHETIC", "change_status": "F", "change_status_name": null, "warnings": []
   }
 }
 ```
 
 `form_data` 保留原订舱表单，`submitted_form_data` 为实际开单规范化表单（包括最终体积、合并特货码、拆分的订单联系人）。成功创建/同步同主单号的 `waybills` 记录、设 `airline_record_status=3`，booking 设 `invoice_status=3`；不修改订舱成功时的 `has_complete_contact_info` 快照。结算及自动制单、打印继续受原南航开单后自动处理开关控制；关闭时仍同步核心运单和成功状态。
+
+**待审批也属于本平台开单成功：** 南航返回 `changeStatus="S"` 且无 `errorMsg` 时，本接口返回 HTTP 200、`code=0`、`msg="南航修改数据后开单成功，待审批"`，`data.invoice_status="3"`、`change_status="S"`，并返回 `waybill_id`、`change_id`。新增成功响应字段 `change_status_name` 透传南航 `changeStatusName`（通常为 `"待审批"`，缺失时为 `null`，`F` 分支同样返回此可空字段）；前端可以据此显示南航审批状态，不应把 `S` 视为开单中或失败。本平台开单成功不代表南航审批已通过。`S` 与 `F` 复用相同运单落库、结算和自动处理开关，阻止再次开单；不增加审批轮询，不改变其他开单模式。请求参数和数据库结构不变。
+
+此前版本已将 `S` 返回为结果未知、保留 `invoice_status=1` 的历史记录不会被此次修改自动恢复。应核查对应南航订单后补录/修复本地运单与状态；不要为了获取新版成功响应而重新提交同一变更。
 
 结算单使用最终费用：`oldTotalCharge + diffTotalCharge` 为最终总成本，绝不能把 `diffTotalCharge` 单独作为总成本；延伸费使用新计费金额，计费重量使用南航计算结果。结算同步失败仍返回开单成功，在 `warnings` 中提示补录，不能触发重新开单。
 
@@ -2142,7 +2146,7 @@ direct 成功响应（省略其他原有 booking 字段）：
 | --- | --- | --- |
 | 本地缺字段、缺 Token、无主单号、航司不符 | 400；不占用开单状态 | 补齐后重新提交 |
 | 前置查询、计费、货名/变化项检查失败，或最终提交明确业务拒绝 | 400；已开始执行则 `invoice_status=2`、`data.outcome_unknown=false` | 根据提示修正后可重新提交 |
-| `createChange` 网络超时、HTTP 5xx、返回非 JSON、未确认 F 等 | 400；`invoice_status=1`、`data.outcome_unknown=true`，可能附 `changeId/changeStatus` | 先核查南航订单；不得自动重试或切 RPA 重复提交 |
+| `createChange` 网络超时、HTTP 5xx、返回非 JSON、状态不在 `F/S` 内或存在 `errorMsg` 等 | 400；`invoice_status=1`、`data.outcome_unknown=true`，可能附 `changeId/changeStatus` | 先核查南航订单；不得自动重试或切 RPA 重复提交 |
 | 南航确认完成但本地运单/状态事务失败 | 500；保留 `invoice_status=1`，`data.upstream_completed=true`、`change_id` | 核查并补录本地数据，不得再次调用南航提交 |
 | 已开单、开单中（含结果待核查）、已有两类开单任务、正在/已退舱或待退舱任务 | 400 | 禁止重复/冲突操作 |
 

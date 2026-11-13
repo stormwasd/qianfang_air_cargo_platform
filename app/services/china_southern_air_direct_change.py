@@ -562,7 +562,9 @@ class ChinaSouthernAirDirectChangeService:
                 client, self.CREATE_CHANGE_URL, headers=headers, payload=payload,
                 stage="create_change", is_submission=True,
             )
-            if not isinstance(result, dict) or result.get("changeStatus") != "F" or result.get("errorMsg"):
+            # F=已完成，S=已受理待审批；两者均按业务约定视为开单成功。
+            # 其他状态、显式错误仍不能据此确认成功，更不能自动重复提交。
+            if not isinstance(result, dict) or result.get("changeStatus") not in ("F", "S") or result.get("errorMsg"):
                 raise ChinaSouthernAirDirectChangeError(
                     "南航变更尚未确认完成，请先核查南航订单后再处理", stage="create_change",
                     outcome_unknown=True,

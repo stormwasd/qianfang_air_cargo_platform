@@ -23,7 +23,7 @@ http.createServer(async (req, res) => {
       scenario = body.scenario;
       requests = [];
       order = structuredClone(fixtures.forward);
-      if (scenario.startsWith("contacts-")) {
+      if (scenario.startsWith("contacts-") || scenario === "approval-missing-contacts") {
         delete order.totalOrderDetail.orderDetailDto.orderShipmentContact.consigneeMobile;
       }
       return send(200, { ok: true });
@@ -49,7 +49,7 @@ http.createServer(async (req, res) => {
     }
     if (["calculateCharge", "checkChange", "createChange"].includes(name)) {
       const order = body.totalOrderDetail?.orderDetailDto;
-      const expectedVersion = scenario === "contacts-missing" ? 18 : 17;
+      const expectedVersion = ["contacts-missing", "approval-missing-contacts"].includes(scenario) ? 18 : 17;
       if (order?.orderId !== "B-SYNTHETIC" || order.version !== expectedVersion || body.version !== (expectedVersion === 18 ? 9 : 8) || body.flights?.[0]?.bookId !== 987654) {
         return send(400, { code: "fixture_contract_mismatch", message: "Original order identity lost" });
       }
@@ -71,6 +71,9 @@ http.createServer(async (req, res) => {
       checkChange: scenario !== "check-rejected",
       createChange: { changeStatus: "F", changeId: "S-SYNTHETIC", errorMsg: null },
     };
+    if (scenario.startsWith("approval-")) {
+      results.createChange = { changeStatus: "S", changeStatusName: "待审批", changeId: "S-SYNTHETIC", errorMsg: scenario === "approval-with-error" ? "合成提交错误" : null };
+    }
     if (["group-marker-omitted", "tc-string-amount", "required-fee-unpriced"].includes(scenario)) {
       const priced = scenario !== "required-fee-unpriced";
       const tc = scenario === "tc-string-amount";

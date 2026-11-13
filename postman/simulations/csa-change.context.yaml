@@ -44,6 +44,13 @@ assumptions:
     verification: Reviewed the supplied request/response and the existing forward/contact mappings. Ran the real client against a local synthetic HTTP service only. No captured credentials, real order IDs or live airline writes were used. Actual refreshed detail shapes, status eligibility and preservation of specialized declarations still require authorized integration validation; an ordinary status rejection never triggers an automatic final-submission retry.
     source: User-provided saveContactAndLiveAnimals request/response on 2026-11-13; app/services/china_southern_air_direct_change.py; postman/mocks/csa-change/default.js
     updated_at: "2026-11-13"
+  - id: awaiting-approval-counts-as-invoice-success
+    status: supported
+    claim: In the tested modified-data direct invoice path, successful business responses with changeStatus S and no errorMsg are accepted alongside F; S remains visible as awaiting approval while local booking and waybill states are successful.
+    reason: The user confirmed the real submitted order exists correctly on CSA and supplied changeStatus S with changeStatusName awaiting approval. The business requirement defines that accepted state as invoice success. The local implementation now recognizes the explicit status code without treating arbitrary pending states or display names as proof of success.
+    verification: On 2026-11-13, eight related modules ran 97 tests with 95 passing and two unrelated simulation-dependent skips. Thirteen local HTTP scenarios made 93 airline-shaped calls, including existing-contact S success, missing-contact save and refreshed-context S success, and S with an errorMsg remaining unknown. API tests verified HTTP success, invoice_status=3, waybill airline_record_status=3, final settlement cost, automation invocation, preserved booking form/contact snapshot and rejection of duplicate invoices. Existing F, unknown P, timeout, rejection and RPA tests passed. No live airline requests or repairs to historical unknown records were performed.
+    source: User-provided createChange result and website verification on 2026-11-13; tests/test_china_southern_air_direct_change.py; app/services/china_southern_air_direct_change.py; app/api/bookings.py; API_DOCS.md
+    updated_at: "2026-11-13"
 fingerprints:
   - id: csa-change-20261110
     date: "2026-11-10"
@@ -56,4 +63,8 @@ fingerprints:
   - id: csa-change-missing-contact-save-20261113
     date: "2026-11-13"
     commit: "2b8a043 (working tree: missing-contact save before modified-data invoicing)"
+    cli: "1.74.0"
+  - id: csa-change-awaiting-approval-success-20261113
+    date: "2026-11-13"
+    commit: "d0715dd (working tree: recognize awaiting approval as invoice success)"
     cli: "1.74.0"

@@ -405,6 +405,8 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             ({"status_code": 500, "text": "error"}, True),
             ({"status_code": 200, "text": "not json"}, True),
             ({"status_code": 200, "json": {"code": "0000", "result": {"changeStatus": "P", "changeId": "S-SYNTHETIC"}}}, True),
+            ({"status_code": 200, "json": {"code": "0000", "result": {"changeStatus": "S", "changeId": "S-SYNTHETIC", "errorMsg": "合成错误"}}}, True),
+            ({"status_code": 200, "json": {"code": "0000", "result": {"changeStatusName": "待审批", "changeId": "S-SYNTHETIC"}}}, True),
             (httpx.ReadTimeout("synthetic timeout"), True),
         ):
             fixture = ProtocolFixture()
@@ -412,6 +414,16 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(Error) as ctx:
                 await self.submit(fixture)
             self.assertEqual(ctx.exception.outcome_unknown, unknown)
+            self.assertEqual([n for n, _ in fixture.requests].count("createChange"), 1)
+
+    async def test_awaiting_approval_is_success_with_or_without_display_name(self):
+        for name in ("待审批", None):
+            fixture = ProtocolFixture()
+            fixture.overrides["createChange"] = {"status_code": 200, "json": {"code": "0000", "result": {
+                "changeStatus": "S", "changeStatusName": name, "changeId": "S-SYNTHETIC", "errorMsg": None,
+            }}}
+            result = await self.submit(fixture)
+            self.assertEqual(result["changeStatus"], "S")
             self.assertEqual([n for n, _ in fixture.requests].count("createChange"), 1)
 
     def test_invalid_form_does_not_change_shared_new_order_parser(self):
@@ -539,6 +551,34 @@ class ChangeAPITests(unittest.IsolatedAsyncioTestCase):
             response = await self.client.post(f"/api/v1/bookings/101/{route}", json=form())
             self.assertEqual(response.status_code, 400, response.text)
         self.assertEqual(self.db.query(Waybill).count(), 0)
+
+    async def test_awaiting_approval_syncs_success_with_missing_contacts_and_blocks_duplicate(self):
+        self.fixture.forward["totalOrderDetail"]["orderDetailDto"]["orderShipmentContact"] = None
+        self.fixture.overrides["createChange"] = {"status_code": 200, "json": {"code": "0000", "result": {
+            "changeStatus": "S", "changeStatusName": "待审批", "changeId": "S-SYNTHETIC", "errorMsg": None,
+        }}}
+        response = await self.call()
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertIn("待审批", body["msg"])
+        data = body["data"]
+        self.assertEqual((data["invoice_status"], data["change_status"], data["change_status_name"]), ("3", "S", "待审批"))
+        self.assertEqual(data["change_id"], "S-SYNTHETIC")
+        self.assertIsNone(data["task_id"])
+        self.db.refresh(self.booking)
+        self.assertEqual(self.booking.invoice_status, "3")
+        self.assertFalse(self.booking.has_complete_contact_info)
+        self.assertEqual(json.loads(self.booking.form_data), self.original)
+        self.assertEqual(self.db.query(Waybill).one().airline_record_status, "3")
+        settlement = json.loads(self.db.query(Settlement).one().form_data)
+        self.assertEqual(settlement["master_total_cost"], "51.45")
+        self.postprocess.assert_awaited_once()
+        for route in ("invoice-with-data", "direct-invoice"):
+            duplicate = await self.client.post(f"/api/v1/bookings/101/{route}", json=form())
+            self.assertEqual(duplicate.status_code, 400, duplicate.text)
+        names = [n for n, _ in self.fixture.requests]
+        self.assertEqual(names.count("createChange"), 1)
+        self.assertEqual(names.count("saveContactAndLiveAnimals"), 1)
 
     async def test_missing_live_contacts_are_saved_even_when_booking_snapshot_is_true(self):
         self.booking.has_complete_contact_info = True
@@ -716,7 +756,7 @@ class ChangeHTTPSimulationTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_contacts_saved_and_refreshed_over_real_http(self):
         base = os.environ["CSA_CHANGE_SIMULATION_URL"].rstrip("/")
         async with REAL_ASYNC_CLIENT() as control:
-            for scenario, failure_stage in (("contacts-missing", None), ("contacts-save-rejected", "save_change_contacts"),
+            for scenario, failure_stage in (("contacts-missing", None), ("approval-missing-contacts", None), ("contacts-save-rejected", "save_change_contacts"),
                                              ("contacts-save-stale", "verify_change_contacts")):
                 await control.post(base + "/__reset", json={"scenario": scenario})
                 with ExitStack() as stack:
@@ -733,7 +773,7 @@ class ChangeHTTPSimulationTests(unittest.IsolatedAsyncioTestCase):
                         payload, goods, _ = await Client().prepare(token="synthetic-token", awb_number="784-12345670", form_data=form(), business_config=_business_config())
                         self.assertEqual((payload["totalOrderDetail"]["orderDetailDto"]["version"], payload["version"]), (18, 9))
                         result = await Client().validate_and_submit(token="synthetic-token", agent_code="SZXFED", goods_check_payload=goods, change_payload=payload)
-                        self.assertEqual(result["changeStatus"], "F")
+                        self.assertEqual(result["changeStatus"], "S" if scenario == "approval-missing-contacts" else "F")
                 trace = (await control.get(base + "/__requests")).json()
                 names = [row["name"] for row in trace]
                 self.assertEqual(names[:2], ["forward", "saveContactAndLiveAnimals"])
@@ -770,7 +810,8 @@ class ChangeHTTPSimulationTests(unittest.IsolatedAsyncioTestCase):
         base = os.environ["CSA_CHANGE_SIMULATION_URL"].rstrip("/")
         async with REAL_ASYNC_CLIENT() as control:
             for scenario, expected_unknown, final in (("success", False, "createChange"), ("goods-rejected", False, "allowedGoodsNameCheck"),
-                                                       ("check-rejected", False, "checkChange"), ("create-500", True, "createChange")):
+                                                       ("check-rejected", False, "checkChange"), ("create-500", True, "createChange"),
+                                                       ("approval-pending", False, "createChange"), ("approval-with-error", True, "createChange")):
                 await control.post(base + "/__reset", json={"scenario": scenario})
                 with ExitStack() as stack:
                     patch_prerequisites(stack)
@@ -778,9 +819,9 @@ class ChangeHTTPSimulationTests(unittest.IsolatedAsyncioTestCase):
                         stack.enter_context(patch.object(Client, attr, base + httpx.URL(getattr(Client, attr)).path))
                     stack.enter_context(patch.object(change.ChinaSouthernAirService, "CALCULATE_CWEIGHT_URL", base + "/calculateCWeight"))
                     payload, goods, _ = await Client().prepare(token="synthetic-token", awb_number="784-12345670", form_data=form(), business_config=_business_config())
-                    if scenario == "success":
+                    if scenario in ("success", "approval-pending"):
                         result = await Client().validate_and_submit(token="synthetic-token", agent_code="SZXFED", goods_check_payload=goods, change_payload=payload)
-                        self.assertEqual(result["changeStatus"], "F")
+                        self.assertEqual(result["changeStatus"], "S" if scenario == "approval-pending" else "F")
                     else:
                         with self.assertRaises(Error) as ctx:
                             await Client().validate_and_submit(token="synthetic-token", agent_code="SZXFED", goods_check_payload=goods, change_payload=payload)
