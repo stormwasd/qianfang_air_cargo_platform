@@ -44,6 +44,7 @@ class TransitLoadingManager:
         self._watcher_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self.watch_dir = settings.RPA_GENERATED_FILES_DIR
+        self._last_direct_billing_request_finished_at: Optional[float] = None
 
     def start(self) -> None:
         if not os.path.exists(self.watch_dir):
@@ -455,6 +456,19 @@ class TransitLoadingManager:
         finally:
             db.close()
 
+    async def _wait_for_direct_billing_request(self) -> bool:
+        """按上次请求结束时间限速，跨调度轮次保留；停止时不继续发起请求。"""
+        interval = settings.SHENZHEN_AIR_BILLING_TIME_CONTAINER_REQUEST_INTERVAL_SECONDS
+        while not self._stop_event.is_set():
+            if self._last_direct_billing_request_finished_at is None:
+                return True
+            remaining = interval - (time.monotonic() - self._last_direct_billing_request_finished_at)
+            if remaining <= 0:
+                return True
+            # 短暂异步等待，避免较大间隔阻塞关闭；处理和入库耗时计入间隔。
+            await asyncio.sleep(min(1.0, remaining))
+        return False
+
     async def _process_direct_billing_time_container_records(self) -> None:
         """在直连模式下按既有计飞时间直接处理，不创建 rpa_tasks 记录。"""
         from app.services.shenzhen_air_billing_time_container_processor import (
@@ -510,6 +524,8 @@ class TransitLoadingManager:
                 records = [record for record in records if record.id not in running_export_ids]
 
             for record in records:
+                if self._stop_event.is_set():
+                    break
                 try:
                     flight_no = str(record.billing_flight or "").strip()
                     flight_date = str(record.flight_date or "").strip()
@@ -542,14 +558,20 @@ class TransitLoadingManager:
                         )
                         continue
 
+                    if not await self._wait_for_direct_billing_request():
+                        break
                     print(
                         "[TransitLoadingManager] 开始查询深航走货明细: "
                         f"waybill={record.waybill_number}, billing_flight={flight_no}, "
                         f"date={flight_date}, routing={routing}, export_id={record.id}"
                     )
-                    rows = await shenzhen_air_direct_billing_time_container_service.fetch_rows(
-                        record.waybill_number, routing, flight_date
-                    )
+                    try:
+                        rows = await shenzhen_air_direct_billing_time_container_service.fetch_rows(
+                            record.waybill_number, routing, flight_date
+                        )
+                    finally:
+                        # 网络失败/返回空数据也必须限速，防止异常时连续请求其他单号。
+                        self._last_direct_billing_request_finished_at = time.monotonic()
                     record_success_time(DIRECT_BILLING_SUCCESS_TYPE)
                     result = await persist_shenzhen_air_billing_rows(
                         db, rows, record.waybill_number, record.id

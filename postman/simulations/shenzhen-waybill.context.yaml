@@ -64,6 +64,21 @@ assumptions:
       upstream rejection instead of silently changing cabin.
     source: API_DOCS.md; app/services/shenzhen_air_direct_waybill.py; postman/mocks/kinggo/default.js
     updated_at: "2026-11-02"
+  - id: billing-detail-request-interval
+    status: supported
+    claim: The direct billing-detail manager spaces consecutive fetch_rows calls from the previous call's completion, including failures and subsequent scheduler rounds.
+    reason: Tests exercised the real manager and SQLite persistence with a controlled monotonic clock; an additional test used the real HTTP client against this local KingGo simulation.
+    verification: >-
+      On 2026-11-13 ran 86 related tests: 80 passed and 6 optional tests were skipped.
+      Covered the immediate first call, success and failure gaps, cross-round retries,
+      skipped records, processing-time credit, zero interval, stopping during waits,
+      and configuration validation. The local HTTP test sent two getaway queries through
+      the real client and persisted two completed records; its clock was simulated,
+      so it does not establish wall-clock spacing on the live provider. Default interval
+      is five seconds, scoped to this manager instance. No live KingGo calls were made;
+      these results do not establish provider rate limits or resolve the prior TLS failure.
+    source: app/services/transit_loading_manager.py; tests/test_shenzhen_air_billing_request_interval.py; postman/mocks/kinggo/default.js
+    updated_at: "2026-11-13"
 fingerprints:
   - id: storage-note-fix
     date: "2026-11-02"
@@ -73,3 +88,7 @@ fingerprints:
     date: "2026-11-02"
     commit: b9cc3e0 plus the uncommitted below-45kg F-cabin fix
     cli: Postman CLI 1.74.0, existing local path routing on port 4913; no live airline writes
+  - id: billing-detail-request-interval
+    date: "2026-11-13"
+    commit: 6eec87c plus the uncommitted billing-detail request-interval change
+    cli: Postman CLI 1.74.0, existing local path routing on port 4913; no live airline calls

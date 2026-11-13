@@ -1447,6 +1447,7 @@ Cookie 和 `oOr6SIhu` 签名。文件名分别以 `订舱查询导出`、`宽体
 
 ```env
 SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
+SHENZHEN_AIR_BILLING_TIME_CONTAINER_REQUEST_INTERVAL_SECONDS=5
 ```
 
 直连请求每次从 HAR 重新提取 Cookie 和签名，生成当前毫秒时间戳 `_` 及新的
@@ -1462,10 +1463,15 @@ SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE` | `direct` | `direct` 使用 KingGo GET 接口；`rpa` 使用原 RPA 流程 |
+| `SHENZHEN_AIR_BILLING_TIME_CONTAINER_REQUEST_INTERVAL_SECONDS` | `5.0` | 走货明细定时管理器的逐单直连请求最小间隔，单位秒，支持小数，范围 `0～3600`；`0` 表示不额外等待，支持同名环境变量 |
 | `RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS` | 由现有配置决定 | 仅 RPA 模式的任务重试间隔；直连模式在下一次定时扫描重试 |
 | `SHENZHEN_AIR_KINGGO_HAR_PATH` | `generated_files/www.kinggo.com.har` | 每次请求提取签名和 Cookie 的 HAR |
 | `SHENZHEN_AIR_KINGGO_API_ORIGIN` | `https://www.kinggo.com` | KingGo 地址；本地模拟可覆盖 |
 | `SHENZHEN_AIR_DIRECT_WAYBILL_HTTP_TIMEOUT_SECONDS` | `30` | 直连请求超时秒数 |
+
+逐单请求保持串行。当前管理器首次请求不额外等待；后续请求从上一次 `fetch_rows` 调用结束时计时（包括签名准备、HTTP 请求和解析，成功或失败都计入）。两次调用之间至少间隔配置时长，本地入库及其他处理耗时已满足间隔时不重复等待。间隔记录在同一管理器实例中跨调度轮次保留，不对尚未到调度时间、缺字段、已完成等未请求记录累计等待。等待期间可响应停止信号，不继续请求下一单。
+
+此配置只控制当前进程定时管理器发起的 `/awb/query/getaway` 逐单查询，不是所有 KingGo 接口或多个后端实例共享的全局限速；不改变 RPA 执行、开单、作废、批复下载、航班表刷新及携程查询策略。它与 `RPA_SHENZHEN_AIR_TRANSIT_LOADING_INTERVAL_SECONDS` 的整轮调度间隔、HTTP 超时相互独立，不新增自动重试或修改已完成标记规则。API 路径、请求和响应字段、数据库结构均不变。
 
 上游返回的九列依次映射为 `sequence`、`flight_number`、`flight_date`、
 `billing_time`、`origin`、`destination`、`quantity`、`weight`、`container`。

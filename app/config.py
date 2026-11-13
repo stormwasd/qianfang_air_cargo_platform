@@ -172,6 +172,10 @@ class Settings(BaseSettings):
         default="direct",
         description="深航订舱-计飞时间-集装器数据获取执行模式：direct=KingGo接口，rpa=原RPA流程",
     )
+    SHENZHEN_AIR_BILLING_TIME_CONTAINER_REQUEST_INTERVAL_SECONDS: float = Field(
+        default=5.0, ge=0, le=3600,
+        description="深航走货明细直连逐单请求间隔（秒）；上次请求结束后至少等待此时长，0表示不额外等待，仅作用于当前进程定时管理器",
+    )
     SHENZHEN_AIR_DIRECT_WAYBILL_QUEUE_ENABLED: bool = Field(
         default=True, description="是否启用深航KingGo直连接口持久化任务队列"
     )
