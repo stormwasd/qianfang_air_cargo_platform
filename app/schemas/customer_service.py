@@ -83,7 +83,8 @@ class ConsignmentInfoQuery(BaseModel):
     customer_name: Optional[str] = Field(None, description="客户名称 (模糊查询)")
     destination: Optional[str] = Field(None, description="目的站 (模糊查询，仅匹配始发站-目的站的最后一段)")
     flight_no: Optional[str] = Field(None, description="客服接单台航班号 (模糊查询)")
-    flight_doc_no: Optional[str] = Field(None, description="主单号 (模糊查询客服委托信息顶层 flight_doc_no；首尾空白去除，空值不筛选)")
+    flight_doc_no: Optional[str] = Field(None, description="主单号 (包含式模糊匹配委托信息顶层 flight_doc_no、payables.intl_air.flight_doc_no、payables.dom_air.flight_doc_no、payables.trucking.flight_doc_no，任一命中)")
+    agent: Optional[str] = Field(None, description="代理名称 (包含式模糊匹配应付款项国际空运、报关、地面操作、汽运、国内空运的全部5处代理，任一命中)")
     status: Optional[ConsignmentSubmissionStatus] = Field(None, description="单据状态：0=未提交，1=已提交，2=作废")
     sort_by: ConsignmentInfoSortField = Field(
         ConsignmentInfoSortField.CREATE_TIME,

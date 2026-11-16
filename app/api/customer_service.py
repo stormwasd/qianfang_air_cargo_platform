@@ -10,7 +10,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.database import get_db
 from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
@@ -401,7 +401,8 @@ async def get_consignments(
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
     destination: Optional[str] = Query(None, description="目的站 (模糊查询，仅匹配始发站-目的站的最后一段)"),
     flight_no: Optional[str] = Query(None, description="航班号 (模糊查询)"),
-    flight_doc_no: Optional[str] = Query(None, description="主单号 (模糊查询客服委托信息顶层 flight_doc_no；首尾空白去除，空值不筛选)"),
+    flight_doc_no: Optional[str] = Query(None, description="主单号 (包含式模糊匹配委托信息顶层 flight_doc_no、payables.intl_air.flight_doc_no、payables.dom_air.flight_doc_no、payables.trucking.flight_doc_no，任一命中)"),
+    agent: Optional[str] = Query(None, description="代理名称 (包含式模糊匹配应付款项国际空运、报关、地面操作、汽运、国内空运的全部5处代理，任一命中)"),
     status: Optional[ConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
     sort_by: ConsignmentInfoSortField = Query(
         ConsignmentInfoSortField.CREATE_TIME,
@@ -425,7 +426,8 @@ async def get_consignments(
     - **customer_name**: 客户名称 (支持模糊匹配)
     - **destination**: 目的站 (支持中英文模糊匹配，仅匹配 `origin_destination` 最后一个 `-` 后的内容)
     - **flight_no**: 客服接单台航班号 (支持模糊匹配)
-    - **flight_doc_no**: 客服委托信息主单号 (仅匹配顶层 flight_doc_no，支持包含式模糊匹配，忽略首尾空白)
+    - **flight_doc_no**: 主单号 (委托信息、国际空运、国内空运、汽运四处任一命中)
+    - **agent**: 代理名称 (应付款项国际空运、报关、地面操作、汽运、国内空运五处任一命中，不匹配委托代理)
     - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）
     - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `create_time`
     - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
@@ -478,15 +480,38 @@ async def get_consignments(
                 )
             )
 
-    # 客服主单号取委托信息顶层字段，与费用列表的国际空运主单号筛选分开。
+    # 查询本台财务快照，避免草稿未流转费用或两台数据不同时漏查。
+    if agent and agent.strip():
+        agent_keyword = agent.strip().upper()
+        query_obj = query_obj.filter(or_(
+            *(
+                func.upper(
+                    ConsignmentInfo.financial_data["payables"][group][field].as_string()
+                ).contains(agent_keyword, autoescape=True)
+                for group, field in (
+                    ("intl_air", "outsource_unit"),
+                    ("customs", "agent"),
+                    ("ground", "outsource_unit"),
+                    ("trucking", "outsource_unit"),
+                    ("dom_air", "outsource_unit"),
+                )
+            )
+        ))
+
+    # 主单号四处OR，其他筛选条件继续按AND叠加；不关联费用表，不产生重复行。
     if flight_doc_no:
         doc_no_keyword = flight_doc_no.strip()
         if doc_no_keyword:
             query_obj = query_obj.filter(
-                func.upper(ConsignmentInfo.flight_doc_no).contains(
-                    doc_no_keyword.upper(),
-                    autoescape=True,
-                )
+                or_(*(
+                    func.upper(column).contains(doc_no_keyword.upper(), autoescape=True)
+                    for column in (
+                        ConsignmentInfo.flight_doc_no,
+                        ConsignmentInfo.financial_data["payables"]["intl_air"]["flight_doc_no"].as_string(),
+                        ConsignmentInfo.financial_data["payables"]["dom_air"]["flight_doc_no"].as_string(),
+                        ConsignmentInfo.financial_data["payables"]["trucking"]["flight_doc_no"].as_string(),
+                    )
+                ))
             )
 
     if status is not None:

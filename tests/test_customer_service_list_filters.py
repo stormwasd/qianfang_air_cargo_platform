@@ -91,6 +91,7 @@ class CustomerServiceListFilterTests(unittest.IsolatedAsyncioTestCase):
             destination=destination,
             flight_no=flight_no,
             flight_doc_no=None,
+            agent=None,
             status=None,
             sort_by=ConsignmentInfoSortField.CREATE_TIME,
             sort_order=ConsignmentInfoSortOrder.DESC,
@@ -222,10 +223,10 @@ class CustomerServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["code"], 0)
         return response.json()["data"]
 
-    async def test_only_matches_entrustment_master_doc_and_preserves_business_fields(self):
+    async def test_matches_entrustment_or_payable_master_docs_and_preserves_business_fields(self):
         result = await self.query(flight_doc_no="  784-12345678  ")
-        self.assertEqual(result["total"], 1)
-        self.assertEqual([item["id"] for item in result["items"]], ["1"])
+        self.assertEqual(result["total"], 2)
+        self.assertEqual([item["id"] for item in result["items"]], ["1", "4"])
         item = result["items"][0]
         self.assertEqual(item["flight_doc_no"], "784-12345678")
         self.assertEqual(item["bill_of_lading"], "提单原值")
@@ -235,14 +236,14 @@ class CustomerServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_match_pagination_total_and_sort(self):
         first = await self.query(flight_doc_no="123456", page=1, pageSize=2)
-        self.assertEqual(first["total"], 3)
+        self.assertEqual(first["total"], 4)
         self.assertEqual([item["id"] for item in first["items"]], ["3", "2"])
         second = await self.query(flight_doc_no="123456", page=2, pageSize=2)
-        self.assertEqual(second["total"], 3)
-        self.assertEqual([item["id"] for item in second["items"]], ["1"])
+        self.assertEqual(second["total"], 4)
+        self.assertEqual([item["id"] for item in second["items"]], ["1", "4"])
         self.assertEqual((second["page"], second["pageSize"]), (2, 2))
         ascending = await self.query(flight_doc_no="123456", sort_order="asc")
-        self.assertEqual([item["id"] for item in ascending["items"]], ["1", "2", "3"])
+        self.assertEqual([item["id"] for item in ascending["items"]], ["4", "1", "2", "3"])
 
     async def test_missing_empty_and_whitespace_do_not_filter(self):
         for params in ({}, {"flight_doc_no": ""}, {"flight_doc_no": "  "}):
@@ -254,7 +255,7 @@ class CustomerServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
     async def test_combines_with_existing_filters(self):
         for params, expected in (
             ({"customer_name": "客户A"}, {"1", "2"}),
-            ({"status": 0}, {"1"}), ({"status": 1}, {"2"}), ({"status": 2}, {"3"}),
+            ({"status": 0}, {"1"}), ({"status": 1}, {"2", "4"}), ({"status": 2}, {"3"}),
             ({"destination": "KUL"}, {"1", "3"}),
             ({"flight_no": "CZ"}, {"1", "2"}),
             ({"start_date": "2026-11-02", "end_date": "2026-11-03"}, {"2", "3"}),

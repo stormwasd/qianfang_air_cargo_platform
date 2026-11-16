@@ -159,7 +159,7 @@ class CostServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
         self.db = Session(self.engine, autoflush=False)
         self.db.add_all([
             CostConsignment(
-                id=1, status=0, customer_name="客户A", agent="代理A",
+                id=1, status=0, customer_name="客户A", agent="代理A", pay_intl_air_outsource_unit="代理A",
                 warehouse_entry_date=date(2026, 11, 1), flight_date=date(2026, 11, 3),
                 pay_intl_air_flight_date=date(2026, 11, 1),
                 flight_doc_no="货主原值", bill_of_lading="提单原值", flight_no="CZ-TOP",
@@ -171,13 +171,13 @@ class CostServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
             CostConsignment(id=4, status=0, bill_of_lading="784-12345678", pay_intl_air_flight_doc_no=""),
             CostConsignment(id=5, status=0, pay_trucking_flight_doc_no="784-12345678"),
             CostConsignment(
-                id=6, status=1, customer_name="客户A", agent="代理A",
+                id=6, status=1, customer_name="客户A", agent="代理A", pay_ground_outsource_unit="代理A",
                 warehouse_entry_date=date(2026, 11, 2), flight_date=date(2026, 11, 1),
                 pay_intl_air_flight_date=date(2026, 11, 2),
                 pay_intl_air_flight_doc_no="999-12345678", pay_intl_air_flight_no="CZ-INTL",
             ),
             CostConsignment(
-                id=7, status=2, customer_name="客户B", agent="代理B",
+                id=7, status=2, customer_name="客户B", agent="代理B", pay_customs_agent="代理B",
                 warehouse_entry_date=date(2026, 11, 3), flight_date=date(2026, 11, 2),
                 pay_intl_air_flight_date=date(2026, 11, 3),
                 pay_intl_air_flight_doc_no="888-12345678", pay_dom_air_flight_no="CZ-DOM",
@@ -203,10 +203,10 @@ class CostServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["code"], 0)
         return response.json()["data"]
 
-    async def test_master_doc_only_matches_international_payables_and_preserves_response_fields(self):
+    async def test_master_doc_matches_all_four_sections_and_preserves_response_fields(self):
         result = await self.query(flight_doc_no="  784-12345678  ")
-        self.assertEqual(result["total"], 1)
-        self.assertEqual([item["id"] for item in result["items"]], ["1"])
+        self.assertEqual(result["total"], 4)
+        self.assertEqual([item["id"] for item in result["items"]], ["1", "5", "3", "2"])
         item = result["items"][0]
         self.assertEqual(item["payables"]["intl_air"]["flight_doc_no"], "784-12345678")
         self.assertEqual(item["consignor_info"]["flight_doc_no"], "货主原值")
@@ -218,14 +218,14 @@ class CostServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_search_keeps_pagination_total_and_sort_order(self):
         result = await self.query(flight_doc_no="123456", page=1, pageSize=2)
-        self.assertEqual(result["total"], 3)
+        self.assertEqual(result["total"], 6)
         self.assertEqual([item["id"] for item in result["items"]], ["7", "6"])
         second = await self.query(flight_doc_no="123456", page=2, pageSize=2)
-        self.assertEqual(second["total"], 3)
-        self.assertEqual([item["id"] for item in second["items"]], ["1"])
+        self.assertEqual(second["total"], 6)
+        self.assertEqual([item["id"] for item in second["items"]], ["1", "5"])
         self.assertEqual((second["page"], second["pageSize"]), (2, 2))
         ascending = await self.query(flight_doc_no="123456", sort_order="asc")
-        self.assertEqual([item["id"] for item in ascending["items"]], ["1", "6", "7"])
+        self.assertEqual([item["id"] for item in ascending["items"]], ["2", "3", "5", "1", "6", "7"])
 
     async def test_missing_empty_and_whitespace_master_doc_do_not_filter(self):
         for params in ({}, {"flight_doc_no": ""}, {"flight_doc_no": "  "}):
@@ -236,10 +236,10 @@ class CostServiceMasterDocFilterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_master_doc_combines_with_other_filters_without_changing_flight_no_search(self):
         for params, expected in (
-            ({"status": 0}, {"1"}), ({"status": 1}, {"6"}), ({"status": 2}, {"7"}),
+            ({"status": 0}, {"1", "2", "3", "5"}), ({"status": 1}, {"6"}), ({"status": 2}, {"7"}),
             ({"customer_name": "客户A", "agent": "代理A"}, {"1", "6"}),
             ({"customer_name": "客户A", "agent": "代理B"}, set()),
-            ({"start_flight_date": "2026-11-02", "end_flight_date": "2026-11-02"}, {"7"}),
+            ({"start_flight_date": "2026-11-02", "end_flight_date": "2026-11-02"}, {"2", "7"}),
             ({"start_warehouse_date": "2026-11-01", "end_warehouse_date": "2026-11-01"}, {"1"}),
             ({"flight_no": "CZ-TOP"}, {"1"}), ({"flight_no": "CZ-INTL"}, {"6"}),
             ({"flight_no": "CZ-DOM"}, {"7"}),

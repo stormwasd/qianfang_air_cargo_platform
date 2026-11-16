@@ -260,10 +260,10 @@ class CostConsignmentQuery(BaseModel):
     end_flight_date: Optional[str] = Field(None, description="委托信息航班结束日期 (YYYY-MM-DD，含当天；consignor_info.flight_date)")
     customer_name: Optional[str] = Field(None, description="客户名称 (模糊匹配)")
     status: Optional[CostConsignmentSubmissionStatus] = Field(None, description="单据状态：0=未提交，1=已提交，2=作废")
-    agent: Optional[str] = Field(None, description="代理单位 (模糊匹配)")
+    agent: Optional[str] = Field(None, description="代理名称 (包含式模糊匹配应付款项国际空运、报关、地面操作、汽运、国内空运的全部5处代理，任一命中)")
     flight_doc_no: Optional[str] = Field(
         None,
-        description="主单号 (仅模糊匹配国际空运应付款项的 payables.intl_air.flight_doc_no)",
+        description="主单号 (包含式模糊匹配 consignor_info.flight_doc_no、payables.intl_air.flight_doc_no、payables.dom_air.flight_doc_no、payables.trucking.flight_doc_no，任一命中)",
     )
     flight_no: Optional[str] = Field(
         None,

@@ -10,7 +10,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 
 from app.database import get_db
 from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
@@ -652,10 +652,10 @@ async def get_cost_consignments(
     end_flight_date: Optional[str] = Query(None, description="委托信息航班结束日期 (YYYY-MM-DD，含当天；consignor_info.flight_date)"),
     customer_name: Optional[str] = Query(None, description="客户名称 (模糊查询)"),
     status: Optional[CostConsignmentSubmissionStatus] = Query(None, description="单据状态：0=未提交，1=已提交，2=作废"),
-    agent: Optional[str] = Query(None, description="代理单位 (模糊查询)"),
+    agent: Optional[str] = Query(None, description="代理名称 (包含式模糊匹配应付款项国际空运、报关、地面操作、汽运、国内空运的全部5处代理，任一命中)"),
     flight_doc_no: Optional[str] = Query(
         None,
-        description="主单号 (仅模糊查询国际空运应付款项的 payables.intl_air.flight_doc_no)",
+        description="主单号 (包含式模糊匹配 consignor_info.flight_doc_no、payables.intl_air.flight_doc_no、payables.dom_air.flight_doc_no、payables.trucking.flight_doc_no，任一命中)",
     ),
     flight_no: Optional[str] = Query(
         None,
@@ -686,8 +686,8 @@ async def get_cost_consignments(
     - **end_flight_date**: 委托信息航班日期区间结束（含当天），例如 '2026-07-30'
     - **customer_name**: 客户名称 (支持模糊匹配)
     - **status**: 单据状态，可选 `0`（未提交）、`1`（已提交）或 `2`（作废）；不传则查询全部
-    - **agent**: 代理单位 (支持模糊匹配)
-    - **flight_doc_no**: 主单号 (仅模糊匹配国际空运应付款项 payables.intl_air.flight_doc_no；去除首尾空白，未传或仅空白不筛选)
+    - **agent**: 代理名称 (应付款项国际空运、报关、地面操作、汽运、国内空运五处任一命中，不匹配委托代理)
+    - **flight_doc_no**: 主单号 (委托信息、国际空运、国内空运、汽运四处任一命中；去除首尾空白，未传或仅空白不筛选)
     - **flight_no**: 航班号 (支持模糊匹配；任一货主托运、国际空运应付或国内空运应付航班号匹配即返回)
     - **sort_by**: 排序字段，可选 `create_time` 或 `warehouse_entry_date`，默认 `warehouse_entry_date`
     - **sort_order**: 排序方向，可选 `asc` 或 `desc`，默认 `desc`
@@ -725,15 +725,32 @@ async def get_cost_consignments(
     if status is not None:
         query_obj = query_obj.filter(CostConsignment.status == status.value)
         
-    # 4. 代理单位模糊查询
+    # 4. 应付款项全部五处代理OR，不再使用委托信息中的旧汇总agent字段。
     if agent and agent.strip():
-        query_obj = query_obj.filter(CostConsignment.agent.like(f"%{agent.strip()}%"))
+        query_obj = query_obj.filter(or_(*(
+            column.like(f"%{agent.strip()}%")
+            for column in (
+                CostConsignment.pay_intl_air_outsource_unit,
+                CostConsignment.pay_customs_agent,
+                CostConsignment.pay_ground_outsource_unit,
+                CostConsignment.pay_trucking_outsource_unit,
+                CostConsignment.pay_dom_air_outsource_unit,
+            )
+        )))
         
-    # 5. 主单号模糊查询：仅匹配应付款项-国际空运的主单号。
+    # 5. 委托信息、国际空运、国内空运、汽运四处主单号OR。
     if flight_doc_no and flight_doc_no.strip():
         doc_no = flight_doc_no.strip()
         query_obj = query_obj.filter(
-            CostConsignment.pay_intl_air_flight_doc_no.like(f"%{doc_no}%")
+            or_(*(
+                column.like(f"%{doc_no}%")
+                for column in (
+                    CostConsignment.flight_doc_no,
+                    CostConsignment.pay_intl_air_flight_doc_no,
+                    CostConsignment.pay_dom_air_flight_doc_no,
+                    CostConsignment.pay_trucking_flight_doc_no,
+                )
+            ))
         )
         
     # 6. 航班号模糊查询：覆盖响应中全部三个 flight_no 字段。

@@ -9870,10 +9870,11 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - `GET /api/v1/cost-service/consignments` 的 `flight_no` 参数支持模糊匹配，并同时作用于响应中的全部三个航班号字段：`consignor_info.flight_no`、`payables.intl_air.flight_no`、`payables.dom_air.flight_no`。
    - 三个字段之间采用“或（OR）”关系；任一字段包含传入的 `flight_no` 即返回该单据。参数首尾空白会被去除，未传或仅传空白时不增加航班号筛选条件。
 
-9. **列表主单号筛选规范（2026-11-02更新）**：
-   - `GET /api/v1/cost-service/consignments` 保留查询参数 `flight_doc_no`，前端搜索框显示名称改为“主单号”；仅模糊匹配国际空运应付款项 `payables.intl_air.flight_doc_no`，数据库列为 `cost_consignments.pay_intl_air_flight_doc_no`。
-   - 不再通过货主委托信息 `consignor_info.flight_doc_no`、提单 `consignor_info.bill_of_lading` 或国内空运 `payables.dom_air.flight_doc_no` 匹配，汽运主单号也不在此筛选范围内。国际空运主单号为空、仅其他分组有相同号码时不入选。
-   - 参数首尾空白会被去除，未传、空字符串或仅传空白时不增加主单号筛选条件；与其他查询条件按AND组合。返回对象、分页、排序及其他筛选逻辑延续。参数及返回示例详见23.16。
+9. **两台列表主单号及代理名称筛选规范（2026-11-17更新）**：
+   - 两台列表均用 `flight_doc_no` 包含式模糊匹配委托信息、应付国际空运、国内空运、汽运的四处主单号，任一命中即可。委托主单号在客服响应顶层，在费用响应 `consignor_info` 中；三个应付字段均位于 `payables` 对应分组。提单和内部单据ID不参与。
+   - 两台列表均用 `agent` 包含式模糊匹配应付国际空运、报关、地面操作、汽运、国内空运的五处代理，任一命中即可；不再查询委托信息中的旧 `agent` 汇总字段。
+   - 参数首尾空白会被去除，未传、空字符串或仅传空白时不增加对应条件；匹配保留各台原有规则，详见23.27。两个条件及其他筛选按AND组合。同一单据多字段命中只计一次，原响应、分页和排序不变。
+   - 当前字段范围、参数及返回示例详见23.27；23.16、23.21中的单字段主单号规则已被替代。
 
 10. **列表排序规范**：
    - `GET /api/v1/cost-service/consignments` 新增 `sort_by` 和 `sort_order` 查询参数，排序在分页前执行。
@@ -10037,7 +10038,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
 
 #### 23.4 客服接单台委托列表排序规范
 
-客服列表另支持可选主单号参数 `flight_doc_no`，仅匹配客服委托信息顶层主单号；参数、规则和响应示例见23.21。
+客服列表支持可选主单号参数 `flight_doc_no` 和代理名称参数 `agent`；当前分别匹配四处主单号和应付五处代理，参数、规则和响应示例见23.27，原23.21的单字段范围已被替代。
 
 - `GET /api/v1/customer-service/consignments` 返回的委托信息包含 `create_time`（制单时间）和 `warehouse_entry_date`（进仓日期），现支持通过 `sort_by` 和 `sort_order` 查询参数在分页前排序。
 - `sort_by` 可选值：`create_time`、`warehouse_entry_date`；默认值为 `create_time`。
@@ -12159,7 +12160,9 @@ Content-Type: application/json
 - 客服继续使用已有 `financial_data` JSON，无需新增数据库列。全新库使用已更新的 `sql/migration_create_cost_service_consignments.sql` 或ORM建表，已包含该字段，不再执行此增量加列。
 - 本次未连接生产数据库执行迁移；既有财务快照、标签、状态及操作记录表等历史迁移仍需按数据库现状执行。
 
-#### 23.16 费用列表主单号仅搜索国际空运主单号（2026-11-02）
+#### 23.16 费用列表主单号仅搜索国际空运主单号（2026-11-02，历史规则已替代）
+
+**历史说明：本节为旧版范围和示例，已由23.27（2026-11-17）替代。当前费用列表主单号匹配委托、国际空运、国内空运、汽运四处；代理名称匹配应付五处代理。请按23.27对接。**
 
 **涉及接口**：`GET /api/v1/cost-service/consignments`。使用原列表接口及原认证方式 `Authorization: Bearer <token>`，只修改主单号查询范围。前端将搜索框标题和提示从“航司单号”改为“主单号”，仍使用 `flight_doc_no` 查询参数，无需更改参数名或新增请求字段。
 
@@ -12541,7 +12544,7 @@ Content-Type: application/json
 | `page` | query | integer | 否 | 页码，默认1，最小1 |
 | `pageSize` | query | integer | 否 | 每页条数，默认10，最小1 |
 
-其他原有条件（进仓日期范围、客户名称、代理单位、主单号、航班号、状态）和排序参数继续支持，有效条件按AND组合。主单号仍仅匹配国际空运 `payables.intl_air.flight_doc_no`。
+其他原有条件（进仓日期范围、客户名称、代理名称、主单号、航班号、状态）和排序参数继续支持，有效条件按AND组合。主单号和代理名称范围已于2026-11-17扩展，当前以23.27为准。
 
 - 开始和结束日期同时有效时为闭区间，传相同日期可精确查一天；开始晚于结束返回空列表。
 - 只看委托信息日期，不回退或混用国际空运、国内空运日期。委托日期为空时不满足有效日期条件，即使国际空运日期在范围内也不入选；委托日期在范围内、国际空运日期为空或在范围外时仍可入选。
@@ -12590,7 +12593,7 @@ Authorization: Bearer <token>
 
 列表委托航班日期的读取路径为 `data.items[].consignor_info.flight_date`，返回string/null，各分组原日期保持原值。前端沿用原参数名，仅按委托信息区日期理解筛选结果。
 
-组合查询示例：`GET /api/v1/cost-service/consignments?start_warehouse_date=2026-11-01&end_warehouse_date=2026-11-08&start_flight_date=2026-11-09&end_flight_date=2026-11-09&flight_doc_no=123456&status=0`，要求委托进仓日期在11月1日至8日、委托航班日期为11月9日、国际空运主单号包含123456、费用状态未提交，全部条件同时满足。
+组合查询示例：`GET /api/v1/cost-service/consignments?start_warehouse_date=2026-11-01&end_warehouse_date=2026-11-08&start_flight_date=2026-11-09&end_flight_date=2026-11-09&flight_doc_no=123456&status=0`，要求委托进仓日期在11月1日至8日、委托航班日期为11月9日、四处主单号任一包含123456、费用状态未提交，全部条件同时满足（主单号范围按23.27）。
 
 无匹配时成功HTTP200，完整响应：
 
@@ -12603,7 +12606,9 @@ Authorization: Bearer <token>
 本次仅修改查询条件及接口参数说明，不修改或搬运历史日期，不改两台的日期保存/同步、Excel列值和排序、客服锁定规则。继续使用既有委托航班日期列和索引，无新增表字段或迁移脚本。已有 `flight_date` 索引时无需执行SQL；若旧库尚未加过索引，可先用 `SHOW INDEX FROM cost_consignments` 核查，缺少以flight_date为首列的索引时再执行既有 `sql/migration_add_cost_consignment_flight_date_index.sql`，避免重复加索引。无需为本次查询变更执行旧国际空运日期索引脚本，也不删除既有索引。本次未执行生产数据库操作。
 
 
-#### 23.21 客服接单台新增主单号查询条件（2026-11-09）
+#### 23.21 客服接单台新增主单号查询条件（2026-11-09，历史范围已替代）
+
+**历史说明：本节记录最初新增参数时的单字段规则与示例。当前客服列表主单号已扩展为委托、国际空运、国内空运、汽运四处，并新增 `agent` 匹配应付五处代理；以23.27（2026-11-17）为准。**
 
 **接口**：`GET /api/v1/customer-service/consignments`。新增可选Query参数 `flight_doc_no`，使用 `Authorization: Bearer <token>`，请求无body。
 
@@ -13210,3 +13215,183 @@ Access-Control-Expose-Headers: Content-Disposition
 本次只重排列，不调整记录的导出排序：客服按原制单时间倒序，费用按委托航班日期升序、空日期最后、同日ID升序。两台读取各自已存值，委托与国际/国内空运的航班号、日期继续各取所属字段；财务各分组坐标不变，一程费用仍为客服第32列AF、费用第35列AI。
 
 保存、暂存、两台同步、委托航班号联动、编辑锁定、主单号查重、详情/列表及其筛选条件均不因本次Excel列重排改变。导出过程不改写历史单据或操作记录，**无需新增数据库迁移SQL**。此前版本独立迁移仍按各自说明执行；本次未执行生产数据库操作。
+
+#### 23.27 两台列表代理名称与主单号搜索范围统一扩展（2026-11-17）
+
+##### 23.27.1 涉及接口与前端参数
+
+| HTTP方法 | 完整路径 | 本次修改 |
+|---|---|---|
+| GET | `/api/v1/customer-service/consignments` | 新增可选 `agent`；已有 `flight_doc_no` 扩展至四处主单号 |
+| GET | `/api/v1/cost-service/consignments` | 已有 `agent` 改查应付五处代理；已有 `flight_doc_no` 扩展至四处主单号 |
+
+均沿用 `Authorization: Bearer <token>`，参数通过URL Query传入，无请求body。前端“代理名称”搜索框使用 `agent`，“主单号”使用 `flight_doc_no`，不传 `agent_name` 或按分组分别传查询参数。
+
+| 参数 | 位置 | 类型 | 必填 | 默认值及字段说明 |
+|---|---|---|---|---|
+| `agent` | query | string | 否 | 不传不筛选。代理名称关键字，包含式模糊匹配应付款项区全部5处代理输入框，字段见23.27.2 |
+| `flight_doc_no` | query | string | 否 | 不传不筛选。主单号关键字，包含式模糊匹配委托、国际空运、国内空运、汽运4处主单号，字段见23.27.3 |
+| `page` | query | integer | 否 | 1；最小1 |
+| `pageSize` | query | integer | 否 | 10；最小1 |
+| `customer_name` | query | string | 否 | 原客户名称模糊查询 |
+| `status` | query | integer | 否 | 本台状态：0未提交、1已提交、2作废；不传查询全部 |
+| `sort_by` | query | string | 否 | `create_time`或`warehouse_entry_date`；客服默认`create_time`，费用默认`warehouse_entry_date` |
+| `sort_order` | query | string | 否 | `asc`或`desc`，两台默认`desc` |
+| `flight_no` | query | string | 否 | 原航班号条件。客服只查顶层航班号；费用查委托、国际、国内空运三处航班号，范围不因本次修改改变 |
+| `destination` | query | string | 否 | 仅客服支持，原目的站条件，匹配`origin_destination`最后一段 |
+| `start_date` / `end_date` | query | string，YYYY-MM-DD | 否 | 仅客服支持，制单日期上下限，按`create_time`筛选，含当天 |
+| `start_warehouse_date` / `end_warehouse_date` | query | string，YYYY-MM-DD | 否 | 仅费用支持，委托进仓日期上下限，含当天 |
+| `start_flight_date` / `end_flight_date` | query | string，YYYY-MM-DD | 否 | 仅费用支持，委托信息航班日期上下限，含当天；不查应付航班日期 |
+
+##### 23.27.2 代理名称的完整匹配范围
+
+两台均覆盖以下全部5处，任何一处包含关键字即可，不要求所有分组都填写代理：
+
+| 代理输入框 | 两台响应中单条记录的字段路径 | 费用表`cost_consignments`存储列 |
+|---|---|---|
+| 应付-国际空运代理名称 | `payables.intl_air.outsource_unit` | `pay_intl_air_outsource_unit` |
+| 应付-报关代理名称 | `payables.customs.agent` | `pay_customs_agent` |
+| 应付-地面操作代理名称 | `payables.ground.outsource_unit` | `pay_ground_outsource_unit` |
+| 应付-汽运代理名称 | `payables.trucking.outsource_unit` | `pay_trucking_outsource_unit` |
+| 应付-国内空运代理名称 | `payables.dom_air.outsource_unit` | `pay_dom_air_outsource_unit` |
+
+客服读取本台 `consignment_infos.financial_data.payables` 对应字段，包括尚未流转费用的暂存运单，不依赖费用表中存在关联记录。费用读取本台上表列中的当前值。
+
+委托信息的旧 `agent` 汇总字段、备注、折让人、业务员等不属于应付款项的代理输入框，不参与此条件。旧 `agent` 为NULL，只要五处代理任一命中就能查到；反之仅旧汇总字段含关键字不再入选。该修改只改变查询范围，不回填、合并或覆盖历史代理名称。
+
+##### 23.27.3 主单号的完整匹配范围
+
+| 主单号输入框 | 客服单条响应路径 | 费用单条响应路径 | 费用表存储列 |
+|---|---|---|---|
+| 委托信息 | `flight_doc_no` | `consignor_info.flight_doc_no` | `flight_doc_no` |
+| 应付-国际空运 | `payables.intl_air.flight_doc_no` | `payables.intl_air.flight_doc_no` | `pay_intl_air_flight_doc_no` |
+| 应付-国内空运 | `payables.dom_air.flight_doc_no` | `payables.dom_air.flight_doc_no` | `pay_dom_air_flight_doc_no` |
+| 应付-汽运 | `payables.trucking.flight_doc_no` | `payables.trucking.flight_doc_no` | `pay_trucking_flight_doc_no` |
+
+客服委托号码读取本台顶层列，应付三个号码读取本台`financial_data.payables`；费用读取本台对应列。四处独立按OR匹配，某处未填不会阻止其他字段命中。提单 `bill_of_lading`、内部单据ID、备注不参与。
+
+搜索不修改原值，响应路径保持原样。例如客服顶层主单号为731-90161024、国际空运主单号为731-90161013时，搜索其中任一号码均可返回这票，返回的两个号码仍各为原值，不因搜索而合并。
+
+##### 23.27.4 组合、空值、分页与兼容规则
+
+- 两个参数均去除首尾空白；未传、空字符串、仅空白时不启用对应条件。参数使用绑定值，支持中文和号码片段。客服沿用原主单号包含式规则（英文不区分大小写，`%`、`_`按普通字符），新增代理条件使用相同规则；费用沿用原`LIKE '%关键字%'`及数据库排序规则（`%`、`_`仍可作为LIKE通配符），此次仅扩大字段范围。特殊字符及中文由前端标准URL编码。
+- 单个条件内部是OR：`代理1 OR 代理2 OR … OR 代理5`，以及`委托主单号 OR 国际主单号 OR 国内主单号 OR 汽运主单号`。
+- 不同条件间是AND：同时传代理与主单号时，必须同时满足两个条件，但可以命中不同分组。例如代理命中报关、主单号命中国际空运，也应返回该票。
+- 客户、状态、日期、目的站、航班号等原筛选条件继续按AND叠加，不会因某处分组命中而绕过其他条件。列表不新增“近30天”的隐含限制，仍按调用方的有效日期条件查询；保存时近30天国际空运号码查重仍按23.23的独立规则执行。
+- JSON分组缺失、字段缺失或null均不构成关键字命中，也不会把JSON的null当成字符串`"null"`。某处为空时继续检查其余字段。
+- 多处命中同一运单只返回一次、计数一次。先筛选计算`total`，再按原排序分页。无条件查询、状态、`editable`及编辑锁定、同步、保存和暂存均保持原行为。
+
+##### 23.27.5 请求与返回案例
+
+两台按代理查询（中文由客户端URL编码）：
+
+```http
+GET /api/v1/customer-service/consignments?agent=北京翼速&page=1&pageSize=10
+Authorization: Bearer <token>
+
+GET /api/v1/cost-service/consignments?agent=北京翼速&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+两台按主单号查询，保留原参数名，现可命中四处号码：
+
+```http
+GET /api/v1/customer-service/consignments?flight_doc_no=731-90161013&page=1&pageSize=10
+Authorization: Bearer <token>
+
+GET /api/v1/cost-service/consignments?flight_doc_no=731-90161013&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+客服组合查询示例：
+
+```http
+GET /api/v1/customer-service/consignments?agent=北京翼速&flight_doc_no=90161013&start_date=2026-11-01&end_date=2026-11-17&status=1&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+HTTP200成功响应**片段**（仅省略其余业务字段，实际仍返回完整单据）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [
+      {
+        "id": "358000000000000001",
+        "status": 1,
+        "editable": true,
+        "create_time": "2026-11-16 10:00:00",
+        "customer_name": "客户A",
+        "agent": "",
+        "flight_doc_no": "731-90161024",
+        "payables": {
+          "intl_air": {"outsource_unit": null, "flight_doc_no": "731-90161013"},
+          "customs": {"agent": "北京翼速"},
+          "ground": {"outsource_unit": null},
+          "trucking": {"outsource_unit": null, "flight_doc_no": null},
+          "dom_air": {"outsource_unit": null, "flight_doc_no": null}
+        }
+      }
+    ],
+    "page": 1,
+    "pageSize": 10
+  },
+  "msg": "查询成功"
+}
+```
+
+该示例代理命中报关，号码命中国际空运；无需同分组匹配。费用组合查询示例：
+
+```http
+GET /api/v1/cost-service/consignments?agent=北京翼速&flight_doc_no=90161013&start_flight_date=2026-11-01&end_flight_date=2026-11-17&status=1&page=1&pageSize=10
+Authorization: Bearer <token>
+```
+
+HTTP200成功响应**片段**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [
+      {
+        "id": "358000000000000001",
+        "status": 1,
+        "consignor_info": {
+          "customer_name": "客户A",
+          "agent": "旧汇总内容",
+          "flight_date": "2026-11-16",
+          "flight_doc_no": "731-90161024"
+        },
+        "payables": {
+          "intl_air": {"outsource_unit": "北京翼速", "flight_doc_no": "731-90161013"},
+          "customs": {"agent": "其他报关代理"},
+          "ground": {"outsource_unit": "其他地面代理"},
+          "trucking": {"outsource_unit": "", "flight_doc_no": ""},
+          "dom_air": {"outsource_unit": "", "flight_doc_no": ""}
+        }
+      }
+    ],
+    "page": 1,
+    "pageSize": 10
+  },
+  "msg": "查询成功"
+}
+```
+
+两台无匹配时均为HTTP200，完整返回：
+
+```json
+{"code":0,"data":{"total":0,"items":[],"page":1,"pageSize":10},"msg":"查询成功"}
+```
+
+不新增返回字段或错误码；无效分页、状态或排序枚举仍按原规则HTTP422，认证规则不变。前端继续从各分组原字段显示数据，不要把搜索关键字当作单据值写回。
+
+##### 23.27.6 数据库与发布
+
+本次只修改两个GET列表的筛选范围，使用已有列及客服JSON快照，**无需新增迁移SQL或回填生产数据**。查询直接在数据库筛选、统计和分页，不把全部运单加载到Python逐条过滤，不关联另一台表，不因OR匹配产生重复行。包含式多字段搜索不保证使用普通B树索引加速；原分页与其他日期等条件继续适用。
+
+导出仍按原`ids`下载，Excel字段、顺序与取值不变。保存查重、费用提交锁定客服等逻辑不因本次搜索调整改变。23.16及23.21保留为历史记录，主单号与代理搜索的当前契约以本节为准。
