@@ -15,19 +15,20 @@ import json
 import asyncio
 import threading
 import traceback
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models.config import BusinessConfig
-from app.models.robot import Robot, RobotJob
+from app.models.robot import Robot, RobotJob, RPARecurringTaskScheduleState
 from app.models.rpa_task import RPATaskType
 from app.services.rpa_task_service import rpa_task_service
+from app.utils.helpers import get_china_now
 
 
 KEEP_LOGIN_TARGET_TYPE = "keep_login"
 
-# 保持登录任务类型到凭据配置路径的映射
 KEEP_LOGIN_CONFIG_MAP = {
     RPATaskType.SHENZHEN_AIR_KEEP_LOGIN.value: {
         "config_path": ["shenzhen_air", "booking", "shenzhen_air_login"],
@@ -41,6 +42,11 @@ KEEP_LOGIN_CONFIG_MAP = {
         "config_path": ["china_southern_air", "booking_and_create", "tangi_login"],
         "fallback_path": ["china_southern_air", "booking_and_create", "china_southern_air_login"],
         "interval_attr": "RPA_TANGYI_KEEP_LOGIN_INTERVAL_SECONDS",
+    },
+    RPATaskType.TANGYI_RESTART.value: {
+        "config_path": ["china_southern_air", "booking_and_create", "tangi_login"],
+        "fallback_path": ["china_southern_air", "booking_and_create", "china_southern_air_login"],
+        "interval_attr": "RPA_TANGYI_RESTART_INTERVAL_SECONDS",
     },
 }
 
@@ -67,19 +73,34 @@ def _load_creds_from_path(business_config: Dict[str, Any], config_path: list, fa
     
     system_account = node.get("system_account", "")
     login_password = node.get("login_password", "")
+    tangyi_path = node.get("address_of_the_application_executable_file_tangyi", "")
     
-    # fallback：如果主路径没有凭据，尝试回退路径
     if (not system_account or not login_password) and fallback_path:
         fb_node = business_config
         for key in fallback_path:
             fb_node = fb_node.get(key, {})
         system_account = system_account or fb_node.get("system_account", "")
         login_password = login_password or fb_node.get("login_password", "")
+        tangyi_path = tangyi_path or fb_node.get("address_of_the_application_executable_file_tangyi", "")
     
     return {
         "system_account": system_account,
         "login_password": login_password,
+        "address_of_the_application_executable_file_tangyi": tangyi_path,
     }
+
+
+def _is_interval_due(
+    last_enqueued_at: Optional[datetime], interval_seconds: int, now: Optional[datetime] = None
+) -> bool:
+    """判断周期任务是否已到达下一次可入队时间，兼容 MySQL 返回的无时区时间。"""
+    if last_enqueued_at is None:
+        return True
+
+    now = now or get_china_now()
+    if last_enqueued_at.tzinfo is None:
+        last_enqueued_at = last_enqueued_at.replace(tzinfo=now.tzinfo)
+    return now >= last_enqueued_at + timedelta(seconds=interval_seconds)
 
 
 class KeepLoginScheduler:
@@ -127,7 +148,6 @@ class KeepLoginScheduler:
             except Exception as e:
                 print(f"[KeepLoginScheduler] 扫描创建保持登录任务失败: {repr(e)}\n{traceback.format_exc()}")
 
-            # 使用最短的保持登录间隔作为扫描间隔
             scan_interval = self._get_min_interval()
             remaining = scan_interval
             while remaining > 0 and not self._stop_event.is_set():
@@ -161,12 +181,10 @@ class KeepLoginScheduler:
                     if task_type_value not in permissions:
                         continue
 
-                    # 检查间隔是否已配置
                     interval = getattr(settings, cfg["interval_attr"], None)
                     if not interval or interval <= 0:
                         continue
 
-                    # 检查是否已有 pending/running 任务（使用 robot_id 作为 target_id 区分不同机器人）
                     existing = rpa_task_service.get_pending_task_for_target(
                         db,
                         target_type=KEEP_LOGIN_TARGET_TYPE,
@@ -176,7 +194,18 @@ class KeepLoginScheduler:
                     if existing:
                         continue
 
-                    # 读取凭据
+                    schedule_state = None
+                    if task_type_value == RPATaskType.TANGYI_RESTART.value:
+                        schedule_state = db.query(RPARecurringTaskScheduleState).filter(
+                            RPARecurringTaskScheduleState.robot_id == robot.id,
+                            RPARecurringTaskScheduleState.task_type == task_type_value,
+                        ).first()
+                        if not _is_interval_due(
+                            schedule_state.last_enqueued_at if schedule_state else None,
+                            interval,
+                        ):
+                            continue
+
                     creds = _load_creds_from_path(
                         business_config,
                         cfg["config_path"],
@@ -188,14 +217,25 @@ class KeepLoginScheduler:
                         )
                         continue
 
-                    # 获取该机器人对应的 job_uuid
                     robot_job = db.query(RobotJob).filter(
                         RobotJob.robot_id == robot.id,
                         RobotJob.task_name == task_type_value,
                     ).first()
                     job_uuid = robot_job.job_uuid if robot_job else None
 
-                    # 创建任务，指定 robot_id 使其只被该机器人的 Worker 消费
+                    # 将打卡记录与任务一起提交，进程重启后也不会绕过重启间隔。
+                    if task_type_value == RPATaskType.TANGYI_RESTART.value:
+                        now = get_china_now()
+                        if schedule_state is None:
+                            schedule_state = RPARecurringTaskScheduleState(
+                                robot_id=robot.id,
+                                task_type=task_type_value,
+                                last_enqueued_at=now,
+                            )
+                            db.add(schedule_state)
+                        else:
+                            schedule_state.last_enqueued_at = now
+
                     rpa_task_service.create_task(
                         db=db,
                         task_type=task_type_value,
@@ -203,9 +243,9 @@ class KeepLoginScheduler:
                         target_id=robot.id,
                         params=creds,
                         job_uuid=job_uuid,
-                        priority=3,  # 保持登录任务最高优先级
+                        priority=None,  
                         created_by=None,
-                        robot_id=robot.id,  # 指定消费机器人
+                        robot_id=robot.id,  
                     )
                     print(
                         f"[KeepLoginScheduler] 已创建保持登录任务: robot={robot.name}, task_type={task_type_value}, job_uuid={job_uuid}"
@@ -224,5 +264,4 @@ class KeepLoginScheduler:
         print("[KeepLoginScheduler] 已停止保持登录调度器")
 
 
-# 全局单例
 rpa_keep_login_scheduler = KeepLoginScheduler()

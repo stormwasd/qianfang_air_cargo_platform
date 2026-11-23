@@ -26,15 +26,17 @@ class DictOptionUpdate(BaseModel):
 
 class DictOptionResponse(BaseModel):
     """字典选项响应schema"""
-    id: str  # ID以字符串形式返回
-    dict_type_id: str  # 字典类型ID
-    dict_type: str  # 字典类型的唯一标识
-    label: str  # 显示字段
-    value: str  # 存储的值（单个字符串）
-    status: int  # 状态（0=禁用，1=开启）
-    color_type: Optional[str] = None  # 颜色类型（用于前端区分状态颜色，非必填）
+    id: str  
+    dict_type_id: str  
+    dict_type: str  
+    label: str  
+    value: str  
+    status: int  
+    color_type: Optional[str] = None  
     created_at: datetime
     updated_at: datetime
+    cargo_type: Optional[str] = Field(None, description="仅南航货物类型返回：名称，与label一致")
+    cargo_type_code: Optional[str] = Field(None, description="仅南航货物类型返回：代码，与value一致，允许不同名称共用代码")
     
     class Config:
         from_attributes = True
@@ -53,7 +55,7 @@ class DictOptionQuery(BaseModel):
     dict_type: Optional[str] = Field(None, description="字典类型（唯一标识，如：freight_code）")
     status: Optional[int] = Field(None, description="状态筛选（0=禁用，1=开启）", ge=0, le=1)
     page: Optional[int] = Field(None, ge=1, description="页码（不传则不分页，返回全部）")
-    page_size: Optional[int] = Field(None, ge=1, le=200, alias="pageSize", description="每页数量（不传则不分页，返回全部）")
+    pageSize: Optional[int] = Field(None, ge=1, le=200, description="每页数量（不传则不分页，返回全部）")
     order: Optional[str] = Field(None, description="排序方式（asc=从小到大，desc=从大到小），仅当所有选项的value全为数字时生效，不传则默认从小到大排序")
     
     @validator("order")

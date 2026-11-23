@@ -18,7 +18,6 @@ from app.utils.helpers import format_datetime_china
 router = APIRouter()
 
 
-# 航空公司数据字典映射
 AIRLINE_NAME_MAP = {
     "1": "深圳航空",
     "2": "南方航空"
@@ -42,37 +41,29 @@ def _extract_waybill_notification_data(waybill: Waybill, is_exception: bool = Fa
     Returns:
         通知数据字典
     """
-    # 解析form_data
     form_data = json.loads(waybill.form_data)
     
-    # 获取航空公司
     airline = form_data.get("airline", "")
     airline_name = AIRLINE_NAME_MAP.get(airline, "未知航空公司")
     
-    # 获取航班信息
     flight_info = form_data.get("flight_info", {})
     flight_number = flight_info.get("flight_number", "")
     
-    # 获取货物信息
     cargo_info = form_data.get("cargo_info", {})
     quantity = cargo_info.get("quantity", "")
     weight = cargo_info.get("weight", "")
     
-    # 获取货物类型和客户名称（根据航空公司不同，字段位置不同）
-    # 深航：货物类型 = cargo_info.cargo_name，客户名称 = shipper_consignee_info.shipper_unit
-    # 南航：货物类型 = cargo_info.cargo_type，客户名称 = contact_info.shipper_unit
     cargo_type = ""
     customer_name = ""
-    if airline == "1":  # 深航
+    if airline == "1":  
         cargo_type = cargo_info.get("cargo_name", "")
         shipper_consignee_info = form_data.get("shipper_consignee_info", {})
         customer_name = shipper_consignee_info.get("shipper_unit", "")
-    elif airline == "2":  # 南航
+    elif airline == "2":  
         cargo_type = cargo_info.get("cargo_type", "")
         contact_info = form_data.get("contact_info", {})
         customer_name = contact_info.get("shipper_unit", "")
     
-    # 构建通知数据
     notification_data = {
         "id": str(waybill.id),
         "task_type": "开单",
@@ -87,7 +78,6 @@ def _extract_waybill_notification_data(waybill: Waybill, is_exception: bool = Fa
         "cargo_type": cargo_type
     }
     
-    # 如果是异常任务，添加异常时间
     if is_exception:
         notification_data["exception_time"] = format_datetime_china(waybill.updated_at)
     else:
@@ -107,30 +97,22 @@ def _extract_booking_notification_data(booking: Booking, is_exception: bool = Fa
     Returns:
         通知数据字典
     """
-    # 解析form_data
     form_data = json.loads(booking.form_data)
     
-    # 获取航空公司
     airline = form_data.get("airline", "")
     airline_name = AIRLINE_NAME_MAP.get(airline, "未知航空公司")
     
-    # 获取bookings数组中的第一个元素
     bookings_list = form_data.get("bookings", [])
     booking_item = bookings_list[0] if bookings_list and len(bookings_list) > 0 else {}
     
-    # 获取航班号
     flight_number = booking_item.get("flight_number", "")
     
-    # 获取数量、重量、货物类型
-    # 订舱只有南航，货物类型字段为 cargo_type
     quantity = booking_item.get("quantity", "")
     weight = booking_item.get("weight", "")
     cargo_type = booking_item.get("cargo_type", "")
     
-    # 订舱没有客户名称
     customer_name = ""
     
-    # 构建通知数据
     notification_data = {
         "id": str(booking.id),
         "task_type": "订舱",
@@ -145,7 +127,6 @@ def _extract_booking_notification_data(booking: Booking, is_exception: bool = Fa
         "cargo_type": cargo_type
     }
     
-    # 如果是异常任务，添加异常时间
     if is_exception:
         notification_data["exception_time"] = format_datetime_china(booking.updated_at)
     else:
@@ -185,57 +166,44 @@ async def get_notifications(
     
     返回数据按创建时间倒序排列（最新的在前面）
     """
-    # ============ 获取待执行任务 ============
     
-    # 查询待执行的运单（airline_record_status = "0"）
     pending_waybills = db.query(Waybill).filter(
         Waybill.airline_record_status == "0"
     ).order_by(Waybill.created_at.desc()).all()
     
-    # 查询待执行的订舱（booking_status = "0"）
     pending_bookings = db.query(Booking).filter(
         Booking.booking_status == "0"
     ).order_by(Booking.created_at.desc()).all()
     
-    # 提取待执行任务的通知数据
     pending_tasks_list = []
     
-    # 处理待执行运单
     for waybill in pending_waybills:
         notification_data = _extract_waybill_notification_data(waybill, is_exception=False)
         pending_tasks_list.append(notification_data)
     
-    # 处理待执行订舱
     for booking in pending_bookings:
         notification_data = _extract_booking_notification_data(booking, is_exception=False)
         pending_tasks_list.append(notification_data)
     
-    # ============ 获取异常任务 ============
     
-    # 查询异常的运单（airline_record_status = "2"）
     exception_waybills = db.query(Waybill).filter(
         Waybill.airline_record_status == "2"
     ).order_by(Waybill.created_at.desc()).all()
     
-    # 查询异常的订舱（booking_status = "2"）
     exception_bookings = db.query(Booking).filter(
         Booking.booking_status == "2"
     ).order_by(Booking.created_at.desc()).all()
     
-    # 提取异常任务的通知数据
     exception_tasks_list = []
     
-    # 处理异常运单
     for waybill in exception_waybills:
         notification_data = _extract_waybill_notification_data(waybill, is_exception=True)
         exception_tasks_list.append(notification_data)
     
-    # 处理异常订舱
     for booking in exception_bookings:
         notification_data = _extract_booking_notification_data(booking, is_exception=True)
         exception_tasks_list.append(notification_data)
     
-    # ============ 构建响应数据 ============
     response_data = {
         "pending_tasks": {
             "total": len(pending_tasks_list),
@@ -265,27 +233,22 @@ async def get_notification_summary(
     - exception_count: 异常任务数量
     - total_count: 总数量
     """
-    # 统计待执行的运单数量
     pending_waybill_count = db.query(Waybill).filter(
         Waybill.airline_record_status == "0"
     ).count()
     
-    # 统计待执行的订舱数量
     pending_booking_count = db.query(Booking).filter(
         Booking.booking_status == "0"
     ).count()
     
-    # 统计异常的运单数量
     exception_waybill_count = db.query(Waybill).filter(
         Waybill.airline_record_status == "2"
     ).count()
     
-    # 统计异常的订舱数量
     exception_booking_count = db.query(Booking).filter(
         Booking.booking_status == "2"
     ).count()
     
-    # 计算总数
     pending_count = pending_waybill_count + pending_booking_count
     exception_count = exception_waybill_count + exception_booking_count
     total_count = pending_count + exception_count
@@ -338,11 +301,9 @@ async def cancel_pending_task(
     - skipped_ids: 因任务正在执行中而被跳过的目标ID列表
     - not_found_ids: 因为不存在 pending 任务（非等待中）而被保护免删的目标ID列表
     """
-    # 验证 source_table 参数
     if request.source_table not in ["waybills", "bookings"]:
         raise BadRequestException("source_table 参数无效，必须是 'waybills' 或 'bookings'")
     
-    # 根据 source_table 确定 target_type 和源数据模型
     if request.source_table == "waybills":
         target_type = "waybill"
         SourceModel = Waybill
@@ -350,7 +311,6 @@ async def cancel_pending_task(
         target_type = "booking"
         SourceModel = Booking
     
-    # 解析并验证所有 ID
     target_ids = []
     for id_str in request.ids:
         try:
@@ -358,17 +318,14 @@ async def cancel_pending_task(
         except ValueError:
             raise BadRequestException(f"id '{id_str}' 无效，必须是数字")
     
-    # 去重
     target_ids = list(set(target_ids))
     
-    # 记录操作结果
-    deleted_ids = []              # 成功删除的目标ID
-    deleted_rpa_task_ids = []     # 删除的RPA任务ID
-    skipped_ids = []              # 因running而跳过的ID
-    not_found_ids = []            # 因无pending任务而跳过的ID
+    deleted_ids = []              
+    deleted_rpa_task_ids = []     
+    skipped_ids = []              
+    not_found_ids = []            
     
     for target_id in target_ids:
-        # 检查是否有执行中的 RPA 任务
         running_count = db.query(RPATask).filter(
             RPATask.target_type == target_type,
             RPATask.target_id == target_id,
@@ -376,28 +333,23 @@ async def cancel_pending_task(
         ).count()
         
         if running_count > 0:
-            # 有执行中的任务，跳过该 ID
             skipped_ids.append(str(target_id))
             continue
         
-        # 查找 rpa_tasks 表中对应的 pending 状态的任务
         pending_tasks = db.query(RPATask).filter(
             RPATask.target_type == target_type,
             RPATask.target_id == target_id,
             RPATask.status == RPATaskStatus.PENDING.value
         ).all()
         
-        # 严重安全校验：如果没有任何等待中（pending）任务存在，说明这不是待执行列，绝对不可清理源表。予以剔除！
         if not pending_tasks:
             not_found_ids.append(str(target_id))
             continue
         
-        # 验证通过（存在pending）：删除 rpa_tasks 表中对应的 pending 任务
         for task in pending_tasks:
             deleted_rpa_task_ids.append(str(task.id))
             db.delete(task)
         
-        # 删除源数据表（waybills 或 bookings）中对应的记录
         source_record = db.query(SourceModel).filter(
             SourceModel.id == target_id
         ).first()
@@ -407,10 +359,8 @@ async def cancel_pending_task(
         
         deleted_ids.append(str(target_id))
     
-    # 统一提交事务
     db.commit()
     
-    # 构建友好响应消息（可直接用于前端弹窗提示）
     total = len(target_ids)
     if len(deleted_ids) == total:
         if total == 1:

@@ -21,7 +21,6 @@ class DictOption(Base):
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
-    # 关系
     dict_type = relationship("DictType", foreign_keys=[dict_type_id])
     
     def __repr__(self):

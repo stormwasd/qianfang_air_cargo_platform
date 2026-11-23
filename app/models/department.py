@@ -18,7 +18,6 @@ class Department(Base):
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
-    # 多对多关系：部门可以有多个用户
     users = relationship(
         "User",
         secondary=user_department,

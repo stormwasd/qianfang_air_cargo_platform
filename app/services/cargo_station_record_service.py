@@ -35,26 +35,19 @@ from openpyxl.cell.cell import MergedCell
 from app.utils.airport_code_mapper import get_city_name_by_code
 
 
-# 文件存储根目录（相对于项目根目录）
-# 所有航司的货站录单文件统一存放在 generated_files/{waybill_id}/ 下
 GENERATED_FILES_DIR = "generated_files"
 
-# 深航Excel模板目录（相对于项目根目录）
 TEMPLATE_DIR = "documents/shenzhen_air"
-# 南航模板目录（相对于项目根目录）
 CHINA_SOUTHERN_AIR_TEMPLATE_DIR = "documents/china_southern_air"
 
-# ======== 深航文档类型常量 ========
-DOC_TYPE_HANDOVER = "handover"  # 交接单
-DOC_TYPE_CARGO_DETAIL = "cargo_detail"  # 航空货物明细表
-DOC_TYPE_CARGO_CHECKLIST = "cargo_checklist"  # 货物收运检查清单
-DOC_TYPE_AQUATIC_ANIMAL_CHECKLIST = "aquatic_animal_checklist"  # 充氧类水生动物货物收运检查单
-DOC_TYPE_LABEL = "label"  # 标签单
+DOC_TYPE_HANDOVER = "handover"  
+DOC_TYPE_CARGO_DETAIL = "cargo_detail"  
+DOC_TYPE_CARGO_CHECKLIST = "cargo_checklist"  
+DOC_TYPE_AQUATIC_ANIMAL_CHECKLIST = "aquatic_animal_checklist"  
+DOC_TYPE_LABEL = "label"  
 
-# ======== 南航文档类型常量 ========
-DOC_TYPE_CSA_AQUATIC_ANIMAL_CHECKLIST = "csa_aquatic_animal_checklist"  # 南航充氧类水生动物货物收运检查单（xlsx版）
+DOC_TYPE_CSA_AQUATIC_ANIMAL_CHECKLIST = "csa_aquatic_animal_checklist"  
 
-# 深航文档类型到文件名的映射
 DOC_TYPE_TO_FILENAME = {
     DOC_TYPE_HANDOVER: "交接单",
     DOC_TYPE_CARGO_DETAIL: "航空货物明细表",
@@ -63,7 +56,6 @@ DOC_TYPE_TO_FILENAME = {
     DOC_TYPE_LABEL: "标签单",
 }
 
-# 南航文档类型到文件名的映射
 CSA_DOC_TYPE_TO_FILENAME = {
     DOC_TYPE_CSA_AQUATIC_ANIMAL_CHECKLIST: "充氧类水生动物货物收运检查单",
 }
@@ -71,8 +63,6 @@ CSA_DOC_TYPE_TO_FILENAME = {
 
 def _get_project_root() -> Path:
     """获取项目根目录"""
-    # 从当前文件位置向上三级就是项目根目录
-    # app/services/cargo_station_record_service.py -> app/services -> app -> 项目根目录
     return Path(__file__).parent.parent.parent
 
 
@@ -107,16 +97,14 @@ def _parse_flight_date(flight_date: str) -> Tuple[str, str, str]:
     if not flight_date:
         return "", "", ""
     
-    # 尝试多种日期格式
     date_str = flight_date.strip()
     
-    # 替换可能的分隔符
     date_str = date_str.replace("/", "-")
     
     parts = date_str.split("-")
     if len(parts) == 3:
         year = parts[0]
-        month = parts[1].lstrip("0") or "0"  # 去除前导零，但保留至少一个字符
+        month = parts[1].lstrip("0") or "0"  
         day = parts[2].lstrip("0") or "0"
         return year, month, day
     
@@ -180,7 +168,6 @@ def _replace_cell_value(ws: Worksheet, search_value: str, replace_value: str) ->
             if cell.value is not None:
                 cell_str = str(cell.value)
                 if search_value in cell_str:
-                    # 执行替换
                     cell.value = cell_str.replace(search_value, replace_value)
                     replaced_count += 1
     return replaced_count
@@ -208,17 +195,15 @@ def _convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> bool:
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
         
-        # 尝试注册中文字体
         chinese_font_name = "SimSun"
         font_registered = False
         
-        # 尝试常见的中文字体路径
         font_paths = [
-            "C:/Windows/Fonts/simsun.ttc",  # Windows
-            "C:/Windows/Fonts/simhei.ttf",  # Windows
-            "C:/Windows/Fonts/msyh.ttc",    # Windows 微软雅黑
-            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",  # Linux
-            "/System/Library/Fonts/PingFang.ttc",  # macOS
+            "C:/Windows/Fonts/simsun.ttc",  
+            "C:/Windows/Fonts/simhei.ttf",  
+            "C:/Windows/Fonts/msyh.ttc",    
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",  
+            "/System/Library/Fonts/PingFang.ttc",  
         ]
         
         for font_path in font_paths:
@@ -234,19 +219,15 @@ def _convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> bool:
                     continue
         
         if not font_registered:
-            # 如果没有找到中文字体，使用默认字体（可能无法显示中文）
             chinese_font_name = "Helvetica"
             print(f"警告：未找到中文字体，PDF中的中文可能无法正确显示")
         
-        # 加载Excel文件
         wb = load_workbook(excel_path)
         ws = wb.active
         
-        # 获取Excel数据
         data = []
-        merge_cells_info = []  # 存储合并单元格信息
+        merge_cells_info = []  
         
-        # 获取合并单元格信息
         for merged_range in ws.merged_cells.ranges:
             merge_cells_info.append({
                 'min_row': merged_range.min_row,
@@ -255,24 +236,19 @@ def _convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> bool:
                 'max_col': merged_range.max_col
             })
         
-        # 获取实际使用的行列范围
         max_row = ws.max_row
         max_col = ws.max_column
         
-        # 读取数据
         for row_idx in range(1, max_row + 1):
             row_data = []
             for col_idx in range(1, max_col + 1):
                 cell = ws.cell(row=row_idx, column=col_idx)
-                # 跳过合并单元格中非左上角的单元格
                 cell_value = ""
                 if isinstance(cell, MergedCell):
-                    # 查找这个单元格属于哪个合并区域，获取主单元格的值
                     for merge_info in merge_cells_info:
                         if (merge_info['min_row'] <= row_idx <= merge_info['max_row'] and
                             merge_info['min_col'] <= col_idx <= merge_info['max_col']):
                             if row_idx == merge_info['min_row'] and col_idx == merge_info['min_col']:
-                                # 这是合并区域的左上角
                                 main_cell = ws.cell(row=merge_info['min_row'], column=merge_info['min_col'])
                                 cell_value = str(main_cell.value) if main_cell.value is not None else ""
                             break
@@ -283,12 +259,10 @@ def _convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> bool:
         
         wb.close()
         
-        # 如果没有数据，返回失败
         if not data:
             print(f"Excel文件没有数据: {excel_path}")
             return False
         
-        # 创建PDF文档（使用横向A4）
         doc = SimpleDocTemplate(
             str(pdf_path),
             pagesize=landscape(A4),
@@ -298,10 +272,8 @@ def _convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> bool:
             bottomMargin=10*mm
         )
         
-        # 创建样式
         styles = getSampleStyleSheet()
         
-        # 创建中文段落样式
         chinese_style = ParagraphStyle(
             'Chinese',
             parent=styles['Normal'],
@@ -311,7 +283,6 @@ def _convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> bool:
             wordWrap='CJK',
         )
         
-        # 将数据转换为Paragraph对象以支持自动换行
         table_data = []
         for row in data:
             row_paragraphs = []
@@ -323,18 +294,15 @@ def _convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> bool:
                 row_paragraphs.append(p)
             table_data.append(row_paragraphs)
         
-        # 计算列宽（根据页面宽度平均分配）
-        page_width = landscape(A4)[0] - 20*mm  # 减去左右边距
+        page_width = landscape(A4)[0] - 20*mm  
         if max_col > 0:
             col_width = page_width / max_col
             col_widths = [col_width] * max_col
         else:
             col_widths = None
         
-        # 创建表格
         table = Table(table_data, colWidths=col_widths, repeatRows=1)
         
-        # 创建表格样式
         style_commands = [
             ('FONTNAME', (0, 0), (-1, -1), chinese_font_name),
             ('FONTSIZE', (0, 0), (-1, -1), 8),
@@ -347,13 +315,11 @@ def _convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> bool:
             ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ]
         
-        # 处理合并单元格
         for merge_info in merge_cells_info:
             row_span = merge_info['max_row'] - merge_info['min_row'] + 1
             col_span = merge_info['max_col'] - merge_info['min_col'] + 1
             
             if row_span > 1 or col_span > 1:
-                # reportlab使用0索引
                 start_row = merge_info['min_row'] - 1
                 start_col = merge_info['min_col'] - 1
                 end_row = merge_info['max_row'] - 1
@@ -365,7 +331,6 @@ def _convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> bool:
         
         table.setStyle(TableStyle(style_commands))
         
-        # 构建PDF
         elements = [table]
         doc.build(elements)
         
@@ -417,7 +382,6 @@ def generate_handover_document(
     wb = load_workbook(excel_path)
     ws = wb.active
     
-    # 提取数据（使用 _safe_str 防止 list/None 等非标量类型导致 openpyxl 崩溃）
     flight_info = form_data.get("flight_info") or {}
     cargo_info = form_data.get("cargo_info") or {}
     
@@ -433,7 +397,6 @@ def generate_handover_document(
     cargo_name = _safe_str(cargo_info.get("cargo_name", ""))
     package = _safe_str(cargo_info.get("package", ""))
     
-    # 从业务参数配置中获取交运人(delivery_person)
     shenzhen_air_config = business_config.get("shenzhen_air") or {}
     document_config = shenzhen_air_config.get("document") or {}
     declaration_config = document_config.get("shenzhen_airport_air_cargo_security_inspection_declaration_list") or {}
@@ -442,21 +405,19 @@ def generate_handover_document(
     print(f"[交接单] 运单ID={waybill_id}, 航班号={flight_number}, 目的地={destination_city}, "
           f"运单号={waybill_number}, 件数={quantity}, 重量={weight}, 交运人={delivery_person}")
     
-    # 使用直接单元格赋值（模板中短值如"1","2"等不适合用字符串搜索替换）
-    ws['D4'] = flight_number        # ZH9505 → 航班号
-    ws['F4'] = destination_city     # 上海虹桥 → 目的地城市
-    ws['H4'] = year                 # 2025 → 年
-    ws['I4'] = month                # 2 → 月
-    ws['J4'] = day                  # 18 → 日
-    ws['A12'] = waybill_number      # 479-53957562 → 运单号
-    ws['C12'] = quantity            # 1 → 件数
-    ws['D12'] = weight              # 5 → 毛重
-    ws['E12'] = chargeable_weight   # 5 → 计费重量
-    ws['J12'] = package             # 纸箱 → 包装
-    ws['F13'] = cargo_name          # NK细胞 → 货物品名
-    ws['B47'] = delivery_person     # 唐文旭 → 交运人
+    ws['D4'] = flight_number        
+    ws['F4'] = destination_city     
+    ws['H4'] = year                 
+    ws['I4'] = month                
+    ws['J4'] = day                  
+    ws['A12'] = waybill_number      
+    ws['C12'] = quantity            
+    ws['D12'] = weight              
+    ws['E12'] = chargeable_weight   
+    ws['J12'] = package             
+    ws['F13'] = cargo_name          
+    ws['B47'] = delivery_person     
     
-    # airline_consent_certificate 条件替换：非空时替换 H30 单元格
     airline_consent_certificate = _safe_str(form_data.get("airline_consent_certificate", ""))
     if airline_consent_certificate and len(airline_consent_certificate.strip()) > 0:
         ws['H30'] = airline_consent_certificate
@@ -504,7 +465,6 @@ def generate_cargo_detail_document(
     wb = load_workbook(excel_path)
     ws = wb.active
     
-    # 提取数据
     flight_info = form_data.get("flight_info") or {}
     cargo_info = form_data.get("cargo_info") or {}
     
@@ -513,12 +473,10 @@ def generate_cargo_detail_document(
     quantity = _safe_str(cargo_info.get("quantity", ""))
     weight = _safe_str(cargo_info.get("weight", ""))
     
-    # 使用直接单元格赋值（避免短值"18"/"296"的误匹配风险）
-    ws['B3'] = flight_number              # ZH9949 → 航班号
-    ws['D3'] = waybill_number             # 479-57110642 → 主单号
-    ws['G3'] = f"{quantity}件{weight}KG"  # 18件296KG → 件数重量
+    ws['B3'] = flight_number              
+    ws['D3'] = waybill_number             
+    ws['G3'] = f"{quantity}件{weight}KG"  
     
-    # H3 是日期（模板中为Excel日期序列号45909），设置为实际航班日期
     try:
         date_obj = datetime.strptime(flight_date, "%Y-%m-%d")
         ws['H3'] = date_obj
@@ -568,7 +526,6 @@ def generate_cargo_checklist_document(
     wb = load_workbook(excel_path)
     ws = wb.active
     
-    # 提取数据
     flight_info = form_data.get("flight_info") or {}
     cargo_info = form_data.get("cargo_info") or {}
     
@@ -581,7 +538,6 @@ def generate_cargo_checklist_document(
     cargo_name = _safe_str(cargo_info.get("cargo_name", ""))
     package = _safe_str(cargo_info.get("package", ""))
     
-    # 从业务参数配置中获取托运人/签章/检查人
     shenzhen_air_config = business_config.get("shenzhen_air") or {}
     document_config = shenzhen_air_config.get("document") or {}
     checklist_config = document_config.get("domestic_cargo_checklist") or {}
@@ -589,24 +545,20 @@ def generate_cargo_checklist_document(
     shipper_or_agent_seal = _safe_str(checklist_config.get("shipper_or_agent_seal", ""))
     shipper_or_inspector = _safe_str(checklist_config.get("shipper_or_inspector", ""))
     
-    # 使用直接单元格赋值
     flight_date = _safe_str(flight_info.get("flight_date", ""))
     
-    ws['E4'] = flight_number          # ZH9929 → 航班号
-    ws['M4'] = destination_city       # 济南 → 目的地
-    ws['U4'] = flight_date            # 日期右侧 → 航班日期
-    ws['A8'] = waybill_number         # 479-57515651 → 运单号
-    ws['E8'] = quantity               # 110 → 件数
-    ws['G8'] = weight                 # 400 → 毛重
-    ws['I8'] = chargeable_weight      # 400 → 计费重量
-    ws['K8'] = cargo_name             # 货物品名
-    ws['P8'] = package                # 纸箱 → 包装
+    ws['E4'] = flight_number          
+    ws['M4'] = destination_city       
+    ws['U4'] = flight_date            
+    ws['A8'] = waybill_number         
+    ws['E8'] = quantity               
+    ws['G8'] = weight                 
+    ws['I8'] = chargeable_weight      
+    ws['K8'] = cargo_name             
+    ws['P8'] = package                
     
-    # E3: "航空货运托运人或托运人代理人"右侧 → shipper_or_agent
     ws['E3'] = shipper_or_agent
-    # E15: "航空货运托运人或托运人代理人签章"右侧 → shipper_or_agent_seal
     ws['E15'] = shipper_or_agent_seal
-    # A25 含"检查人：陈晶晶"，替换检查人名称
     a25_value = ws['A25'].value
     if a25_value and isinstance(a25_value, str) and shipper_or_inspector:
         ws['A25'] = a25_value.replace("陈晶晶", shipper_or_inspector)
@@ -638,24 +590,21 @@ def _fill_aquatic_animal_checklist_xlsx(ws: Worksheet, waybill_number: str,
     oxygen_supply_test_results = _safe_str(form_data.get("oxygen_supply_test_results", ""))
     shipper_unit = _safe_str(shipper_unit)
     
-    # 基本信息（直接单元格赋值）
-    ws['D3'] = shipper_unit                  # 深圳丰德航空物流有限公司 → 托运代理人
-    ws['C4'] = waybill_number                # 479-60491104 → 运单号
-    ws['I4'] = f"{quantity}件{weight}KG"     # 3件80KG → 件数/重量
-    ws['C5'] = flight_number                 # CA4336 → 航班号
-    ws['I5'] = destination_city              # 成都双流 → 目的站
+    ws['D3'] = shipper_unit                  
+    ws['C4'] = waybill_number                
+    ws['I4'] = f"{quantity}件{weight}KG"     
+    ws['C5'] = flight_number                 
+    ws['I5'] = destination_city              
     
-    # I3 是日期（模板中为Excel日期序列号46086），设置为实际航班日期
     try:
         date_obj = datetime.strptime(flight_date, "%Y-%m-%d")
         ws['I3'] = date_obj
     except (ValueError, TypeError):
         ws['I3'] = flight_date
     
-    # 新增替换项
-    ws['C16'] = quantity                     # 3 → 开包件数
-    ws['F16'] = oxygen_supply_test_results   # 蔬菜、丝瓜、芥菜 → 检查结果
-    ws['C18'] = flight_date                  # 填航班日期 → 航班日期
+    ws['C16'] = quantity                     
+    ws['F16'] = oxygen_supply_test_results   
+    ws['C18'] = flight_date                  
 
 
 def generate_aquatic_animal_checklist_document(
@@ -693,7 +642,6 @@ def generate_aquatic_animal_checklist_document(
     wb = load_workbook(excel_path)
     ws = wb.active
     
-    # 深航托运代理人来源于业务参数配置
     shenzhen_air_config = business_config.get("shenzhen_air") or {}
     document_config = shenzhen_air_config.get("document") or {}
     aquatic_config = document_config.get("inspection_form_for_the_receipt_and_transport_of_oxygenated_aquatic_animal_cargo") or {}
@@ -745,7 +693,6 @@ def generate_label_document(
     wb = load_workbook(excel_path)
     ws = wb.active
     
-    # 提取数据
     flight_info = form_data.get("flight_info") or {}
     cargo_info = form_data.get("cargo_info") or {}
     
@@ -757,13 +704,12 @@ def generate_label_document(
     quantity = _safe_str(cargo_info.get("quantity", ""))
     weight = _safe_str(cargo_info.get("weight", ""))
     
-    # 只需修改第一个标签区域，后续标签通过公式自动同步
-    ws['C2'] = waybill_number    # 479-58183392 → 航班运单号
-    ws['B3'] = quantity          # 6 → 件数
-    ws['D3'] = weight            # 36 → 重量
-    ws['A4'] = origin_city       # 深圳 → 始发站城市
-    ws['C4'] = destination_city  # 合肥 → 目的站城市
-    ws['D4'] = flight_number     # ZH9945 → 航班号
+    ws['C2'] = waybill_number    
+    ws['B3'] = quantity          
+    ws['D3'] = weight            
+    ws['A4'] = origin_city       
+    ws['C4'] = destination_city  
+    ws['D4'] = flight_number     
     
     wb.save(excel_path)
     wb.close()
@@ -804,7 +750,6 @@ def generate_all_documents(
     declaration_list = _safe_str(form_data.get("declaration_list", ""))
     aquatic_switch = _safe_str(form_data.get("oxygenated_aquatic_animal_goods_receipt_inspection_form_switch", "1"))
     
-    # 先清理所有深航旧生成文件，避免条件变化后遗留过期文件
     _cleanup_generated_documents(waybill_id, list(DOC_TYPE_TO_FILENAME.values()))
     
     print(f"[深航货站录单] 运单ID={waybill_id}, cargo_code={repr(cargo_code)}, "
@@ -815,7 +760,6 @@ def generate_all_documents(
           f"标签单=生成, "
           f"充氧类={'生成' if aquatic_switch == '0' else '跳过'}")
     
-    # 生成交接单（仅当 cargo_code == "044"）
     if cargo_code == "044":
         try:
             excel_path, pdf_path = generate_handover_document(
@@ -829,7 +773,6 @@ def generate_all_documents(
             print(f"生成交接单失败: {str(e)}")
             results[DOC_TYPE_HANDOVER] = {"excel": None, "pdf": None, "error": str(e)}
     
-    # 生成航空货物明细表（仅当 declaration_list == "0"）
     if declaration_list == "0":
         try:
             excel_path, pdf_path = generate_cargo_detail_document(
@@ -843,7 +786,6 @@ def generate_all_documents(
             print(f"生成航空货物明细表失败: {str(e)}")
             results[DOC_TYPE_CARGO_DETAIL] = {"excel": None, "pdf": None, "error": str(e)}
     
-    # 生成货物收运检查清单（仅当 cargo_code == "044"）
     if cargo_code == "044":
         try:
             excel_path, pdf_path = generate_cargo_checklist_document(
@@ -857,7 +799,6 @@ def generate_all_documents(
             print(f"生成货物收运检查清单失败: {str(e)}")
             results[DOC_TYPE_CARGO_CHECKLIST] = {"excel": None, "pdf": None, "error": str(e)}
     
-    # 生成标签单（必生成）
     try:
         excel_path, pdf_path = generate_label_document(
             waybill_id, waybill_number, form_data, business_config
@@ -870,7 +811,6 @@ def generate_all_documents(
         print(f"生成标签单失败: {str(e)}")
         results[DOC_TYPE_LABEL] = {"excel": None, "pdf": None, "error": str(e)}
     
-    # 生成充氧类水生动物货物收运检查单（仅当开关为"0"时生成）
     if aquatic_switch == "0":
         try:
             excel_path, pdf_path = generate_aquatic_animal_checklist_document(
@@ -909,15 +849,12 @@ def get_document_path(
     if not waybill_dir.exists():
         return None
     
-    # 获取文档名称
     doc_name = DOC_TYPE_TO_FILENAME.get(doc_type)
     if not doc_name:
         return None
     
-    # 确定文件扩展名
     extension = ".pdf" if file_format == "pdf" else ".xlsx"
     
-    # 使用固定文件名（不带时间戳）
     file_path = waybill_dir / f"{doc_name}{extension}"
     
     if file_path.exists():
@@ -945,12 +882,10 @@ def list_documents(waybill_id: int) -> Dict[str, Dict[str, Optional[str]]]:
     """
     results = {}
     
-    # 遍历所有文档类型
     for doc_type in [DOC_TYPE_HANDOVER, DOC_TYPE_CARGO_DETAIL, DOC_TYPE_CARGO_CHECKLIST, DOC_TYPE_LABEL, DOC_TYPE_AQUATIC_ANIMAL_CHECKLIST]:
         excel_path = get_document_path(waybill_id, doc_type, "excel")
         pdf_path = get_document_path(waybill_id, doc_type, "pdf")
         
-        # 只有当文件存在时才添加到结果中
         if excel_path or pdf_path:
             results[doc_type] = {
                 "excel": str(excel_path) if excel_path else None,
@@ -960,8 +895,6 @@ def list_documents(waybill_id: int) -> Dict[str, Dict[str, Optional[str]]]:
     return results
 
 
-# ======== 南航货站录单相关函数 ========
-# 注意：南航和深航的文件统一存放在 generated_files/{waybill_id}/ 下
 
 
 def generate_csa_aquatic_animal_checklist_document(
@@ -1003,7 +936,6 @@ def generate_csa_aquatic_animal_checklist_document(
     wb = load_workbook(excel_path)
     ws = wb.active
     
-    # 南航托运代理人来源于业务参数配置
     csa_config = business_config.get("china_southern_air") or {}
     csa_document_config = csa_config.get("document") or {}
     csa_aquatic_config = csa_document_config.get("inspection_form_for_the_receipt_and_transport_of_oxygenated_aquatic_animal_cargo") or {}
@@ -1044,7 +976,6 @@ def generate_csa_all_documents(
     
     aquatic_switch = _safe_str(form_data.get("oxygenated_aquatic_animal_goods_receipt_inspection_form_switch", "1"))
     
-    # 先清理南航旧生成文件，避免条件变化后遗留过期文件
     _cleanup_generated_documents(waybill_id, list(CSA_DOC_TYPE_TO_FILENAME.values()))
     
     print(f"[南航货站录单] 运单ID={waybill_id}, aquatic_switch={repr(aquatic_switch)}, "

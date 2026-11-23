@@ -1,0 +1,553 @@
+from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import or_, and_, func
+from typing import List
+from datetime import datetime
+import json
+import pandas as pd
+from io import BytesIO
+from fastapi.responses import StreamingResponse
+from urllib.parse import quote
+
+from app.api.deps import get_db, get_current_active_user
+from app.core.response import success_response
+from app.api.reconciliation_agent import _settle_payable
+from app.api.financial_audit import (
+    format_decimal, get_peer_value, parse_csa_flight_info, parse_form_data,
+    safe_float, safe_int, safe_str,
+)
+
+from app.models.air_financial_audit_data import AirFinancialAuditData
+from app.models.transit_loading import ShenzhenAirBookingExport
+from app.models.departure_manual_data import ShenzhenAirDepartureManualData
+from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
+from app.models.csa_departure_manual_data import CsaDepartureManualData
+from app.models.csa_departure_tracking import CsaLalamoveInformation
+from app.models.consignment_note import ConsignmentNote
+from app.models.peer_air_manual_data import PeerAirDepartureManualData
+from app.models.customer import Customer
+from app.models.waybill import Waybill
+
+from app.schemas.reconciliation_delivery import (
+    DeliveryReconciliationQuery,
+    DeliveryReconciliationItemResponse,
+    DeliveryReconciliationListResponse,
+    DeliveryBatchSettleRequest,
+    DeliveryReconciliationExportRequest
+)
+
+router = APIRouter()
+
+@router.get("/air", summary="派送单位对账列表查询")
+def get_delivery_reconciliation_list(
+    query: DeliveryReconciliationQuery = Depends(),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    fa_base_query = db.query(AirFinancialAuditData).filter(AirFinancialAuditData.financial_audit_status == 2)
+    if query.financial_audit_status is not None:
+        fa_base_query = fa_base_query.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
+    if query.settlement_status is not None:
+        fa_base_query = fa_base_query.filter(AirFinancialAuditData.delivery_settlement_status == query.settlement_status)
+        
+    fa_records = fa_base_query.all()
+    fa_map = {}
+    for fa in fa_records:
+        if fa.source_type not in fa_map:
+            fa_map[fa.source_type] = {}
+        fa_map[fa.source_type][fa.source_id] = fa
+        
+
+    candidate_items = []
+    
+    sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).outerjoin(
+        ShenzhenAirDepartureManualData, ShenzhenAirBookingExport.id == ShenzhenAirDepartureManualData.booking_export_id
+    )
+    
+    if query.waybill_numbers:
+        wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
+        if wbs:
+            or_filters = []
+            for wb in wbs:
+                if "-" in wb:
+                    pref, num = wb.split("-", 1)
+                    or_filters.append(and_(ShenzhenAirBookingExport.prefix == pref, ShenzhenAirBookingExport.waybill_number == num))
+                else:
+                    or_filters.append(ShenzhenAirBookingExport.waybill_number == wb)
+            sz_query = sz_query.filter(or_(*or_filters))
+            
+    if query.flight_date_start:
+        sz_query = sz_query.filter(
+            func.replace(ShenzhenAirBookingExport.flight_date, "/", "-") >= query.flight_date_start
+        )
+    if query.flight_date_end:
+        sz_query = sz_query.filter(
+            func.replace(ShenzhenAirBookingExport.flight_date, "/", "-") <= query.flight_date_end
+        )
+    
+        
+    sz_records = sz_query.all()
+    for export, md in sz_records:
+        fa = fa_map.get("shenzhen_air", {}).get(export.id)
+        if not fa:
+            continue
+            
+        c_name = str(md.customer_name) if md and md.customer_name else ""
+        if query.customer_name and query.customer_name not in c_name:
+            continue
+            
+        act_flight = str(export.actual_flight or export.billing_flight or "")
+        if query.actual_flight_number and query.actual_flight_number not in act_flight:
+            continue
+            
+        rt_parts = [r.strip() for r in str(export.routing).split("-")] if export.routing and "-" in export.routing else ["", str(export.routing or "")]
+        dest = rt_parts[1] if len(rt_parts) > 1 else ""
+        
+        gate_pieces = "0"
+        transit_weight = "0"
+        waybill_record = db.query(Waybill).filter(Waybill.waybill_number == export.waybill_number).first()
+        if waybill_record:
+            transit_loading = waybill_record.transit_loading
+            if transit_loading and transit_loading.custom_data:
+                try:
+                    c_data = json.loads(transit_loading.custom_data) if isinstance(transit_loading.custom_data, str) else transit_loading.custom_data
+                    if "gate_pieces" in c_data:
+                        gate_pieces = str(c_data["gate_pieces"])
+                    if "transit_weight" in c_data:
+                        transit_weight = str(c_data["transit_weight"])
+                except:
+                    pass
+
+        candidate_items.append({
+            "source_type": "shenzhen_air",
+            "source_id": export.id,
+            "flight_date": export.flight_date,
+            "waybill_number": f"{export.prefix}-{export.waybill_number}" if export.prefix else export.waybill_number,
+            "destination": dest,
+            "actual_flight_number": act_flight,
+            "actual_pieces": gate_pieces,
+            "actual_weight": transit_weight,
+            "air_freight": export.air_freight,
+            "fuel_surcharge": export.fuel_surcharge,
+            "customer_name": c_name,
+            "_main": export,
+            "_md": md,
+            "_fa": fa
+        })
+
+    csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).outerjoin(
+        CsaDepartureManualData, ChinaSouthernAirApprovalData.id == CsaDepartureManualData.approval_data_id
+    )
+    
+    if query.waybill_numbers:
+        wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
+        if wbs:
+            or_filters = []
+            for wb in wbs:
+                if "-" in wb:
+                    num = wb.split("-", 1)[1]
+                    or_filters.append(ChinaSouthernAirApprovalData.waybill_number.like(f"%{num}%"))
+                else:
+                    or_filters.append(ChinaSouthernAirApprovalData.waybill_number.like(f"%{wb}%"))
+            csa_query = csa_query.filter(or_(*or_filters))
+            
+
+        
+        
+    csa_records = csa_query.all()
+    
+    csa_ids = [r[0].id for r in csa_records]
+    csa_lalamoves = db.query(CsaLalamoveInformation).filter(CsaLalamoveInformation.approval_data_id.in_(csa_ids)).all() if csa_ids else []
+    csa_lms_map = {}
+    for lm in csa_lalamoves:
+        csa_lms_map.setdefault(lm.approval_data_id, []).append(lm)
+
+    for approval, md in csa_records:
+        fa = fa_map.get("china_southern_air", {}).get(approval.id)
+        if not fa:
+            continue
+            
+        c_name = str(md.customer_name) if md and md.customer_name else ""
+        if query.customer_name and query.customer_name not in c_name:
+            continue
+            
+        flight_num, f_date, _, csa_dest = parse_csa_flight_info(approval.flight_info)
+        
+        if query.flight_date_start and f_date < str(query.flight_date_start):
+            continue
+        if query.flight_date_end and f_date > str(query.flight_date_end):
+            continue
+            
+        act_flight = str(approval.actual_flight or flight_num)
+        
+        if query.actual_flight_number and query.actual_flight_number not in act_flight:
+            continue
+
+        lms = csa_lms_map.get(approval.id, [])
+        gate_pieces = str(sum(safe_int(l.pieces) for l in lms))
+        transit_weight = str(sum(safe_float(l.weight) for l in lms))
+
+        candidate_items.append({
+            "source_type": "china_southern_air",
+            "source_id": approval.id,
+            "flight_date": f_date,
+            "waybill_number": approval.waybill_number,
+            "destination": csa_dest or (approval.booking_routing.split("-")[-1] if approval.booking_routing else ""),
+            "actual_flight_number": act_flight,
+            "actual_pieces": gate_pieces,
+            "actual_weight": transit_weight,
+            "air_freight": approval.ref_freight,
+            "fuel_surcharge": 0,
+            "customer_name": c_name,
+            "_main": approval,
+            "_md": md,
+            "_fa": fa
+        })
+
+    peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).outerjoin(
+        PeerAirDepartureManualData, ConsignmentNote.id == PeerAirDepartureManualData.consignment_note_id
+    ).filter(
+        ConsignmentNote.transport_type == "0"
+    )
+    
+    if query.flight_date_start:
+        peer_query = peer_query.filter(ConsignmentNote.consignment_date >= query.flight_date_start)
+    if query.flight_date_end:
+        peer_query = peer_query.filter(ConsignmentNote.consignment_date <= query.flight_date_end)
+        
+    peer_records = peer_query.all()
+    for note, md in peer_records:
+        fa = fa_map.get("peer_air", {}).get(note.id)
+        if not fa:
+            continue
+        financial_audit_status = fa.financial_audit_status if fa else 0
+        settlement_status = fa.delivery_settlement_status if fa else 0
+        if query.financial_audit_status is not None and financial_audit_status != query.financial_audit_status:
+            continue
+        if query.settlement_status is not None and settlement_status != query.settlement_status:
+            continue
+            
+        form_dict = parse_form_data(note.form_data)
+        wb_no = safe_str(get_peer_value(md, form_dict, "waybill_number"))
+        delivery_company = safe_str(get_peer_value(md, form_dict, "delivery_company"))
+        delivery_fee = get_peer_value(md, form_dict, "delivery_fee", "delivery_cost")
+        airport_pickup_fee = get_peer_value(md, form_dict, "airport_pickup_fee")
+        c_name = safe_str(
+            md.customer_name if md and md.customer_name not in (None, "")
+            else note.customer_name if note.customer_name not in (None, "")
+            else form_dict.get("customer_name", "")
+        )
+        pay_override = {}
+        if fa and fa.payable_data:
+            pay_override = fa.payable_data
+            if isinstance(pay_override, str):
+                try:
+                    pay_override = json.loads(pay_override)
+                except (TypeError, ValueError):
+                    pay_override = {}
+        if isinstance(pay_override, dict):
+            delivery_company = safe_str(pay_override.get("delivery_company", delivery_company))
+            delivery_fee = pay_override.get(
+                "delivery_fee", pay_override.get("delivery_cost", delivery_fee)
+            )
+            airport_pickup_fee = pay_override.get("airport_pickup_fee", airport_pickup_fee)
+        if not delivery_company and not safe_float(delivery_fee) and not safe_float(airport_pickup_fee):
+            continue
+        if query.customer_name and query.customer_name not in c_name:
+            continue
+        if query.delivery_company and query.delivery_company not in delivery_company:
+            continue
+        if query.waybill_numbers:
+            wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
+            if wbs and wb_no not in wbs:
+                continue
+
+        act_flight = str(form_dict.get("actual_flight") or note.flight_number or "")
+        if query.actual_flight_number and query.actual_flight_number not in act_flight:
+            continue
+
+        gate_pieces = "0"
+        transit_weight = "0"
+        peer_air_freight = str(form_dict.get("air_freight") or "")
+        peer_fuel_surcharge = ""
+        if fa and fa.payable_data:
+            po = fa.payable_data
+            if isinstance(po, str):
+                try: po = json.loads(po)
+                except Exception: po = {}
+            if isinstance(po, dict):
+                gate_pieces = str(po.get("gate_pieces") or "0")
+                transit_weight = str(po.get("transit_weight") or "0")
+                if "air_freight" in po:
+                    peer_air_freight = str(po.get("air_freight") or "")
+                if "fuel_surcharge" in po:
+                    peer_fuel_surcharge = str(po.get("fuel_surcharge") or "")
+
+        candidate_items.append({
+            "source_type": "peer_air",
+            "source_id": note.id,
+            "flight_date": str(note.consignment_date) if note.consignment_date else "",
+            "waybill_number": wb_no,
+            "destination": note.destination or "",
+            "actual_flight_number": act_flight,
+            "actual_pieces": gate_pieces,
+            "actual_weight": transit_weight,
+            "air_freight": peer_air_freight,
+            "fuel_surcharge": peer_fuel_surcharge,
+            "customer_name": c_name,
+            "_main": note,
+            "_md": md,
+            "_fa": fa,
+            "_form_dict": form_dict,
+        })
+
+    eligible_items = []
+    for item in candidate_items:
+        overrides = parse_form_data(item["_fa"].payable_data)
+        manual, form = item["_md"], item.get("_form_dict", {})
+        company = safe_str(overrides.get("delivery_company", get_peer_value(manual, form, "delivery_company")))
+        fee = overrides.get("delivery_fee", overrides.get(
+            "delivery_cost", get_peer_value(manual, form, "delivery_fee", "delivery_cost"),
+        ))
+        airport_fee = overrides.get("airport_pickup_fee", get_peer_value(manual, form, "airport_pickup_fee"))
+        if not company.strip() and not safe_float(fee) and not safe_float(airport_fee):
+            continue
+        if query.delivery_company and query.delivery_company not in company:
+            continue
+        eligible_items.append(item)
+    candidate_items = eligible_items
+    candidate_items.sort(key=lambda x: str(x.get("flight_date", "")), reverse=True)
+    
+    total_count = len(candidate_items)
+    start_idx = (query.page - 1) * query.pageSize
+    end_idx = start_idx + query.pageSize
+    paged_items = candidate_items[start_idx:end_idx]
+
+    customer_ids = {str(item["customer_name"]) for item in paged_items if str(item.get("customer_name")).isdigit()}
+    customer_id_map = {}
+    if customer_ids:
+        customers = db.query(Customer).filter(Customer.id.in_(customer_ids)).all()
+        customer_id_map = {str(c.id): c for c in customers}
+
+    result_items = []
+    for item in paged_items:
+        fa = item["_fa"]
+        md = item["_md"]
+        
+        financial_audit_status = fa.financial_audit_status if fa else 0
+        delivery_settlement_status = fa.delivery_settlement_status if fa else 0
+        
+        form_dict = item.get("_form_dict", {})
+        delivery_company = safe_str(get_peer_value(md, form_dict, "delivery_company"))
+        delivery_fee = safe_str(get_peer_value(md, form_dict, "delivery_fee", "delivery_cost"))
+        
+        pay_override = {}
+        if fa and fa.payable_data:
+            po = fa.payable_data
+            if isinstance(po, str):
+                try: po = json.loads(po)
+                except Exception: po = {}
+            if isinstance(po, dict):
+                pay_override = po
+
+        if isinstance(pay_override, dict):
+            delivery_company = safe_str(
+                pay_override.get("delivery_company", delivery_company)
+            )
+            delivery_fee = safe_str(
+                pay_override.get(
+                    "delivery_fee",
+                    pay_override.get("delivery_cost", delivery_fee),
+                )
+            )
+                
+        calc_total_cost = safe_float(pay_override.get("total_cost", 0.0))
+        if "total_cost" not in pay_override:
+            transit_fee_val = 0.0
+            telegraph_cost_val = safe_float(
+                pay_override.get(
+                    "telegraph_cost",
+                    get_peer_value(md, form_dict, "telegram_fee", "telegraph_fee"),
+                )
+            )
+            cca_cost = safe_float(pay_override.get("cca_cost", get_peer_value(md, form_dict, "cca")))
+            pack_fee = safe_float(
+                pay_override.get("packaging_fee", get_peer_value(md, form_dict, "packaging_fee"))
+            )
+            oth_fee = safe_float(
+                pay_override.get("other_fees", get_peer_value(md, form_dict, "other_fees"))
+            )
+            penalty_fee = safe_float(pay_override.get("penalty_fee", 0.0))
+            door_pickup_fee = safe_float(
+                pay_override.get("door_pickup_fee", get_peer_value(md, form_dict, "door_pickup_fee"))
+            )
+            airport_fee = safe_float(
+                pay_override.get(
+                    "airport_pickup_fee",
+                    get_peer_value(md, form_dict, "airport_pickup_fee"),
+                )
+            )
+            
+            calc_total_cost = (
+                safe_float(item["air_freight"]) +
+                safe_float(item["fuel_surcharge"]) +
+                transit_fee_val +
+                cca_cost +
+                telegraph_cost_val +
+                penalty_fee +
+                pack_fee +
+                oth_fee +
+                door_pickup_fee +
+                airport_fee +
+                safe_float(delivery_fee)
+            )
+            
+        airport_pickup_fee = format_decimal(calc_total_cost)
+
+        c_name = str(item.get("customer_name") or "").strip()
+        actual_customer_name = customer_id_map[c_name].company_name if c_name in customer_id_map else ""
+
+        result_items.append(DeliveryReconciliationItemResponse(
+            source_type=item["source_type"],
+            source_id=str(item["source_id"]),
+            waybill_number=str(item.get("waybill_number", "")).replace("/", "-"),
+            financial_audit_status=financial_audit_status,
+            delivery_settlement_status=delivery_settlement_status,
+            customer_name=item.get("customer_name", ""),
+            actual_customer_name=actual_customer_name,
+            delivery_company=delivery_company,
+            flight_date=str(item.get("flight_date", "")).replace("/", "-"),
+            actual_flight_number=item.get("actual_flight_number", ""),
+            destination=item.get("destination", ""),
+            actual_pieces=item.get("actual_pieces", "0"),
+            actual_weight=item.get("actual_weight", "0"),
+            airport_pickup_fee=airport_pickup_fee,
+            delivery_fee=delivery_fee
+        ))
+
+    return success_response({
+        "items": [i.dict() for i in result_items],
+        "total": total_count,
+        "page": query.page,
+        "pageSize": query.pageSize
+    })
+
+@router.post("/{source_type}/{source_id}/settle", summary="确认结算派送对账")
+def confirm_delivery_settlement(
+    source_type: str,
+    source_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    _settle_payable(db, {(source_type, safe_int(source_id))}, current_user, "delivery_settlement")
+    return success_response(msg="确认结算成功")
+
+@router.post("/{source_type}/{source_id}/cancel-settlement", summary="取消结算派送对账")
+def cancel_delivery_settlement(
+    source_type: str,
+    source_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    fa = db.query(AirFinancialAuditData).filter(
+        AirFinancialAuditData.source_type == source_type,
+        or_(
+            AirFinancialAuditData.source_id == source_id,
+            AirFinancialAuditData.id == source_id
+        )
+    ).first()
+    
+    if not fa:
+        return success_response(msg="数据不存在，无需取消")
+        
+    fa.delivery_settlement_status = 0
+    fa.delivery_settlement_auditor_id = None
+    fa.delivery_settlement_auditor_name = None
+    fa.delivery_settlement_time = None
+    
+    db.commit()
+    return success_response(msg="取消结算成功")
+
+@router.post("/batch-settle", summary="批量确认结算派送对账")
+def batch_confirm_delivery_settlement(
+    req: DeliveryBatchSettleRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    keys = {(item.source_type, safe_int(item.source_id)) for item in req.items}
+    if keys:
+        _settle_payable(db, keys, current_user, "delivery_settlement")
+    return success_response(msg=f"成功批量结算 {len(keys)} 条单据")
+
+@router.post("/export", summary="导出派送单位对账列表 (选中/批量)")
+def export_delivery_reconciliation_list(
+    req: DeliveryReconciliationExportRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    query = DeliveryReconciliationQuery(
+        waybill_numbers=req.waybill_numbers,
+        flight_date_start=req.flight_date_start,
+        flight_date_end=req.flight_date_end,
+        actual_flight_number=req.actual_flight_number,
+        financial_audit_status=req.financial_audit_status,
+        customer_name=req.customer_name,
+        settlement_status=req.settlement_status,
+        delivery_company=req.delivery_company,
+        page=1,
+        pageSize=999999
+    )
+    
+    result = get_delivery_reconciliation_list(query=query, db=db, current_user=current_user)
+    all_items = result.data.get("items", []) if result.data else []
+    
+    if req.selected_items:
+        selected_keys = {(item.source_type, str(item.source_id)) for item in req.selected_items}
+        items_to_export = [item for item in all_items if (item["source_type"], str(item["source_id"])) in selected_keys]
+    else:
+        items_to_export = all_items
+        
+    if not items_to_export:
+        raise HTTPException(status_code=400, detail="没有符合条件的数据可导出")
+        
+    export_data = []
+    
+    status_map = {0: "未审核", 1: "暂存", 2: "已审核"}
+    settle_map = {0: "未结算", 1: "已结算"}
+    
+    for idx, item in enumerate(items_to_export, 1):
+        export_data.append({
+            "序号": idx,
+            "运单号": item.get("waybill_number", ""),
+            "客户名称": item.get("actual_customer_name", ""),
+            "财务审核": status_map.get(item.get("financial_audit_status", 0), "未知"),
+            "结算状态": settle_map.get(item.get("delivery_settlement_status", 0), "未知"),
+            "派送单位": item.get("delivery_company", ""),
+            "航班日期": item.get("flight_date", ""),
+            "实走航班号": item.get("actual_flight_number", ""),
+            "目的站": item.get("destination", ""),
+            "件数": item.get("actual_pieces", ""),
+            "重量": item.get("actual_weight", ""),
+            "机场提货费": item.get("airport_pickup_fee", ""),
+            "派送费": item.get("delivery_fee", "")
+        })
+        
+    df = pd.DataFrame(export_data)
+    
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='派送单位对账记录')
+    output.seek(0)
+    
+    filename = f"派送单位对账列表_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+    encoded_filename = quote(filename)
+    
+    headers = {
+        'Content-Disposition': f'attachment; filename="{encoded_filename}"; filename*=utf-8\'\'{encoded_filename}'
+    }
+    
+    return StreamingResponse(
+        output, 
+        headers=headers,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )

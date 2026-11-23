@@ -1,0 +1,10 @@
+version: 1
+name: CSA cargo-type pair contract
+slug: csa-cargo-defaults
+protocol: http
+port: 4903
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

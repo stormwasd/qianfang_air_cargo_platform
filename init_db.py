@@ -11,11 +11,9 @@ from app.utils.helpers import format_permissions_to_json
 def init_database():
     """初始化数据库"""
     print("开始创建数据库表...")
-    # 创建所有表
     Base.metadata.create_all(bind=engine)
     print("数据库表创建完成！")
     
-    # 检查是否已有管理员账号
     from app.database import SessionLocal
     db = SessionLocal()
     
@@ -23,12 +21,10 @@ def init_database():
         admin_user = db.query(User).filter(User.phone == "13800000000").first()
         if not admin_user:
             print("创建默认管理员账号...")
-            # 创建默认部门
             admin_dept = Department(name="系统管理部")
             db.add(admin_dept)
             db.flush()
             
-            # 创建默认管理员账号
             admin_user = User(
                 phone="13800000000",
                 password_hash=get_password_hash("admin123456"),
@@ -36,7 +32,6 @@ def init_database():
                 permissions=format_permissions_to_json(["admin"]),
                 is_active=True
             )
-            # 关联部门
             admin_user.departments = [admin_dept]
             db.add(admin_user)
             db.commit()

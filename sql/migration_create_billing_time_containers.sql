@@ -1,0 +1,23 @@
+CREATE TABLE `shenzhen_air_billing_time_containers` (
+  `id` bigint(20) NOT NULL COMMENT '主键ID',
+  `booking_export_id` bigint(20) NOT NULL COMMENT '关联 shenzhen_air_booking_exports.id',
+  `waybill_number_8` varchar(50) DEFAULT NULL COMMENT '运单号(8位)',
+  `sequence` varchar(50) DEFAULT NULL COMMENT '序号',
+  `flight_number` varchar(50) DEFAULT NULL COMMENT '航班号',
+  `flight_date` varchar(50) DEFAULT NULL COMMENT '航班日期',
+  `billing_time` varchar(50) DEFAULT NULL COMMENT '计飞时间',
+  `planned_time` varchar(50) DEFAULT NULL COMMENT '预飞时间（携程）',
+  `actual_time` varchar(50) DEFAULT NULL COMMENT '实飞时间（携程）',
+  `actual_time_attempts` varchar(20) NOT NULL DEFAULT '0' COMMENT '实飞时间查询次数',
+  `next_actual_time_query_at` datetime DEFAULT NULL COMMENT '下一次查询实飞时间时间',
+  `origin` varchar(100) DEFAULT NULL COMMENT '起飞站',
+  `destination` varchar(100) DEFAULT NULL COMMENT '目的站',
+  `quantity` varchar(50) DEFAULT NULL COMMENT '件数',
+  `weight` varchar(50) DEFAULT NULL COMMENT '重量',
+  `container` varchar(255) DEFAULT NULL COMMENT '集装器',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_booking_export_id` (`booking_export_id`),
+  KEY `idx_waybill_number_8` (`waybill_number_8`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='深航计飞时间集装器表';

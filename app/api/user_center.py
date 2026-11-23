@@ -25,7 +25,6 @@ async def get_current_user_info(
     
     返回当前登录用户的详细信息
     """
-    # 确保加载部门关系
     db.refresh(current_user, ["departments"])
     
     user_permissions = parse_json_permissions(current_user.permissions)
@@ -59,13 +58,26 @@ async def reset_current_user_password(
     
     注意：此接口只能重置当前登录用户自己的密码，需要验证旧密码
     """
-    # 验证旧密码
     if not verify_password(password_data.old_password, current_user.password_hash):
         raise BadRequestException("旧密码错误")
     
-    # 更新密码
     current_user.password_hash = get_password_hash(password_data.new_password)
     db.commit()
     
     return success_response(data=None, msg="密码重置成功")
+
+
+@router.get("/username", summary="获取当前登录用户姓名")
+async def get_current_user_name(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    获取当前登录用户姓名接口，供前端渲染时获取当前操作的财务人员姓名。
+    """
+    return success_response(data={
+        "username": current_user.name,
+        "name": current_user.name,
+        "phone": current_user.phone
+    })
+
 

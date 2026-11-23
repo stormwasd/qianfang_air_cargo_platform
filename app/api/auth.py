@@ -64,33 +64,24 @@ async def login(
     
     注意：has_initialized 字段仅对管理员权限用户返回，因为业务参数管理只有管理员权限才能看到
     """
-    # 查找用户，并加载部门关系
     user = db.query(User).options(joinedload(User.departments)).filter(User.phone == login_data.phone).first()
     if not user:
         raise UnauthorizedException("手机号或密码错误")
     
-    # 验证密码
     if not verify_password(login_data.password, user.password_hash):
         raise UnauthorizedException("手机号或密码错误")
     
-    # 检查用户是否启用
     if not user.is_active:
         raise ForbiddenException("用户已被禁用")
     
-    # 生成token
-    # 注意：JWT标准要求sub字段必须是字符串
-    # 包含token_version用于JWT失效机制
     token_data = {"sub": str(user.id), "phone": user.phone, "token_version": user.token_version}
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data=token_data)
     
-    # 解析权限
     permissions = parse_json_permissions(user.permissions)
     
-    # 根据权限生成菜单
     menus = generate_menus_by_permissions(permissions)
     
-    # 构建返回数据
     response_data = {
         "access_token": access_token,
         "refresh_token": refresh_token,
@@ -109,13 +100,10 @@ async def login(
         }
     }
     
-    # 只有管理员权限才返回 has_initialized（业务参数管理只有管理员权限才能看到）
     if is_admin(permissions):
-        # 检查是否已初始化配置（全局唯一配置）
         has_initialized = db.query(BusinessConfig).first() is not None
         response_data["has_initialized"] = has_initialized
     
-    # 返回统一格式
     return success_response(
         data=response_data,
         msg="登录成功"
@@ -144,54 +132,37 @@ async def refresh_token(
         "msg": "success"
     }
     """
-    # 验证refresh_token
     token_data = verify_token(refresh_data.refresh_token, token_type="refresh")
     if token_data is None:
-        # 尝试解码token以获取更详细的错误信息
         try:
             from jose import jwt
-            # 不验证签名，只检查payload
-            # 注意：即使不验证签名，jwt.decode也需要一个key参数（可以是任意值）
             unverified = jwt.decode(
                 refresh_data.refresh_token,
-                key="",  # 使用空字符串作为key，因为我们不验证签名
+                key="",  
                 options={"verify_signature": False, "verify_exp": False}
             )
-            # 如果能解码，说明token格式正确，可能是签名或过期问题
             token_type_in_token = unverified.get("type")
             if token_type_in_token != "refresh":
                 raise UnauthorizedException(f"token类型错误：期望refresh，实际{token_type_in_token}")
             else:
-                # 类型正确，可能是签名或过期问题
                 raise UnauthorizedException("无效的refresh_token或token已过期（可能是签名验证失败或token已过期）")
         except Exception:
-            # 如果连解码都失败，说明token格式有问题
             raise UnauthorizedException("无效的refresh_token格式")
     
-    # 查找用户
     user = db.query(User).filter(User.id == token_data.user_id).first()
     if not user:
         raise UnauthorizedException("用户不存在")
     
-    # 验证token_version是否匹配（检查JWT是否已失效）
-    # 注意：此检查放在is_active之前，因为禁用用户时会递增token_version，
-    # 这样被禁用的用户会先得到401（token失效），前端可以正确重定向到登录页面
     if token_data.token_version != user.token_version:
         raise UnauthorizedException("token已失效，请重新登录")
     
-    # 检查用户是否启用（兜底检查）
-    # 使用401而非403，确保前端统一跳转到登录页面
     if not user.is_active:
         raise UnauthorizedException("用户已被禁用")
     
-    # 生成新的token
-    # 注意：JWT标准要求sub字段必须是字符串
-    # 包含token_version用于JWT失效机制
     new_token_data = {"sub": str(user.id), "phone": user.phone, "token_version": user.token_version}
     new_access_token = create_access_token(data=new_token_data)
     new_refresh_token = create_refresh_token(data=new_token_data)
     
-    # 返回统一格式
     return success_response(
         data={
             "access_token": new_access_token,
@@ -226,11 +197,9 @@ async def logout(
     - 用户需要重新登录才能获取新的token
     - 即使token尚未过期，也会因为token_version不匹配而无法使用
     """
-    # 递增token_version，使所有现有的token失效
     current_user.token_version = (current_user.token_version or 0) + 1
     db.commit()
     
-    # 返回统一格式
     return success_response(
         data=None,
         msg="退出登录成功"

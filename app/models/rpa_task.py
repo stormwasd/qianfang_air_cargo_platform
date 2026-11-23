@@ -11,41 +11,46 @@ import enum
 
 class RPATaskType(str, enum.Enum):
     """RPA任务类型枚举"""
-    # 深航任务
-    SHENZHEN_AIR_WAYBILL_EXECUTE = "SHENZHEN_AIR_WAYBILL_EXECUTE"  # 深航开单
-    SHENZHEN_AIR_WAYBILL_VOID = "SHENZHEN_AIR_WAYBILL_VOID"  # 深航作废
-    SHENZHEN_AIR_MAIN_WAYBILL_PRINT = "SHENZHEN_AIR_MAIN_WAYBILL_PRINT"  # 深航货运主单打印
-    # 南航任务
-    CHINA_SOUTHERN_AIR_BOOKING_EXECUTE = "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE"  # 南航订舱
-    CHINA_SOUTHERN_AIR_BOOKING_CANCEL = "CHINA_SOUTHERN_AIR_BOOKING_CANCEL"  # 南航退舱
-    CHINA_SOUTHERN_AIR_DIRECT_INVOICE = "CHINA_SOUTHERN_AIR_DIRECT_INVOICE"  # 南航直接开单
-    CHINA_SOUTHERN_AIR_WAYBILL_VOID = "CHINA_SOUTHERN_AIR_WAYBILL_VOID"  # 南航作废
-    CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE = "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE"  # 南航新增运单
-    CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA = "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA"  # 南航修改数据后开单（从订舱回显数据后修改再开单）
-    CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT = "CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT"  # 南航货运主单打印
-    CHINA_SOUTHERN_AIR_SECURITY_PRINT = "CHINA_SOUTHERN_AIR_SECURITY_PRINT"  # 南航货运安检申报单打印
-    CHINA_SOUTHERN_AIR_LABEL_PRINT = "CHINA_SOUTHERN_AIR_LABEL_PRINT"  # 南航货运标签单打印
-    # 制单打印任务
-    FILE_PRINT = "FILE_PRINT"  # 制单文件打印
-    # 保持登录任务（不涉及机器人端队列数据存取）
-    SHENZHEN_AIR_KEEP_LOGIN = "SHENZHEN_AIR_KEEP_LOGIN"  # 深航保持登录
-    CHINA_SOUTHERN_AIR_KEEP_LOGIN = "CHINA_SOUTHERN_AIR_KEEP_LOGIN"  # 南航保持登录
-    TANGYI_KEEP_LOGIN = "TANGYI_KEEP_LOGIN"  # 唐翼保持登录
+    SHENZHEN_AIR_WAYBILL_EXECUTE = "SHENZHEN_AIR_WAYBILL_EXECUTE"  
+    SHENZHEN_AIR_WAYBILL_VOID = "SHENZHEN_AIR_WAYBILL_VOID"  
+    SHENZHEN_AIR_BILLING_TIME_CONTAINER = "SHENZHEN_AIR_BILLING_TIME_CONTAINER"  
+    SHENZHEN_AIR_TRANSIT_LOADING = "SHENZHEN_AIR_TRANSIT_LOADING"  
+    SHENZHEN_AIR_MAIN_WAYBILL_PRINT = "SHENZHEN_AIR_MAIN_WAYBILL_PRINT"  
+    SHENZHEN_AIR_APPROVAL_DATA = "SHENZHEN_AIR_APPROVAL_DATA"  
+    SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY = "SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY"  
+    CHINA_SOUTHERN_AIR_BOOKING_EXECUTE = "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE"  
+    CHINA_SOUTHERN_AIR_BOOKING_CANCEL = "CHINA_SOUTHERN_AIR_BOOKING_CANCEL"  
+    CHINA_SOUTHERN_AIR_DIRECT_INVOICE = "CHINA_SOUTHERN_AIR_DIRECT_INVOICE"  
+    CHINA_SOUTHERN_AIR_WAYBILL_VOID = "CHINA_SOUTHERN_AIR_WAYBILL_VOID"  
+    CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE = "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE"  
+    CHINA_SOUTHERN_AIR_APPROVAL_DATA = "CHINA_SOUTHERN_AIR_APPROVAL_DATA"  
+    CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA = "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA"  
+    CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT = "CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT"  
+    CHINA_SOUTHERN_AIR_SECURITY_PRINT = "CHINA_SOUTHERN_AIR_SECURITY_PRINT"  
+    CHINA_SOUTHERN_AIR_LABEL_PRINT = "CHINA_SOUTHERN_AIR_LABEL_PRINT"  
+    CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING = "CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING"  
+    CHINA_SOUTHERN_AIR_GET_TOKEN = "CHINA_SOUTHERN_AIR_GET_TOKEN"  
+    SHENZHEN_AIR_GET_HAR = "SHENZHEN_AIR_GET_HAR"
+    FILE_PRINT = "FILE_PRINT"  
+    SHENZHEN_AIR_KEEP_LOGIN = "SHENZHEN_AIR_KEEP_LOGIN"  
+    CHINA_SOUTHERN_AIR_KEEP_LOGIN = "CHINA_SOUTHERN_AIR_KEEP_LOGIN"  
+    TANGYI_KEEP_LOGIN = "TANGYI_KEEP_LOGIN"  
+    TANGYI_RESTART = "TANGYI_RESTART"  
 
 
 class RPATaskStatus(str, enum.Enum):
     """RPA任务状态枚举"""
-    PENDING = "pending"  # 待执行（在队列中等待）
-    RUNNING = "running"  # 执行中（已被Worker取出正在执行）
-    SUCCESS = "success"  # 执行成功
-    FAILED = "failed"  # 执行失败
-    TIMEOUT = "timeout"  # 执行超时
+    PENDING = "pending"  
+    RUNNING = "running"  
+    SUCCESS = "success"  
+    FAILED = "failed"  
+    TIMEOUT = "timeout"  
 
 
 class RPATargetType(str, enum.Enum):
     """RPA任务目标类型枚举"""
-    WAYBILL = "waybill"  # 运单
-    BOOKING = "booking"  # 订舱
+    WAYBILL = "waybill"  
+    BOOKING = "booking"  
 
 
 class RPATask(Base):
@@ -53,7 +58,7 @@ class RPATask(Base):
     __tablename__ = "rpa_tasks"
     
     id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="任务ID")
-    task_type = Column(String(50), nullable=False, index=True, comment="任务类型（SHENZHEN_AIR_WAYBILL_EXECUTE/SHENZHEN_AIR_WAYBILL_VOID/CHINA_SOUTHERN_AIR_BOOKING_EXECUTE/CHINA_SOUTHERN_AIR_BOOKING_CANCEL/CHINA_SOUTHERN_AIR_DIRECT_INVOICE）")
+    task_type = Column(String(50), nullable=False, index=True, comment="RPA任务类型")
     target_type = Column(String(20), nullable=False, index=True, comment="目标类型（waybill/booking）")
     target_id = Column(BigInteger, nullable=False, index=True, comment="目标ID（运单ID或订舱ID）")
     params = Column(Text, nullable=False, comment="RPA调用参数（JSON格式）")
@@ -68,14 +73,29 @@ class RPATask(Base):
     error_message = Column(Text, nullable=True, comment="错误信息")
     created_by = Column(BigInteger, nullable=True, index=True, comment="创建用户ID")
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, index=True, comment="创建时间（中国时间UTC+8）")
+    scheduled_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, index=True, comment="计划可执行时间（中国时间UTC+8）")
+    attempt_count = Column(Integer, nullable=False, default=0, comment="已消费次数")
+    max_attempts = Column(Integer, nullable=False, default=1, comment="最大消费次数")
     started_at = Column(DateTime(timezone=True), nullable=True, comment="开始执行时间")
     finished_at = Column(DateTime(timezone=True), nullable=True, comment="完成时间")
     
-    # 复合索引：用于Worker获取待执行任务（按优先级降序、创建时间升序）
     __table_args__ = (
         Index('idx_status_priority_created', 'status', 'priority', 'created_at'),
     )
     
     def __repr__(self):
         return f"<RPATask(id={self.id}, task_type={self.task_type}, status={self.status})>"
+
+
+class RPATaskLastSuccess(Base):
+    """RPA任务最后成功执行时间表"""
+    __tablename__ = "rpa_task_last_success"
+
+    task_type = Column(String(100), primary_key=True, comment="任务类型 (RPATaskType)")
+    last_success_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="最后一次成功执行时间（UTC+8）")
+    updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="记录更新时间（UTC+8）")
+
+    def __repr__(self):
+        return f"<RPATaskLastSuccess(task_type={self.task_type}, last_success_at={self.last_success_at})>"
+
 

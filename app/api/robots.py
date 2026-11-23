@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ======================== 接口实现 ========================
 
 @router.post("", summary="新增或修改机器人")
 async def create_or_update_robot(
@@ -49,13 +48,11 @@ async def create_or_update_robot(
     - **extra_config**: 机器人其他配置（可选，包含深航账号密码、打印机服务、唐翼程序地址）
     - **status**: 机器人状态（可选，1=启用，0=未启用，默认1）
     """
-    # 验证加密的robot_id是否可解密（确保是合法的加密ID）
     try:
         decrypt_robot_id(payload.robot_id)
     except ValueError:
         raise BadRequestException("机器人ID无效，请使用加密工具生成正确的机器人ID")
 
-    # 序列化 extra_config
     extra_config_json = None
     if payload.extra_config:
         extra_config_json = json.dumps(
@@ -63,16 +60,13 @@ async def create_or_update_robot(
             ensure_ascii=False,
         )
 
-    # 序列化 task_permissions
     task_permissions_json = json.dumps(payload.task_permissions, ensure_ascii=False)
 
     if payload.id:
-        # ========== 修改模式（先清理旧数据，再重建）==========
         robot = db.query(Robot).filter(Robot.id == int(payload.id)).first()
         if not robot:
             raise NotFoundException("机器人记录不存在")
 
-        # 如果修改了 robot_id，检查唯一性
         if payload.robot_id != robot.robot_id:
             existing = db.query(Robot).filter(
                 Robot.robot_id == payload.robot_id,
@@ -81,10 +75,8 @@ async def create_or_update_robot(
             if existing:
                 raise ConflictException("该机器人ID已被其他机器人使用")
 
-        # 1. 先清理旧的远程 Job 和本地 robot_jobs/robot_queues
         await robot_job_service.cleanup_robot(db, robot)
 
-        # 2. 更新字段
         robot.robot_id = payload.robot_id
         robot.name = payload.name
         robot.location = payload.location
@@ -98,10 +90,8 @@ async def create_or_update_robot(
         db.commit()
         db.refresh(robot)
 
-        # 3. 根据新数据重建 RPA Job 和队列配置
         await robot_job_service.sync_robot_jobs(db, robot)
 
-        # 热同步 Worker 线程（状态变更时自动启动/停止对应 Worker，无需重启服务）
         from app.services.rpa_worker import rpa_worker_manager
         rpa_worker_manager.sync_workers()
 
@@ -109,8 +99,6 @@ async def create_or_update_robot(
         return success_response(data=_format_robot_response(robot, db), msg="机器人修改成功")
 
     else:
-        # ========== 新增模式 ==========
-        # 检查 robot_id 唯一性
         existing = db.query(Robot).filter(Robot.robot_id == payload.robot_id).first()
         if existing:
             raise ConflictException("该机器人ID已存在")
@@ -128,10 +116,8 @@ async def create_or_update_robot(
         db.commit()
         db.refresh(robot)
 
-        # 异步/后台同步生成 RPA Job
         await robot_job_service.sync_robot_jobs(db, robot)
 
-        # 热同步 Worker 线程（新增机器人后自动启动对应 Worker，无需重启服务）
         from app.services.rpa_worker import rpa_worker_manager
         rpa_worker_manager.sync_workers()
 
@@ -155,18 +141,15 @@ async def get_robots(
     """
     query_obj = db.query(Robot)
 
-    # 状态筛选
     if query.status is not None:
         query_obj = query_obj.filter(Robot.status == query.status)
 
-    # 总数
     total = query_obj.count()
 
-    # 分页（按创建时间倒序）
-    offset = (query.page - 1) * query.page_size
+    offset = (query.page - 1) * query.pageSize
     robots = query_obj.order_by(
-        Robot.created_at.desc()
-    ).offset(offset).limit(query.page_size).all()
+        Robot.created_at.desc(), Robot.id.desc()
+    ).offset(offset).limit(query.pageSize).all()
 
     robot_list = [_format_robot_response(r, db) for r in robots]
 
@@ -186,28 +169,44 @@ async def get_task_types(
     返回 rpa_tasks 表中 RPATaskType 枚举的所有任务类型及其中文描述。
     前端在配置机器人可执行任务权限时使用此接口获取可选项。
     """
-    # 任务类型中文描述映射
     task_type_descriptions = {
         "SHENZHEN_AIR_WAYBILL_EXECUTE": "深航开单",
         "SHENZHEN_AIR_WAYBILL_VOID": "深航作废",
+        "SHENZHEN_AIR_BILLING_TIME_CONTAINER": "深航计飞时间-集装器数据获取",
+        "SHENZHEN_AIR_TRANSIT_LOADING": "深航过机-装机数据获取",
+        "SHENZHEN_AIR_APPROVAL_DATA": "深航订舱-批复数据获取",
+        "SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY": "深航订舱-批复数据获取-宽体",
         "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE": "南航订舱",
         "CHINA_SOUTHERN_AIR_BOOKING_CANCEL": "南航退舱",
         "CHINA_SOUTHERN_AIR_DIRECT_INVOICE": "南航直接开单",
         "CHINA_SOUTHERN_AIR_WAYBILL_VOID": "南航作废",
         "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE": "南航新增运单",
+        "CHINA_SOUTHERN_AIR_APPROVAL_DATA": "南航订舱-批复数据获取",
         "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA": "南航修改数据后开单",
         "FILE_PRINT": "制单文件打印",
         "SHENZHEN_AIR_MAIN_WAYBILL_PRINT": "深航货运主单打印",
         "CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT": "南航货运主单打印",
         "CHINA_SOUTHERN_AIR_SECURITY_PRINT": "南航货运安检申报单打印",
         "CHINA_SOUTHERN_AIR_LABEL_PRINT": "南航标签单打印",
+        "CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING": "南航订舱-本站货物+货拉数据获取",
+        "CHINA_SOUTHERN_AIR_GET_TOKEN": "南航获取token",
+        "SHENZHEN_AIR_GET_HAR": "深航获取har",
         "SHENZHEN_AIR_KEEP_LOGIN": "深航保持登录",
         "CHINA_SOUTHERN_AIR_KEEP_LOGIN": "南航保持登录",
         "TANGYI_KEEP_LOGIN": "唐翼保持登录",
+        "TANGYI_RESTART": "唐翼重启流程",
     }
 
+    # 南航新增运单和订舱均已迁移至直连接口；枚举和 Worker 保留以处理历史任务，
+    # 但不再允许前端为机器人配置这两种任务类型。
+    excluded_task_types = {
+        "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE",
+        "CHINA_SOUTHERN_AIR_BOOKING_EXECUTE",
+    }
     task_types = []
     for task_type in RPATaskType:
+        if task_type.value in excluded_task_types:
+            continue
         task_types.append({
             "value": task_type.value,
             "label": task_type.value,
@@ -217,7 +216,6 @@ async def get_task_types(
     return success_response(data=task_types, msg="查询成功")
 
 
-# ======================== 任务流程配置管理 (TaskProcess) ========================
 
 @router.get("/task-processes", summary="获取所有任务流程配置")
 async def get_task_processes(
@@ -245,7 +243,6 @@ async def create_or_update_task_process(
     uuid_changed = False
     
     if process:
-        # 检查 UUID 是否变化
         if process.process_detail_uuid != payload.process_detail_uuid:
             uuid_changed = True
             
@@ -268,9 +265,8 @@ async def create_or_update_task_process(
         db.commit()
         db.refresh(process)
         msg = "任务流程配置新增成功"
-        uuid_changed = True # 新增也视为变化，触发初始同步（虽然新流程可能还没机器人关联）
+        uuid_changed = True 
 
-    # 如果 UUID 变化，同步所有机器人
     if uuid_changed:
         logger.info(f"任务流程 UUID 发生变化，触发机器人 Job 重建: task_name={payload.task_name}")
         await robot_job_service.sync_all_robots_for_process(db, payload.task_name)
@@ -342,14 +338,11 @@ async def delete_robot(
 
     robot_name = robot.name
 
-    # 1. 清理关联资源（远程删除 Job + 本地删除 robot_jobs + robot_queues）
     await robot_job_service.cleanup_robot(db, robot)
 
-    # 2. 删除机器人记录
     db.delete(robot)
     db.commit()
 
-    # 3. 热同步 Worker 线程（删除机器人后自动停止对应 Worker）
     from app.services.rpa_worker import rpa_worker_manager
     rpa_worker_manager.sync_workers()
 
@@ -358,11 +351,9 @@ async def delete_robot(
 
 
 
-# ======================== 响应格式化工具 ========================
 
 def _format_robot_response(robot: Robot, db: Session) -> dict:
     """格式化机器人响应数据，包含每个任务对应的 jobUUID"""
-    # 解析 task_permissions
     task_permissions = []
     if robot.task_permissions:
         try:
@@ -370,7 +361,6 @@ def _format_robot_response(robot: Robot, db: Session) -> dict:
         except (json.JSONDecodeError, TypeError):
             task_permissions = []
 
-    # 解析 extra_config
     extra_config = None
     if robot.extra_config:
         try:
@@ -378,12 +368,10 @@ def _format_robot_response(robot: Robot, db: Session) -> dict:
         except (json.JSONDecodeError, TypeError):
             extra_config = None
 
-    # 获取 Job 映射
     jobs = db.query(RobotJob).filter(RobotJob.robot_id == robot.id).all()
     job_mapping = {j.task_name: j.job_uuid for j in jobs}
     job_name_mapping = {j.task_name: j.job_name for j in jobs if j.job_name}
 
-    # 获取队列映射（按 task_name 分组）
     queues = db.query(RobotQueue).filter(RobotQueue.robot_id == robot.id).all()
     queue_mapping = {}
     for q in queues:
@@ -398,9 +386,9 @@ def _format_robot_response(robot: Robot, db: Session) -> dict:
         "location": robot.location,
         "location_required": robot.location_required,
         "task_permissions": task_permissions,
-        "job_mapping": job_mapping, # 返回 task_name -> jobUUID 的映射
-        "job_name_mapping": job_name_mapping, # 返回 task_name -> RPA任务名称 的映射
-        "queue_mapping": queue_mapping, # 返回 task_name -> {queue_key: queue_name} 的映射
+        "job_mapping": job_mapping, 
+        "job_name_mapping": job_name_mapping, 
+        "queue_mapping": queue_mapping, 
         "extra_config": extra_config,
         "status": robot.status,
         "created_at": format_datetime_china(robot.created_at),

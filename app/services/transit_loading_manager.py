@@ -1,0 +1,611 @@
+import os
+import time
+import json
+import asyncio
+import threading
+import traceback
+import pandas as pd
+from typing import Any, Dict, Optional
+from datetime import datetime, timedelta
+from sqlalchemy import and_, exists, or_
+
+from app.config import settings
+from app.database import SessionLocal
+from app.models.config import BusinessConfig
+from app.models.rpa_task import RPATask, RPATaskType, RPATaskStatus
+from app.models.transit_loading import ShenzhenAirBookingExport
+from app.models.billing_time_container import ShenzhenAirBillingTimeContainer
+from app.services.rpa_task_service import rpa_task_service
+from app.utils.helpers import get_china_now
+
+
+TRANSIT_LOADING_TARGET_TYPE = "transit_loading"
+BILLING_TIME_TARGET_TYPE = "booking_export"
+
+def _get_business_config_dict(db_session) -> Dict[str, Any]:
+    config = db_session.query(BusinessConfig).first()
+    if not config or not config.config_data:
+        return {}
+    try:
+        return json.loads(config.config_data)
+    except Exception:
+        return {}
+
+
+class TransitLoadingManager:
+    """
+    深航过机装机数据获取管理器
+    包含两部分功能：
+    1. 定时调度深航过机装机数据获取任务 (RPA下载表格)
+    2. 后台轮询监控下载目录，解析表格并入库，同时派发子任务
+    """
+    def __init__(self):
+        self._scheduler_thread: Optional[threading.Thread] = None
+        self._watcher_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self.watch_dir = settings.RPA_GENERATED_FILES_DIR
+        self._last_direct_billing_request_finished_at: Optional[float] = None
+
+    def start(self) -> None:
+        if not os.path.exists(self.watch_dir):
+            os.makedirs(self.watch_dir, exist_ok=True)
+            
+        self._stop_event.clear()
+        
+        if not (self._scheduler_thread and self._scheduler_thread.is_alive()):
+            self._scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
+            self._scheduler_thread.start()
+            
+        if not (self._watcher_thread and self._watcher_thread.is_alive()):
+            self._watcher_thread = threading.Thread(target=self._run_watcher, daemon=True)
+            self._watcher_thread.start()
+            
+        print("[TransitLoadingManager] 已启动定时调度与文件监控服务")
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        print("[TransitLoadingManager] 正在停止...")
+
+    def _run_scheduler(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._async_scheduler_main())
+        finally:
+            loop.close()
+
+    def _run_watcher(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._async_watcher_main())
+        finally:
+            loop.close()
+
+    async def _async_scheduler_main(self) -> None:
+        """主循环：定期下发下载表格任务"""
+        while not self._stop_event.is_set():
+            interval = getattr(
+                settings,
+                "RPA_SHENZHEN_AIR_TRANSIT_LOADING_INTERVAL_SECONDS",
+                3600,
+            )
+            if interval and interval > 0:
+                try:
+                    await self._scan_and_enqueue_transit_loading()
+                except Exception as exc:
+                    print(
+                        "[TransitLoadingManager] 下载任务调度异常: "
+                        f"{repr(exc)}\n{traceback.format_exc()}"
+                    )
+            try:
+                if interval and interval > 0:
+                    await self._enqueue_missing_billing_tasks()
+            except Exception as exc:
+                print(
+                    "[TransitLoadingManager] 子任务补偿调度异常: "
+                    f"{repr(exc)}\n{traceback.format_exc()}"
+                )
+
+            remaining = interval if interval and interval > 0 else 60
+            while remaining > 0 and not self._stop_event.is_set():
+                step = min(5, remaining)
+                await asyncio.sleep(step)
+                remaining -= step
+
+    async def _scan_and_enqueue_transit_loading(self) -> None:
+        """创建下载表格任务"""
+        if settings.SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE == "direct":
+            from app.services.shenzhen_air_direct_transit_loading import (
+                ShenzhenAirDirectTransitLoadingError,
+                shenzhen_air_direct_transit_loading_service,
+            )
+            from app.services.tracking_execution_time import (
+                DIRECT_TRANSIT_LOADING_SUCCESS_TYPE,
+                record_success_time,
+            )
+
+            try:
+                export_path = await shenzhen_air_direct_transit_loading_service.download_export()
+            except ShenzhenAirDirectTransitLoadingError as exc:
+                print(f"[TransitLoadingManager] KingGo过机装机表直连下载失败: {exc}")
+                return
+            record_success_time(DIRECT_TRANSIT_LOADING_SUCCESS_TYPE)
+            print(
+                "[TransitLoadingManager] KingGo过机装机表直连下载完成: "
+                f"{export_path.name}"
+            )
+            return
+
+        db = SessionLocal()
+        try:
+            existing = rpa_task_service.get_pending_task_for_target(
+                db,
+                target_type=TRANSIT_LOADING_TARGET_TYPE,
+                target_id=1,  
+                task_type=RPATaskType.SHENZHEN_AIR_TRANSIT_LOADING.value,
+            )
+            if existing:
+                return
+
+            business_config = _get_business_config_dict(db)
+            node = business_config.get("shenzhen_air", {}).get("booking", {}).get("shenzhen_air_login", {})
+            system_account = node.get("system_account", "")
+            if not system_account:
+                system_account = "szxfdh002"
+
+            params = {
+                "system_url": "https://www.kinggo.com/main",
+                "system_account": system_account
+            }
+
+            rpa_task_service.create_task(
+                db=db,
+                task_type=RPATaskType.SHENZHEN_AIR_TRANSIT_LOADING.value,
+                target_type=TRANSIT_LOADING_TARGET_TYPE,
+                target_id=1,
+                params=params,
+                job_uuid=None,  
+                priority=2,
+                created_by=None,
+                robot_id=None,  
+            )
+            print("[TransitLoadingManager] 已生成深航过机装机数据获取(下载表格)定时任务")
+        finally:
+            db.close()
+
+    async def _enqueue_missing_billing_tasks(self) -> None:
+        """为旧版本遗留或此前航班时间查询失败的主表记录补建子任务。"""
+        if settings.SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE == "direct":
+            await self._process_direct_billing_time_container_records()
+            return
+
+        db = SessionLocal()
+        try:
+            business_config = _get_business_config_dict(db)
+            node = business_config.get("shenzhen_air", {}).get("booking", {}).get(
+                "shenzhen_air_login", {}
+            )
+            system_account = node.get("system_account") or "szxfdh002"
+            today = get_china_now().strftime("%Y-%m-%d")
+            missing_task = ~exists().where(and_(
+                RPATask.target_type == BILLING_TIME_TARGET_TYPE,
+                RPATask.target_id == ShenzhenAirBookingExport.id,
+                RPATask.task_type
+                == RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value,
+            ))
+            last_id = None
+            while True:
+                query = db.query(ShenzhenAirBookingExport).filter(
+                    or_(
+                        ShenzhenAirBookingExport.departure_tracking_completed.is_(None),
+                        ShenzhenAirBookingExport.departure_tracking_completed != "1",
+                    ),
+                    ShenzhenAirBookingExport.billing_flight.isnot(None),
+                    ShenzhenAirBookingExport.routing.isnot(None),
+                    ShenzhenAirBookingExport.flight_date.isnot(None),
+                    ShenzhenAirBookingExport.flight_date >= today,
+                    missing_task,
+                )
+                if last_id is not None:
+                    query = query.filter(ShenzhenAirBookingExport.id < last_id)
+                records = query.order_by(
+                    ShenzhenAirBookingExport.id.desc()
+                ).limit(200).all()
+                if not records:
+                    break
+                for record in records:
+                    record_id = record.id
+                    try:
+                        await self._enqueue_billing_time_task(
+                            db, record, system_account
+                        )
+                    except Exception as exc:
+                        db.rollback()
+                        print(
+                            "[TransitLoadingManager] 补建深航子任务失败: "
+                            f"export_id={record_id}, error={exc}"
+                        )
+                last_id = records[-1].id
+        finally:
+            db.close()
+
+    async def _enqueue_billing_time_task(
+        self,
+        db,
+        export_record: ShenzhenAirBookingExport,
+        system_account: str,
+    ) -> bool:
+        """按深航优先时间源为一条主表记录创建唯一子任务。"""
+        if str(export_record.departure_tracking_completed or "0") == "1":
+            return False
+        existing_task = rpa_task_service.get_existing_task_for_target(
+            db,
+            target_type=BILLING_TIME_TARGET_TYPE,
+            target_id=export_record.id,
+            task_type=RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value,
+        )
+        if existing_task:
+            return False
+
+        from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
+
+        flight_no = str(export_record.billing_flight or "").strip()
+        flight_date = str(export_record.flight_date or "").strip()
+        routing = str(export_record.routing or "").strip()
+        if any(
+            not value or value.lower() in {"none", "nan"}
+            for value in (flight_no, flight_date, routing)
+        ):
+            return False
+        try:
+            flight_day = datetime.strptime(
+                flight_date.replace("/", "-")[:10], "%Y-%m-%d"
+            ).date()
+        except ValueError:
+            return False
+        if flight_day < get_china_now().date():
+            return False
+        try:
+            ctrip_times = await shenzhen_air_flight_times.get_flight_times(
+                flight_no, flight_date, routing, required_times=("planned_time",)
+            )
+        except Exception as exc:
+            print(
+                "[TransitLoadingManager] 深航计飞时间查询异常，"
+                "本轮暂不创建子任务: "
+                f"waybill={export_record.waybill_number}, error={exc}"
+            )
+            return False
+        ready_time = (ctrip_times or {}).get("planned_time") or (ctrip_times or {}).get("ready_time")
+        if not ready_time:
+            print(
+                "[TransitLoadingManager] 未取得有效航班时间，本轮暂不创建子任务: "
+                f"waybill={export_record.waybill_number}, flight={flight_no}, "
+                f"date={flight_date}, routing={routing}"
+            )
+            return False
+
+        try:
+            scheduled_at = datetime.fromisoformat(
+                str(ready_time).replace("Z", "+00:00")
+            ) - timedelta(minutes=105)
+        except (TypeError, ValueError) as exc:
+            print(
+                "[TransitLoadingManager] 深航航班时间格式无效，本轮暂不创建子任务: "
+                f"waybill={export_record.waybill_number}, ready_time={ready_time}, "
+                f"error={exc}"
+            )
+            return False
+        if scheduled_at.tzinfo:
+            scheduled_at = scheduled_at.replace(tzinfo=None)
+
+        params = {
+            "system_url": "https://www.kinggo.com/main",
+            "system_account": system_account,
+            "waybill_number_8": export_record.waybill_number,
+        }
+        task = rpa_task_service.create_task(
+            db=db,
+            task_type=RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value,
+            target_type=BILLING_TIME_TARGET_TYPE,
+            target_id=export_record.id,
+            params=params,
+            job_uuid=None,
+            priority=2,
+            created_by=None,
+            robot_id=None,
+            scheduled_at=scheduled_at,
+            max_attempts=settings.RPA_DEPARTURE_TASK_MAX_ATTEMPTS,
+        )
+        print(
+            "[TransitLoadingManager] 已创建深航出港明细子任务: "
+            f"task_id={task.id}, export_id={export_record.id}, "
+            f"scheduled_at={scheduled_at}"
+        )
+        return True
+
+    async def _async_watcher_main(self) -> None:
+        """主循环：轮询监控文件夹"""
+        while not self._stop_event.is_set():
+            try:
+                await self._check_for_new_files()
+            except Exception as e:
+                print(f"[TransitLoadingManager] 文件监控异常: {repr(e)}\n{traceback.format_exc()}")
+            
+            await asyncio.sleep(5)  
+
+    async def _check_for_new_files(self) -> None:
+        if not os.path.exists(self.watch_dir):
+            return
+            
+        for filename in os.listdir(self.watch_dir):
+            if "AwbQueryExport" in filename and filename.endswith(".xlsx"):
+                filepath = os.path.join(self.watch_dir, filename)
+                
+                try:
+                    os.rename(filepath, filepath)
+                except OSError:
+                    continue  
+                
+                print(f"[TransitLoadingManager] 发现新的数据文件: {filename}，开始解析入库...")
+                await self._process_file(filepath)
+
+    async def _process_file(self, filepath: str) -> None:
+        db = SessionLocal()
+        try:
+            df = pd.read_excel(filepath)
+            
+            existing_records = []
+            if "航班日期" in df.columns:
+                unique_dates = df["航班日期"].dropna().unique().tolist()
+                date_strs = [str(d).strip() for d in unique_dates if str(d).strip() and str(d) != 'nan']
+                if date_strs:
+                    existing_records = db.query(ShenzhenAirBookingExport).filter(
+                        ShenzhenAirBookingExport.flight_date.in_(date_strs)
+                    ).all()
+            
+            existing_map = {(r.waybill_number, r.flight_date): r for r in existing_records}
+            processed_keys = set()
+
+            business_config = _get_business_config_dict(db)
+            node = business_config.get("shenzhen_air", {}).get("booking", {}).get("shenzhen_air_login", {})
+            system_account = node.get("system_account") or "szxfdh002"
+
+            for index, row in df.iterrows():
+                row_dict = row.where(pd.notnull(row), None).to_dict()
+                
+                waybill_number = str(row_dict.get("单号", ""))
+                if waybill_number.endswith('.0'):
+                    waybill_number = waybill_number[:-2]
+                
+                if not waybill_number or waybill_number == 'None':
+                    continue
+                
+                flight_date = str(row_dict.get("航班日期", ""))
+                key = (waybill_number, flight_date)
+                processed_keys.add(key)
+                
+                field_values = {
+                    "prefix": str(row_dict.get("前缀", "")),
+                    "waybill_status": str(row_dict.get("运单状态", "")),
+                    "creation_time": str(row_dict.get("制单时间", "")),
+                    "creator": str(row_dict.get("制单人", "")),
+                    "agent": str(row_dict.get("代理人", "")),
+                    "routing": str(row_dict.get("航程", "")),
+                    "billing_flight": str(row_dict.get("开单航班", "")),
+                    "actual_flight": str(row_dict.get("走货航班", "")),
+                    "shipper": str(row_dict.get("发货人", "")),
+                    "consignee": str(row_dict.get("收货人", "")),
+                    "carrier": str(row_dict.get("承运人", "")),
+                    "storage_precautions": str(row_dict.get("储运事项", "")),
+                    "cargo_name": str(row_dict.get("品名", "")),
+                    "cabin": str(row_dict.get("舱位", "")),
+                    "quantity": str(row_dict.get("件数", "")),
+                    "weight": str(row_dict.get("重量", "")),
+                    "chargeable_weight": str(row_dict.get("计费重量", "")),
+                    "freight_rate": str(row_dict.get("费率", "")),
+                    "air_freight": str(row_dict.get("航空运费", "")),
+                    "fuel_surcharge": str(row_dict.get("燃油费", "")),
+                    "airport_management_fee": str(row_dict.get("机管费", "")),
+                    "total_amount": str(row_dict.get("总金额", "")),
+                    "price_code": str(row_dict.get("运价代码", "")),
+                    "handling_code": str(row_dict.get("处理代码", "")),
+                    "payment_method": str(row_dict.get("支付方式", "")),
+                    "waybill_type": str(row_dict.get("运单类型", "")),
+                    "quantity_difference": str(row_dict.get("运输件数差额", "")),
+                    "weight_difference": str(row_dict.get("运输重量差额", "")),
+                    "container": str(row_dict.get("集装器", ""))
+                }
+                
+                if key in existing_map:
+                    export_record = existing_map[key]
+                    for k, v in field_values.items():
+                        setattr(export_record, k, v)
+                else:
+                    export_record = ShenzhenAirBookingExport(
+                        waybill_number=waybill_number,
+                        flight_date=flight_date,
+                        **field_values
+                    )
+                    db.add(export_record)
+                    existing_map[key] = export_record 
+                
+                db.flush()  
+
+                if str(getattr(export_record, "departure_tracking_completed", "0")) == "1":
+                    continue
+
+                if settings.SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE == "rpa":
+                    await self._enqueue_billing_time_task(
+                        db, export_record, system_account
+                    )
+                
+            for key, existing_record in existing_map.items():
+                if key not in processed_keys:
+                    db.delete(existing_record)
+            
+            db.commit()
+            print(f"[TransitLoadingManager] 文件 {os.path.basename(filepath)} 解析入库及子任务下发完成。")
+            
+            os.rename(filepath, filepath + ".processed")
+            
+        except Exception as e:
+            db.rollback()
+            print(f"[TransitLoadingManager] 处理文件 {filepath} 失败: {repr(e)}\n{traceback.format_exc()}")
+        finally:
+            db.close()
+
+    async def _wait_for_direct_billing_request(self) -> bool:
+        """按上次请求结束时间限速，跨调度轮次保留；停止时不继续发起请求。"""
+        interval = settings.SHENZHEN_AIR_BILLING_TIME_CONTAINER_REQUEST_INTERVAL_SECONDS
+        while not self._stop_event.is_set():
+            if self._last_direct_billing_request_finished_at is None:
+                return True
+            remaining = interval - (time.monotonic() - self._last_direct_billing_request_finished_at)
+            if remaining <= 0:
+                return True
+            # 短暂异步等待，避免较大间隔阻塞关闭；处理和入库耗时计入间隔。
+            await asyncio.sleep(min(1.0, remaining))
+        return False
+
+    async def _process_direct_billing_time_container_records(self) -> None:
+        """在直连模式下按既有计飞时间直接处理，不创建 rpa_tasks 记录。"""
+        from app.services.shenzhen_air_billing_time_container_processor import (
+            mark_shenzhen_air_export_completed,
+            persist_shenzhen_air_billing_rows,
+        )
+        from app.services.shenzhen_air_direct_billing_time_container import (
+            ShenzhenAirDirectBillingTimeContainerError,
+            shenzhen_air_direct_billing_time_container_service,
+        )
+        from app.services.tracking_execution_time import DIRECT_BILLING_SUCCESS_TYPE, record_success_time
+        from app.services.shenzhen_air_flight_times import shenzhen_air_flight_times
+
+        db = SessionLocal()
+        try:
+            # Tasks created before switching to direct mode are no longer
+            # executable through the RPA queue. Pending rows are safe to
+            # discard; running rows are allowed to finish and are excluded
+            # below to avoid two callers fetching the same export concurrently.
+            legacy_pending = db.query(RPATask).filter(
+                RPATask.task_type == RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value,
+                RPATask.status == RPATaskStatus.PENDING.value,
+            ).all()
+            if legacy_pending:
+                for legacy_task in legacy_pending:
+                    db.delete(legacy_task)
+                db.commit()
+                print(
+                    "[TransitLoadingManager] 直连模式清理遗留深航计飞集装器待执行任务: "
+                    f"{len(legacy_pending)} 条"
+                )
+
+            running_export_ids = {
+                task.target_id
+                for task in db.query(RPATask).filter(
+                    RPATask.task_type == RPATaskType.SHENZHEN_AIR_BILLING_TIME_CONTAINER.value,
+                    RPATask.status == RPATaskStatus.RUNNING.value,
+                    RPATask.target_id.isnot(None),
+                ).all()
+            }
+            today = get_china_now().strftime("%Y-%m-%d")
+            records = db.query(ShenzhenAirBookingExport).filter(
+                or_(
+                    ShenzhenAirBookingExport.departure_tracking_completed.is_(None),
+                    ShenzhenAirBookingExport.departure_tracking_completed != "1",
+                ),
+                ShenzhenAirBookingExport.billing_flight.isnot(None),
+                ShenzhenAirBookingExport.routing.isnot(None),
+                ShenzhenAirBookingExport.flight_date.isnot(None),
+                ShenzhenAirBookingExport.flight_date >= today,
+            ).order_by(ShenzhenAirBookingExport.id.asc()).limit(200).all()
+            if running_export_ids:
+                records = [record for record in records if record.id not in running_export_ids]
+
+            for record in records:
+                if self._stop_event.is_set():
+                    break
+                try:
+                    flight_no = str(record.billing_flight or "").strip()
+                    flight_date = str(record.flight_date or "").strip()
+                    routing = str(record.routing or "").strip()
+                    if not flight_no or not flight_date or not routing:
+                        continue
+                    ctrip_times = await shenzhen_air_flight_times.get_flight_times(
+                        flight_no, flight_date, routing, required_times=("planned_time",)
+                    )
+                    ready_time = (ctrip_times or {}).get("planned_time") or (ctrip_times or {}).get("ready_time")
+                    if not ready_time:
+                        print(
+                            "[TransitLoadingManager] 深航走货明细暂缓: reason=missing_flight_time, "
+                            f"waybill={record.waybill_number}, billing_flight={flight_no}, "
+                            f"date={flight_date}, routing={routing}"
+                        )
+                        continue
+                    scheduled_at = datetime.fromisoformat(
+                        str(ready_time).replace("Z", "+00:00")
+                    ) - timedelta(minutes=105)
+                    if scheduled_at.tzinfo:
+                        scheduled_at = scheduled_at.astimezone(get_china_now().tzinfo)
+                    else:
+                        scheduled_at = scheduled_at.replace(tzinfo=get_china_now().tzinfo)
+                    if scheduled_at > get_china_now():
+                        print(
+                            "[TransitLoadingManager] 深航走货明细暂缓: reason=not_due, "
+                            f"waybill={record.waybill_number}, billing_flight={flight_no}, "
+                            f"planned_time={ready_time}, scheduled_at={scheduled_at}"
+                        )
+                        continue
+
+                    if not await self._wait_for_direct_billing_request():
+                        break
+                    print(
+                        "[TransitLoadingManager] 开始查询深航走货明细: "
+                        f"waybill={record.waybill_number}, billing_flight={flight_no}, "
+                        f"date={flight_date}, routing={routing}, export_id={record.id}"
+                    )
+                    try:
+                        rows = await shenzhen_air_direct_billing_time_container_service.fetch_rows(
+                            record.waybill_number, routing, flight_date
+                        )
+                    finally:
+                        # 网络失败/返回空数据也必须限速，防止异常时连续请求其他单号。
+                        self._last_direct_billing_request_finished_at = time.monotonic()
+                    record_success_time(DIRECT_BILLING_SUCCESS_TYPE)
+                    result = await persist_shenzhen_air_billing_rows(
+                        db, rows, record.waybill_number, record.id
+                    )
+                    if not result.inserted_count or result.has_invalid_flight:
+                        print(
+                            "[TransitLoadingManager] 深航计飞集装器直连返回空数据或空航班号，"
+                            f"下轮调度重试: export_id={record.id}"
+                        )
+                        continue
+                    mark_shenzhen_air_export_completed(db, record.id)
+                    print(
+                        "[TransitLoadingManager] 深航计飞集装器直连处理完成: "
+                        f"export_id={record.id}, rows={result.inserted_count}"
+                    )
+                except ShenzhenAirDirectBillingTimeContainerError as exc:
+                    db.rollback()
+                    print(
+                        "[TransitLoadingManager] 深航计飞集装器直连获取失败，"
+                        f"下轮调度重试: export_id={record.id}, error={exc}"
+                    )
+                except (TypeError, ValueError) as exc:
+                    db.rollback()
+                    print(
+                        "[TransitLoadingManager] 深航计飞时间格式无效，"
+                        f"下轮调度重试: export_id={record.id}, error={exc}"
+                    )
+                except Exception as exc:
+                    db.rollback()
+                    print(
+                        "[TransitLoadingManager] 深航计飞集装器直连处理异常，"
+                        f"下轮调度重试: export_id={record.id}, error={exc}"
+                    )
+        finally:
+            db.close()
+
+transit_loading_manager = TransitLoadingManager()

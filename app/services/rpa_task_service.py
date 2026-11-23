@@ -7,13 +7,11 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
-from app.models.rpa_task import RPATask, RPATaskStatus, RPATaskType, RPATargetType
+from app.models.rpa_task import RPATask, RPATaskStatus, RPATaskType, RPATargetType, RPATaskLastSuccess
 from app.utils.snowflake import generate_id
 from app.utils.helpers import get_china_now
 from app.config import settings
 
-# 打印子任务类型（小写）→ RPATaskType 枚举值的映射
-# 用于将 prepare_print_tasks() 返回的子任务 type 映射为独立的 rpa_tasks.task_type
 PRINT_TYPE_MAPPING = {
     "file_print": RPATaskType.FILE_PRINT.value,
     "shenzhen_air_main_waybill_print": RPATaskType.SHENZHEN_AIR_MAIN_WAYBILL_PRINT.value,
@@ -22,40 +20,34 @@ PRINT_TYPE_MAPPING = {
     "china_southern_air_label_print": RPATaskType.CHINA_SOUTHERN_AIR_LABEL_PRINT.value,
 }
 
-# RPATaskType 枚举值 → 打印子任务类型（小写）的反向映射
-# 用于 Worker 执行时将 task_type 映射回 _execute_single_print_task 所需的类型字符串
 PRINT_TYPE_REVERSE_MAPPING = {v: k for k, v in PRINT_TYPE_MAPPING.items()}
 
-# 所有打印相关的任务类型集合
 PRINT_TASK_TYPES = set(PRINT_TYPE_MAPPING.values())
 
-# 任务类型 → 需要的队列 key 列表
-# 只有以下任务类型需要 RPA 队列，其他任务类型（作废、打印、保持登录等）不使用队列
 TASK_QUEUE_CONFIGS = {
     "SHENZHEN_AIR_WAYBILL_EXECUTE": ["waybill_number", "freight_rate", "freight", "delivery_fee"],
-    # 南航订舱不再需要队列（运单号改为从单号库预分配）
+    "SHENZHEN_AIR_BILLING_TIME_CONTAINER": ["billing_time_container", "change_order_information"],
     "CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE": ["freight_rate", "freight", "fuel_costs", "extended_service_fee"],
     "CHINA_SOUTHERN_AIR_DIRECT_INVOICE": ["rate", "freight", "fuel_costs", "extended_service_fee"],
     "CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA": ["rate", "freight", "fuel_costs", "extended_service_fee"],
+    "CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING": ["product_information_on_this_site", "lalamove_information"],
+    "CHINA_SOUTHERN_AIR_GET_TOKEN": ["token_name"],
 }
 
-# 全局单例任务类型：同一时刻整个系统只允许一个机器人执行的任务类型。
-# 背景：深航开单时，多个机器人同时登录同一深航账号会导致 session 共享，
-#       进而使深航系统把同一个单号分配给多个任务，出现单号重复的情况。
-#       因此 SHENZHEN_AIR_WAYBILL_EXECUTE 需要全局串行：同类任务的 RUNNING 数量必须为 0，
-#       才允许新的机器人消费并开始执行下一个。
 SINGLETON_TASK_TYPES: set = {
     RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value,
 }
 
-# 任务类型 → 默认优先级（数值越大越优先）
-# 未在此映射中的任务类型使用 settings.RPA_QUEUE_DEFAULT_PRIORITY（默认 1）
 TASK_PRIORITY_MAP = {
-    # 保持登录任务：最高优先级（确保登录态不丢失）
+    RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value: settings.RPA_QUEUE_WAYBILL_PRIORITY,
+    RPATaskType.CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE.value: settings.RPA_QUEUE_WAYBILL_PRIORITY,
+    RPATaskType.CHINA_SOUTHERN_AIR_DIRECT_INVOICE.value: settings.RPA_QUEUE_WAYBILL_PRIORITY,
+    RPATaskType.CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA.value: settings.RPA_QUEUE_WAYBILL_PRIORITY,
+    RPATaskType.CHINA_SOUTHERN_AIR_BOOKING_CANCEL.value: settings.RPA_QUEUE_WAYBILL_PRIORITY,
     RPATaskType.SHENZHEN_AIR_KEEP_LOGIN.value: 3,
     RPATaskType.CHINA_SOUTHERN_AIR_KEEP_LOGIN.value: 3,
     RPATaskType.TANGYI_KEEP_LOGIN.value: 3,
-    # 打印类任务：高于普通业务任务
+    RPATaskType.TANGYI_RESTART.value: 4,
     RPATaskType.SHENZHEN_AIR_MAIN_WAYBILL_PRINT.value: 2,
     RPATaskType.CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT.value: 2,
     RPATaskType.CHINA_SOUTHERN_AIR_SECURITY_PRINT.value: 2,
@@ -91,7 +83,9 @@ class RPATaskService:
         priority: Optional[int] = None,
         created_by: Optional[int] = None,
         robot_id: Optional[int] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
+        scheduled_at: Optional[datetime] = None,
+        max_attempts: Optional[int] = None
     ) -> RPATask:
         """
         创建RPA任务
@@ -115,11 +109,9 @@ class RPATaskService:
         Returns:
             创建的任务对象
         """
-        # 优先级自动推断：先查 TASK_PRIORITY_MAP，未命中则使用配置文件默认值
         if priority is None:
             priority = TASK_PRIORITY_MAP.get(task_type, settings.RPA_QUEUE_DEFAULT_PRIORITY)
         
-        # ---- 自动推断 location ----
         if location is None:
             location = self.resolve_task_location(task_type)
         
@@ -129,13 +121,16 @@ class RPATaskService:
             target_type=target_type,
             target_id=target_id,
             params=json.dumps(params, ensure_ascii=False),
-            queue_params=None,  # 队列参数由 Worker 消费时动态构建
-            job_uuid=None,  # job_uuid 由 Worker 消费时动态解析
-            robot_id=robot_id,  # 默认 NULL，由 Worker 竞争消费
+            queue_params=None,  
+            job_uuid=None,  
+            robot_id=robot_id,  
             location=location,
             status=RPATaskStatus.PENDING.value,
             priority=priority,
-            created_by=created_by
+            created_by=created_by,
+            scheduled_at=scheduled_at or get_china_now(),
+            max_attempts=max_attempts or 1,
+            attempt_count=0
         )
         
         db.add(task)
@@ -168,13 +163,13 @@ class RPATaskService:
         Returns:
             待执行的任务对象，没有则返回None
         """
-        # 查询待执行的任务，按优先级降序、创建时间升序
         task = db.query(RPATask).filter(
-            RPATask.status == RPATaskStatus.PENDING.value
+            RPATask.status == RPATaskStatus.PENDING.value,
+            RPATask.scheduled_at <= get_china_now()
         ).order_by(
             RPATask.priority.desc(),
             RPATask.created_at.asc()
-        ).with_for_update(skip_locked=True).first()  # 跳过已锁定的记录
+        ).with_for_update(skip_locked=True).first()  
         
         return task
     
@@ -207,13 +202,6 @@ class RPATaskService:
         if not allowed_task_types:
             return None
         
-        # ---- 单例任务类型全局并发检查 ----
-        # 对于 SINGLETON_TASK_TYPES 中的任务类型，同一时刻全局只允许一个机器人执行。
-        # 若已有同类任务处于 RUNNING 状态，则将该类型从本次可消费的候选列表中剔除，
-        # 避免多个机器人并发操作深航等对并发敏感的系统。
-        # 注意：这里只需普通 SELECT，不需要加锁，是一次"软过滤"——即使极端情况下
-        #       两个 Worker 同时通过此检查，后续 with_for_update(skip_locked=True)
-        #       的行级锁保证最终只有一个成功 lock_task()。
         effective_types = list(allowed_task_types)
         singleton_types_in_allowed = [t for t in effective_types if t in SINGLETON_TASK_TYPES]
         if singleton_types_in_allowed:
@@ -222,15 +210,14 @@ class RPATaskService:
                 RPATask.status == RPATaskStatus.RUNNING.value
             ).first()
             if already_running:
-                # 从候选列表中去除所有已有 RUNNING 实例的单例任务类型
                 running_type = already_running[0]
                 effective_types = [t for t in effective_types if t != running_type]
                 if not effective_types:
                     return None
-        # ---- 单例检查结束 ----
         
         filters = [
             RPATask.status == RPATaskStatus.PENDING.value,
+            RPATask.scheduled_at <= get_china_now(),
             RPATask.task_type.in_(effective_types),
             or_(
                 RPATask.robot_id == None,
@@ -238,7 +225,6 @@ class RPATaskService:
             )
         ]
         
-        # location 区域过滤：只消费相同区域的任务
         if robot_location:
             filters.append(RPATask.location == robot_location)
         
@@ -298,6 +284,26 @@ class RPATaskService:
             db.commit()
             return True
         return False
+
+    def requeue_task(self, db: Session, task_id: int, delay_seconds: int, error_message: Optional[str] = None) -> bool:
+        """将未更新的明细任务重新入队；达到上限后保留失败终态。"""
+        task = db.query(RPATask).filter(RPATask.id == task_id).first()
+        if not task:
+            return False
+        task.attempt_count = (task.attempt_count or 0) + 1
+        if task.attempt_count >= (task.max_attempts or 1):
+            task.status = RPATaskStatus.FAILED.value
+            task.error_message = error_message or "达到最大消费次数，数据仍未更新"
+            task.finished_at = get_china_now()
+        else:
+            task.status = RPATaskStatus.PENDING.value
+            task.scheduled_at = get_china_now() + timedelta(seconds=max(1, delay_seconds))
+            task.started_at = None
+            task.finished_at = None
+            task.work_uuid = None
+            task.error_message = error_message
+        db.commit()
+        return True
     
     def complete_task(
         self,
@@ -322,15 +328,51 @@ class RPATaskService:
         """
         task = db.query(RPATask).filter(RPATask.id == task_id).first()
         if task:
-            # 记录完成状态（用于日志）
             status = RPATaskStatus.SUCCESS.value if success else RPATaskStatus.FAILED.value
             print(f"任务 {task_id} 完成，状态: {status}, 错误: {error_message}")
             
-            # 直接删除任务
+            if success and task.task_type:
+                self.record_task_success(db, task.task_type)
+
             db.delete(task)
             db.commit()
             return True
         return False
+
+    def record_task_success(self, db: Session, task_type: str) -> bool:
+        """
+        记录/刷新指定任务类型的最后一次成功执行时间（UTC+8）
+        """
+        if not task_type:
+            return False
+        try:
+            now = get_china_now()
+            record = db.query(RPATaskLastSuccess).filter(RPATaskLastSuccess.task_type == task_type).first()
+            if record:
+                record.last_success_at = now
+                record.updated_at = now
+            else:
+                record = RPATaskLastSuccess(
+                    task_type=task_type,
+                    last_success_at=now,
+                    updated_at=now
+                )
+                db.add(record)
+            db.commit()
+            return True
+        except Exception as e:
+            print(f"记录 RPA 任务({task_type})成功时间打卡失败: {e}")
+            db.rollback()
+            return False
+
+    def get_last_success_time(self, db: Session, task_type: str) -> Optional[datetime]:
+        """
+        获取指定任务类型的最后一次成功执行时间
+        """
+        if not task_type:
+            return None
+        record = db.query(RPATaskLastSuccess).filter(RPATaskLastSuccess.task_type == task_type).first()
+        return record.last_success_at if record else None
     
     def timeout_task(
         self,
@@ -351,10 +393,8 @@ class RPATaskService:
         """
         task = db.query(RPATask).filter(RPATask.id == task_id).first()
         if task:
-            # 记录超时状态（用于日志）
             print(f"任务 {task_id} 超时，错误: {error_message}")
             
-            # 直接删除任务
             db.delete(task)
             db.commit()
             return True
@@ -435,6 +475,20 @@ class RPATaskService:
                 RPATask.status == RPATaskStatus.RUNNING.value
             )
         ).first()
+
+    def get_existing_task_for_target(
+        self,
+        db: Session,
+        target_type: str,
+        target_id: int,
+        task_type: str,
+    ) -> Optional[RPATask]:
+        """查询目标现存任务，包括达到重试上限后保留的失败终态。"""
+        return db.query(RPATask).filter(
+            RPATask.target_type == target_type,
+            RPATask.target_id == target_id,
+            RPATask.task_type == task_type,
+        ).order_by(RPATask.created_at.desc()).first()
     
     def get_tasks_list(
         self,
@@ -444,7 +498,7 @@ class RPATaskService:
         target_id: Optional[int] = None,
         status: Optional[str] = None,
         page: int = 1,
-        page_size: int = 10
+        pageSize: int = 10
     ) -> Dict[str, Any]:
         """
         分页查询任务列表
@@ -456,7 +510,7 @@ class RPATaskService:
             target_id: 目标ID（可选）
             status: 任务状态（可选）
             page: 页码
-            page_size: 每页数量
+            pageSize: 每页数量
         
         Returns:
             包含列表和分页信息的字典
@@ -472,18 +526,16 @@ class RPATaskService:
         if status:
             query = query.filter(RPATask.status == status)
         
-        # 获取总数
         total = query.count()
         
-        # 分页查询
         tasks = query.order_by(
             RPATask.created_at.desc()
-        ).offset((page - 1) * page_size).limit(page_size).all()
+        ).offset((page - 1) * pageSize).limit(pageSize).all()
         
         return {
             "total": total,
             "page": page,
-            "page_size": page_size,
+            "pageSize": pageSize,
             "items": tasks
         }
     
@@ -505,7 +557,6 @@ class RPATaskService:
             RPATask.status == RPATaskStatus.RUNNING.value
         ).count()
         
-        # 统计启用的机器人数量作为活动Worker数量
         from app.models.robot import Robot
         worker_count = db.query(Robot).filter(Robot.status == 1).count()
         
@@ -546,6 +597,5 @@ class RPATaskService:
         return count
 
 
-# 全局单例
 rpa_task_service = RPATaskService()
 

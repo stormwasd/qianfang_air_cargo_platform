@@ -1,7 +1,7 @@
 """
 运单相关的Pydantic schemas
 """
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 
@@ -45,7 +45,8 @@ class WaybillCreate(BaseModel):
         "pickup_fee": "",  // 上门提货费
         "delivery_fee": ""  // 派送费
       },
-      "oxygenated_aquatic_animal_goods_receipt_inspection_form_switch": ""  // 充氧类水生动物货物收运检查单开关（"0"=需要生成，"1"或不传=不需要生成）
+      "oxygenated_aquatic_animal_goods_receipt_inspection_form_switch": "",  // 充氧类水生动物货物收运检查单开关
+      "pickup_method": ""  // 提货方式（独立字段，不参与RPA开单）
     }
     
     南方航空字段结构（airline 可以是 "2" 或 "南方航空"）：
@@ -60,14 +61,15 @@ class WaybillCreate(BaseModel):
       },
       "cargo_info": {
         "cargo_type": "",  // 货物类型
+        "cargo_type_code": "",  // 货物类型代码，对应南航 rateCode；历史数据未提供时兼容读取业务参数配置
         "cargo_code": "",  // 货物代码
         "cargo_name": "",  // 货物名称
         "quantity": "",  // 件数
         "weight": "",  // 重量
-        "booking_volume": "",  // 订舱体积（可选）
+        "booking_volume": "",  // 订舱体积（可选；未填时执行阶段由南航接口计算默认值）
         "product_name": "",  // 产品名称
         "oversized_cargo": "",  // 超规货
-        "special_cargo_code": "",  // 特货码
+        "special_cargo_code": "",  // 用户附加特货码（可选）；多个使用英文逗号分隔，例如 GEN,AKA
         "storage_and_transportation_precautions": ""  // 储运注意事项（可选）
       },
       "contact_info": {
@@ -91,22 +93,58 @@ class WaybillCreate(BaseModel):
         "contact_phone": "",  // 联系人电话
         "settlement_file_number": ""  // 结算文件号
       },
+      "outbound_cargo_and_mail_handling_fee_options": null,  // 可选；为空时透传南航费用查询结果
       "other_fees": {
         "packaging_fee": "",  // 包装费
         "pickup_fee": "",  // 上门提货费
         "delivery_fee": ""  // 派送费
       },
-      "oxygenated_aquatic_animal_goods_receipt_inspection_form_switch": ""  // 充氧类水生动物货物收运检查单开关（"0"=需要生成，"1"或不传=不需要生成）
+      "oxygenated_aquatic_animal_goods_receipt_inspection_form_switch": "",  // 充氧类水生动物货物收运检查单开关
+      "pickup_method": ""  // 提货方式（独立字段，不参与RPA开单）
     }
     
     说明：
     - 所有字段的值都是字符串类型
     - address 是对象类型，包含 region（省/市/区）和 detail（详细地址）两个字段
+    - 南航货物类型名称/代码缺失时，保存接口按 business_default 默认名称/代码及启用字典补齐；已填字段优先保留
+    - 南航 `cargo_info.cargo_type_code` 优先映射到开单和费用计算请求的 `rateCode`；仍无法补齐的历史数据保持 `direct_order.rate_code`（默认 3006）兜底
+    - 南航 `cargo_info.special_cargo_code` 可不填；执行时按始发站、目的站、货物类型和有效产品名称查询南航默认特货码，再与用户码去重合并。平台 `form_data` 回写为英文逗号格式，发往南航的 `spCode`、`productionCode` 使用 `/` 格式
+    - 南航接口开单时，`cargo_info.product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
+    - 南航 `cargo_info.booking_volume` 可不填；未填、为 `null` 或空字符串时，执行阶段使用 `flight_info.origin_station` 和 `cargo_info.weight` 调用南航 `calculateCWeight`，并将返回的 `volume` 用于后续 `calculateCharge`、`createOrder`；已填写时原值优先
+    - 最终体积确定后，南航执行阶段按航班、货物类型、重量、体积及有效产品名称查询运价舱位；返回的 `spaceClass` 用于 `bookGrade`、`spaceClass`，`subSpaceClass` 用于同名字段
+    - `outbound_cargo_and_mail_handling_fee_options` 可选；填写时使用表单保存的费用组选项，未填写时执行阶段直接透传南航费用查询返回的完整选项列表，不再按名称定位或补勾
+    - 南航开单时，发货人和收货人的国家代码默认传 `CN`；可分别通过业务参数 `direct_order.shipper_country_code`、`direct_order.consignee_country_code` 覆盖
+    - 南航开单的收货人地址 `consigneeAddress` 默认传 `机场自提`，可通过业务参数 `direct_order.consignee_address` 覆盖
+    - 南航开单的提货方式 `selfPickUp` 默认传 `Y`，与收货人地址 `机场自提` 配套；可通过业务参数 `direct_order.self_pick_up` 覆盖
     - 不同航司的字段结构不同，前端需要根据 airline 字段来展示对应的表单字段
     - 深圳航空的运单可以选择性提供 flight_info.waybill_type 字段（运单类型），南方航空不需要此字段
     """
     form_data: Dict[str, Any] = Field(..., description="表单数据（JSON格式），根据航司类型包含不同的字段结构")
 
+
+class ChinaSouthernAirServiceChargeOptionsQuery(BaseModel):
+    """查询南航出港货邮处理费选项的必要航班与货物信息。"""
+
+    origin_station: str = Field(..., min_length=3, max_length=10, description="始发站三字码")
+    destination: str = Field(..., min_length=3, max_length=10, description="目的站三字码")
+    flight_number: str = Field(..., min_length=2, max_length=20, description="航班号")
+    flight_date: date = Field(..., description="航班日期，格式 YYYY-MM-DD")
+    cargo_type_code: str = Field(..., min_length=1, max_length=50, description="货物类型代码，对应南航 shipmentType")
+    cargo_name: str = Field(..., min_length=1, max_length=100, description="货物类型名称，对应南航 shipmentTypeName")
+
+    @field_validator("origin_station", "destination", "flight_number", mode="before")
+    @classmethod
+    def normalize_airport_and_flight_fields(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip().upper()
+        return value
+
+    @field_validator("cargo_type_code", "cargo_name", mode="before")
+    @classmethod
+    def normalize_cargo_fields(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 class WaybillUpdate(BaseModel):
     """
@@ -135,12 +173,12 @@ class WaybillQuery(BaseModel):
     shipper: Optional[str] = Field(None, description="托运单位（模糊搜索）")
     waybill_number: Optional[str] = Field(None, description="运单号（模糊搜索）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")
+    pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 
 
 class WaybillResponse(BaseModel):
     """运单响应schema"""
-    id: str  # ID以字符串形式返回
+    id: str  
     waybill_number: Optional[str]
     form_data: Dict[str, Any]
     airline_record_status: str

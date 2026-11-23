@@ -1,11 +1,11 @@
 """
 权限管理
 """
+import json
+
 from app.config import settings
 
-# 管理员权限代码
 ADMIN_PERMISSION_CODE = "admin"
-# 管理员权限名称（向后兼容）
 ADMIN_PERMISSION_NAME = settings.PERMISSIONS.get(ADMIN_PERMISSION_CODE, "管理员")
 
 
@@ -19,7 +19,6 @@ def is_admin(permissions: list) -> bool:
     Returns:
         是否为管理员
     """
-    # 支持代码和名称两种格式
     return ADMIN_PERMISSION_CODE in permissions or ADMIN_PERMISSION_NAME in permissions
 
 
@@ -39,17 +38,35 @@ def has_permission(user_permissions: list, required_permission: str) -> bool:
 
 def validate_permissions(permissions: list) -> bool:
     """
-    验证权限列表是否有效（支持代码和名称）
+    验证权限列表是否有效（仅接受标准权限代码）
     
     Args:
-        permissions: 权限列表（可能是代码或名称）
+        permissions: 权限列表（权限代码）
     
     Returns:
         是否所有权限都有效
     """
     valid_codes = set(settings.PERMISSION_CODES)
-    valid_names = set(settings.PERMISSION_NAMES)
-    valid_permissions = valid_codes | valid_names
-    
-    return all(perm in valid_permissions for perm in permissions)
+    return all(perm in valid_codes for perm in permissions)
+
+
+def normalize_user_permissions(permissions: list[str]) -> list[str]:
+    """用户管理写入边界：兼容 agency 旧值，拒绝未知值，统一为去重代码。"""
+    valid_codes = set(settings.PERMISSION_CODES)
+    aliases = {"agency": "agent"}
+    codes = []
+    invalid = []
+    seen = set()
+    for permission in permissions:
+        value = permission.strip()
+        code = aliases.get(value, value)
+        if code not in valid_codes:
+            invalid.append(permission)
+        elif code not in seen:
+            seen.add(code)
+            codes.append(code)
+    if invalid:
+        # Do not silently discard unsupported permissions and save a partial set.
+        raise ValueError("权限列表包含无效的权限：" + json.dumps(invalid, ensure_ascii=False))
+    return codes
 

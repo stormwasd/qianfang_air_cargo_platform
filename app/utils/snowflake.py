@@ -17,21 +17,17 @@ class SnowflakeGenerator:
     - 12位序列号
     """
     
-    # 时间戳起始点：2024-01-01 00:00:00
     EPOCH = 1704067200000
     
-    # 位分配
     TIMESTAMP_BITS = 41
     DATACENTER_ID_BITS = 5
     MACHINE_ID_BITS = 5
     SEQUENCE_BITS = 12
     
-    # 最大值
     MAX_DATACENTER_ID = (1 << DATACENTER_ID_BITS) - 1
     MAX_MACHINE_ID = (1 << MACHINE_ID_BITS) - 1
     MAX_SEQUENCE = (1 << SEQUENCE_BITS) - 1
     
-    # 位移
     MACHINE_ID_SHIFT = SEQUENCE_BITS
     DATACENTER_ID_SHIFT = SEQUENCE_BITS + MACHINE_ID_BITS
     TIMESTAMP_SHIFT = SEQUENCE_BITS + MACHINE_ID_BITS + DATACENTER_ID_BITS
@@ -76,25 +72,20 @@ class SnowflakeGenerator:
         with self.lock:
             timestamp = self._current_timestamp()
             
-            # 时钟回拨处理
             if timestamp < self.last_timestamp:
                 raise RuntimeError(
                     f"时钟回拨，拒绝生成ID。当前时间戳：{timestamp}，上次时间戳：{self.last_timestamp}"
                 )
             
-            # 同一毫秒内，序列号递增
             if timestamp == self.last_timestamp:
                 self.sequence = (self.sequence + 1) & self.MAX_SEQUENCE
-                # 序列号溢出，等待下一毫秒
                 if self.sequence == 0:
                     timestamp = self._wait_next_millis(self.last_timestamp)
             else:
-                # 新的毫秒，序列号重置
                 self.sequence = 0
             
             self.last_timestamp = timestamp
             
-            # 生成ID
             id_value = (
                 ((timestamp - self.EPOCH) << self.TIMESTAMP_SHIFT) |
                 (self.datacenter_id << self.DATACENTER_ID_SHIFT) |
@@ -105,8 +96,6 @@ class SnowflakeGenerator:
             return id_value
 
 
-# 全局单例生成器（默认数据中心ID=1，机器ID=1）
-# 在生产环境中，应该从配置文件或环境变量读取
 _generator = SnowflakeGenerator(datacenter_id=1, machine_id=1)
 
 

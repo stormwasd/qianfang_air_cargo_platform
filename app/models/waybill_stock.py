@@ -19,7 +19,6 @@ class WaybillStock(Base):
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
-    # 关联领单批次
     batches = relationship("WaybillStockBatch", back_populates="stock", cascade="all, delete-orphan", lazy="dynamic")
     
     def __repr__(self):
@@ -40,10 +39,8 @@ class WaybillStockBatch(Base):
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
-    # 关联单号库
     stock = relationship("WaybillStock", back_populates="batches")
     
-    # 关联单号详情（级联删除，删除批次时自动删除关联的详情记录）
     items = relationship("WaybillStockItem", back_populates="batch", cascade="all, delete-orphan", lazy="dynamic")
     
     def __repr__(self):
@@ -68,7 +65,6 @@ class WaybillStockItem(Base):
     created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间（中国时间UTC+8）")
     updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间（中国时间UTC+8）")
     
-    # 关联领单批次
     batch = relationship("WaybillStockBatch", back_populates="items")
     
     def __repr__(self):

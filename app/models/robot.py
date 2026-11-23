@@ -72,3 +72,19 @@ class RobotQueue(Base):
         Index('uk_robot_task_queue', 'robot_id', 'task_name', 'queue_key', unique=True),
     )
 
+
+class RPARecurringTaskScheduleState(Base):
+    """按机器人记录周期性 RPA 任务的最近入队时间。"""
+    __tablename__ = "rpa_recurring_task_schedule_states"
+
+    id = Column(BigInteger, primary_key=True, default=generate_id, index=True, comment="记录ID")
+    robot_id = Column(BigInteger, nullable=False, index=True, comment="机器人记录ID")
+    task_type = Column(String(100), nullable=False, index=True, comment="周期性RPA任务类型")
+    last_enqueued_at = Column(DateTime(timezone=True), nullable=False, comment="最近一次入队时间（中国时间UTC+8）")
+    created_at = Column(DateTime(timezone=True), default=get_china_now, nullable=False, comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), default=get_china_now, onupdate=get_china_now, nullable=False, comment="更新时间")
+
+    __table_args__ = (
+        Index("uk_robot_recurring_task_type", "robot_id", "task_type", unique=True),
+    )
+

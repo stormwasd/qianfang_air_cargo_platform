@@ -30,12 +30,12 @@ class SettlementQuery(BaseModel):
     airline_record_time_start: Optional[date] = Field(None, description="航司录单时间开始（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）")
     airline_record_time_end: Optional[date] = Field(None, description="航司录单时间结束（格式：YYYY-MM-DD，从 form_data.airline_record_time 筛选）")
     page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(10, ge=1, le=200, alias="pageSize", description="每页数量")
+    pageSize: int = Field(10, ge=1, le=200, description="每页数量")
 
 
 class SettlementResponse(BaseModel):
     """结算单响应schema"""
-    id: str  # ID以字符串形式返回
+    id: str  
     form_data: Dict[str, Any]
     created_at: datetime
     updated_at: datetime

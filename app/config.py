@@ -2,118 +2,115 @@
 项目配置文件
 使用Pydantic Settings进行配置管理，提供类型验证和更好的配置管理
 """
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal
 from pydantic_settings import BaseSettings
 from pydantic import Field
+import os
 
 
 class Settings(BaseSettings):
     """应用配置"""
     
-    # 项目信息
     PROJECT_NAME: str = "千方航空物流平台"
     VERSION: str = "1.0.0"
     API_V1_PREFIX: str = "/api/v1"
     
-    # 数据库配置
     MYSQL_HOST: str = "localhost"
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "root"
     MYSQL_PASSWORD: str = "password"
     MYSQL_DATABASE: str = "qianfang_air_cargo"
     
-    # 数据库连接池配置
     DB_POOL_SIZE: int = Field(default=20, ge=1, le=100, description="连接池大小")
     DB_MAX_OVERFLOW: int = Field(default=10, ge=0, description="连接池最大溢出数")
     DB_POOL_RECYCLE: int = Field(default=3600, ge=0, description="连接回收时间（秒）")
     
-    # JWT配置
-    SECRET_KEY: str = "your-secret-key-here-change-in-production"  # 生产环境需要修改
+    SECRET_KEY: str = "your-secret-key-here-change-in-production"  
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30 * 24 * 60, ge=1, description="访问token过期时间（分钟）")
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=90, ge=1, description="刷新token过期时间（天）")
     
-    # 密码加密配置
     PASSWORD_SALT_ROUNDS: int = Field(default=12, ge=4, le=31, description="密码加密轮数")
     
-    # 权限定义（权限代码 -> 权限名称）
     PERMISSIONS: Dict[str, str] = {
-        "waybill": "运单管理",
-        "booking": "订舱管理",
-        "settlement": "结算单管理",
-        "customer": "客户管理",
-        "bill": "单号管理",
+        "waybill": "主单管理",
+        "bill": "单号库",
         "robot": "机器人管理",
+        "customer": "客户管理",
+        "account": "账号管理",
+        "system": "系统管理",
+        "agent": "代理管理",
+        "finance": "财务管理",
+        "smart_tracking": "智能跟单",
+        "waybill_audit": "运单单据审核",
+        "company_info": "公司信息",
         "admin": "管理员"
     }
     
-    # 权限代码列表（用于验证）
     PERMISSION_CODES: List[str] = list(PERMISSIONS.keys())
     
-    # 权限名称列表（用于向后兼容）
     PERMISSION_NAMES: List[str] = list(PERMISSIONS.values())
     
-    # CORS配置
     CORS_ORIGINS: List[str] = ["*"]
     
-    # RPA API配置
     RPA_API_BASE_URL: str = "https://z-commander-api.ai-indeed.com"
     RPA_API_APP_KEY: str = "56505085de31411d95c7d55d7d77147c"
     RPA_API_APP_SECRET: str = "iZfoiSTRiBkTSzpiPTxCfcPuiOtXcC"
     RPA_API_COOKIE: str = "JSESSIONID=3251C9354C6364367DF927B56A1E3CCE"
     
-    # RPA任务配置
-    RPA_SHENZHEN_AIR_JOB_UUID: str = "e1b259766b97e5e115c21b2614158a5f"  # 深航新增运单任务jobUuid
-    RPA_SHENZHEN_AIR_VOID_JOB_UUID: str = "a7c653b789a20bb955bf22163a9bd7c9"  # 深航作废运单任务jobUuid
-    RPA_SHENZHEN_AIR_QUEUE_UUID: str = "8e53aa16fb8642489e899998283da28f"  # 深航获取运单号队列UUID（历史遗留，已不使用）
-    # 深航开单队列名称（固定队列名称，每次执行开单时都会创建新队列实例）
-    RPA_SHENZHEN_AIR_QUEUE_WAYBILL_NUMBER: str = "shenzhen_air_kaidan_queue_waybill_number"  # 深航开单运单号队列名称
-    RPA_SHENZHEN_AIR_QUEUE_FREIGHT_RATE: str = "shenzhen_air_kaidan_queue_freight_rate"  # 深航开单费率队列名称
-    RPA_SHENZHEN_AIR_QUEUE_FREIGHT: str = "shenzhen_air_kaidan_queue_freight"  # 深航开单运费队列名称
-    RPA_SHENZHEN_AIR_QUEUE_DELIVERY_FEE: str = "shenzhen_air_kaidan_queue_delivery_fee"  # 深航开单派送费队列名称
-    RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID: str = "4971126222078ca6b2fa992432024d99"  # 南航订舱任务jobUuid
-    RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID: str = "196dde6fbcfd15e2e0641caf8720c7d7"  # 南航退舱任务jobUuid
-    RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID: str = "167b4cbefd18d7311d55844cdb36c398"  # 南航直接开单任务jobUuid
-    RPA_CHINA_SOUTHERN_AIR_VOID_JOB_UUID: str = "6597981f58eae4a6dd0b025699215c44"  # 南航作废运单任务jobUuid
-    RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID: str = "cc2bda248c24dbf57fa6cd2534ce5054"  # 南航新增运单任务jobUuid
-    RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID: str = "1d8f4e2518e0f2c858853c189873e91d"  # 南航修改数据后开单任务jobUuid（从订舱回显数据后修改再开单）
-    RPA_CHINA_SOUTHERN_AIR_QUEUE_UUID: str = "d5933f787b77482aa486da4fd3ffdcfd"  # 南航获取运单号队列UUID（历史遗留，已不使用）
+    RPA_SHENZHEN_AIR_JOB_UUID: str = "e1b259766b97e5e115c21b2614158a5f"  
+    RPA_SHENZHEN_AIR_VOID_JOB_UUID: str = "a7c653b789a20bb955bf22163a9bd7c9"  
+    RPA_SHENZHEN_AIR_QUEUE_UUID: str = "8e53aa16fb8642489e899998283da28f"  
+    RPA_SHENZHEN_AIR_QUEUE_WAYBILL_NUMBER: str = "shenzhen_air_kaidan_queue_waybill_number"  
+    RPA_SHENZHEN_AIR_QUEUE_FREIGHT_RATE: str = "shenzhen_air_kaidan_queue_freight_rate"  
+    RPA_SHENZHEN_AIR_QUEUE_FREIGHT: str = "shenzhen_air_kaidan_queue_freight"  
+    RPA_SHENZHEN_AIR_QUEUE_DELIVERY_FEE: str = "shenzhen_air_kaidan_queue_delivery_fee"  
+    RPA_CHINA_SOUTHERN_AIR_BOOKING_JOB_UUID: str = "4971126222078ca6b2fa992432024d99"  
+    RPA_CHINA_SOUTHERN_AIR_CANCEL_JOB_UUID: str = "196dde6fbcfd15e2e0641caf8720c7d7"  
+    RPA_CHINA_SOUTHERN_AIR_DIRECT_INVOICE_JOB_UUID: str = "167b4cbefd18d7311d55844cdb36c398"  
+    RPA_CHINA_SOUTHERN_AIR_VOID_JOB_UUID: str = "6597981f58eae4a6dd0b025699215c44"  
+    RPA_CHINA_SOUTHERN_AIR_WAYBILL_JOB_UUID: str = "cc2bda248c24dbf57fa6cd2534ce5054"  
+    RPA_CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_JOB_UUID: str = "1d8f4e2518e0f2c858853c189873e91d"  
+    RPA_CHINA_SOUTHERN_AIR_QUEUE_UUID: str = "d5933f787b77482aa486da4fd3ffdcfd"  
     
-    # ========== 打单RPA配置 ==========
-    # 通用文件打印jobUuid（深航和南航共用，用于打印制单后生成的文档文件）
     RPA_FILE_PRINT_JOB_UUID: str = "8aef03178d04720fdbcc7ea66c7cb00d"
-    # 深航货运主单打印jobUuid
     RPA_SHENZHEN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID: str = "1fa863b38e0e0741239b7bbf51d196ac"
-    # 南航货运主单打印jobUuid
     RPA_CHINA_SOUTHERN_AIR_MAIN_WAYBILL_PRINT_JOB_UUID: str = "9b4f2e79cf1107f57f6ea7130552ffe5"
-    # 南航货运安检申报单打印jobUuid
     RPA_CHINA_SOUTHERN_AIR_SECURITY_PRINT_JOB_UUID: str = "afd7fa28e46cd61cf26707c98176556e"
-    # 南航标签单打印jobUuid
     RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID: str = "1efafa308b1c7a789117747b56b6e6a2"
-    # 打印文件在RPA机器人上的根目录（固定路径）
     RPA_PRINT_FILE_ROOT_PATH: str = "D:\\generated_files_of_qianfang_air_cargo_platform"
-    # 南航统一队列名称（所有南航功能共用，每次执行时都会创建新队列实例）
-    # - 南航订舱：使用运单号队列（1个）
-    # - 南航直接开单：使用费率、运费、燃油费、延伸服务费队列（4个）
-    # - 南航新增运单：使用全部5个队列
-    RPA_CHINA_SOUTHERN_AIR_QUEUE_WAYBILL_NUMBER: str = "nanhang_air_dingcang_kaidan_queue_waybill_number"  # 南航运单号队列名称
-    RPA_CHINA_SOUTHERN_AIR_QUEUE_RATE: str = "nanhang_air_dingcang_kaidan_queue_rate"  # 南航费率队列名称
-    RPA_CHINA_SOUTHERN_AIR_QUEUE_FREIGHT: str = "nanhang_air_dingcang_kaidan_queue_freight"  # 南航运费队列名称
-    RPA_CHINA_SOUTHERN_AIR_QUEUE_FUEL_COSTS: str = "nanhang_air_dingcang_kaidan_queue_fuel_costs"  # 南航燃油费队列名称
-    RPA_CHINA_SOUTHERN_AIR_QUEUE_EXTENDED_SERVICE_FEE: str = "nanhang_air_dingcang_kaidan_queue_extended_service_fee"  # 南航延伸服务费队列名称
+    RPA_SHENZHEN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED: Optional[bool] = Field(
+        default=None,
+        description="深航开单成功后是否自动制单；未配置时兼容使用自动打单开关"
+    )
+    RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED: bool = Field(
+        default=True,
+        description="深航开单成功后是否自动创建打印任务，默认开启"
+    )
+    RPA_CHINA_SOUTHERN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED: Optional[bool] = Field(
+        default=None,
+        description="南航开单成功后是否自动制单；未配置时兼容使用自动打单开关"
+    )
+    RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED: bool = Field(
+        default=True,
+        description="南航开单成功后是否自动创建打印任务，默认开启"
+    )
+    RPA_CHINA_SOUTHERN_AIR_QUEUE_WAYBILL_NUMBER: str = "nanhang_air_dingcang_kaidan_queue_waybill_number"  
+    RPA_CHINA_SOUTHERN_AIR_QUEUE_RATE: str = "nanhang_air_dingcang_kaidan_queue_rate"  
+    RPA_CHINA_SOUTHERN_AIR_QUEUE_FREIGHT: str = "nanhang_air_dingcang_kaidan_queue_freight"  
+    RPA_CHINA_SOUTHERN_AIR_QUEUE_FUEL_COSTS: str = "nanhang_air_dingcang_kaidan_queue_fuel_costs"  
+    RPA_CHINA_SOUTHERN_AIR_QUEUE_EXTENDED_SERVICE_FEE: str = "nanhang_air_dingcang_kaidan_queue_extended_service_fee"  
 
-    # ========== 保持登录RPA配置 ==========
     RPA_KEEP_LOGIN_ENABLED: bool = Field(
         default=True,
         description="是否启用保持登录定时入队（会创建RPATask，由Worker消费）"
     )
 
-    # jobUuid（产品下发的jobUuid）
     RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_JOB_UUID: str = "946f2c29111a8d6e023ff0a75afb0029"
     RPA_SHENZHEN_AIR_KEEP_LOGIN_JOB_UUID: str = "6d24e496bf1b39af5b77740960d51ca4"
     RPA_TANGYI_KEEP_LOGIN_JOB_UUID: str = "137a3c17c14505dfaac006eab08f16e6"
+    RPA_TANGYI_RESTART_JOB_UUID: str = ""
 
-    # 定时入队间隔（秒）：不填/填None则不入队
     RPA_CHINA_SOUTHERN_AIR_KEEP_LOGIN_INTERVAL_SECONDS: Optional[int] = Field(
         default=6600, ge=1, le=86400,
         description="南航保持登录执行间隔（秒），默认不启用"
@@ -126,33 +123,346 @@ class Settings(BaseSettings):
         default=1200, ge=1, le=86400,
         description="唐翼保持登录执行间隔（秒），默认不启用"
     )
+    RPA_TANGYI_RESTART_INTERVAL_SECONDS: Optional[int] = Field(
+        default=86400, ge=1, le=86400,
+        description="唐翼重启流程执行间隔（秒），默认每天"
+    )
     
-    # RPA轮询配置
+    RPA_SHENZHEN_AIR_TRANSIT_LOADING_INTERVAL_SECONDS: Optional[int] = Field(
+        default=900, ge=1, le=86400,
+        description="深航订舱-过机-装机数据获取任务执行间隔（秒），默认900秒（15分钟）"
+    )
+    RPA_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS: int = Field(
+        default=900, ge=1, le=86400,
+        description="深航订舱-批复数据获取任务定时执行间隔（秒），默认900秒（15分钟）"
+    )
+    RPA_CHINA_SOUTHERN_AIR_APPROVAL_INTERVAL_SECONDS: int = Field(
+        default=900, ge=1, le=86400,
+        description="南航订舱批复数据定时获取执行间隔（秒），默认900秒（15分钟）"
+    )
+    RPA_CHINA_SOUTHERN_AIR_DEPARTURE_TRACKING_INTERVAL_SECONDS: int = Field(
+        default=900, ge=1, le=86400,
+        description="南航出港跟踪数据（本站货物+货拉信息）定时获取执行间隔（秒），默认900秒"
+    )
+    RPA_CHINA_SOUTHERN_AIR_GET_TOKEN_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=1, le=86400,
+        description="南航获取Token任务定时调度间隔（秒），默认1800秒（30分钟）"
+    )
+    RPA_SHENZHEN_AIR_GET_HAR_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=1, le=86400,
+        description="深航获取HAR任务定时调度间隔（秒），默认1800秒（30分钟）"
+    )
+    SHENZHEN_AIR_WAYBILL_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航 POST /waybills/{id}/execute 执行模式：direct=KingGo接口，rpa=原RPA流程",
+    )
+    SHENZHEN_AIR_WAYBILL_VOID_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航 POST /waybills/{id}/void 执行模式：direct=KingGo接口，rpa=原RPA流程",
+    )
+    SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航订舱-过机-装机数据获取执行模式：direct=KingGo接口下载，rpa=原RPA下载流程",
+    )
+    SHENZHEN_AIR_APPROVAL_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航订舱-批复数据获取执行模式：direct=KingGo接口下载普通及宽体机批复，rpa=原RPA流程",
+    )
+    SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航订舱-计飞时间-集装器数据获取执行模式：direct=KingGo接口，rpa=原RPA流程",
+    )
+    SHENZHEN_AIR_BILLING_TIME_CONTAINER_REQUEST_INTERVAL_SECONDS: float = Field(
+        default=5.0, ge=0, le=3600,
+        description="深航走货明细直连逐单请求间隔（秒）；上次请求结束后至少等待此时长，0表示不额外等待，仅作用于当前进程定时管理器",
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_QUEUE_ENABLED: bool = Field(
+        default=True, description="是否启用深航KingGo直连接口持久化任务队列"
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_WORKER_COUNT: int = Field(
+        default=1, ge=1, le=20, description="深航KingGo直连接口Worker数量；共享账号开单由数据库互斥串行领取"
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_POLL_INTERVAL: int = Field(
+        default=2, ge=1, le=60, description="深航KingGo直连接口Worker轮询间隔（秒）"
+    )
+    SHENZHEN_AIR_KINGGO_HAR_PATH: str = Field(
+        default="generated_files/www.kinggo.com.har",
+        description="每次KingGo请求重新提取签名配置和Cookie所用的HAR文件路径",
+    )
+    SHENZHEN_AIR_KINGGO_API_ORIGIN: str = Field(
+        default="https://www.kinggo.com",
+        description="KingGo API传输地址；仅用于本地模拟测试时可覆盖为本地地址",
+    )
+    SHENZHEN_AIR_KINGGO_BROWSER: Literal["auto", "msedge", "chromium"] = Field(
+        default="auto", description="离线HAR签名提取使用的浏览器；生产Linux建议chromium",
+    )
+    SHENZHEN_AIR_KINGGO_EXECUTABLE_PATH: Optional[str] = Field(
+        default=None, description="可选的HAR提取浏览器可执行文件路径",
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_HTTP_TIMEOUT_SECONDS: int = Field(
+        default=30, ge=5, le=180, description="单次KingGo HTTP请求超时秒数",
+    )
+    SHENZHEN_AIR_KINGGO_AGENT_TYPE: str = Field(default="1", description="KingGo深航开单代理类型")
+    SHENZHEN_AIR_KINGGO_AGENT_NAME: str = Field(default="", description="KingGo深航开单代理名称")
+    SHENZHEN_AIR_KINGGO_AGENT_ID: str = Field(default="", description="KingGo深航开单代理ID")
+    SHENZHEN_AIR_KINGGO_AGENT_CODE: str = Field(default="", description="KingGo深航开单代理编码")
+    SHENZHEN_AIR_KINGGO_OPER_ID: str = Field(default="", description="KingGo深航操作员ID")
+    SHENZHEN_AIR_KINGGO_PICK_TEL_NO: str = Field(default="", description="KingGo深航提货联系电话")
+    SHENZHEN_AIR_KINGGO_CNE_ADDR: str = Field(default="", description="KingGo深航收货地址代码")
+    SHENZHEN_AIR_KINGGO_CABIN_TYPE: str = Field(default="F", description="KingGo深航舱位代码；与提供的开单表单一致")
+    SHENZHEN_AIR_KINGGO_CABIN_TYPE_NAME: str = Field(default="F舱", description="KingGo深航舱位名称")
+    SHENZHEN_AIR_KINGGO_PAY_TYPE: str = Field(default="1", description="KingGo深航付款方式")
+
+    # 深航航班时间来源：KingGo优先，携程按需兜底；不影响南航。
+    SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED: bool = Field(
+        default=True, description="启用深航KingGo航班表同步及优先查询，不依赖RPA队列"
+    )
+    SHENZHEN_AIR_FLIGHT_INFO_SYNC_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=60, le=86400, description="深航KingGo航班表同步间隔（秒）"
+    )
+    SHENZHEN_AIR_FLIGHT_INFO_SYNC_RETRY_SECONDS: int = Field(
+        default=60, ge=10, le=3600, description="深航KingGo航班表同步失败重试间隔（秒）"
+    )
+    SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED: bool = Field(
+        default=True,
+        description="深航计飞/实飞缺失时启用携程API兜底：覆盖开单航班调度、每条走货明细入库及后台补查；关闭后不请求携程，不影响南航",
+    )
+
+    # 携程航班接口代理。默认关闭以保持非 Docker/既有部署的原行为；
+    # docker-compose 会显式开启并指向同编排内的 proxy_pool 服务。
+    CTRIP_PROXY_ENABLED: bool = Field(
+        default=False,
+        description="是否通过 proxy_pool 访问携程航班接口"
+    )
+    CTRIP_PROXY_POOL_URL: str = Field(
+        default="http://127.0.0.1:5010",
+        description="jhao104/proxy_pool 的内部 API 地址"
+    )
+    CTRIP_PROXY_MAX_ATTEMPTS: int = Field(
+        default=5, ge=1, le=20,
+        description="单次携程查询最多尝试的不同代理数量"
+    )
+    CTRIP_PROXY_POOL_TIMEOUT_SECONDS: float = Field(
+        default=3.0, ge=0.5, le=30.0,
+        description="访问 proxy_pool API 的超时时间（秒）"
+    )
+
+    CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_ENABLED: bool = Field(
+        default=True,
+        description="是否启用南航货物类型数据字典自动同步"
+    )
+    CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_INTERVAL_SECONDS: int = Field(
+        default=43200, ge=60, le=604800,
+        description="南航货物类型数据字典同步间隔（秒），默认43200秒（12小时）"
+    )
+    CHINA_SOUTHERN_AIR_CARGO_TYPE_SYNC_RETRY_SECONDS: int = Field(
+        default=300, ge=10, le=3600,
+        description="南航货物类型同步失败后的重试间隔（秒），默认300秒（5分钟）"
+    )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_ENABLED: bool = Field(
+        default=False,
+        description="是否启用南航最近导入批次单号可用性扫描，默认关闭"
+    )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_ITEM_INTERVAL_SECONDS: int = Field(
+        default=30, ge=1, le=3600,
+        description="南航单号扫描时相邻两个单号请求的间隔（秒），默认30秒"
+    )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_CYCLE_INTERVAL_SECONDS: int = Field(
+        default=3600, ge=60, le=604800,
+        description="南航最近批次完成一轮扫描后的等待间隔（秒），默认3600秒"
+    )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_SCAN_RETRY_SECONDS: int = Field(
+        default=300, ge=10, le=3600,
+        description="南航单号扫描无法启动一轮时的重试间隔（秒），默认300秒"
+    )
+    CHINA_SOUTHERN_AIR_WAYBILL_STOCK_RELEASE_GRACE_SECONDS: int = Field(
+        default=600, ge=0, le=86400,
+        description="本地单号刚被预占后禁止扫描回流的保护期（秒），默认600秒"
+    )
+    RPA_GENERATED_FILES_DIR: str = Field(
+        default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "generated_files"),
+        description="后台扫描的RPA下载文件存放目录"
+    )
+    
     RPA_POLL_INTERVAL: int = Field(default=5, ge=1, le=300, description="RPA状态轮询间隔（秒），默认5秒")
     RPA_POLL_MAX_COUNT: int = Field(default=60, ge=1, le=1000, description="RPA状态最大轮询次数，默认60次（即最多轮询5分钟）")
     
-    # RPA任务队列配置
     RPA_QUEUE_ENABLED: bool = Field(default=True, description="是否启用RPA任务队列模式")
     RPA_QUEUE_POLL_INTERVAL: int = Field(default=2, ge=1, le=60, description="Worker轮询队列间隔（秒），默认2秒")
     RPA_QUEUE_DEFAULT_PRIORITY: int = Field(default=1, ge=1, le=100, description="默认任务优先级，默认1")
+    RPA_QUEUE_WAYBILL_PRIORITY: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="深航/南航开单及南航退舱任务优先级，数值越大越优先，默认10"
+    )
     RPA_QUEUE_WORKER_COUNT: int = Field(default=1, ge=1, le=10, description="Worker数量（对应RPA机器人数量），默认1")
     RPA_QUEUE_TASK_TIMEOUT: int = Field(default=30, ge=10, le=300, description="RPA接口调用超时时间（秒），默认30秒，超时则任务失败")
     RPA_QUEUE_CLEANUP_DAYS: int = Field(default=7, ge=1, le=365, description="已完成任务保留天数，默认7天")
+
+    # 出港明细子任务调度与重试策略。所有时间均为秒，次数为单条明细任务的最大消费次数。
+    RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS: int = Field(
+        default=900, ge=10, le=86400,
+        description="深航/南航出港明细未更新时重新入队的间隔（秒），默认15分钟"
+    )
+    RPA_DEPARTURE_TASK_MAX_ATTEMPTS: int = Field(
+        default=5, ge=1, le=100,
+        description="深航/南航出港明细任务最大消费次数（含首次消费）"
+    )
+    RPA_SHENZHEN_AIR_ACTUAL_TIME_FIRST_QUERY_DELAY_SECONDS: int = Field(
+        default=1800, ge=60, le=86400,
+        description="深航预飞时间后首次查询实飞时间的延迟（秒），默认30分钟"
+    )
+    RPA_SHENZHEN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=60, le=86400,
+        description="深航首次查询未拿到实飞时间后的重试间隔（秒），默认30分钟"
+    )
+    RPA_SHENZHEN_AIR_ACTUAL_TIME_MAX_ATTEMPTS: int = Field(
+        default=8, ge=1, le=100,
+        description="深航实飞时间最大查询次数"
+    )
+    RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_FIRST_QUERY_DELAY_SECONDS: int = Field(
+        default=900, ge=60, le=86400,
+        description="南航预飞时间后首次查询实飞时间的延迟（秒），默认15分钟"
+    )
+    RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_RETRY_INTERVAL_SECONDS: int = Field(
+        default=900, ge=60, le=86400,
+        description="南航首次查询未拿到实飞时间后的重试间隔（秒），默认15分钟"
+    )
+    RPA_CHINA_SOUTHERN_AIR_ACTUAL_TIME_MAX_ATTEMPTS: int = Field(
+        default=12, ge=1, le=100,
+        description="南航实飞时间最大查询次数"
+    )
+    CHINA_SOUTHERN_AIR_DIRECT_BOOKING_QUEUE_ENABLED: bool = Field(
+        default=True, description="是否启用南航直连订舱持久化任务队列"
+    )
+    CHINA_SOUTHERN_AIR_DIRECT_BOOKING_WORKER_COUNT: int = Field(
+        default=2, ge=1, le=20, description="南航直连订舱Worker数量"
+    )
+    CHINA_SOUTHERN_AIR_DIRECT_BOOKING_POLL_INTERVAL: int = Field(
+        default=2, ge=1, le=60, description="南航直连订舱Worker轮询间隔（秒）"
+    )
+    CHINA_SOUTHERN_AIR_DIRECT_BOOKING_EXECUTE_TIMEOUT_SECONDS: int = Field(
+        default=1800, ge=30, le=7200,
+        description="南航直连订舱接口等待任务终态的最长时间（秒），超时后返回结果未知，后台任务继续执行"
+    )
+    CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description=(
+            "南航POST /bookings/execute执行模式：direct=接口直连任务并等待实际结果，"
+            "rpa=写入通用rpa_tasks后立即返回入队结果"
+        ),
+    )
     
+    CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="南航订舱后修改数据开单执行方式：direct=接口直连，rpa=原RPA队列",
+    )
+
+    WECHAT_WEBHOOK_URL: str = Field(
+        default="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=05b6c4d8-5058-4706-8a96-27724683e46e",
+        description="企业微信群机器人Webhook地址"
+    )
+    WECHAT_ALERT_ENABLED: bool = Field(
+        default=True,
+        description="企业微信预警通知总开关；关闭后所有场景均不发送，但后台扫描和数据同步继续运行"
+    )
+    WECHAT_ALERT_SHENZHEN_AIR_APPROVAL_ENABLED: bool = Field(
+        default=True,
+        description="是否发送深航订舱批复预警通知"
+    )
+    WECHAT_ALERT_SHENZHEN_AIR_DEPARTURE_ENABLED: bool = Field(
+        default=True,
+        description="是否发送深航出港跟踪（过机状态与卡号）预警通知"
+    )
+    WECHAT_ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_ENABLED: bool = Field(
+        default=True,
+        description="是否发送南航出港跟踪（过机状态与卡号）预警通知"
+    )
+    WECHAT_ALERT_SHENZHEN_AIR_LOADING_ENABLED: bool = Field(
+        default=True,
+        description="是否发送深航装机状态预警通知"
+    )
+    WECHAT_ALERT_CHINA_SOUTHERN_AIR_LOADING_ENABLED: bool = Field(
+        default=True,
+        description="是否发送南航装机状态预警通知"
+    )
+    WECHAT_ALERT_SHENZHEN_AIR_DEPARTURE_STATUS_ENABLED: bool = Field(
+        default=True,
+        description="是否发送深航出港状态通知"
+    )
+    WECHAT_ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_STATUS_ENABLED: bool = Field(
+        default=True,
+        description="是否发送南航出港状态通知"
+    )
+    ALERT_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS: int = Field(
+        default=0, ge=0, le=86400,
+        description="深航订舱批复预警-按间隔触发（秒），默认600秒（10分钟），设0则禁用间隔触发"
+    )
+    ALERT_SHENZHEN_AIR_APPROVAL_FIXED_TIMES: str = Field(
+        default="18:00",
+        description="深航订舱批复预警-按时间点触发（HH:MM格式，多个用逗号分隔，如'09:00,14:00,18:00'），为空则禁用定时触发"
+    )
+    ALERT_SHENZHEN_AIR_DEPARTURE_STATUS_INTERVAL_SECONDS: int = Field(
+        default=600, ge=60, le=86400,
+        description="深航出港状态通知-同步任务执行间隔（秒），默认600秒（10分钟），负责定时监控和推送"
+    )
+    ALERT_SHENZHEN_AIR_DEPARTURE_STATUS_FIXED_TIMES: str = Field(
+        default="",
+        description="深航出港状态通知-按时间点触发（HH:MM格式，多个用逗号分隔），为空则只依赖间隔触发"
+    )
+    ALERT_SHENZHEN_AIR_DEPARTURE_SYNC_INTERVAL_SECONDS: int = Field(
+        default=300, ge=60, le=86400,
+        description="深航出港跟踪预警-同步任务执行间隔（秒），默认300秒（5分钟），负责发现新单及获取计飞时间"
+    )
+    ALERT_SHENZHEN_AIR_DEPARTURE_EXEC_INTERVAL_SECONDS: int = Field(
+        default=60, ge=10, le=3600,
+        description="深航出港跟踪预警-到点预警执行间隔（秒），默认60秒（1分钟），负责准点触发预警消息"
+    )
+    ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_SYNC_INTERVAL_SECONDS: int = Field(
+        default=300, ge=60, le=86400,
+        description="南航出港跟踪预警-同步任务执行间隔（秒），默认300秒（5分钟），负责发现新单及获取计飞时间"
+    )
+    ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_STATUS_INTERVAL_SECONDS: int = Field(
+        default=600, ge=60, le=86400,
+        description="南航出港状态通知-同步任务执行间隔（秒），默认600秒（10分钟），负责定时监控和推送"
+    )
+    ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_STATUS_FIXED_TIMES: str = Field(
+        default="",
+        description="南航出港状态通知-按时间点触发（HH:MM格式，多个用逗号分隔），为空则只依赖间隔触发"
+    )
+    ALERT_CHINA_SOUTHERN_AIR_DEPARTURE_EXEC_INTERVAL_SECONDS: int = Field(
+        default=60, ge=10, le=3600,
+        description="南航出港跟踪预警-到点预警执行间隔（秒），默认60秒（1分钟），负责准点触发预警消息"
+    )
+    ALERT_SHENZHEN_AIR_LOADING_SYNC_INTERVAL_SECONDS: int = Field(
+        default=300, ge=60, le=86400,
+        description="深航装机状态预警-同步任务执行间隔（秒），默认300秒（5分钟），负责发现新单及获取计飞时间"
+    )
+    ALERT_SHENZHEN_AIR_LOADING_EXEC_INTERVAL_SECONDS: int = Field(
+        default=60, ge=10, le=3600,
+        description="深航装机状态预警-到点预警执行间隔（秒），默认60秒（1分钟），负责准点触发预警消息"
+    )
+    ALERT_CSA_LOADING_SYNC_INTERVAL_SECONDS: int = Field(
+        default=300, ge=60, le=86400,
+        description="南航装机状态预警-同步任务执行间隔（秒），默认300秒（5分钟），负责发现新单及获取计飞时间"
+    )
+    ALERT_CSA_LOADING_EXEC_INTERVAL_SECONDS: int = Field(
+        default=60, ge=10, le=3600,
+        description="南航装机状态预警-到点预警执行间隔（秒），默认60秒（1分钟），负责准点触发预警消息"
+    )
     
-    # 航司单号前缀映射（航司名称 -> 单号前缀）
     AIRLINE_NUMBER_PREFIX: Dict[str, str] = {
         "china_southern_air": "784-",
     }
     
-    # 应用配置
     DEBUG: bool = Field(default=False, description="调试模式")
     
     class Config:
         case_sensitive = True
-        env_file = ".env"  # 支持从 .env 文件加载配置（Docker 部署需要，本地无 .env 文件时自动忽略）
+        env_file = ".env"  
         env_file_encoding = "utf-8"
-        extra = "ignore"  # 忽略 .env 中未在 Settings 中定义的字段，避免报错
+        extra = "ignore"  
     
     @property
     def DATABASE_URL(self) -> str:

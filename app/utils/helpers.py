@@ -15,7 +15,6 @@ def parse_json_permissions(permissions_str: str) -> List[str]:
     """
     try:
         permissions = json.loads(permissions_str)
-        # 转换为权限代码列表（兼容旧数据中的中文名称）
         return convert_permissions_to_codes(permissions)
     except (json.JSONDecodeError, TypeError):
         return []
@@ -31,7 +30,6 @@ def format_permissions_to_json(permissions: List[str]) -> str:
     Returns:
         JSON格式的权限代码字符串（如 '["admin", "waybill"]'）
     """
-    # 确保所有权限都是代码格式
     permission_codes = convert_permissions_to_codes(permissions)
     return json.dumps(permission_codes, ensure_ascii=False)
 
@@ -59,7 +57,6 @@ def convert_permission_name_to_code(permission_name: str) -> Optional[str]:
     Returns:
         权限代码（如 "admin", "waybill"），如果名称不存在则返回None
     """
-    # 创建反向映射
     name_to_code = {name: code for code, name in settings.PERMISSIONS.items()}
     return name_to_code.get(permission_name)
 
@@ -76,17 +73,13 @@ def convert_permissions_to_codes(permissions: List[str]) -> List[str]:
     """
     codes = []
     for perm in permissions:
-        # 如果已经是代码，直接使用
         if perm in settings.PERMISSION_CODES:
             codes.append(perm)
-        # 如果是名称，转换为代码
         elif perm in settings.PERMISSION_NAMES:
             code = convert_permission_name_to_code(perm)
             if code:
                 codes.append(code)
-        # 如果都不匹配，尝试作为代码处理（向后兼容）
         else:
-            # 尝试查找匹配的代码
             code = convert_permission_name_to_code(perm)
             if code:
                 codes.append(code)
@@ -107,18 +100,15 @@ def convert_permissions_to_names(permissions: List[str]) -> List[str]:
     """
     names = []
     for perm in permissions:
-        # 如果是代码，转换为名称
         if perm in settings.PERMISSION_CODES:
             name = convert_permission_code_to_name(perm)
             if name:
                 names.append(name)
-        # 如果已经是名称，直接使用（向后兼容）
         elif perm in settings.PERMISSION_NAMES:
             names.append(perm)
     return names
 
 
-# 中国时区（UTC+8）
 CHINA_TIMEZONE = timezone(timedelta(hours=8))
 
 
@@ -145,10 +135,8 @@ def format_datetime_china(dt: Optional[datetime]) -> Optional[str]:
     if dt is None:
         return None
     
-    # 如果datetime是naive（没有时区信息），假设它是中国时间
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=CHINA_TIMEZONE)
-    # 如果datetime有时区信息，转换为中国时间
     else:
         dt = dt.astimezone(CHINA_TIMEZONE)
     

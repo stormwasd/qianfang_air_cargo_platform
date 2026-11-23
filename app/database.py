@@ -13,23 +13,21 @@ class Base(DeclarativeBase):
     pass
 
 
-# 创建数据库引擎
 engine = create_engine(
     settings.DATABASE_URL,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_recycle=settings.DB_POOL_RECYCLE,
-    pool_pre_ping=True,  # 连接前检查连接是否有效
-    echo=settings.DEBUG,  # 根据配置决定是否输出SQL
-    future=True,  # 使用SQLAlchemy 2.0风格
+    pool_pre_ping=True,  
+    echo=settings.DEBUG,  
+    future=True,  
 )
 
-# 创建会话工厂
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
     bind=engine,
-    future=True  # 使用SQLAlchemy 2.0风格
+    future=True  
 )
 
 

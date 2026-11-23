@@ -3,12 +3,14 @@
 # 基于 Python 3.11 slim，包含中文字体支持（PDF 生成需要）
 # ============================================================
 
-FROM python:3.11-slim
+# Playwright 1.55 supports Debian 12; pin the distro instead of floating to newer releases.
+FROM python:3.11-slim-bookworm
 
 # 设置环境变量
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    TZ=Asia/Shanghai
+    TZ=Asia/Shanghai \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 
 # 替换 apt 源为阿里云镜像（国内服务器加速）
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources
@@ -33,8 +35,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
 
+# Install the headless browser and Linux libraries at build time, not on service startup.
+RUN python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+
 # 复制项目代码
 COPY . .
+
+# Fail the image build if Chromium cannot actually start and execute JavaScript.
+RUN python -m kinggo_token check-browser --browser chromium
 
 # 预创建 generated_files 目录（运行时通过 volume 挂载覆盖）
 RUN mkdir -p /app/generated_files

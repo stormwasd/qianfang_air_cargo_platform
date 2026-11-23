@@ -18,7 +18,7 @@ class DepartmentUpdate(BaseModel):
 
 class DepartmentResponse(BaseModel):
     """部门响应schema"""
-    id: str  # ID以字符串形式返回
+    id: str  
     name: str
     created_at: datetime
     updated_at: datetime

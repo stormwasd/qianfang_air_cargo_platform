@@ -1,0 +1,10 @@
+version: 1
+name: CSA booking change contract
+slug: csa-change
+protocol: http
+port: 4905
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

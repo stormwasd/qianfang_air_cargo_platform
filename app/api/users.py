@@ -17,10 +17,17 @@ from app.schemas.user import (
 )
 from app.api.deps import require_admin, get_current_active_user
 from app.core.security import get_password_hash
-from app.core.permissions import validate_permissions
+from app.core.permissions import normalize_user_permissions
 from app.utils.helpers import format_permissions_to_json, parse_json_permissions, format_datetime_china
 
 router = APIRouter()
+
+
+def _normalize_user_permissions(permissions: list[str]) -> list[str]:
+    try:
+        return normalize_user_permissions(permissions)
+    except ValueError as exc:
+        raise BadRequestException(str(exc)) from exc
 
 
 @router.post("", summary="新增账号")
@@ -36,37 +43,31 @@ async def create_user(
     - **password**: 密码
     - **name**: 用户姓名
     - **department_ids**: 所属部门ID列表（支持多个部门）
-    - **permissions**: 权限列表（权限代码：waybill-运单管理、booking-订舱管理、settlement-结算单管理、bill-单号管理、robot-机器人管理、admin-管理员）
+    - **permissions**: 权限列表（权限代码：waybill-主单管理、bill-单号库、robot-机器人管理、customer-客户管理、account-账号管理、system-系统管理、agent-代理管理、finance-财务管理、smart_tracking-智能跟单、waybill_audit-运单单据审核、company_info-公司信息、admin-管理员）
     
-    新增账号默认启用
+    兼容旧客户端的 agency 值并转换为 agent，去除首尾空白、去重后保存并返回标准代码。
+    无效值返回 HTTP 400，错误提示列出具体无效项。新增账号默认启用。
     """
-    # 验证权限列表
-    if not validate_permissions(user.permissions):
-        raise BadRequestException("权限列表包含无效的权限")
+    permissions = _normalize_user_permissions(user.permissions)
     
-    # 检查手机号是否已存在
     existing_user = db.query(User).filter(User.phone == user.phone).first()
     if existing_user:
         raise ConflictException("该手机号已被注册")
     
-    # 验证部门是否存在
     if user.department_ids:
-        # 将字符串ID转换为整数用于查询
         department_ids_int = [int(dept_id) for dept_id in user.department_ids]
         departments = db.query(Department).filter(Department.id.in_(department_ids_int)).all()
         if len(departments) != len(user.department_ids):
             raise NotFoundException("部分部门不存在")
     
-    # 创建用户
     new_user = User(
         phone=user.phone,
         password_hash=get_password_hash(user.password),
         name=user.name,
-        permissions=format_permissions_to_json(user.permissions),
-        is_active=True  # 默认启用
+        permissions=format_permissions_to_json(permissions),
+        is_active=True  
     )
     
-    # 关联部门
     if user.department_ids:
         new_user.departments = departments
     
@@ -74,7 +75,6 @@ async def create_user(
     db.commit()
     db.refresh(new_user)
     
-    # 返回响应（ID转换为字符串）
     user_permissions = parse_json_permissions(new_user.permissions)
     user_data = {
         "id": str(new_user.id),
@@ -135,15 +135,12 @@ async def get_user(
     
     - **user_id**: 用户ID（字符串格式）
     """
-    # 将字符串ID转换为整数用于查询
     user_id_int = int(user_id)
     
-    # 查询用户是否存在，并加载关联的部门
     user = db.query(User).options(joinedload(User.departments)).filter(User.id == user_id_int).first()
     if not user:
         raise NotFoundException("用户不存在")
     
-    # 解析权限
     user_permissions = parse_json_permissions(user.permissions)
     
     user_data = {
@@ -183,8 +180,6 @@ async def update_user_status(
     
     user.is_active = is_active
     
-    # 停用账号时，递增token_version使该用户所有已有的JWT立即失效
-    # 防止被禁用的用户继续使用缓存的token访问系统
     if not is_active:
         user.token_version = (user.token_version or 0) + 1
     
@@ -212,7 +207,6 @@ async def batch_update_user_status(
     注意：批量停用账号时会递增每个用户的token_version，使其所有已有的JWT立即失效，
     被停用的用户将无法继续使用系统，需要重新登录（但登录时会被is_active检查拦截）。
     """
-    # 将字符串ID转换为整数用于查询
     user_ids_int = [int(uid) for uid in batch_data.user_ids]
     users = db.query(User).filter(User.id.in_(user_ids_int)).all()
     if len(users) != len(batch_data.user_ids):
@@ -220,8 +214,6 @@ async def batch_update_user_status(
     
     for user in users:
         user.is_active = batch_data.is_active
-        # 停用账号时，递增token_version使该用户所有已有的JWT立即失效
-        # 防止被禁用的用户继续使用缓存的token访问系统
         if not batch_data.is_active:
             user.token_version = (user.token_version or 0) + 1
     
@@ -231,6 +223,42 @@ async def batch_update_user_status(
     return success_response(
         data={"count": len(users), "is_active": batch_data.is_active},
         msg=msg
+    )
+
+
+@router.put("/password", summary="重置账号密码")
+async def reset_user_password(
+    password_data: UserPasswordUpdate,
+    current_user = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    重置账号密码接口（需要管理员权限）
+    
+    - **user_id**: 用户ID（必填）
+    - **password**: 新密码
+    """
+    if not password_data.user_id:
+        raise BadRequestException("用户ID不能为空")
+        
+    try:
+        user_id_int = int(password_data.user_id)
+    except ValueError:
+        raise BadRequestException("无效的用户ID格式")
+        
+    user = db.query(User).filter(User.id == user_id_int).first()
+    if not user:
+        raise NotFoundException("用户不存在")
+        
+    user.password_hash = get_password_hash(password_data.password)
+    # 重置密码后，强制用户重新登录
+    user.token_version = (user.token_version or 0) + 1
+    
+    db.commit()
+    
+    return success_response(
+        data={"user_id": password_data.user_id},
+        msg="密码重置成功，用户的现有登录凭证已失效"
     )
 
 
@@ -249,74 +277,62 @@ async def update_user(
     - **password**: 密码（可选）
     - **name**: 用户姓名（可选）
     - **department_ids**: 所属部门ID列表（可选）
-    - **permissions**: 权限列表（可选）
+    - **permissions**: 权限代码列表（可选，兼容旧客户端 agency 并转换为 agent）
     
     注意：
     - 所有字段都是可选的，传入值的就修改该用户属性，没传值的就保留原值
-    - 如果修改了权限，该用户的JWT将失效，需要重新登录
+    - 权限去除首尾空白、去重后保存并返回代码；无效值返回 HTTP 400 并列出具体项
+    - permissions 不传或为 null 保留原权限，[] 清空权限
+    - 实际权限集合变化时，该用户的JWT将失效；仅顺序、重复项或 agency/agent 切换不使JWT失效
     """
-    # 将字符串ID转换为整数用于查询
     target_user_id_int = int(user_id)
     
-    # 查找目标用户
     target_user = db.query(User).options(joinedload(User.departments)).filter(User.id == target_user_id_int).first()
     if not target_user:
         raise NotFoundException("用户不存在")
     
-    # 记录原始权限（用于判断权限是否变更）
     original_permissions = parse_json_permissions(target_user.permissions)
+    # Validate before changing tracked ORM attributes, including departments.
+    permissions = (
+        _normalize_user_permissions(user_update.permissions)
+        if user_update.permissions is not None else None
+    )
     
-    # 更新手机号（如果提供）
     if user_update.phone is not None:
-        # 检查新手机号是否与其他用户重复
         existing_user = db.query(User).filter(User.phone == user_update.phone, User.id != target_user_id_int).first()
         if existing_user:
             raise ConflictException("该手机号已被其他用户使用")
         target_user.phone = user_update.phone
     
-    # 更新密码（如果提供）
     if user_update.password is not None:
         target_user.password_hash = get_password_hash(user_update.password)
     
-    # 更新用户姓名（如果提供）
     if user_update.name is not None:
         target_user.name = user_update.name
     
-    # 更新部门（如果提供）
     if user_update.department_ids is not None:
         if user_update.department_ids:
-            # 验证部门是否存在
             department_ids_int = [int(dept_id) for dept_id in user_update.department_ids]
             departments = db.query(Department).filter(Department.id.in_(department_ids_int)).all()
             if len(departments) != len(user_update.department_ids):
                 raise NotFoundException("部分部门不存在")
             target_user.departments = departments
         else:
-            # 空列表表示清空部门关联
             target_user.departments = []
     
-    # 更新权限（如果提供）
     permissions_changed = False
-    if user_update.permissions is not None:
-        # 验证权限列表
-        if not validate_permissions(user_update.permissions):
-            raise BadRequestException("权限列表包含无效的权限")
-        
-        # 检查权限是否变更
-        new_permissions = sorted(user_update.permissions)
-        if sorted(original_permissions) != new_permissions:
+    if permissions is not None:
+        if set(original_permissions) != set(permissions):
             permissions_changed = True
         
-        target_user.permissions = format_permissions_to_json(user_update.permissions)
+        target_user.permissions = format_permissions_to_json(permissions)
     
-    # 如果权限变更，递增token_version使JWT失效
     if permissions_changed:
         target_user.token_version = (target_user.token_version or 0) + 1
     
     db.commit()
     db.refresh(target_user)
     
-    # 返回响应（ID转换为字符串）
     user_permissions = parse_json_permissions(target_user.permissions)
     user_data = {
         "id": str(target_user.id),
@@ -337,6 +353,43 @@ async def update_user(
     return success_response(data=user_data, msg=msg)
 
 
+@router.delete("/batch", summary="批量删除账号 (DELETE /batch)")
+@router.post("/batch-delete", summary="批量删除账号 (POST /batch-delete)")
+@router.delete("", summary="批量删除账号")
+async def batch_delete_users(
+    batch_data: BatchUserDelete,
+    current_user = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    批量删除账号接口（需要管理员权限）
+    
+    支持路径:
+    - DELETE /api/v1/users
+    - DELETE /api/v1/users/batch
+    - POST /api/v1/users/batch-delete
+    
+    - **user_ids**: 用户ID列表（字符串格式）
+    """
+    user_ids_int = [int(uid) for uid in batch_data.user_ids]
+    
+    if current_user.id in user_ids_int:
+        raise BadRequestException("不能删除自己的账号")
+    
+    users = db.query(User).filter(User.id.in_(user_ids_int)).all()
+    if len(users) != len(batch_data.user_ids):
+        raise BadRequestException("部分用户ID不存在")
+    
+    for user in users:
+        db.delete(user)
+    db.commit()
+    
+    return success_response(
+        data={"count": len(users)},
+        msg="批量删除成功"
+    )
+
+
 @router.delete("/{user_id}", summary="删除账号")
 async def delete_user(
     user_id: str,
@@ -353,7 +406,6 @@ async def delete_user(
     if not user:
         raise NotFoundException("用户不存在")
     
-    # 不能删除自己
     if user.id == current_user.id:
         raise BadRequestException("不能删除自己的账号")
     
@@ -363,37 +415,5 @@ async def delete_user(
     return success_response(
         data={"user_id": str(user_id)},
         msg="账号删除成功"
-    )
-
-
-@router.delete("", summary="批量删除账号")
-async def batch_delete_users(
-    batch_data: BatchUserDelete,
-    current_user = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """
-    批量删除账号接口（需要管理员权限）
-    
-    - **user_ids**: 用户ID列表（字符串格式）
-    """
-    # 将字符串ID转换为整数用于查询
-    user_ids_int = [int(uid) for uid in batch_data.user_ids]
-    
-    # 不能删除自己
-    if current_user.id in user_ids_int:
-        raise BadRequestException("不能删除自己的账号")
-    
-    users = db.query(User).filter(User.id.in_(user_ids_int)).all()
-    if len(users) != len(batch_data.user_ids):
-        raise BadRequestException("部分用户ID不存在")
-    
-    for user in users:
-        db.delete(user)
-    db.commit()
-    
-    return success_response(
-        data={"count": len(users)},
-        msg="批量删除成功"
     )
 

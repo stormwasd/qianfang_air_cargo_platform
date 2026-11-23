@@ -1,0 +1,23 @@
+CREATE TABLE `shenzhen_air_departure_manual_data` (
+  `id` bigint(20) NOT NULL COMMENT '主键ID',
+  `waybill_number_8` varchar(50) DEFAULT NULL COMMENT '单号后8位',
+  `customer_name` varchar(255) DEFAULT NULL COMMENT '客户名称',
+  `packaging_fee` varchar(50) DEFAULT NULL COMMENT '包装费',
+  `telegram_fee` varchar(50) DEFAULT NULL COMMENT '电报费',
+  `cca` varchar(50) DEFAULT NULL COMMENT 'CCA',
+  `door_pickup_fee` varchar(50) DEFAULT NULL COMMENT '上门提货费',
+  `door_pickup_company` varchar(255) DEFAULT NULL COMMENT '上门提货单位',
+  `airport_pickup_fee` varchar(50) DEFAULT NULL COMMENT '机场提货费',
+  `airport_pickup_company` varchar(255) DEFAULT NULL COMMENT '机场提货单位',
+  `delivery_fee` varchar(50) DEFAULT NULL COMMENT '派送费',
+  `delivery_company` varchar(255) DEFAULT NULL COMMENT '派送单位',
+  `carrier_deduction` varchar(50) DEFAULT NULL COMMENT '承运扣款',
+  `other_fees` varchar(50) DEFAULT NULL COMMENT '其他费用',
+  `manual_total_amount` varchar(50) DEFAULT NULL COMMENT '总金额',
+  `remark` varchar(500) DEFAULT NULL COMMENT '备注',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_shenzhen_air_departure_manual_data_waybill_number_8` (`waybill_number_8`),
+  KEY `ix_shenzhen_air_departure_manual_data_id` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='深航出港列表手动录入数据表';

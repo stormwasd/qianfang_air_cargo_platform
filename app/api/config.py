@@ -2,7 +2,7 @@
 业务参数配置接口
 """
 import json
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
 from app.core.response import success_response
 from sqlalchemy.orm import Session
@@ -16,11 +16,29 @@ from app.schemas.dict_option import DictOptionCreate, DictOptionUpdate, DictOpti
 from app.api.deps import get_current_active_user
 from app.models.user import User
 from app.utils.helpers import format_datetime_china
+from app.services.csa_cargo_type_defaults import normalize_config_cargo_type
 
 router = APIRouter()
 
 
-# ==================== 业务参数配置接口 ====================
+def _dict_option_response(option: DictOption, dict_type: str) -> dict:
+    """统一字典选项响应，南航货物类型直接提供业务表单所需的名称/代码。"""
+    result = {
+        "id": str(option.id),
+        "dict_type_id": str(option.dict_type_id),
+        "dict_type": dict_type,
+        "label": option.label,
+        "value": option.value,
+        "status": option.status,
+        "color_type": option.color_type,
+        "created_at": format_datetime_china(option.created_at),
+        "updated_at": format_datetime_china(option.updated_at),
+    }
+    if dict_type == "nanfang_air_cargo_type":
+        result.update(cargo_type=option.label, cargo_type_code=option.value)
+    return result
+
+
 
 @router.put("", summary="保存业务参数配置")
 async def save_config(
@@ -38,21 +56,21 @@ async def save_config(
     - 如果已有配置，则更新现有配置
     - 这是一个 upsert 操作（update or insert）
     - 只有管理员可以操作此接口（通过菜单权限控制）
+    - 南航 business_default 支持 cargo_type（名称）、cargo_type_code（代码）两个字符串；
+      新提交的非空代码须与启用字典中的名称匹配，旧配置只有可识别名称时自动补码
     """
-    # 查询是否已存在配置（全局唯一）
     existing_config = db.query(BusinessConfig).first()
     
-    config_json = json.dumps(config_data.config_data, ensure_ascii=False)
+    normalized_config = normalize_config_cargo_type(config_data.config_data, db, validate=True)
+    config_json = json.dumps(normalized_config, ensure_ascii=False)
     
     if existing_config:
-        # 更新现有配置
         existing_config.config_data = config_json
         db.commit()
         db.refresh(existing_config)
         config = existing_config
         msg = "配置更新成功"
     else:
-        # 创建新配置
         new_config = BusinessConfig(
             config_data=config_json
         )
@@ -62,7 +80,6 @@ async def save_config(
         config = new_config
         msg = "配置创建成功"
     
-    # 返回响应（ID转换为字符串）
     response_data = json.loads(config.config_data)
     result_data = {
         "id": str(config.id),
@@ -83,14 +100,14 @@ async def get_current_config(
     
     如果尚未配置，返回 code=0，data=null（这是正常情况，不是错误）
     只有管理员可以操作此接口（通过菜单权限控制）
+    南航历史配置只有可识别的货物类型名称时，响应补齐 cargo_type_code，不修改数据库。
     """
     config = db.query(BusinessConfig).first()
     
     if not config:
-        # 没有配置是正常情况，返回 code=0，data=null
         return success_response(data=None, msg="暂无配置信息")
     
-    response_data = json.loads(config.config_data)
+    response_data = normalize_config_cargo_type(json.loads(config.config_data), db)
     config_data = {
         "id": str(config.id),
         "config_data": response_data,
@@ -100,7 +117,6 @@ async def get_current_config(
     return success_response(data=config_data, msg="查询成功")
 
 
-# ==================== 字典类型管理接口 ====================
 
 @router.post("/dict-types", summary="创建字典类型")
 async def create_dict_type(
@@ -117,12 +133,10 @@ async def create_dict_type(
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 检查type是否已存在
     existing_type = db.query(DictType).filter(DictType.type == dict_type_data.type).first()
     if existing_type:
         raise ConflictException(f"类型标识 '{dict_type_data.type}' 已存在")
     
-    # 创建新字典类型
     new_dict_type = DictType(
         name=dict_type_data.name,
         type=dict_type_data.type,
@@ -160,32 +174,24 @@ async def get_dict_types(
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 构建查询（全局共享）
     query_obj = db.query(DictType)
     
-    # 类型标识筛选
     if query.type:
         query_obj = query_obj.filter(DictType.type == query.type)
     
-    # 状态筛选
     if query.status is not None:
         query_obj = query_obj.filter(DictType.status == query.status)
     
-    # 获取总数
     total = query_obj.count()
     
-    # 排序
     query_obj = query_obj.order_by(DictType.created_at.desc())
     
-    # 分页（只有同时传了page和pageSize才分页）
-    if query.page is not None and query.page_size is not None:
-        offset = (query.page - 1) * query.page_size
-        dict_types = query_obj.offset(offset).limit(query.page_size).all()
+    if query.page is not None and query.pageSize is not None:
+        offset = (query.page - 1) * query.pageSize
+        dict_types = query_obj.offset(offset).limit(query.pageSize).all()
     else:
-        # 不分页，返回全部
         dict_types = query_obj.all()
     
-    # 构建响应
     items = []
     for dt in dict_types:
         items.append({
@@ -263,7 +269,6 @@ async def update_dict_type(
     if not dict_type:
         raise NotFoundException(f"字典类型不存在（id: {dict_type_id}）")
     
-    # 如果更新type，检查是否与其他类型冲突
     if dict_type_data.type is not None and dict_type_data.type != dict_type.type:
         existing_type = db.query(DictType).filter(
             DictType.type == dict_type_data.type,
@@ -273,7 +278,6 @@ async def update_dict_type(
             raise ConflictException(f"类型标识 '{dict_type_data.type}' 已被其他字典类型使用")
         dict_type.type = dict_type_data.type
     
-    # 更新其他字段
     if dict_type_data.name is not None:
         dict_type.name = dict_type_data.name
     if dict_type_data.status is not None:
@@ -318,10 +322,8 @@ async def delete_dict_type(
     if not dict_type:
         raise NotFoundException(f"字典类型不存在（id: {dict_type_id}）")
     
-    # 统计关联的选项数量
     options_count = db.query(DictOption).filter(DictOption.dict_type_id == type_id).count()
     
-    # 删除字典类型（关联的选项会自动级联删除）
     dict_type_type = dict_type.type
     dict_type_name = dict_type.name
     db.delete(dict_type)
@@ -338,7 +340,6 @@ async def delete_dict_type(
     )
 
 
-# ==================== 字典选项管理接口 ====================
 
 @router.post("/dict-options", summary="创建字典选项")
 async def create_dict_option(
@@ -357,13 +358,10 @@ async def create_dict_option(
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 查询字典类型
     dict_type = db.query(DictType).filter(DictType.type == dict_option_data.dict_type).first()
     if not dict_type:
         raise NotFoundException(f"字典类型 '{dict_option_data.dict_type}' 不存在")
     
-    # 创建新字典选项
-    # 处理 color_type：如果为空字符串或只包含空白字符，设置为 None
     color_type_value = None
     if dict_option_data.color_type is not None:
         stripped_color_type = dict_option_data.color_type.strip()
@@ -380,17 +378,7 @@ async def create_dict_option(
     db.commit()
     db.refresh(new_option)
     
-    result_data = {
-        "id": str(new_option.id),
-        "dict_type_id": str(new_option.dict_type_id),
-        "dict_type": dict_type.type,
-        "label": new_option.label,
-        "value": new_option.value,
-        "status": new_option.status,
-        "color_type": new_option.color_type,
-        "created_at": format_datetime_china(new_option.created_at),
-        "updated_at": format_datetime_china(new_option.updated_at)
-    }
+    result_data = _dict_option_response(new_option, dict_type.type)
     
     return success_response(data=result_data, msg="字典选项创建成功")
 
@@ -409,30 +397,25 @@ async def get_dict_options(
     - **page**: 页码（可选，不传则不分页，返回全部）
     - **pageSize**: 每页数量（可选，不传则不分页，返回全部）
     - **order**: 排序方式（可选，asc=从小到大，desc=从大到小），仅当所有选项的value全为数字时生效，不传则默认从小到大排序
+    - 南航货物类型 nanfang_air_cargo_type 的每项额外返回 cargo_type（名称）、cargo_type_code（代码）；已有同步记录直接适用
     
     说明：只有管理员可以操作此接口（通过菜单权限控制）
     """
-    # 构建查询（全局共享）
     query_obj = db.query(DictOption).join(
         DictType, 
         DictOption.dict_type_id == DictType.id
     )
     
-    # 字典类型筛选
     if query.dict_type:
         query_obj = query_obj.filter(DictType.type == query.dict_type)
     
-    # 状态筛选
     if query.status is not None:
         query_obj = query_obj.filter(DictOption.status == query.status)
     
-    # 获取总数
     total = query_obj.count()
     
-    # 先查询所有数据（在排序和分页之前）
     all_dict_options = query_obj.all()
     
-    # 检查所有value是否全为数字
     def is_numeric(value: str) -> bool:
         """检查字符串是否为数字（包括整数和小数）"""
         try:
@@ -443,10 +426,7 @@ async def get_dict_options(
     
     all_values_numeric = all(is_numeric(do.value) for do in all_dict_options) if all_dict_options else False
     
-    # 排序逻辑
     if all_values_numeric:
-        # 所有value全为数字，按value排序
-        # 如果order参数存在，使用order参数；如果不存在，默认从小到大（asc）
         sort_order = query.order if query.order else "asc"
         reverse = (sort_order == "desc")
         dict_options = sorted(
@@ -455,36 +435,85 @@ async def get_dict_options(
             reverse=reverse
         )
     else:
-        # 不全为数字，保持原有排序（按创建时间倒序），不受order参数影响
         dict_options = sorted(
             all_dict_options,
             key=lambda x: x.created_at,
             reverse=True
         )
     
-    # 分页（只有同时传了page和pageSize才分页）
-    if query.page is not None and query.page_size is not None:
-        offset = (query.page - 1) * query.page_size
-        dict_options = dict_options[offset:offset + query.page_size]
+    if query.page is not None and query.pageSize is not None:
+        offset = (query.page - 1) * query.pageSize
+        dict_options = dict_options[offset:offset + query.pageSize]
     
-    # 构建响应
-    items = []
-    for do in dict_options:
-        items.append({
-            "id": str(do.id),
-            "dict_type_id": str(do.dict_type_id),
-            "dict_type": do.dict_type.type,
-            "label": do.label,
-            "value": do.value,
-            "status": do.status,
-            "color_type": do.color_type,
-            "created_at": format_datetime_china(do.created_at),
-            "updated_at": format_datetime_china(do.updated_at)
-        })
+    items = [_dict_option_response(option, option.dict_type.type) for option in dict_options]
     
     return success_response(
         data={"total": total, "items": items},
         msg="查询成功"
+    )
+
+
+@router.get("/dict-options/value-by-key", summary="根据字典key获取value")
+async def get_dict_value_by_key(
+    dict_type: str = Query(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="字典类型唯一标识，如：booking_status",
+    ),
+    key: str = Query(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="字典选项的业务代码，对应dict_options.value",
+    ),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    根据字典类型和业务代码获取展示值。
+
+    - **dict_type**: 字典类型的唯一标识，对应 `dict_types.type`
+    - **key**: 字典选项的业务代码，对应 `dict_options.value`
+
+    只查询启用状态的字典类型和字典选项，使用精确匹配。
+    """
+    normalized_dict_type = dict_type.strip()
+    normalized_key = key.strip()
+    if not normalized_dict_type:
+        raise BadRequestException("dict_type不能为空")
+    if not normalized_key:
+        raise BadRequestException("key不能为空")
+
+    matches = (
+        db.query(DictOption)
+        .join(DictType, DictOption.dict_type_id == DictType.id)
+        .filter(
+            DictType.type == normalized_dict_type,
+            DictType.status == 1,
+            DictOption.value == normalized_key,
+            DictOption.status == 1,
+        )
+        .order_by(DictOption.id.asc())
+        .limit(2)
+        .all()
+    )
+    if not matches:
+        raise NotFoundException(
+            f"未找到启用的字典选项（dict_type: {normalized_dict_type}, key: {normalized_key}）"
+        )
+    if len(matches) > 1:
+        raise ConflictException(
+            f"字典选项配置重复（dict_type: {normalized_dict_type}, key: {normalized_key}）"
+        )
+
+    return success_response(
+        data={
+            "dict_type": normalized_dict_type,
+            "key": normalized_key,
+            "value": matches[0].label,
+        },
+        msg="查询成功",
     )
 
 
@@ -510,17 +539,7 @@ async def get_dict_option_detail(
     if not dict_option:
         raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    result_data = {
-        "id": str(dict_option.id),
-        "dict_type_id": str(dict_option.dict_type_id),
-        "dict_type": dict_option.dict_type.type,
-        "label": dict_option.label,
-        "value": dict_option.value,
-        "status": dict_option.status,
-        "color_type": dict_option.color_type,
-        "created_at": format_datetime_china(dict_option.created_at),
-        "updated_at": format_datetime_china(dict_option.updated_at)
-    }
+    result_data = _dict_option_response(dict_option, dict_option.dict_type.type)
     
     return success_response(data=result_data, msg="查询成功")
 
@@ -555,42 +574,26 @@ async def update_dict_option(
     if not dict_option:
         raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    # 如果更新dict_type，检查新的类型是否存在
     if dict_option_data.dict_type is not None:
         new_dict_type = db.query(DictType).filter(DictType.type == dict_option_data.dict_type).first()
         if not new_dict_type:
             raise NotFoundException(f"字典类型 '{dict_option_data.dict_type}' 不存在")
         dict_option.dict_type_id = new_dict_type.id
     
-    # 更新其他字段
     if dict_option_data.label is not None:
         dict_option.label = dict_option_data.label
     if dict_option_data.value is not None:
         dict_option.value = dict_option_data.value
     if dict_option_data.status is not None:
         dict_option.status = dict_option_data.status
-    # color_type 字段：如果提供了值（非 None），就更新；如果为 None，保持原值
-    # 支持传入空字符串来清空 color_type 字段（空字符串会被转换为 None）
     if dict_option_data.color_type is not None:
-        # 如果传入空字符串或只包含空白字符，设置为 None（清空字段）
-        # 否则设置为去除首尾空白后的值
         stripped_value = dict_option_data.color_type.strip()
         dict_option.color_type = stripped_value if stripped_value else None
     
     db.commit()
     db.refresh(dict_option)
     
-    result_data = {
-        "id": str(dict_option.id),
-        "dict_type_id": str(dict_option.dict_type_id),
-        "dict_type": dict_option.dict_type.type,
-        "label": dict_option.label,
-        "value": dict_option.value,
-        "status": dict_option.status,
-        "color_type": dict_option.color_type,
-        "created_at": format_datetime_china(dict_option.created_at),
-        "updated_at": format_datetime_china(dict_option.updated_at)
-    }
+    result_data = _dict_option_response(dict_option, dict_option.dict_type.type)
     
     return success_response(data=result_data, msg="字典选项更新成功")
 
@@ -617,7 +620,6 @@ async def delete_dict_option(
     if not dict_option:
         raise NotFoundException(f"字典选项不存在（id: {option_id}）")
     
-    # 保存信息用于返回
     option_label = dict_option.label
     option_dict_type = dict_option.dict_type.type
     

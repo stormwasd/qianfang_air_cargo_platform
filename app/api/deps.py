@@ -29,14 +29,9 @@ async def get_current_user(
     if user is None:
         raise UnauthorizedException("用户不存在")
     
-    # 验证token_version是否匹配（检查JWT是否已失效）
-    # 注意：此检查放在is_active之前，因为禁用用户时会递增token_version，
-    # 这样被禁用的用户会先得到401（token失效），前端可以正确重定向到登录页面
     if token_data.token_version != user.token_version:
         raise UnauthorizedException("token已失效，请重新登录")
     
-    # 检查用户是否被禁用（兜底检查，处理token_version未递增但is_active被修改的边缘情况）
-    # 使用401而非403，确保前端统一跳转到登录页面，而非显示"无权限"错误
     if not user.is_active:
         raise UnauthorizedException("用户已被禁用")
     

@@ -1,0 +1,10 @@
+version: 1
+name: Ctrip flight times client contract
+slug: ctrip-times
+protocol: http
+port: 4902
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true
