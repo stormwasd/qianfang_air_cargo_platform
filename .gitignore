@@ -203,6 +203,7 @@ settings.local.py
 # Markdown files (except README.md)
 *.md
 !README.md
+!DEPLOY_PRODUCTION.md
 
 # Application specific
 # 如果数据库文件在项目目录中，取消下面的注释

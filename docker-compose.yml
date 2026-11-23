@@ -4,12 +4,12 @@
 # 使用方式：
 #   1. 复制 .env.example 为 .env 并修改配置
 #   2. docker-compose up -d
-#   3. 首次启动后初始化数据库：
-#      docker-compose exec app python init_db.py
+#   3. 已有环境升级及整库替换见 DEPLOY_PRODUCTION.md；不要重复初始化旧库。
 #
 # 挂载说明：
 #   - ./documents      → 模板文件目录，修改后立即生效
 #   - ./generated_files → 制单生成的文件，可通过文件共享服务共享
+#   - ./static/uploads  → 上传附件，重建容器后保留
 #   - ./.env            → 项目配置文件，修改后需重启服务
 # ============================================================
 
@@ -133,6 +133,8 @@ services:
       - ./documents:/app/documents
       # 生成文件挂载：制单后生成的文件会写入此目录，可通过文件共享服务访问
       - ./generated_files:/app/generated_files
+      # 升级旧容器前先迁出其中尚未持久化的附件，再启用这个挂载。
+      - ./static/uploads:/app/static/uploads
       # 配置文件挂载：修改 .env 后需重启服务
       - ./.env:/app/.env:ro
     depends_on:

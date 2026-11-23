@@ -62,6 +62,11 @@ config.local.py
 
 # Generated files (mounted as volume, not baked into image)
 generated_files/
+static/uploads/
+
+# Database exports belong outside the build context.
+backups/
+*.dump
 
 # HAR captures and page/session configs belong in runtime storage, not the image.
 *.har
