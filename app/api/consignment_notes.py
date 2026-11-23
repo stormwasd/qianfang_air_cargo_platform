@@ -444,7 +444,8 @@ async def generate_consignment_pdf(
         "volume": "体积(立方)", "vehicle_type": "车型", "cargo_name": "货物名称", 
         "total_freight": "总运费", "other_fees": "其他费用", "origin_city": "始发城市", 
         "origin_address": "始发城市详细地址", "destination_city": "终点城市", 
-        "destination_address": "终点城市详细地址", "destination_weather": "目的站天气"
+        "destination_address": "终点城市详细地址", "consignee_info": "收件人",
+        "contact_phone": "联系电话", "destination_weather": "目的站天气"
     }
     
     template = Template(html_template)

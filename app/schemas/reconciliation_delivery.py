@@ -6,7 +6,7 @@ class DeliveryReconciliationQuery(BaseModel):
     flight_date_start: Optional[str] = Field(None, description="航班日期起始 (YYYY-MM-DD)")
     flight_date_end: Optional[str] = Field(None, description="航班日期结束 (YYYY-MM-DD)")
     actual_flight_number: Optional[str] = Field(None, description="实走航班号")
-    financial_audit_status: Optional[int] = Field(None, description="财务审核：0=未审, 1=暂存, 2=已审")
+    financial_audit_status: Optional[int] = Field(None, description="仅查询财务已审2；不传或传2返回已审，传0/1返回空列表")
     customer_name: Optional[str] = Field(None, description="客户名称")
     settlement_status: Optional[int] = Field(None, description="结算状态：0=未结算, 1=已结算")
     delivery_company: Optional[str] = Field(None, description="派送单位")

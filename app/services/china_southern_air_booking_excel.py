@@ -52,6 +52,8 @@ class ChinaSouthernAirBookingExcelService:
         "储运注意事项": "storage_and_transportation_precautions",
         "无隐含危险品": "no_dangerous_goods",
         "出港货邮处理费选项": "outbound_cargo_and_mail_handling_fee_options",
+        "收货人": "consignee",
+        "收货人手机号": "consignee_phone",
     }
     HEADER_ALIASES = {
         "重量（kg）": "重量(kg)",
@@ -65,7 +67,10 @@ class ChinaSouthernAirBookingExcelService:
     }
     # 费用选项列保留在模板和映射中，但整列允许缺失；缺失时执行阶段
     # 直接透传南航费用查询返回的完整列表。
-    REQUIRED_HEADERS = frozenset(HEADER_FIELDS) - {"出港货邮处理费选项"}
+    # 收货人两列也允许缺失，以兼容旧模板；任一项为空时不提交联系人。
+    REQUIRED_HEADERS = frozenset(HEADER_FIELDS) - {
+        "出港货邮处理费选项", "收货人", "收货人手机号"
+    }
     REQUIRED_FIELDS = {
         "origin_station": "始发站",
         "destination": "到达站",
@@ -97,6 +102,8 @@ class ChinaSouthernAirBookingExcelService:
             "booking_volume",
             "storage_and_transportation_precautions",
             "outbound_cargo_and_mail_handling_fee_options",
+            "consignee",
+            "consignee_phone",
         }
     )
 
@@ -295,8 +302,7 @@ class ChinaSouthernAirBookingExcelService:
     ) -> Dict[str, Any]:
         result: Dict[str, Any] = {}
         for header, field_name in cls.HEADER_FIELDS.items():
-            # 出港货邮处理费选项列为可选列；列缺失与单元格留空都统一视为空值，
-            # 由执行阶段决定是否透传南航查询结果。
+            # 费用和收货人列兼容旧模板；缺列统一视为空值，由执行阶段处理。
             column_number = header_mapping.get(header)
             result[field_name] = (
                 sheet.cell(row_number, column_number).value

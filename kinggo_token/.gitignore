@@ -1,0 +1,6 @@
+# Generated session configuration and HAR exports stay local.
+config*.json
+*.har
+*.tmp
+tests/local-*.json
+!VALIDATION.md

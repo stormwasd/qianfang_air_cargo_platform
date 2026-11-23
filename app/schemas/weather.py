@@ -7,7 +7,7 @@ from typing import Optional
 
 class WeatherQuery(BaseModel):
     """天气查询入参"""
-    airport_code: str = Field(..., description="机场三字码或城市名（如 TAO 或 天津）", min_length=1)
+    airport_code: str = Field(..., description="机场三字码或城市名（如 TAO 或 天津）；三字码不区分大小写，支持 WMT（遵义茅台、仁怀市）和 LYI（临沂市）", min_length=1)
     date: str = Field(..., description="目标日期，格式为 YYYY-MM-DD")
 
 

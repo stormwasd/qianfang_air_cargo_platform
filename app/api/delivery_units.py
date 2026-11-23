@@ -58,8 +58,8 @@ async def create_delivery_unit(
     new_unit = DeliveryUnit(
         delivery_code=delivery_code,
         delivery_name=unit_in.delivery_name,
-        contact_person=unit_in.contact_person,
-        contact_phone=unit_in.contact_phone,
+        contact_person=unit_in.contact_person or "",
+        contact_phone=unit_in.contact_phone or "",
         settlement_method=unit_in.settlement_method,
         creator_id=current_user.id,
         creator_name=current_user.name
@@ -85,6 +85,9 @@ async def update_delivery_unit(
     
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
+        # These optional inputs use empty strings in the existing NOT NULL columns.
+        if key in ("contact_person", "contact_phone") and value is None:
+            value = ""
         setattr(unit, key, value)
             
     db.commit()

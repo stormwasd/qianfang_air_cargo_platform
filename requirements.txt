@@ -16,3 +16,5 @@ xhtml2pdf>=0.2.11
 Jinja2>=3.1.2
 pandas>=2.0.0
 python-multipart>=0.0.6
+# Kinggo HAR configuration extraction; token AES uses existing cryptography.
+playwright==1.55.0

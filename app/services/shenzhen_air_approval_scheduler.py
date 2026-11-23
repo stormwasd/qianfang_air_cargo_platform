@@ -8,17 +8,18 @@ import json
 import asyncio
 import threading
 import traceback
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 import os
 import pandas as pd
 
 from app.database import SessionLocal
 from app.config import settings
-from app.models.rpa_task import RPATaskType
+from app.models.rpa_task import RPATask, RPATaskStatus, RPATaskType
 from app.models.robot import TaskProcess
 from app.models.shenzhen_air_approval import ShenzhenAirApprovalData, ShenzhenAirApprovalWideBodyData
 from app.services.rpa_task_service import rpa_task_service
+from app.utils.helpers import get_china_now
 
 
 TARGET_TYPE = "approval_data"
@@ -82,15 +83,30 @@ class ShenzhenAirApprovalScheduler:
 
     async def _enqueue_task(self) -> None:
         """创建任务（今天+明天各一个，确保当天航司更新的数据也能被获取）"""
+        if settings.SHENZHEN_AIR_APPROVAL_EXECUTION_MODE == "direct":
+            self._cleanup_pending_direct_switch_tasks()
+            await self._download_direct_exports()
+            # Both standard and wide-body reports are handled directly. Their
+            # existing file watchers/parsers remain unchanged, and direct mode
+            # must not generate either approval task type in rpa_tasks.
+            return
+
         db = SessionLocal()
         try:
             task_types_to_enqueue = [
-                RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value,
                 RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value
             ]
+            if settings.SHENZHEN_AIR_APPROVAL_EXECUTION_MODE != "direct":
+                task_types_to_enqueue.insert(
+                    0, RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value
+                )
             
-            today = datetime.now().strftime("%Y-%m-%d")
-            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            # Capture one Beijing timestamp for the pair.  If the scheduler
+            # happens to run across midnight, both targets must still belong
+            # to the same scheduling round (today and the following day).
+            schedule_date = get_china_now()
+            today = schedule_date.strftime("%Y-%m-%d")
+            tomorrow = (schedule_date + timedelta(days=1)).strftime("%Y-%m-%d")
             date_configs = [
                 {"flight_date": today, "target_id": 1, "label": "今天"},
                 {"flight_date": tomorrow, "target_id": 2, "label": "明天"},
@@ -134,6 +150,73 @@ class ShenzhenAirApprovalScheduler:
                     print(f"[ShenzhenAirApprovalScheduler] 已生成深航订舱批复数据获取任务({task_type}), flight_date={date_cfg['flight_date']}({date_cfg['label']})")
         finally:
             db.close()
+
+    def _cleanup_pending_direct_switch_tasks(self) -> None:
+        """Remove approval RPA tasks left pending from a previous mode."""
+        db = SessionLocal()
+        try:
+            pending = db.query(RPATask).filter(
+                RPATask.task_type.in_((
+                    RPATaskType.SHENZHEN_AIR_APPROVAL_DATA.value,
+                    RPATaskType.SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY.value,
+                )),
+                RPATask.status == RPATaskStatus.PENDING.value,
+            ).all()
+            if pending:
+                for task in pending:
+                    db.delete(task)
+                db.commit()
+                print(
+                    "[ShenzhenAirApprovalScheduler] 直连模式清理遗留深航批复待执行RPA任务: "
+                    f"{len(pending)} 条"
+                )
+        finally:
+            db.close()
+
+    async def _download_direct_exports(self) -> None:
+        """Download standard and wide-body reports for Beijing today/tomorrow."""
+        from app.services.shenzhen_air_direct_approval import (
+            DIRECT_APPROVAL_SUCCESS_TYPES,
+            ShenzhenAirDirectApprovalError,
+            shenzhen_air_direct_approval_service,
+        )
+        from app.services.tracking_execution_time import record_success_time
+
+        schedule_date = get_china_now()
+        dates = (schedule_date, schedule_date + timedelta(days=1))
+        reports = (
+            (
+                "普通机型",
+                shenzhen_air_direct_approval_service.download_export,
+                DIRECT_APPROVAL_SUCCESS_TYPES[0],
+            ),
+            (
+                "宽体机",
+                shenzhen_air_direct_approval_service.download_wide_body_export,
+                DIRECT_APPROVAL_SUCCESS_TYPES[1],
+            ),
+        )
+        for report_label, download, success_type in reports:
+            for flight_date in dates:
+                try:
+                    output_path = await download(flight_date)
+                    record_success_time(success_type)
+                    print(
+                        f"[ShenzhenAirApprovalScheduler] KingGo深航{report_label}批复表直连下载完成: "
+                        f"flight_date={flight_date:%Y-%m-%d}, file={output_path.name}"
+                    )
+                except ShenzhenAirDirectApprovalError as exc:
+                    print(
+                        f"[ShenzhenAirApprovalScheduler] KingGo深航{report_label}批复表直连下载失败，"
+                        f"flight_date={flight_date:%Y-%m-%d}, error={exc}"
+                    )
+                except Exception as exc:
+                    # One report/date failure must not suppress the other
+                    # downloads in this round. The next round retries it.
+                    print(
+                        f"[ShenzhenAirApprovalScheduler] KingGo深航{report_label}批复表直连下载出现未预期异常，"
+                        f"flight_date={flight_date:%Y-%m-%d}, error={repr(exc)}"
+                    )
 
     def _check_for_new_files(self) -> None:
         if not os.path.exists(self.watch_dir):

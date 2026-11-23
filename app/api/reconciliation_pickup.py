@@ -11,8 +11,11 @@ from urllib.parse import quote
 
 from app.api.deps import get_db, get_current_active_user
 from app.core.response import success_response
-from app.utils.helpers import get_china_now
-from app.api.financial_audit import format_decimal, safe_float, safe_int, safe_str, parse_csa_flight_info
+from app.api.reconciliation_agent import _settle_payable
+from app.api.financial_audit import (
+    format_decimal, get_peer_value, parse_csa_flight_info, parse_form_data,
+    safe_float, safe_int, safe_str,
+)
 
 from app.models.air_financial_audit_data import AirFinancialAuditData
 from app.models.transit_loading import ShenzhenAirBookingExport
@@ -41,7 +44,7 @@ def get_pickup_reconciliation_list(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    fa_base_query = db.query(AirFinancialAuditData)
+    fa_base_query = db.query(AirFinancialAuditData).filter(AirFinancialAuditData.financial_audit_status == 2)
     if query.financial_audit_status is not None:
         fa_base_query = fa_base_query.filter(AirFinancialAuditData.financial_audit_status == query.financial_audit_status)
     if query.settlement_status is not None:
@@ -54,15 +57,11 @@ def get_pickup_reconciliation_list(
             fa_map[fa.source_type] = {}
         fa_map[fa.source_type][fa.source_id] = fa
         
-    fa_status_filter_active = query.financial_audit_status is not None or query.settlement_status is not None
 
     candidate_items = []
     
-    sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).join(
+    sz_query = db.query(ShenzhenAirBookingExport, ShenzhenAirDepartureManualData).outerjoin(
         ShenzhenAirDepartureManualData, ShenzhenAirBookingExport.id == ShenzhenAirDepartureManualData.booking_export_id
-    ).filter(
-        ShenzhenAirDepartureManualData.audit_status == 2,
-        and_(ShenzhenAirDepartureManualData.door_pickup_company != None, ShenzhenAirDepartureManualData.door_pickup_company != "")
     )
     
     if query.waybill_numbers:
@@ -78,17 +77,19 @@ def get_pickup_reconciliation_list(
             sz_query = sz_query.filter(or_(*or_filters))
             
     if query.flight_date_start:
-        sz_query = sz_query.filter(ShenzhenAirBookingExport.flight_date >= query.flight_date_start.replace("-", "/"))
+        sz_query = sz_query.filter(
+            func.replace(ShenzhenAirBookingExport.flight_date, "/", "-") >= query.flight_date_start
+        )
     if query.flight_date_end:
-        sz_query = sz_query.filter(ShenzhenAirBookingExport.flight_date <= query.flight_date_end.replace("-", "/"))
+        sz_query = sz_query.filter(
+            func.replace(ShenzhenAirBookingExport.flight_date, "/", "-") <= query.flight_date_end
+        )
     
-    if query.pickup_company:
-        sz_query = sz_query.filter(ShenzhenAirDepartureManualData.door_pickup_company.like(f"%{query.pickup_company}%"))
         
     sz_records = sz_query.all()
     for export, md in sz_records:
         fa = fa_map.get("shenzhen_air", {}).get(export.id)
-        if fa_status_filter_active and not fa:
+        if not fa:
             continue
             
         c_name = str(md.customer_name) if md and md.customer_name else ""
@@ -132,11 +133,8 @@ def get_pickup_reconciliation_list(
             "_fa": fa
         })
 
-    csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).join(
+    csa_query = db.query(ChinaSouthernAirApprovalData, CsaDepartureManualData).outerjoin(
         CsaDepartureManualData, ChinaSouthernAirApprovalData.id == CsaDepartureManualData.approval_data_id
-    ).filter(
-        CsaDepartureManualData.audit_status == 2,
-        and_(CsaDepartureManualData.door_pickup_company != None, CsaDepartureManualData.door_pickup_company != "")
     )
     
     if query.waybill_numbers:
@@ -153,8 +151,6 @@ def get_pickup_reconciliation_list(
             
 
         
-    if query.pickup_company:
-        csa_query = csa_query.filter(CsaDepartureManualData.door_pickup_company.like(f"%{query.pickup_company}%"))
         
     csa_records = csa_query.all()
     
@@ -166,7 +162,7 @@ def get_pickup_reconciliation_list(
 
     for approval, md in csa_records:
         fa = fa_map.get("china_southern_air", {}).get(approval.id)
-        if fa_status_filter_active and not fa:
+        if not fa:
             continue
             
         c_name = str(md.customer_name) if md and md.customer_name else ""
@@ -204,12 +200,10 @@ def get_pickup_reconciliation_list(
             "_fa": fa
         })
 
-    peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).join(
+    peer_query = db.query(ConsignmentNote, PeerAirDepartureManualData).outerjoin(
         PeerAirDepartureManualData, ConsignmentNote.id == PeerAirDepartureManualData.consignment_note_id
     ).filter(
-        ConsignmentNote.transport_type == "0",
-        PeerAirDepartureManualData.audit_status == 2,
-        and_(PeerAirDepartureManualData.door_pickup_company != None, PeerAirDepartureManualData.door_pickup_company != "")
+        ConsignmentNote.transport_type == "0"
     )
     
     if query.flight_date_start:
@@ -217,28 +211,48 @@ def get_pickup_reconciliation_list(
     if query.flight_date_end:
         peer_query = peer_query.filter(ConsignmentNote.consignment_date <= query.flight_date_end)
         
-    if query.waybill_numbers:
-        wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
-        if wbs:
-            peer_query = peer_query.filter(PeerAirDepartureManualData.waybill_number.in_(wbs))
-            
-    if query.pickup_company:
-        peer_query = peer_query.filter(PeerAirDepartureManualData.door_pickup_company.like(f"%{query.pickup_company}%"))
-        
     peer_records = peer_query.all()
     for note, md in peer_records:
         fa = fa_map.get("peer_air", {}).get(note.id)
-        if fa_status_filter_active and not fa:
+        if not fa:
+            continue
+        financial_audit_status = fa.financial_audit_status if fa else 0
+        settlement_status = fa.pickup_settlement_status if fa else 0
+        if query.financial_audit_status is not None and financial_audit_status != query.financial_audit_status:
+            continue
+        if query.settlement_status is not None and settlement_status != query.settlement_status:
             continue
             
-        c_name = str(md.customer_name) if md and md.customer_name else ""
+        form_dict = parse_form_data(note.form_data)
+        wb_no = safe_str(get_peer_value(md, form_dict, "waybill_number"))
+        pickup_company = safe_str(get_peer_value(md, form_dict, "door_pickup_company"))
+        pickup_fee = safe_str(get_peer_value(md, form_dict, "door_pickup_fee"))
+        c_name = safe_str(
+            md.customer_name if md and md.customer_name not in (None, "")
+            else note.customer_name if note.customer_name not in (None, "")
+            else form_dict.get("customer_name", "")
+        )
+        pay_override = {}
+        if fa and fa.payable_data:
+            pay_override = fa.payable_data
+            if isinstance(pay_override, str):
+                try:
+                    pay_override = json.loads(pay_override)
+                except (TypeError, ValueError):
+                    pay_override = {}
+        if isinstance(pay_override, dict):
+            pickup_company = safe_str(pay_override.get("door_pickup_company", pickup_company))
+            pickup_fee = safe_str(pay_override.get("door_pickup_fee", pickup_fee))
+        if not pickup_company:
+            continue
         if query.customer_name and query.customer_name not in c_name:
             continue
-
-        try:
-            form_dict = json.loads(note.form_data) if note.form_data else {}
-        except Exception:
-            form_dict = {}
+        if query.pickup_company and query.pickup_company not in pickup_company:
+            continue
+        if query.waybill_numbers:
+            wbs = [w.strip() for w in query.waybill_numbers.split(",") if w.strip()]
+            if wbs and wb_no not in wbs:
+                continue
 
         act_flight = str(form_dict.get("actual_flight") or note.flight_number or "")
         if query.actual_flight_number and query.actual_flight_number not in act_flight:
@@ -259,7 +273,7 @@ def get_pickup_reconciliation_list(
             "source_type": "peer_air",
             "source_id": note.id,
             "flight_date": str(note.consignment_date) if note.consignment_date else "",
-            "waybill_number": md.waybill_number if md else "",
+            "waybill_number": wb_no,
             "destination": note.destination or "",
             "actual_flight_number": act_flight,
             "actual_pieces": gate_pieces,
@@ -267,9 +281,21 @@ def get_pickup_reconciliation_list(
             "customer_name": c_name,
             "_main": note,
             "_md": md,
-            "_fa": fa
+            "_fa": fa,
+            "_form_dict": form_dict,
         })
 
+    # Apply membership and unit search to the effective fee-desk value before
+    # pagination, including rows that have no departure extension.
+    eligible_items = []
+    for item in candidate_items:
+        overrides = parse_form_data(item["_fa"].payable_data)
+        company = safe_str(overrides.get("door_pickup_company", get_peer_value(
+            item["_md"], item.get("_form_dict", {}), "door_pickup_company",
+        )))
+        if company.strip() and (not query.pickup_company or query.pickup_company in company):
+            eligible_items.append(item)
+    candidate_items = eligible_items
     candidate_items.sort(key=lambda x: str(x.get("flight_date", "")), reverse=True)
     
     total_count = len(candidate_items)
@@ -290,8 +316,19 @@ def get_pickup_reconciliation_list(
         financial_audit_status = fa.financial_audit_status if fa else 0
         pickup_settlement_status = fa.pickup_settlement_status if fa else 0
         
-        pickup_company = str(md.door_pickup_company or "")
-        pickup_fee = str(md.door_pickup_fee or "")
+        form_dict = item.get("_form_dict", {})
+        pickup_company = safe_str(get_peer_value(md, form_dict, "door_pickup_company"))
+        pickup_fee = safe_str(get_peer_value(md, form_dict, "door_pickup_fee"))
+        if fa and fa.payable_data:
+            pay_override = fa.payable_data
+            if isinstance(pay_override, str):
+                try:
+                    pay_override = json.loads(pay_override)
+                except (TypeError, ValueError):
+                    pay_override = {}
+            if isinstance(pay_override, dict):
+                pickup_company = safe_str(pay_override.get("door_pickup_company", pickup_company))
+                pickup_fee = safe_str(pay_override.get("door_pickup_fee", pickup_fee))
 
         c_name = str(item.get("customer_name") or "").strip()
         actual_customer_name = customer_id_map[c_name].company_name if c_name in customer_id_map else ""
@@ -327,31 +364,8 @@ def confirm_pickup_settlement(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    fa = db.query(AirFinancialAuditData).filter(
-        AirFinancialAuditData.source_type == source_type,
-        or_(
-            AirFinancialAuditData.source_id == source_id,
-            AirFinancialAuditData.id == source_id
-        )
-    ).first()
-    
-    if not fa:
-        fa = AirFinancialAuditData(
-            source_type=source_type,
-            source_id=source_id
-        )
-        db.add(fa)
-        
-    if fa.pickup_settlement_status == 1:
-        return success_response(msg="该单据已经结算过了")
-        
-    fa.pickup_settlement_status = 1
-    fa.pickup_settlement_auditor_id = current_user.id
-    fa.pickup_settlement_auditor_name = current_user.name
-    fa.pickup_settlement_time = get_china_now()
-    
-    db.commit()
-    return success_response(msg="结算确认成功")
+    _settle_payable(db, {(source_type, safe_int(source_id))}, current_user, "pickup_settlement")
+    return success_response(msg="确认结算成功")
 
 @router.post("/{source_type}/{source_id}/cancel-settlement", summary="取消结算提货对账")
 def cancel_pickup_settlement(
@@ -385,35 +399,10 @@ def batch_confirm_pickup_settlement(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
-    if not req.items:
-        return success_response(msg="没有需要结算的单据")
-
-    now = get_china_now()
-    
-    for item in req.items:
-        source_id_int = safe_int(item.source_id)
-        fa = db.query(AirFinancialAuditData).filter(
-            AirFinancialAuditData.source_type == item.source_type,
-            or_(
-                AirFinancialAuditData.source_id == source_id_int,
-                AirFinancialAuditData.id == source_id_int
-            )
-        ).first()
-        
-        if not fa:
-            fa = AirFinancialAuditData(
-                source_type=item.source_type,
-                source_id=source_id_int
-            )
-            db.add(fa)
-            
-        fa.pickup_settlement_status = 1
-        fa.pickup_settlement_auditor_id = current_user.id
-        fa.pickup_settlement_auditor_name = current_user.name
-        fa.pickup_settlement_time = now
-        
-    db.commit()
-    return success_response(msg=f"成功批量结算 {len(req.items)} 条单据")
+    keys = {(item.source_type, safe_int(item.source_id)) for item in req.items}
+    if keys:
+        _settle_payable(db, keys, current_user, "pickup_settlement")
+    return success_response(msg=f"成功批量结算 {len(keys)} 条单据")
 
 @router.post("/export", summary="导出提货单位对账列表 (选中/批量)")
 def export_pickup_reconciliation_list(

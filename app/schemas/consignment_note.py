@@ -54,6 +54,8 @@ class ConsignmentNoteCreate(BaseModel):
       "origin_address": "始发城市详细地址",
       "destination_city": "终点城市",
       "destination_address": "终点城市详细地址",
+      "consignee_info": "收件人",
+      "contact_phone": "联系电话",
       "destination_weather": "目的站天气"
     }
     """

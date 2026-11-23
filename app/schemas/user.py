@@ -11,7 +11,7 @@ class UserBase(BaseModel):
     phone: str = Field(..., description="手机号", min_length=11, max_length=11)
     name: str = Field(..., description="用户姓名", min_length=1, max_length=50)
     department_ids: List[str] = Field(default_factory=list, description="所属部门ID列表（字符串格式）")
-    permissions: List[str] = Field(..., description="权限列表（权限代码：waybill-主单管理、bill-单号库、robot-机器人管理、customer-客户管理、account-账号管理、system-系统管理、agent-代理管理、finance-财务管理、smart_tracking-智能跟单、waybill_audit-运单单据审核、company_info-公司信息、admin-管理员）")
+    permissions: List[str] = Field(..., description="权限代码列表，创建时兼容旧客户端的agency并转换为agent；自动去首尾空白、去重，响应统一为标准代码。代码：waybill-主单管理、bill-单号库、robot-机器人管理、customer-客户管理、account-账号管理、system-系统管理、agent-代理管理、finance-财务管理、smart_tracking-智能跟单、waybill_audit-运单单据审核、company_info-公司信息、admin-管理员")
     
     @validator("phone")
     def validate_phone(cls, v):
@@ -36,7 +36,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, description="密码", min_length=6, max_length=50)
     name: Optional[str] = Field(None, description="用户姓名", min_length=1, max_length=50)
     department_ids: Optional[List[str]] = Field(None, description="所属部门ID列表（字符串格式）")
-    permissions: Optional[List[str]] = Field(None, description="权限列表（权限代码：waybill-主单管理、bill-单号库、robot-机器人管理、customer-客户管理、account-账号管理、system-系统管理、agent-代理管理、finance-财务管理、smart_tracking-智能跟单、waybill_audit-运单单据审核、company_info-公司信息、admin-管理员）")
+    permissions: Optional[List[str]] = Field(None, description="权限代码列表，兼容旧客户端的agency并转换为agent；自动去首尾空白、去重，响应统一为标准代码；不传或null保留原权限，[]清空权限；实际权限集合变化时旧JWT失效")
     
     @validator("phone")
     def validate_phone(cls, v):

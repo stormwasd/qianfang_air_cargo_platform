@@ -7,6 +7,7 @@ import httpx
 
 from app.services.china_southern_air_direct_order import china_southern_air_direct_order_service
 from app.services.china_southern_air_field_utils import normalize_special_cargo_code
+from app.services.csa_cargo_type_defaults import apply_item_defaults
 from app.services.china_southern_air_service_client import ChinaSouthernAirService
 
 
@@ -84,13 +85,57 @@ class ChinaSouthernAirDirectBookingService:
         return value if isinstance(value, dict) else {}
 
     @classmethod
+    def _get_shipment_contact(
+        cls, item: Dict[str, Any], business_config: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """收发货人必需信息全部齐全才提交整组；缺项仍允许正常订舱。"""
+        consignee = str(item.get("consignee") or "").strip()
+        consignee_phone = str(item.get("consignee_phone") or "").strip()
+        if not consignee or not consignee_phone:
+            return None
+
+        defaults = cls._business_default(business_config)
+        config = cls._direct_order_config(business_config)
+        address = defaults.get("address")
+        if not isinstance(address, dict):
+            return None
+        region = address.get("region")
+        if isinstance(region, str):
+            region = region.split("/")
+        if not isinstance(region, list):
+            region = []
+        region_parts = [str(part or "").strip() for part in region[:3]]
+        shipper = str(defaults.get("shipper") or "").strip()
+        shipper_phone = str(defaults.get("phone") or "").strip()
+        shipper_address = str(address.get("detail") or "").strip()
+        if len(region_parts) != 3 or not all([
+            shipper, shipper_phone, shipper_address, *region_parts,
+        ]):
+            return None
+        return {
+            "shipperName": shipper,
+            "shipperMobile": shipper_phone,
+            "shipperState": region_parts[0],
+            "shipperCity": region_parts[1],
+            "shipperDistrict": region_parts[2],
+            "shipperAddress": shipper_address,
+            "shipperCountryCode": str(config.get("shipper_country_code") or "CN").strip().upper(),
+            "consigneeName": consignee,
+            "consigneeMobile": consignee_phone,
+            "consigneeCountryCode": str(config.get("consignee_country_code") or "CN").strip().upper(),
+            "consigneeAddress": str(config.get("consignee_address") or "机场自提").strip(),
+            "selfPickUp": str(config.get("self_pick_up") or "Y").strip().upper(),
+        }
+
+    @classmethod
     def get_form_values(
         cls, form_data: Dict[str, Any], business_config: Dict[str, Any]
     ) -> Dict[str, Any]:
         bookings = form_data.get("bookings")
         if not isinstance(bookings, list) or not bookings or not isinstance(bookings[0], dict):
             raise ChinaSouthernAirDirectBookingError("南航订舱 form_data.bookings 必须包含一条订舱数据")
-        item = bookings[0]
+        item = deepcopy(bookings[0])
+        apply_item_defaults(item, business_config)
         defaults = cls._business_default(business_config)
 
         product_name = item.get("product_name")
@@ -144,6 +189,7 @@ class ChinaSouthernAirDirectBookingService:
             "booking_remark_narrow": str(item.get("booking_remark_narrow") or defaults.get("booking_remark_narrow") or "").strip(),
             # 为空表示不覆盖南航费用查询结果，保留上游返回的原始勾选状态。
             "selected_fee": selected_fee or None,
+            "shipment_contact": cls._get_shipment_contact(item, business_config),
             "agent_check_name": cls._required_text(defaults.get("agent_checker_name"), "系统参数.代理公司检查人名称"),
             "agent_carrier_name": cls._required_text(defaults.get("agent_consignor_name"), "系统参数.代理公司交运人名称"),
             "contact_name": cls._required_text(
@@ -490,7 +536,7 @@ class ChinaSouthernAirDirectBookingService:
                     "awbNoType": str(config.get("awb_no_type", "BMI")),
                 },
                 "orderShipmentDangerous": None,
-                "orderShipmentContact": None,
+                "orderShipmentContact": deepcopy(values.get("shipment_contact")),
                 "orderShipmentLiveAnimals": None,
             },
             "addServiceCharges": [],

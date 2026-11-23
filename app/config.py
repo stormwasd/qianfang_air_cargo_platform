@@ -79,13 +79,21 @@ class Settings(BaseSettings):
     RPA_CHINA_SOUTHERN_AIR_SECURITY_PRINT_JOB_UUID: str = "afd7fa28e46cd61cf26707c98176556e"
     RPA_CHINA_SOUTHERN_AIR_LABEL_PRINT_JOB_UUID: str = "1efafa308b1c7a789117747b56b6e6a2"
     RPA_PRINT_FILE_ROOT_PATH: str = "D:\\generated_files_of_qianfang_air_cargo_platform"
+    RPA_SHENZHEN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED: Optional[bool] = Field(
+        default=None,
+        description="深航开单成功后是否自动制单；未配置时兼容使用自动打单开关"
+    )
     RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED: bool = Field(
         default=True,
-        description="深航开单成功后是否执行结算、制单及打印等自动后处理，默认开启"
+        description="深航开单成功后是否自动创建打印任务，默认开启"
+    )
+    RPA_CHINA_SOUTHERN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED: Optional[bool] = Field(
+        default=None,
+        description="南航开单成功后是否自动制单；未配置时兼容使用自动打单开关"
     )
     RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED: bool = Field(
         default=True,
-        description="南航开单成功后是否执行结算、制单及打印等自动后处理，默认开启"
+        description="南航开单成功后是否自动创建打印任务，默认开启"
     )
     RPA_CHINA_SOUTHERN_AIR_QUEUE_WAYBILL_NUMBER: str = "nanhang_air_dingcang_kaidan_queue_waybill_number"  
     RPA_CHINA_SOUTHERN_AIR_QUEUE_RATE: str = "nanhang_air_dingcang_kaidan_queue_rate"  
@@ -139,6 +147,85 @@ class Settings(BaseSettings):
     RPA_CHINA_SOUTHERN_AIR_GET_TOKEN_INTERVAL_SECONDS: int = Field(
         default=1800, ge=1, le=86400,
         description="南航获取Token任务定时调度间隔（秒），默认1800秒（30分钟）"
+    )
+    RPA_SHENZHEN_AIR_GET_HAR_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=1, le=86400,
+        description="深航获取HAR任务定时调度间隔（秒），默认1800秒（30分钟）"
+    )
+    SHENZHEN_AIR_WAYBILL_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航 POST /waybills/{id}/execute 执行模式：direct=KingGo接口，rpa=原RPA流程",
+    )
+    SHENZHEN_AIR_WAYBILL_VOID_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航 POST /waybills/{id}/void 执行模式：direct=KingGo接口，rpa=原RPA流程",
+    )
+    SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航订舱-过机-装机数据获取执行模式：direct=KingGo接口下载，rpa=原RPA下载流程",
+    )
+    SHENZHEN_AIR_APPROVAL_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航订舱-批复数据获取执行模式：direct=KingGo接口下载普通及宽体机批复，rpa=原RPA流程",
+    )
+    SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="深航订舱-计飞时间-集装器数据获取执行模式：direct=KingGo接口，rpa=原RPA流程",
+    )
+    SHENZHEN_AIR_BILLING_TIME_CONTAINER_REQUEST_INTERVAL_SECONDS: float = Field(
+        default=5.0, ge=0, le=3600,
+        description="深航走货明细直连逐单请求间隔（秒）；上次请求结束后至少等待此时长，0表示不额外等待，仅作用于当前进程定时管理器",
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_QUEUE_ENABLED: bool = Field(
+        default=True, description="是否启用深航KingGo直连接口持久化任务队列"
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_WORKER_COUNT: int = Field(
+        default=1, ge=1, le=20, description="深航KingGo直连接口Worker数量；共享账号开单由数据库互斥串行领取"
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_POLL_INTERVAL: int = Field(
+        default=2, ge=1, le=60, description="深航KingGo直连接口Worker轮询间隔（秒）"
+    )
+    SHENZHEN_AIR_KINGGO_HAR_PATH: str = Field(
+        default="generated_files/www.kinggo.com.har",
+        description="每次KingGo请求重新提取签名配置和Cookie所用的HAR文件路径",
+    )
+    SHENZHEN_AIR_KINGGO_API_ORIGIN: str = Field(
+        default="https://www.kinggo.com",
+        description="KingGo API传输地址；仅用于本地模拟测试时可覆盖为本地地址",
+    )
+    SHENZHEN_AIR_KINGGO_BROWSER: Literal["auto", "msedge", "chromium"] = Field(
+        default="auto", description="离线HAR签名提取使用的浏览器；生产Linux建议chromium",
+    )
+    SHENZHEN_AIR_KINGGO_EXECUTABLE_PATH: Optional[str] = Field(
+        default=None, description="可选的HAR提取浏览器可执行文件路径",
+    )
+    SHENZHEN_AIR_DIRECT_WAYBILL_HTTP_TIMEOUT_SECONDS: int = Field(
+        default=30, ge=5, le=180, description="单次KingGo HTTP请求超时秒数",
+    )
+    SHENZHEN_AIR_KINGGO_AGENT_TYPE: str = Field(default="1", description="KingGo深航开单代理类型")
+    SHENZHEN_AIR_KINGGO_AGENT_NAME: str = Field(default="", description="KingGo深航开单代理名称")
+    SHENZHEN_AIR_KINGGO_AGENT_ID: str = Field(default="", description="KingGo深航开单代理ID")
+    SHENZHEN_AIR_KINGGO_AGENT_CODE: str = Field(default="", description="KingGo深航开单代理编码")
+    SHENZHEN_AIR_KINGGO_OPER_ID: str = Field(default="", description="KingGo深航操作员ID")
+    SHENZHEN_AIR_KINGGO_PICK_TEL_NO: str = Field(default="", description="KingGo深航提货联系电话")
+    SHENZHEN_AIR_KINGGO_CNE_ADDR: str = Field(default="", description="KingGo深航收货地址代码")
+    SHENZHEN_AIR_KINGGO_CABIN_TYPE: str = Field(default="F", description="KingGo深航舱位代码；与提供的开单表单一致")
+    SHENZHEN_AIR_KINGGO_CABIN_TYPE_NAME: str = Field(default="F舱", description="KingGo深航舱位名称")
+    SHENZHEN_AIR_KINGGO_PAY_TYPE: str = Field(default="1", description="KingGo深航付款方式")
+
+    # 深航航班时间来源：KingGo优先，携程按需兜底；不影响南航。
+    SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED: bool = Field(
+        default=True, description="启用深航KingGo航班表同步及优先查询，不依赖RPA队列"
+    )
+    SHENZHEN_AIR_FLIGHT_INFO_SYNC_INTERVAL_SECONDS: int = Field(
+        default=1800, ge=60, le=86400, description="深航KingGo航班表同步间隔（秒）"
+    )
+    SHENZHEN_AIR_FLIGHT_INFO_SYNC_RETRY_SECONDS: int = Field(
+        default=60, ge=10, le=3600, description="深航KingGo航班表同步失败重试间隔（秒）"
+    )
+    SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED: bool = Field(
+        default=True,
+        description="深航计飞/实飞缺失时启用携程API兜底：覆盖开单航班调度、每条走货明细入库及后台补查；关闭后不请求携程，不影响南航",
     )
 
     # 携程航班接口代理。默认关闭以保持非 Docker/既有部署的原行为；
@@ -203,6 +290,12 @@ class Settings(BaseSettings):
     RPA_QUEUE_ENABLED: bool = Field(default=True, description="是否启用RPA任务队列模式")
     RPA_QUEUE_POLL_INTERVAL: int = Field(default=2, ge=1, le=60, description="Worker轮询队列间隔（秒），默认2秒")
     RPA_QUEUE_DEFAULT_PRIORITY: int = Field(default=1, ge=1, le=100, description="默认任务优先级，默认1")
+    RPA_QUEUE_WAYBILL_PRIORITY: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="深航/南航开单及南航退舱任务优先级，数值越大越优先，默认10"
+    )
     RPA_QUEUE_WORKER_COUNT: int = Field(default=1, ge=1, le=10, description="Worker数量（对应RPA机器人数量），默认1")
     RPA_QUEUE_TASK_TIMEOUT: int = Field(default=30, ge=10, le=300, description="RPA接口调用超时时间（秒），默认30秒，超时则任务失败")
     RPA_QUEUE_CLEANUP_DAYS: int = Field(default=7, ge=1, le=365, description="已完成任务保留天数，默认7天")
@@ -261,6 +354,11 @@ class Settings(BaseSettings):
         ),
     )
     
+    CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_EXECUTION_MODE: Literal["direct", "rpa"] = Field(
+        default="direct",
+        description="南航订舱后修改数据开单执行方式：direct=接口直连，rpa=原RPA队列",
+    )
+
     WECHAT_WEBHOOK_URL: str = Field(
         default="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=05b6c4d8-5058-4706-8a96-27724683e46e",
         description="企业微信群机器人Webhook地址"

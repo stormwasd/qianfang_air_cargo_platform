@@ -17,10 +17,17 @@ from app.schemas.user import (
 )
 from app.api.deps import require_admin, get_current_active_user
 from app.core.security import get_password_hash
-from app.core.permissions import validate_permissions
+from app.core.permissions import normalize_user_permissions
 from app.utils.helpers import format_permissions_to_json, parse_json_permissions, format_datetime_china
 
 router = APIRouter()
+
+
+def _normalize_user_permissions(permissions: list[str]) -> list[str]:
+    try:
+        return normalize_user_permissions(permissions)
+    except ValueError as exc:
+        raise BadRequestException(str(exc)) from exc
 
 
 @router.post("", summary="新增账号")
@@ -38,10 +45,10 @@ async def create_user(
     - **department_ids**: 所属部门ID列表（支持多个部门）
     - **permissions**: 权限列表（权限代码：waybill-主单管理、bill-单号库、robot-机器人管理、customer-客户管理、account-账号管理、system-系统管理、agent-代理管理、finance-财务管理、smart_tracking-智能跟单、waybill_audit-运单单据审核、company_info-公司信息、admin-管理员）
     
-    新增账号默认启用
+    兼容旧客户端的 agency 值并转换为 agent，去除首尾空白、去重后保存并返回标准代码。
+    无效值返回 HTTP 400，错误提示列出具体无效项。新增账号默认启用。
     """
-    if not validate_permissions(user.permissions):
-        raise BadRequestException("权限列表包含无效的权限")
+    permissions = _normalize_user_permissions(user.permissions)
     
     existing_user = db.query(User).filter(User.phone == user.phone).first()
     if existing_user:
@@ -57,7 +64,7 @@ async def create_user(
         phone=user.phone,
         password_hash=get_password_hash(user.password),
         name=user.name,
-        permissions=format_permissions_to_json(user.permissions),
+        permissions=format_permissions_to_json(permissions),
         is_active=True  
     )
     
@@ -270,11 +277,13 @@ async def update_user(
     - **password**: 密码（可选）
     - **name**: 用户姓名（可选）
     - **department_ids**: 所属部门ID列表（可选）
-    - **permissions**: 权限列表（可选）
+    - **permissions**: 权限代码列表（可选，兼容旧客户端 agency 并转换为 agent）
     
     注意：
     - 所有字段都是可选的，传入值的就修改该用户属性，没传值的就保留原值
-    - 如果修改了权限，该用户的JWT将失效，需要重新登录
+    - 权限去除首尾空白、去重后保存并返回代码；无效值返回 HTTP 400 并列出具体项
+    - permissions 不传或为 null 保留原权限，[] 清空权限
+    - 实际权限集合变化时，该用户的JWT将失效；仅顺序、重复项或 agency/agent 切换不使JWT失效
     """
     target_user_id_int = int(user_id)
     
@@ -283,6 +292,11 @@ async def update_user(
         raise NotFoundException("用户不存在")
     
     original_permissions = parse_json_permissions(target_user.permissions)
+    # Validate before changing tracked ORM attributes, including departments.
+    permissions = (
+        _normalize_user_permissions(user_update.permissions)
+        if user_update.permissions is not None else None
+    )
     
     if user_update.phone is not None:
         existing_user = db.query(User).filter(User.phone == user_update.phone, User.id != target_user_id_int).first()
@@ -307,15 +321,11 @@ async def update_user(
             target_user.departments = []
     
     permissions_changed = False
-    if user_update.permissions is not None:
-        if not validate_permissions(user_update.permissions):
-            raise BadRequestException("权限列表包含无效的权限")
-        
-        new_permissions = sorted(user_update.permissions)
-        if sorted(original_permissions) != new_permissions:
+    if permissions is not None:
+        if set(original_permissions) != set(permissions):
             permissions_changed = True
         
-        target_user.permissions = format_permissions_to_json(user_update.permissions)
+        target_user.permissions = format_permissions_to_json(permissions)
     
     if permissions_changed:
         target_user.token_version = (target_user.token_version or 0) + 1

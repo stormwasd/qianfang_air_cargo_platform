@@ -1817,6 +1817,43 @@ class RPAService:
             except Exception as e:
                 raise BadRequestException(f"RPA获取Token接口调用异常: {repr(e)}")
 
+    async def create_shenzhen_air_get_har(
+        self,
+        system_url: str,
+        job_uuid: str,
+    ) -> Dict[str, Any]:
+        """启动深航获取 HAR RPA Job。"""
+        url = f"{self.base_url}/openAPI/v2/job/operation"
+        payload = {
+            "jobUuid": job_uuid,
+            "operation": 1,
+            "inputParam": {"system_url": system_url},
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(
+                    url,
+                    headers=self._get_headers(),
+                    json=payload,
+                )
+                response.raise_for_status()
+                result = response.json()
+                if result.get("code") != 0:
+                    error_msg = result.get("msg", "深航获取HAR接口调用失败")
+                    raise BadRequestException(f"深航获取HAR接口调用失败: {error_msg}")
+                return result.get("data", {})
+            except BadRequestException:
+                raise
+            except httpx.HTTPStatusError as exc:
+                raise BadRequestException(
+                    f"深航获取HAR接口HTTP错误: {exc.response.status_code}"
+                ) from exc
+            except httpx.RequestError as exc:
+                raise BadRequestException(f"深航获取HAR接口请求失败: {exc!r}") from exc
+            except Exception as exc:
+                raise BadRequestException(f"深航获取HAR接口调用异常: {exc!r}") from exc
+
 
 rpa_service = RPAService()
 

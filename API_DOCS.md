@@ -1,5 +1,1498 @@
 # API 文档
 
+## 2026-11-02 深航 direct 计费重量低于45kg固定F舱
+
+适用 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE=direct` 的深航开单。
+创建/修改运单、`POST /api/v1/waybills/{waybill_id}/execute` 及任务查询接口的
+请求/响应结构不变，前端仍提交 `form_data.cargo_info.chargeable_weight`，无需增加舱位参数。
+
+| 任务快照的计费重量（kg） | KingGo 检查与提交的舱位规则 |
+| --- | --- |
+| `0 < chargeable_weight < 45` | 固定 `cabinType=F`、`cabinTypeName=F舱`，优先于舱位配置和运单元数据的默认舱位 |
+| `chargeable_weight >= 45` | 沿用原规则：优先使用 `SHENZHEN_AIR_KINGGO_CABIN_TYPE` 与 `_NAME`，两者均为空时使用运单信息返回的舱位；符合条件时仍允许按上游提示调整一次 |
+
+边界按十进制精确比较：`30`、`44.999` 固定F舱，`45`、`45.000` 不触发此固定规则。
+判断仅依赖计费重量，不使用 `cargo_info.weight`（实际重量）；不会改写用户填写的两种重量，
+费用查询继续使用原计费重量并保留上游返回费用。`oldCabinType` 仍保留运单信息接口原始舱位，
+例如上游默认C舱时可出现 `cabinType=F/cabinTypeName=F舱/oldCabinType=C`，后者不是本次申请舱位。
+
+固定F舱的任务在检查、提交阶段收到“舱位等级不足，是否变更为Z舱？”等提示时，
+**不自动接受换舱，也不重发检查或提交**；保留具体上游错误供核查。
+符合既有完整识别条件的明确提交拒绝仍标记 `failed`，未发出提交的检查失败也为 `failed`；
+提交后的超时、非2xx、非JSON、普通业务拒绝或未确认结果仍按原保护规则标记 `unknown`，
+不会因固定F舱而绕过防重复开单保护。
+
+固定F舱任务的检查/提交异常诊断（后台日志及任务查询 `error_message` 中原有诊断JSON）
+增加 `cabin_policy="chargeable_weight_lt_45_fixed_f"`；识别到其他目标舱位并阻止调整时
+增加 `cabin_adjustment_blocked=true`。`request_summary` 继续记录实际请求中的舱位字段，
+`suggested_cabin_type_name` 保留识别出的上游目标；无换舱时成功结果不增加 `cabin_adjustment`。
+
+该规则在实际执行时根据任务已有的计费重量快照判断，兼容升级前的待执行任务，
+不读取运单最新表单来覆盖快照。无需改表、迁移SQL、新增配置或前端修改。
+RPA及南航逻辑不变，历史已开成功的运单不会自动改舱或重新提交。
+
+## 2026-11-02 修复深航 direct 开单储运注意事项映射
+
+适用 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE=direct`。创建/修改运单的表单结构、
+`POST /api/v1/waybills/{waybill_id}/execute` 入参及异步返回、任务查询接口均不变。
+
+储运注意事项继续填写在 `form_data.cargo_info.storage_and_transportation_precautions`。
+此前 direct 未提取该字段，且错误地将货物名称写入 KingGo `transNote`；现已修正：
+
+| 本系统字段 | KingGo 检查及提交字段 | 规则 |
+| --- | --- | --- |
+| `cargo_info.cargo_name` | `goodsName` | 仍为货物名称，保留既有默认值规则 |
+| `cargo_info.storage_and_transportation_precautions` | `transNote` | 独立可选文本；缺失、null 或空字符串时传空，不回退为货物名称或业务默认值 |
+
+例如以下为运单表单中 `cargo_info` 的部分字段，其他必填信息仍按既有契约提交：
+
+```json
+{"cargo_name":"水果白菜内含冰袋冰瓶","storage_and_transportation_precautions":"鲜活最长运输时限24小时\n轻拿轻放"}
+```
+
+上述注意事项保留用户文本（含换行、空格及特殊字符），按现有 UTF-8 表单编码、
+对实际请求体生成签名；`check_awb` 与 `submit_awb` 使用同一注意事项。
+遇明确舱位调整时仅调整既有舱位字段，重查、重提过程中不改变该文本。
+
+新任务将该值存入原有任务参数快照；升级前已排队任务若解析参数中缺少该字段，
+执行时从同一任务保存的原始表单快照补取，不读取运单最新表单，也不覆盖已有快照值。
+这不会自动修正已经在航司创建的历史运单，也不会为其重新提交或重复开单。
+RPA 模式及南航开单逻辑不变，无需改表、迁移 SQL 或新增配置。
+
+## 2026-10-29 补齐遵义茅台、临沂机场天气查询
+
+`GET /api/v1/weather` 保持原认证方式（已登录用户）、查询参数及 `code/data/msg` 响应结构。修复 WMT、LYI 因本地机场映射缺失，直接将 IATA 三字码作为高德 `city` 参数、上游返回空预报的问题。
+
+| `airport_code` 支持的输入 | 高德 `city` 参数 | 对应地区 |
+| --- | --- | --- |
+| `WMT`、`遵义茅台`、`遵义茅台机场`、`仁怀`、`仁怀市` | `520382` | 遵义茅台机场所在地仁怀市 |
+| `LYI`、`临沂`、`临沂市` | `371300` | 临沂市 |
+
+机场三字码不区分大小写，去除入参首尾空白。天气映射仅在天气模块生效，不修改共享机场名称、数据字典、航司入参或航班匹配；`ZYI` 仍为遵义新舟机场，不能将 WMT 与 ZYI 混用。其他既有天气城市映射保持原样。无需改表、迁移数据或修改 `app/config.py`。
+
+调用示例（日期须位于高德当次返回的预报范围内）：
+
+```http
+GET /api/v1/weather?airport_code=WMT&date=2026-11-01
+Authorization: Bearer <access_token>
+```
+
+```http
+GET /api/v1/weather?airport_code=LYI&date=2026-11-01
+Authorization: Bearer <access_token>
+```
+
+行为保持兼容：
+
+- 匹配到 `casts[].date` 时，HTTP 200，返回 `{"code":0,"data":<目标日期的原始cast对象>,"msg":"查询成功"}`，不新增或改名天气字段。
+- 高德返回空预报，或预报不包含请求日期时，仍为 HTTP 200，返回 `{"code":0,"data":null,"msg":"暂无天气预报"}`。高德不提供任意历史或远期日期查询；本次修复不扩大预报日期范围。
+- 高德业务失败或 HTTP/网络异常仍按原逻辑返回 HTTP 400；必填参数规则不变。
+
+## 2026-10-29 用户权限编辑兼容 agency 及无效值提示
+
+适用账号管理 → 用户列表的 `POST /api/v1/users`（新增）和 `PUT /api/v1/users/{user_id}`（修改）。这是系统登录用户权限，不是客户资料权限。请求路径、管理员认证、成功响应结构不变，无需改表、迁移历史数据或修改 `app/config.py`。
+
+### 权限字段与映射
+
+`permissions` 仍为权限代码字符串数组。前端选项 `label` 展示中文、`value` 绑定下列标准代码，并直接提交代码数组。此次实际失败请求把“代理管理”传成了 `agency`，而标准代码是 `agent`。新增/修改接口现在兼容该客户端值，将 `agency` 转换为 `agent`；去除代码首尾空白，同一权限重复出现（包括 `agency` 与 `agent` 混传）只保存一次，保留首次出现顺序。
+
+| 代码 | 名称 |
+| --- | --- |
+| `waybill` | 主单管理 |
+| `bill` | 单号库 |
+| `robot` | 机器人管理 |
+| `customer` | 客户管理 |
+| `account` | 账号管理 |
+| `system` | 系统管理 |
+| `agent` | 代理管理 |
+| `finance` | 财务管理 |
+| `smart_tracking` | 智能跟单 |
+| `waybill_audit` | 运单单据审核 |
+| `company_info` | 公司信息 |
+| `admin` | 管理员 |
+
+此次实际失败请求修正后的推荐请求（用户 ID 使用实际值）：
+
+```http
+PUT /api/v1/users/{user_id}
+Authorization: Bearer <管理员access_token>
+Content-Type: application/json
+
+{"permissions":["waybill","bill","account","robot","customer","system","agent","finance","smart_tracking"]}
+```
+
+旧客户端仍提交 `agency` 时也可保存成功，但响应和数据库统一使用 `agent`；前端应将选项值及回显逻辑统一到 `agent`。登录、用户列表、用户详情仍沿用已有代码格式，不返回选项对象，也不返回 `agency`。不将 `agency` 新增为独立权限，不修改鉴权、菜单映射或全局配置。旧数据库存中文名称的兼容读取保持原样；写入接口仍不接收中文标签。
+
+后端以请求中的完整数组保存权限。前端应确保页面展示的选中项与提交数组一致，避免提交页面未显示为选中的权限。
+
+### 校验、错误及登录失效
+
+- 仅识别当前配置中已经定义的代码和上述明确的 `agency` 兼容值，不猜测其他别名。`smartTracking`、`agencies`、`代理管理`、`账号管理/account`、菜单路径及空字符串仍返回 HTTP 400；不能静默丢掉非法项后只保存剩余权限。
+- 原来笼统的 `权限列表包含无效的权限` 现在包含具体无效值。例如提交 `["waybill","smartTracking"]` 返回应用统一格式：
+
+```json
+{"code":400,"data":null,"msg":"权限列表包含无效的权限：[\"smartTracking\"]"}
+```
+
+- `permissions` 传对象数组、数字元素或单个字符串仍返回 HTTP 422。新增账号仍须提供该字段（允许 `[]`）；修改时不传或传 `null` 保留原权限，传 `[]` 清空权限。
+- 权限校验在修改姓名、手机号、密码、部门等 ORM 属性前完成，非法权限请求不会部分保存其他信息。
+- 以标准代码集合判断是否真正改变权限；仅重排、重复项或 `agency`/`agent` 表示切换不会额外使 JWT 失效。真正新增/删除权限时仍递增 `token_version`，旧 JWT 随即失效，用户须重新登录。
+- 两个写入接口仍要求管理员权限；普通用户即使提交 `admin` 或 `agency` 也不能越权修改。读取、鉴权和菜单生成规则不放宽。
+
+若更新后仍失败，检查 HTTP 400 的 `msg` 中具体无效值，并核对提交的是标准权限代码。此兼容只作用于新增/修改接口的请求入参，不对数据库批量写入或历史非法值做迁移。
+
+## 2026-10-29 南航货物类型字典选项直接返回名称与代码
+
+参数配置页下拉列表的数据源为 `GET /api/v1/config/dict-options?dict_type=nanfang_air_cargo_type`，与 `GET /api/v1/config` 返回的“已选默认配置”是两个接口。本次补齐字典选项响应：**既有记录、定期同步产生的记录立即按新格式返回，无需手动新增、编辑、重新保存配置或等待下一轮同步。** 仅在部署更新后重新请求即可；不需要改表、迁移 SQL 或修改南航同步入库格式。
+
+### 适用接口与新增字段
+
+| 接口 | 新字段所在位置 |
+| --- | --- |
+| `GET /api/v1/config/dict-options` | `data.items[]`，包括按南航类型筛选、混合类型列表及分页结果中的南航货物类型项 |
+| `GET /api/v1/config/dict-options/{option_id}` | `data` |
+| `POST /api/v1/config/dict-options` | 创建成功的 `data` |
+| `PUT /api/v1/config/dict-options/{option_id}` | 更新成功的 `data`，以更新后的字典类型为准 |
+
+只对 `dict_type="nanfang_air_cargo_type"` 的选项增加两个字符串：
+
+| 新字段 | 内容 | 原字段 |
+| --- | --- | --- |
+| `cargo_type` | 原始货物类型名称 | `label` |
+| `cargo_type_code` | 原始南航代码，允许多个名称共用 | `value` |
+
+原有字段、字符串类型及含义保持兼容：`id`、`dict_type_id`、`dict_type`、`label`、`value`、`status`、`color_type`、`created_at`、`updated_at` 仍全部返回。其他字典不增加上述两个业务字段。HTTP 状态、认证、统一响应 `code/data/msg`、排序、状态筛选、总数和分页规则不变。
+
+列表项示例（原有时间等字段省略）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 2,
+    "items": [
+      {
+        "id": "示例字典行ID1",
+        "dict_type_id": "示例字典类型ID",
+        "dict_type": "nanfang_air_cargo_type",
+        "label": "贵重物品",
+        "value": "3001",
+        "cargo_type": "贵重物品",
+        "cargo_type_code": "3001",
+        "status": 1
+      },
+      {
+        "id": "示例字典行ID2",
+        "dict_type_id": "示例字典类型ID",
+        "dict_type": "nanfang_air_cargo_type",
+        "label": "活体动物",
+        "value": "3001",
+        "cargo_type": "活体动物",
+        "cargo_type_code": "3001",
+        "status": 1
+      }
+    ]
+  },
+  "msg": "查询成功"
+}
+```
+
+这两个字段由接口读取数据库现有 `label/value` 时生成，不是数据库新增列，也不依赖记录的创建来源。新增/编辑字典请求仍使用原 `label/value`，不改成提交 `cargo_type/cargo_type_code`；南航自动同步继续以名称、代码写入这两列。
+
+### 参数配置页接入
+
+直接请求原字典选项接口（可加 `status=1` 获取启用项），用返回的 `cargo_type` 展示并绑定选中名称，将同一项的 `cargo_type_code` 作为业务代码保留。控件适配示例：
+
+```js
+const options = items.map(item => ({
+  label: item.cargo_type,
+  value: item.cargo_type, // 控件的选中值使用名称，不能使用重复代码
+  cargo_type_code: item.cargo_type_code
+}));
+```
+
+选择一项后，参数配置的 `business_default` 同时保存该项 `cargo_type`、`cargo_type_code` 两个字符串，保存接口及路径见下节。无需点击下拉框中的“添加”；该按钮属于手工管理字典选项，不是启用新响应格式的前置步骤。
+
+新增字段不会使仍绑定旧 `value=3001` 的控件自动消除歧义，前端须同步采用按名称选择/回显的逻辑。字典 `value` 不改成对象、名称或拼接串，避免破坏其他消费方；`GET /dict-options/value-by-key` 遇到共享代码仍返回 HTTP 409，不用于该下拉框回显。
+
+## 2026-10-29 南航默认货物类型同时保存名称与代码
+
+适用系统管理 → 参数配置 → 南方航空 → 开单的默认货物类型。数据字典 `nanfang_air_cargo_type` 的格式和自动同步规则不变；同码不同名是合法数据，不能按代码去重或反查唯一名称。本次无需修改表、执行 SQL 或调整 `app/config.py`。
+
+### 配置保存与查询
+
+仍使用 `PUT /api/v1/config` 保存、`GET /api/v1/config` 查询，认证及统一响应 `code/data/msg` 不变。在 `config_data.china_southern_air.booking_and_create.business_default` 增加可选字符串 `cargo_type_code`，与既有字符串 `cargo_type` 配对：
+
+| 字段 | 含义 | 示例 |
+| --- | --- | --- |
+| `cargo_type` | 所选字典项的原始 `label`，即货物类型名称 | `锂电类货物` |
+| `cargo_type_code` | 同一字典项的原始 `value`，即南航代码 | `3006` |
+
+以下仅为请求的局部结构。配置保存仍为**整体替换**，前端须在当前完整配置中更新这两个字段，并携带其他已有配置一起提交：
+
+```json
+{
+  "config_data": {
+    "china_southern_air": {
+      "booking_and_create": {
+        "business_default": {
+          "cargo_type": "锂电类货物",
+          "cargo_type_code": "3006"
+        }
+      }
+    }
+  }
+}
+```
+
+- 名称、代码均为独立字符串；不传对象、数组或 `锂电类货物/3006` 拼接串。
+- 新提交的非空 `cargo_type_code` 必须同时有名称，并与启用的 `nanfang_air_cargo_type` 字典项匹配。名称无匹配、存在重复名称、代码不匹配、相关字典或选项禁用时返回 HTTP 400，不覆盖原配置。不同名称共用 `3006` 等代码允许保存。
+- 字段非字符串（允许缺省/null作为未填写）返回 HTTP 400。两个字段传空字符串表示不设置默认货物类型；清除选择时应同时清空两者。
+- 为兼容旧调用，仅传名称且该名称能唯一匹配启用字典时，保存接口自动补齐代码；名称无法识别时保留旧配置内容，不猜测、不擅自替换名称。历史 `cargo_type="3006"` 无法判断实际名称，需要用户重新选择。
+- 查询响应仍在 `data.config_data` 返回完整配置。对于只有可识别名称的历史配置，查询响应会补齐 `cargo_type_code`，但 GET 不修改数据库；下次正常保存后才持久化。已有非空代码在 GET 中保持原值，配对校验发生在 PUT。
+- 错误示例：`南航默认货物类型名称与代码未匹配启用的数据字典，请重新选择货物类型`。
+
+### 运单、订舱的默认值使用
+
+以下路径仍使用原请求与响应结构，可选字段均不改为必填：
+
+| 场景 | 接口 | 名称与代码位置 |
+| --- | --- | --- |
+| 新增/修改运单 | `POST /api/v1/waybills`、`PUT /api/v1/waybills/{waybill_id}` | `form_data.cargo_info.cargo_type`、`cargo_type_code` |
+| 新增/修改订舱 | `POST /api/v1/bookings`、`PUT /api/v1/bookings/{booking_id}` | `form_data.bookings[n].cargo_type`、`cargo_type_code` |
+
+仅南航数据使用上述默认值；保存后的响应、详情及持久化表单中都可读取补齐结果。规则如下：
+
+1. 用户已填写名称和代码时均保留原值，不用默认配置覆盖；现有调用显式传代码的行为保持兼容。
+2. 名称、代码均为空时，尝试使用参数配置中的默认名称与对应代码。历史只有数字代码的默认名称不用于自动填充。
+3. 已有名称、缺少代码时，仅当名称与默认名称相同，才使用默认代码；其他名称按启用字典的 `label -> value` 补齐，不能将默认货物的代码配给另一名称。
+4. 只有代码而没有名称时，不按共享代码猜测名称，也不随意套用默认名称。执行阶段仍需提供有效货物类型名称。
+5. 订舱保持原有严格校验：缺代码且名称无法匹配字典时返回 HTTP 400。运单保持兼容：无法通过默认配置或字典补码时不强制阻止保存；执行时仍沿用原有必填校验、缺代码时的 `direct_order.rate_code`（默认 `3006`）兜底。
+
+南航 direct 订舱/开单服务的请求构造也支持新默认名称、代码对；表单显式选择优先。费用计算和开单的 `shipmentTypeName` 使用名称，`rateCode` 使用代码。历史表单不会因为读取配置被批量改写；未保存的新默认字段不会自动迁移所有旧业务记录。深航流程不应用此默认值规则。
+
+### 前端配合
+
+参数配置页仍展示一个货物类型下拉框；选中选项时同时写入 `cargo_type=label`、`cargo_type_code=value`。新增运单、订舱初始化时也应成对带入默认值，用户重新选择或清空时同步更新两者。
+
+下拉控件必须以名称或“名称+代码”作为唯一选中标识；仅新增一个保存字段、仍以重复代码作控件选中值，无法解决重复显示和回显歧义。配置回显以名称为依据并核对代码，不调用按代码反查唯一名称的 `value-by-key` 接口。字典行 ID 会因定期同步重建，不作为长期业务值保存。本仓库不包含该页面前端源码，前端组件需另行同步调整。
+
+## 2026-10-29 深航开单失败后的重新执行与待核查状态
+
+适用 `POST /api/v1/waybills/{waybill_id}/execute`，以及共用深航任务拦截逻辑的 `PUT /api/v1/waybills/{waybill_id}`。接口路径、请求字段和成功响应均不变，仍通过 `GET /api/v1/rpa-tasks/{task_id}` 读取开单任务结果；无需修改表或配置。
+
+运单 `airline_record_status="2"` 是兼容的航司录单失败状态，既可能对应任务 `failed`，也可能对应 `unknown`。因此前端不能仅凭运单红色“失败”状态判断可以重开，应同时查询本次任务的 `status`、`stage`、`candidate_waybill_number`、`error_message`：
+
+| 任务状态 | 含义 | 重新执行/修改表单 |
+| --- | --- | --- |
+| `pending` | 已入队等待处理 | 保持拦截，提示“正在排队等待执行”及任务 ID |
+| `running` | 正在处理 | 保持拦截，提示“正在执行”及任务 ID |
+| `failed` | 未发送提交，或明确确认提交被舱位询问拒绝 | 可修改原表单；用户再次执行时新建任务，旧任务保留用于追溯，不自动重新入队 |
+| `unknown` | 发出过提交且无法确认最终结果 | 保持拦截，需按候选单号核查 KingGo；不要引导用户直接重复执行或切到 RPA 绕过 |
+| `success` | 已确认开单 | 仍禁止重复开单 |
+
+### 已确认的舱位拒绝不再误标为待核查
+
+只有下节定义的明确舱位询问响应（HTTP 200、`retCode=400`、完整匹配的舱位变更提示，且没有已创建运单标识）被视为本次提交明确被拒绝。它与网络超时、网关错误、非JSON、返回单号/ID缺失，以及其他业务码/业务文案区分处理：后者仍采用原有保守保护，不直接认定失败可重开。
+
+- 自动调整一次后再次明确被舱位拒绝，或提示舱位与当前名称/代码均相同，任务标记 `failed`，允许用户处理后重新执行。
+- 已收到明确拒绝、但调整后的检查或签名失败，且没有发送第二次提交时，同样标记 `failed`。诊断 JSON 增加 `submission_rejected=true`，表明此前提交已明确被拒绝；最终检查/签名错误仍保留为实际失败原因。
+- 第二次提交一旦发出，第一次已被拒绝的结论不再代表第二次请求。第二次超时、HTTP错误、非JSON、结果不完整或不一致等仍标记 `unknown`；只有第二次也明确被拒绝，才可以标记 `failed`。
+- 保留 `stage=submitting` 和原候选单号作为历史记录：`failed + submitting` 表示曾发出但已明确被拒绝；是否允许重试以任务 `status` 为准，不能仅按阶段判断。
+- Worker中断、最终落库异常等无法确证上游结果的情况，继续沿用待核查保护；不会通过删除旧任务或强制改状态的方式放开重开。
+
+### 拦截提示及历史任务
+
+已有拦截仍返回 HTTP 400，使用应用统一响应 `code/data/msg`，本次将笼统的三种状态提示拆分。`unknown` 响应示例：
+
+```json
+{
+  "code": 400,
+  "data": null,
+  "msg": "上次深航提交结果待核查，暂不能修改或重新执行。请先按候选运单号 479-62046633 核查KingGo，避免重复开单；任务ID: 373706152686522368"
+}
+```
+
+没有记录候选单号时提示“未记录”。前端可使用任务状态将 `failed` 展示为失败、`unknown` 展示为“提交结果待核查”，分别提供后续指引。旧页面如果仍统一展示失败，后端也会通过上述提示继续保护待核查任务。
+
+历史已经保存为 `unknown` 的记录不因升级自动改为 `failed`。旧日志可能没有原始业务响应，无法只凭“submit业务失败”判定航司端未开单；需先取得任务错误及候选单号并核查 KingGo。当前没有新增通用强制重试或自动解除待核查的接口。本次代码修正适用于更新后执行的任务，不会自动重发历史任务。
+
+## 2026-10-29 深航 direct 开单按明确舱位提示调整一次
+
+适用 `POST /api/v1/waybills/{waybill_id}/execute` 的深航 `direct` 模式。入参、入队响应、任务查询路径及原字段保持兼容，不新增前端必填项、配置、表或迁移 SQL；深航 RPA、作废及其他航司流程不受此规则影响。
+
+### 触发条件与上游请求参数
+
+正常开单仍依次获取候选单号、运单元数据、航班、费用，再检查并提交。计费重量低于45kg时按2026-11-02规则固定F舱，不接受自动换舱。其余任务仅当 KingGo 的检查 `POST /awb/inland/check_awb?nti=90` 或提交 `POST /awb/inland/submit_awb?nti=90` 返回以下**明确的舱位变更询问**时，自动接受一次调整：
+
+```json
+{"retCode":"400","msg":"舱位等级不足，是否变更为Z舱？","result":""}
+```
+
+必须同时满足 HTTP 200、`retCode` 为400，以及 `msg` 整体匹配“舱位等级不足，是否变更为X舱？”（X 为单个大写英文字母，兼容中英文逗号/问号及字母周围空白）。响应 `result` 中如已包含非空 `awbId`、`awbNo` 或 `awbStatus`，不自动重试，避免在存在开单结果线索时重复提交。
+
+| 上游询问 | 调整后的请求字段 | 保持的字段 |
+| --- | --- | --- |
+| `舱位等级不足，是否变更为Z舱？` | `cabinTypeName=Z`、`cabinType=Z` | `oldCabinType` 保持原值 |
+| `舱位等级不足，是否变更为A舱？` | `cabinTypeName=A`、`cabinType=A` | 同上 |
+
+注意：按本次业务要求，**发往 KingGo 的入参 `cabinTypeName` 和 `cabinType` 同步修改**，两者均为提示中的舱位字母，`cabinTypeName` 不附加“舱”。检查、提交两步均使用这两个调整后的值；`oldCabinType` 继续保留运单元数据查询返回的原始舱位。不是改写上游返回值，也不修改本地原始表单或全局固定舱位配置。重量、计费重量及费用等其余请求字段保持原值；不重新领取单号或创建另一条任务，不重复请求元数据、航班和费用接口。
+
+### 重试上限和任务状态保护
+
+- 同一任务最多接受一次上述调整。先以同步更新后的 `cabinTypeName`、`cabinType` 重新调用检查接口，检查通过后再提交；每个实际请求都根据最新编码表单重新提取认证并生成签名，不复用旧请求体签名。
+- 若首次检查即返回提示，则调整后重新检查，再首次提交；若首次提交返回提示，则复用同一候选单号重新检查、再次提交。单任务最多发送两次提交请求。
+- 提示目标与当前 `cabinTypeName`（比较时兼容当前名称带“舱”后缀）及 `cabinType` 均相同，不重复发送无变化请求；若名称已相同但代码不同，仍同步修正两者。第二次仍提示变更，即使提示另一个舱位，也终止本次任务，不无限切换。
+- 其他业务码/业务文案、网络超时、非2xx、非JSON、签名失败、未确认成功或返回单号不符，均不触发此调整。重试检查失败时不发送第二次提交。
+- 首次提交发出前仍先将任务 `stage=submitting` 和候选单号持久化；一次任务只跨越一次该持久化边界。调整期间保持原任务和候选单号。已发出过提交、但最终既未确认成功也未确认被拒绝时，继续保留 `unknown`，禁止重新执行、切换RPA重开或修改关联表单，待人工按候选单号核查。明确的舱位拒绝，以及其后未再次提交前的检查/签名失败，标记 `failed`，允许用户重新执行。未发出过提交的检查失败仍为 `failed`。
+- 最终成功仍校验 `retCode=100`、返回 `awbNo` 与候选单号一致且有 `awbId`，才写入运单号、成功状态，并执行一次既有开单后处理。
+
+这是原“直连不自动重发”规则的唯一例外，仅针对明确的舱位询问；不会把普通业务失败改为通用重试。历史已进入 `unknown` 的任务不会因部署新代码自动恢复或重发，必须先核查上游。
+
+### 日志和任务查询结果
+
+发生调整时新增一条告警日志，记录候选单号、原/新舱位名称及代码、触发阶段和一次调整计数，不输出联系人、Cookie、签名或完整请求体。失败诊断的 `request_summary` 增加合法舱位字段 `cabinTypeName`、`cabinType`、`oldCabinType`（若存在），便于核对实际发送参数。
+
+已有 `GET /api/v1/rpa-tasks/{task_id}` 在调整成功时，其 `data.result` 除原有运单号和费用字段外，可选新增 `cabin_adjustment`：
+
+```json
+{
+  "waybill_number": "479-62046633",
+  "awb_id": "7220434",
+  "aviation_rate": 6.0,
+  "aviation_fee": 270.0,
+  "delivery_fee": 0,
+  "cabin_adjustment": {
+    "from_cabin_type_name": "F舱",
+    "to_cabin_type_name": "Z",
+    "from_cabin_type": "F",
+    "to_cabin_type": "Z",
+    "trigger_stage": "submit",
+    "upstream_ret_code": "400",
+    "retry_count": 1
+  }
+}
+```
+
+`from_cabin_type_name` / `to_cabin_type_name` 为调整前后的 `cabinTypeName`；`from_cabin_type` / `to_cabin_type` 为调整前后的 `cabinType`。`trigger_stage` 为 `check` 或 `submit`；未发生调整的成功结果不增加该字段。调整后失败时，仍使用原 `error_message` 字符串，其诊断 JSON 包含同样的 `cabin_adjustment` 和最终错误原因。`retry_count=1` 表示采用了一次调整方案，不代表第二次提交一定发出；应结合最终 `stage/reason_code` 判断检查、认证或提交在哪一步失败。
+
+本地模拟可验证请求字段变化、调用次数、持久化和失败保护；不能替代真实 KingGo 对同步修改 `cabinTypeName`、`cabinType` 后开单结果的验收。真实接口若继续拒绝，将保留新的具体失败原因供排查。
+
+## 2026-10-29 南航出港订舱状态 KK/UU 多选筛选
+
+仅适用 `GET /api/v1/departure-tracking/china-southern-air`，认证仍为 `Authorization: Bearer <access_token>`。复用已有查询参数 **`waybill_status`**，从整段订舱号模糊匹配改为按 `booking_no` **末尾括号中的完整标识**筛选，并支持多选。深航出港接口不增加此参数。
+
+### 前端复选框与请求参数
+
+南航搜索区新增复选框 KK、UU；**首次进入和点击重置时默认选中 KK，并明确传 `waybill_status=KK`**。复选框可独立切换，两项都选时匹配任意一种。搜索条件改变后将 `page` 重置为1；搜索、翻页、刷新请求均携带当前选项。
+
+| 复选框状态 | 查询参数 | 含义 |
+| --- | --- | --- |
+| 仅 KK（页面默认/重置） | `waybill_status=KK` | 只匹配末尾状态 KK，例如 `65294402 ( KK )` |
+| 仅 UU | `waybill_status=UU` | 只匹配末尾状态 UU，例如 `65294350 ( UU )` |
+| KK、UU 同时选中 | `waybill_status=KK,UU` | KK **或** UU，逗号为英文逗号；不能把整个字符串当作一个状态 |
+| 全部取消 | 不传或 `waybill_status=` | 不限制订舱状态，包含无订舱号、无识别标识的记录 |
+
+参数类型仍为可选 string，不新增必填参数。为兼容现有调用，**接口本身不传参数仍查询全部，页面默认选中 KK 由前端显式传参实现**。不要用 `audit_status` 代替本参数：前者是人工暂存/提交状态，KK/UU 是航司订舱状态，两者独立。
+
+### 匹配、校验及分页规则
+
+- 输入按英文逗号拆分，去掉首尾空白、忽略空项、统一大写并去重；例如 ` kk,KK, ,uu ` 等价于 `KK,UU`，`UU,KK` 也可使用。未传、空串、纯空白或只有逗号/空白时不增加状态限制。
+- 有效状态仅为 KK、UU。非法值如 `XX`、`KK,XX`、`KK UU`、`KK，UU`（中文逗号）、`%` 返回 HTTP 422，不静默忽略非法项或扩大查询范围。
+- 匹配订舱号末尾括号内的完整标识，兼容括号内空格/制表符/换行、末尾空白、中英文括号和大小写。例如 `65294402(KK)`、`65294402 ( KK )`、`65294402（KK）` 均匹配 KK。原始 `booking_no` 展示值不变。
+- `KK65294350 (UU)` 只匹配 UU；`65294402 (KKX)`、`65294402 KK`、`65294402 (KK)备注` 不匹配 KK。有多组括号时以最后一组为准，例如 `65294402 (KK) (UU)` 只匹配 UU。
+- 启用筛选时，空订舱号、无标识或其他标识的记录不命中；同时勾选 KK/UU 仍只匹配这两种状态，与“全部取消、不限制”有所不同。
+- 多个状态先以“或”组合，再与日期、航班、运单号、客户、人工状态、始发/目的站等筛选以“且”组合。先在数据库筛选，再统计 `total`、排序和分页，不在前端当前页过滤。
+
+请求示例：
+
+```http
+GET /api/v1/departure-tracking/china-southern-air?waybill_status=KK&flight_date_start=2026-10-28&flight_date_end=2026-10-28&page=1&pageSize=20
+Authorization: Bearer <access_token>
+```
+
+两项都勾选时，将上述参数换成 `waybill_status=KK,UU`（URL 编码为 `KK%2CUU` 亦可）。成功响应沿用 `{"code":0,"data":{"total":0,"items":[],"data_update_time":null},"msg":"查询成功"}` 的原有结构；这里示例为无匹配记录，有匹配时返回原有完整列表项，包括客户名称、人工状态、本站货物及货拉明细。
+
+应用统一异常处理下，非法状态响应示例（HTTP 422）：
+
+```json
+{"code":422,"data":null,"msg":"订舱状态仅支持KK、UU，多选请用英文逗号分隔"}
+```
+
+无需修改数据库、配置或历史数据。此筛选只读取已采集订舱号，不触发抓取、修改状态或影响财务/对账。本仓库没有前端页面源码，复选框和默认选项需前端按上述约定对接。
+
+## 2026-10-28 深航、南航出港列表客户名称及暂存/提交对接
+
+适用页面为智能跟单中的深航、南航出港列表。两家列表统一新增 **`data.items[].actual_customer_name`**，作为列表“客户名称”列的展示值；不改名或覆盖原 `manual_data.customer_name`。客户搜索支持客户公司名称，原有暂存、提交和状态机制继续复用。无需建表、改表、执行数据迁移或新增配置。
+
+### 列表和搜索接口
+
+| 航司 | 列表接口 | 编辑区关联 ID |
+| --- | --- | --- |
+| 深航 | `GET /api/v1/departure-tracking/shenzhen-air` | 列表项 `id` → 请求体 `booking_export_id` |
+| 南航 | `GET /api/v1/departure-tracking/china-southern-air` | 列表项 `id` → 请求体 `approval_data_id` |
+
+认证仍为 `Authorization: Bearer <access_token>`。日期、航班、运单号、始发/目的站、疑似异常、分页等原参数及原有明细返回字段继续保留。
+
+| 参数/返回字段 | 类型 | 含义及前端用法 |
+| --- | --- | --- |
+| 查询参数 `customer_name` | 可选 string | 搜索区“客户名称”。首尾空白忽略；未传、空串或纯空白不限制客户。纯数字按客户 ID **精确匹配**，不按 ID 片段模糊搜索；其他文本按 `customers.company_name` 包含式模糊搜索，同时兼容历史直接存为名称的记录。`%`、`_` 按普通字符匹配，不作为通配符。使用 URL 编码传递特殊字符 |
+| 查询参数 `audit_status` | 可选 integer | 原有状态筛选：0 未提交（含无人工记录或状态 NULL），1 暂存，2 已提交。可与客户等其他筛选组合 |
+| `data.items[].actual_customer_name` | string，始终返回 | **新增，位于列表项顶层，与 `manual_data` 同级**。保存的是客户 ID 时，以该 ID 查 `customers.company_name`；历史直接保存的名称兼容返回名称文本；无客户、客户未选、客户 ID 不存在/客户已删除时返回 `""`，不会把 ID 当名称展示 |
+| `data.items[].manual_data.customer_name` | string 或 null | 继续返回原始客户值，通常为客户 ID 字符串，供下拉框回填及保存使用；请勿把 `actual_customer_name` 写回该字段来替换 ID |
+| `data.items[].manual_data.audit_status` | integer 或 null | 继续使用既有字段，2 对应列表“已提交”。没有 `manual_data`、状态为 NULL/0/1 时，按本次产品要求，“状态”列显示为空，不标为“已提交”；如需分辨暂存，仍可读取1 |
+
+客户匹配先在数据库中筛选，再统计 `total`、排序和分页；不是只过滤当前页。显示名称按当前页批量解析，不逐行查询客户表。数字 ID 始终按字符串传给前端，前端不可转换成 JavaScript `Number`，以免雪花 ID 丢失精度。客户改名后列表展示客户表中的最新名称；缺失客户仍保留原 ID 供排查，不自动修改人工数据。
+
+请求示例（两家使用同样的客户查询参数）：
+
+```http
+GET /api/v1/departure-tracking/shenzhen-air?customer_name=%E6%99%A8%E5%BE%B7&flight_date_start=2026-10-28&flight_date_end=2026-10-28&page=1&pageSize=20
+Authorization: Bearer <access_token>
+```
+
+响应示例（仅列出与本次对接相关的字段，其余原有字段继续返回）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [
+      {
+        "id": "373826986889580544",
+        "actual_customer_name": "晨德通",
+        "manual_data": {
+          "id": "373826986889580545",
+          "booking_export_id": "373826986889580544",
+          "customer_name": "373379437934284801",
+          "audit_status": 2,
+          "auditor_name": "操作员"
+        }
+      }
+    ],
+    "data_update_time": "2026-10-28 21:37"
+  },
+  "msg": "查询成功"
+}
+```
+
+南航同样在列表项顶层返回 `actual_customer_name`，`manual_data` 中关联字段为 `approval_data_id`。无人工数据时，`manual_data` 仍为 `null`，`actual_customer_name` 为 `""`，不创建空的人工记录。
+
+### 暂存/提交按钮和状态展示
+
+操作区【暂存】与【提交】调用同一个既有接口，使用请求体中的 `action` 区分，**不是查询参数**：
+
+| 航司 | 操作接口 | 必填关联字段 |
+| --- | --- | --- |
+| 深航 | `POST /api/v1/departure-tracking/shenzhen-air/audit` | `booking_export_id`（列表主表 ID 的字符串） |
+| 南航 | `POST /api/v1/departure-tracking/china-southern-air/audit` | `approval_data_id`（列表主表 ID 的字符串） |
+
+深航暂存请求示例：
+
+```json
+{
+  "booking_export_id": "373826986889580544",
+  "action": "draft",
+  "customer_name": "373379437934284801",
+  "cargo_type": "普货",
+  "packaging_fee": "2",
+  "remark": "待确认其他费用"
+}
+```
+
+南航将关联字段换成 `approval_data_id`；提交时将 `action` 换成 `"submit"`。其余可保存字段两家一致：`customer_name`、`cargo_type`、`packaging_fee`、`telegram_fee`、`telegram_code`、`cca`、`door_pickup_fee`、`door_pickup_company`、`airport_pickup_fee`、`airport_pickup_company`、`delivery_fee`、`delivery_company`、`carrier_deduction`、`other_fees`、`manual_total_amount`、`remark`，均为可选 string/null。操作时传入当前编辑区需要保存的内容。
+
+| 操作 | 保存和状态规则 | 成功响应 |
+| --- | --- | --- |
+| 暂存 `action="draft"` | 保存本次输入，`audit_status=1`，不执行提交、不写入新的审核人或审核时间。首次暂存后列表状态仍显示为空；客户名称可以显示 | `{"code":0,"data":null,"msg":"暂存成功"}` |
+| 提交 `action="submit"` | 同时保存输入，`audit_status=2`，写入当前操作人的 ID/名称及本次审核时间，列表状态展示“已提交” | `{"code":0,"data":null,"msg":"审核成功"}`（兼容已有响应文案，界面按钮仍叫“提交”） |
+
+两家均保留已有更新规则：已有记录只更新请求中传入的字段，省略字段保留原值；显式传 `customer_name=null` 或 `""` 可清空客户。**已提交记录再次点击暂存会回到 `audit_status=1`**；已有审核人/时间保留为历史信息，不表示当前仍已提交，当前状态以 `audit_status` 为准。非法 `action` 或缺少必填关联 ID 返回 HTTP 422，请求不会保存。
+
+【暂存】成功后不要继续调用 `action="submit"`。两种操作成功后刷新当前列表和编辑区，列表客户列绑定 `actual_customer_name`，客户下拉框绑定 `manual_data.customer_name`，状态列按上述规则展示。已有 `POST/PUT /api/v1/departure-tracking/{shenzhen-air|china-southern-air}/manual-data` 仍仅保存人工字段，不主动改变审核状态；需要明确标记暂存时请使用 `/audit` 的 `draft`，不要混用两次保存请求。
+
+这里的提交仅是出港人工信息状态，保留历史接口中的“审核”命名；不代表财务审核通过、不触发航司开单或再次执行抓取。费用登记台和对账仍遵循下文的独立财务审核流程，不新增业务提交门槛。`data_update_time` 仍代表采集成功时间，不会因人工暂存/提交而刷新。
+
+本仓库不包含前端页面源码；以上列、按钮和搜索控件需由前端按此约定对接。本次后端改动仅新增名称响应及完善客户搜索，暂存/提交状态复用既有实现。
+
+## 2026-10-27 深航出港列表更新时间对应过机装机主表
+
+`GET /api/v1/departure-tracking/shenzhen-air` 的 `data.data_update_time` 对应页面“过机数据列表”的最后成功获取时间：按 `SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE` 选择来源，direct 为 `AwbQueryExport` 主表成功下载的时间，RPA 为对应过机装机任务成功运行的 `endTime`。计飞时间/集装器子任务的执行模式、成功时间不再影响该字段。
+
+接口路径、认证、筛选、分页和响应结构保持兼容，时间仍为北京时间 `YYYY-MM-DD HH:mm`。该时间独立于后续解析入库及子项补全，不代表所有走货明细均已完整；获取失败不刷新，空结果页仍返回已有成功时间。当前模式没有主表成功记录时返回 `null`，不会用子任务时间或业务行修改时间代替。无需数据库迁移；新记录从更新代码后下一次主表成功获取开始生成，前端继续使用原字段。
+
+## 2026-10-26 取消业务单据审核，仅财务审核通过后进入对账
+
+当前业务流程统一为：**智能跟单来源运单／手动托运书 → 费用登记台 → 财务审核通过 → 应收／应付对账 → 标记结算**。不再要求先调用业务单据审核接口，不再以 `audit_status=2` 作为费用登记台或对账的准入条件。历史业务审核接口、人工数据及状态保留兼容；不会批量将旧业务状态改成2。
+
+### 费用登记台：前端调用与状态含义
+
+| 接口 | 本次行为／前端处理 |
+| --- | --- |
+| `GET /api/v1/financial-audit/air` | 深航、南航、同行空运直接可查询，无业务审核扩展或业务未审/暂存均不拦截。旧 `audit_status` 参数兼容接收但忽略；前端应移除该筛选。响应中的 `audit_status` 保留历史值，仅作兼容字段，不再决定下一步。`financial_audit_status` 筛选仍有效，未审/暂存可以在费用登记台查询 |
+| `POST /api/v1/financial-audit/air/audit?action=save` | 保持原接口：空运财务状态变为1（暂存），不进入对账；即使之前已通过，重新save也会变为1 |
+| `POST /api/v1/financial-audit/air/audit?action=submit` | 保持原接口：空运财务状态变为2（已审核），随后可由对应对账接口查询。深航、南航、同行空运及费用登记台手工新增单据均使用此接口，无需补业务审核 |
+| `GET /api/v1/consignment-notes?transport_type=1&is_financial=true` | 汽运费用登记台保持原接口，不依赖业务审核；无扩展记录也可查询 |
+| `POST /api/v1/consignment-notes/financial/audit?action=save` | 汽运保持原逻辑：首次暂存财务状态为1；已通过的状态2不会因save退回1 |
+| `POST /api/v1/consignment-notes/financial/audit?action=submit` | 请求体保持 `{"consignment_note_id":"101"}`，汽运财务状态变为2，无需调用 `/consignment-notes/audit`；随后可进入汽运应收/应付对账 |
+
+财务状态取各费用登记台对应记录：空运为 `air_financial_audit_data.financial_audit_status`；汽运为 `peer_road_departure_manual_data.financial_audit_status`。空运统一费用登记台使用 `/financial-audit/air/audit`，不要用历史同行空运业务审核或托运书旧财务接口替代该接口。
+
+### 对账接口：改动范围和完整路由
+
+下表“操作基路径”记为 `B`。每个模块受本次规则影响的接口为：`GET 列表路由`、`POST B/export`、`POST B/{source_type}/{source_id}/settle`、`POST B/batch-settle`；汽运单条确认仅使用 `B/{source_id}/settle`。取消路径为相同的单条路径将 `settle` 替换为 `cancel-settlement`。
+
+| 模块 | 列表路由 | 操作基路径 B |
+| --- | --- | --- |
+| 应付航司 | `/api/v1/reconciliation/airline/air` | `/api/v1/reconciliation/airline/air` |
+| 应付提货单位 | `/api/v1/reconciliation/pickup/air` | `/api/v1/reconciliation/pickup` |
+| 应付派送单位 | `/api/v1/reconciliation/delivery/air` | `/api/v1/reconciliation/delivery` |
+| 应付空运代理 | `/api/v1/reconciliation/air-agent/air` | `/api/v1/reconciliation/air-agent/air` |
+| 应付汽运代理 | `/api/v1/reconciliation/road-agent/road` | `/api/v1/reconciliation/road-agent/road` |
+| 应收航司 | `/api/v1/reconciliation/receivable/airline/air` | `/api/v1/reconciliation/receivable/airline/air` |
+| 应收提货单位 | `/api/v1/reconciliation/receivable/pickup/air` | `/api/v1/reconciliation/receivable/pickup/air` |
+| 应收派送单位 | `/api/v1/reconciliation/receivable/delivery/air` | `/api/v1/reconciliation/receivable/delivery/air` |
+| 应收空运代理 | `/api/v1/reconciliation/receivable/air-agent/air` | `/api/v1/reconciliation/receivable/air-agent/air` |
+| 应收汽运代理 | `/api/v1/reconciliation/receivable/road-agent/road` | `/api/v1/reconciliation/receivable/road-agent/road` |
+
+保留全部现有接口以兼容客户端；系统菜单实际使用的应收空运、汽运入口同样适用。没有新增路由或必填参数，列表响应字段不改名。
+
+| 操作 | 统一规则 |
+| --- | --- |
+| 列表、统计与分页 | **只允许财务已审核2**，不要求业务审核。没有财务记录、财务状态0/NULL/1一律排除；规则在分页和统计前生效。空运保留 `financial_audit_status` 参数，传2或不传均只查2，传0/1返回空列表，不能用该参数绕过门槛；汽运不新增此搜索参数 |
+| 导出 | 与列表使用同一财务准入条件；选中项也不能绕过审核门槛，选中项与可查询范围取交集，无结果返回HTTP400 |
+| 单条确认结算 | 再次检查当前财务状态为2，未通过返回HTTP400，不能靠直接调用结算接口绕过列表；原来源存在性、类型及模块范围校验继续保留 |
+| 批量确认结算 | 对完整批次先校验、再写入；任何一项未通过财务审核，整个批次返回HTTP400，不部分结算。重复项去重，重复确认保留首次操作人及时间 |
+| 取消结算 | 不要求当前财务状态为2，允许清理后来暂存或调整过数据的历史结算；只清空对应模块状态和操作信息，无财务扩展时不创建空记录 |
+
+应付提货、派送查询不再依赖出港人工扩展的存在性或原单位值。归属与单位搜索使用费用登记台保存的最终应付单位/费用，再统计、分页；取消业务审核后，直接在费用登记台填写单位也能进入相应模块。原费用计算、数据来源和模块间结算状态独立性继续保留，确认结算不等于实际收付款。
+
+示例：`GET /api/v1/reconciliation/receivable/air-agent/air?flight_date_start=2026-10-26&flight_date_end=2026-10-26` 路由及参数无需更改。如果运单财务状态为2且满足日期等筛选条件，就可查询；业务 `audit_status` 为0/1或没有业务扩展均不影响。未审/暂存请到费用登记台查询并执行submit，而非补调业务审核。
+
+绕过列表确认尚未财务审核的单据时，统一错误处理响应示例：
+
+```json
+{"code":400,"data":null,"msg":"单据尚未通过财务审核，不能确认结算"}
+```
+
+本次流程调整不新增SQL迁移、表或配置项，也无需更新历史业务审核状态。部署需保留此前各模块所需的已有表结构；代码更新并重启服务后生效。历史文档中的旧“业务审核通过才进入”或“财务未审也可结算”规则均以本节及下文更新后的规则为准。
+
+## 2026-10-23 南航出港跟踪支持多个运单号关键词模糊查询
+
+接口：`GET /api/v1/departure-tracking/china-southern-air`（智能跟单 → 出港跟踪 → 南方航空）。认证仍为 `Authorization: Bearer <access_token>`。
+
+### 运单号查询规则
+
+`waybill_number` 保持可选string，现从“多个完整单号精确匹配”调整为“多个关键词包含式模糊匹配”：
+
+| 入参示例 | 查询含义 |
+| --- | --- |
+| `784-22007775` | 匹配运单号中包含 `784-22007775` 的记录，完整单号仍可查询 |
+| `22007775` 或 `7775` | 匹配运单号任意位置包含该片段的记录 |
+| `7775,7776` | 包含 `7775` **或** `7776`，任意一个命中即可 |
+| `784-22007775,7776` | 完整单号与部分单号可混合使用 |
+| ` 7775, ,7776,7775 ` | 去掉各关键词首尾空白，忽略空项并去重；同一记录不会因命中多个关键词而重复返回 |
+
+未传、空字符串、纯空白或仅逗号/空白时，不增加运单号限制，沿用原行为。`%`、`_` 等字符按普通文本匹配，不开放SQL通配符语法；通过查询参数编码传递特殊字符，例如字面量 `%` 应编码为 `%25`。有有效关键词时，运单号为null的记录不命中。
+
+多个关键词先以“或”组合，再与日期、航班、审核状态等其他条件以“且”组合。数据库筛选完成后再统计 `total`、排序和分页，不在当前页内过滤。
+
+### 查询入参
+
+| 参数 | 类型/默认值 | 说明 |
+| --- | --- | --- |
+| `waybill_number` | 可选string | 运单号关键词，多个用英文逗号分隔，按上述规则模糊查询 |
+| `flight_date_start`、`flight_date_end` | 可选string | 航班日期开始、结束，格式 `YYYY-MM-DD`，沿用原日期区间逻辑 |
+| `flight_number` | 可选string | 航班号 |
+| `audit_status` | 可选integer | 0未审、1暂存、2已审 |
+| `origin`、`destination` | 可选string | 始发站、目的站 |
+| `customer_name` | 可选string | 客户名称 |
+| `waybill_status` | 可选string | 订舱状态：KK、UU 或英文逗号分隔的 KK,UU，精确匹配 `booking_no` 末尾括号内标识；详见2026-10-29多选筛选说明 |
+| `is_suspected_abnormal` | 可选boolean | 疑似异常，沿用原筛选规则 |
+| `page` | integer，默认1 | 大于等于1 |
+| `pageSize` | integer，默认10 | 1～500 |
+
+请求示例：
+
+```http
+GET /api/v1/departure-tracking/china-southern-air?waybill_number=7775,7776&flight_date_start=2026-10-23&flight_date_end=2026-10-23&page=1&pageSize=20
+Authorization: Bearer <access_token>
+```
+
+成功响应示例（只列出每条记录的部分字段，其余原有字段仍返回）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 2,
+    "items": [
+      {"id": "2", "waybill_number": "784-22007776", "flight_info": "CZ1234 / 2026-10-23 / SZX - PEK", "product_information": [], "lalamove_information": [], "manual_data": null},
+      {"id": "1", "waybill_number": "784-22007775", "flight_info": "CZ1234 / 2026-10-23 / SZX - PEK", "product_information": [], "lalamove_information": [], "manual_data": null}
+    ],
+    "data_update_time": null
+  },
+  "msg": "查询成功"
+}
+```
+
+无匹配时 `total=0`、`items=[]`；翻页超出范围时 `items=[]`，`total` 仍为所有筛选条件下的总数。`data_update_time` 保持原成功执行时间口径，有成功记录时仍返回已有时间。分页值不合法等原参数验证仍返回422。
+
+本次仅调整该南航出港列表的运单号筛选及参数说明，响应结构、关联明细、排序、审核与采集逻辑不变；其他列表（包括深航出港、南航订舱批复、费用登记台）不调整。无需新增配置或执行SQL迁移。
+
+## 2026-10-23 南航费用登记台开单件数、开单重量映射修正
+
+`GET /api/v1/financial-audit/air`（空运费用登记台列表）保持现有认证、查询参数、分页及响应结构。本次仅修正关联南航源运单（`source_type=china_southern_air`）的开单件数、重量取值：唐翼表头“订舱件数、重量”即开单件数、重量，应读取与 `GET /api/v1/departure-tracking/china-southern-air` 同源的两个字段，不再拆分 `billing_qty` 获取开单数据。
+
+| 南航源字段 | 列表 `data.items[]` 字段 | 应付信息字段 | 返回类型 |
+| --- | --- | --- | --- |
+| `booking_pieces` | `billing_quantity` | `payable.billing_pieces` | string |
+| `booking_weight` | `billing_weight` | `payable.billing_weight` | string |
+
+请求示例（日期、状态等原有筛选仍可使用）：
+
+```http
+GET /api/v1/financial-audit/air?airline_type=china_southern_air&page=1&pageSize=20
+Authorization: Bearer <access_token>
+```
+
+例如，源数据 `booking_pieces="30"`、`booking_weight="300"`、`billing_qty="0 / 0 / 0 (30 / 300 / 1.80)"`，响应对应部分如下（省略其他字段）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 1,
+    "items": [{
+      "source_type": "china_southern_air",
+      "source_id": "201",
+      "billing_quantity": "30",
+      "billing_weight": "300",
+      "payable": {
+        "billing_pieces": "30",
+        "billing_weight": "300"
+      }
+    }]
+  },
+  "msg": "success"
+}
+```
+
+两个值独立读取，保留 `"0"` 和字符串小数位；源字段为null或空字符串时返回 `""`，不使用 `billing_qty`、计费重量或其他字段代替。
+
+关联南航源运单的这两个应付展示字段始终以源数据为准，包括已暂存或已审核记录。`POST /api/v1/financial-audit/air/audit?action=save` 或 `action=submit` 的请求契约保持兼容，但随后查询时，保存的 `payable.billing_pieces`、`payable.billing_weight` 不覆盖源字段，避免旧页面/历史暂存的零值遮盖修正。其他人工保存字段和审核状态仍按原规则处理；查询不会改写数据库中保存的JSON。源数据后续更新时，两项展示值随之更新。
+
+手工新增的南航财务单据没有关联源运单，继续使用人工填写的件数、重量。深航、同行空运的映射和暂存覆盖规则不变；南航应收区 `receivable.pieces` 仍沿用原 `billing_qty` 拆分及人工覆盖规则，应收重量、计费重量、过机件数和费用计算规则不变。复用费用登记台构建逻辑的下游对账接口继续按原规则读取应收数据，各模块的结算状态规则不变。出港跟单接口的字段名、源数据采集和告警逻辑不变。
+
+本次无需SQL迁移、新表或新增配置。
+
+## 2026-10-23 派送单位联系人及联系电话改为可选
+
+派送单位管理统一前缀 `/api/v1/delivery-units`，继续要求 `Authorization: Bearer <access_token>`。本次放宽联系人与联系电话的输入校验，新增、编辑均可在未填写联系方式时保存。
+
+| 接口 | 方法及路由 | 联系方式处理 |
+| --- | --- | --- |
+| 新增派送单位 | `POST /api/v1/delivery-units` | `contact_person`、`contact_phone` 均可省略、传null或空字符串，未填保存为 `""` |
+| 编辑派送单位 | `PUT /api/v1/delivery-units/{unit_id}` | 省略某字段保留该字段原值；显式传null或 `""` 清空对应字段 |
+| 派送单位详情 | `GET /api/v1/delivery-units/{unit_id}` | 两项继续返回string，未填返回 `""` |
+| 派送单位列表 | `GET /api/v1/delivery-units` | `data.items` 中两项继续返回string，未填返回 `""`；筛选分页不变 |
+
+新增时 `delivery_name`（1～200字符）及 `settlement_method`（整数）继续必填，`delivery_code` 可选，未填写沿用原自动编码逻辑。联系人最长50字符、联系电话最长20字符，填写时仍必须使用字符串；不新增手机号格式限制。两项相互独立，可只填其中一项。编辑只更新请求中明确提供的字段。
+
+新增请求示例（也可显式传 `"contact_person":null,"contact_phone":""`）：
+
+```json
+{"delivery_name":"测试派送单位","settlement_method":1}
+```
+
+新增成功响应示例：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "371229268321112064",
+    "delivery_code": "PSS003",
+    "delivery_name": "测试派送单位",
+    "contact_person": "",
+    "contact_phone": "",
+    "settlement_method": 1,
+    "creator_id": "265357797422665728",
+    "creator_name": "系统管理员",
+    "created_at": "2026-10-23T09:00:00+08:00",
+    "updated_at": "2026-10-23T09:00:00+08:00"
+  },
+  "msg": "派送单位创建成功"
+}
+```
+
+编辑示例：`PUT /api/v1/delivery-units/371229268321112064`，请求 `{"contact_phone":null}` 仅清空电话，联系人和其他未提供字段保留；请求 `{"contact_person":"","contact_phone":""}` 清空两项。成功响应结构同新增，消息为 `派送单位更新成功`；详情和列表消息为 `查询成功`，列表包装仍为 `{"code":0,"data":{"total":1,"items":[...]},"msg":"查询成功"}`。
+
+缺失新增必填字段、名称为空、联系方式超长或非字符串类型继续返回422；无有效登录凭证返回401/403；编辑或查询不存在的单位继续返回404。此次使用空字符串兼容数据库现有NOT NULL列和既有string响应，不需要执行SQL迁移或修改配置；不修改提货单位、客户等其他模块的联系人规则。
+
+## 2026-10-22 汽运代理对账联调修正
+
+本次涉及以下四个接口，认证、查询入参、日期边界、分页及各自独立的结算状态不变：
+
+| 模块 | 方法 | 路由 |
+| --- | --- | --- |
+| 应收汽运代理 | GET | `/api/v1/reconciliation/receivable/road-agent/road` |
+| 应收汽运代理 | POST | `/api/v1/reconciliation/receivable/road-agent/road/export` |
+| 应付汽运代理 | GET | `/api/v1/reconciliation/road-agent/road` |
+| 应付汽运代理 | POST | `/api/v1/reconciliation/road-agent/road/export` |
+
+### 新增计费重量
+
+两个列表的每条 `data.items` 新增 `chargeable_weight`（`string/null`），直接读取费用登记台同源的 `consignment_notes.form_data.chargeable_weight`。数值转成字符串，保留零值；字符串原样保留小数位。未保存、null、布尔值、对象、数组或非有限数值返回null，不使用 `weight` 代替，不根据体积、费率或总运费反推。原有托运书新增/修改接口可通过动态 `form_data` 保存该键，无需新增业务表字段。两个Excel导出均新增“计费重量”列，位于“重量”之后、“体积”之前；缺失时单元格留空。
+
+例如，已保存 `form_data.weight=81, form_data.chargeable_weight=100` 时，应收列表响应如下（其余字段仍按同源数据返回）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "items": [{
+      "settlement_status": 0,
+      "settlement_auditor_name": null,
+      "settlement_time": null,
+      "transport_date": "2026-10-21",
+      "customer_name": "Tester",
+      "cargo_name": "五金件",
+      "origin_city": "北京市-市辖区-西城区",
+      "origin_address": null,
+      "destination_city": "河北省-保定市-徐水区",
+      "destination_address": null,
+      "consignee_info": null,
+      "contact_phone": null,
+      "quantity": "2",
+      "weight": "81",
+      "chargeable_weight": "100",
+      "volume": null,
+      "vehicle_type": null,
+      "rate": null,
+      "total_freight": null,
+      "other_fees": null,
+      "total_amount": null,
+      "source_id": "371229268321112064",
+      "actual_customer_name": "Tester"
+    }],
+    "total": 1,
+    "page": 1,
+    "pageSize": 10
+  },
+  "msg": "success"
+}
+```
+
+应付列表保留原有 `agent_settlement_status`、`agent_settlement_auditor_name`、`agent_settlement_time`，同样新增 `chargeable_weight`，不改名为应收结算字段。
+
+### 修复 MySQL 排序规则冲突导致的500
+
+`GET /api/v1/reconciliation/receivable/road-agent/road?date_start=2026-10-22&date_end=2026-10-22` 是合法请求。原共享查询通过 `CAST(customers.id AS CHAR) = consignment_notes.customer_name` 关联客户，连接默认排序规则 `utf8mb4_0900_ai_ci` 与托运书列的 `utf8mb4_unicode_ci` 不同，会在统计总数时触发MySQL 1267，空结果日期也可能500。
+
+现改为将客户ID的十进制字符串和托运书客户原值作二进制精确比较，避免字符串排序规则冲突；不把客户名称转换为数字，避免 `7abc`、`007`、`7.0` 错误匹配客户ID `7`，也避免大整数ID的浮点精度问题。修复同时作用于两个模块的列表、筛选与导出。没有匹配客户时仍保留托运书并显示原始客户值；没有匹配单据时列表正常返回 `{"code":0,"data":{"items":[],"total":0,"page":1,"pageSize":10},"msg":"success"}`。前端无需修改上述请求。本次无需新增SQL迁移或 `config.py` 配置；原模块所需的已有迁移仍须完成。
+
+## 应付空运日期筛选兼容
+
+原有应付空运的航司、提货单位、派送单位列表仍使用各自原路由和参数。深航来源 `flight_date` 可能以 `YYYY-MM-DD` 或 `YYYY/MM/DD` 保存；三个列表按 `flight_date_start`、`flight_date_end` 筛选时，后端会先统一为 `YYYY-MM-DD` 再做包含边界的区间比较。日期参数、响应字段不变；审核准入及结算规则以本文顶部“仅财务审核通过后进入对账”为准。
+
+## 应收对账：五个模块（25 个接口）
+
+本节按产品更正后的口径，**全部读取费用登记台应收数据**。统一前缀 `/api/v1/reconciliation/receivable`，均需 `Authorization: Bearer <access_token>`，认证规则与现有对账接口相同。以下是独立新增接口；原 `/api/v1/reconciliation/airline`、`pickup`、`delivery`、`air-agent`、`road-agent` 应付接口及其结算状态继续使用。
+
+### 数据流、模块范围及结算规则
+
+空运数据流：深航/南航原始运单、同行空运托运书直接进入费用登记台，不依赖业务审核 → 财务审核通过（`financial_audit_status=2`）→ 费用登记台应收投影（财务保存值、客户制单费和现有合计计算）→ 应收对账 → 独立标记结算。费用登记台直接新增的手工单据也须先通过财务审核；没有财务记录、未审、暂存均不进入对账。手工单据的 `source_id` 使用财务记录ID，兼容历史数据库中 `source_id=0` 的记录。
+
+四个空运模块均返回完整应收字段，另提供物流单位元数据；金额不使用应付成本替代。具体范围：
+
+| 模块 | 路径段 | 范围与费用口径 |
+| --- | --- | --- |
+| 航司对账 | `airline` | 深航/南航/同行空运及手工单据须通过财务审核；航司、金额均取最终应收值 |
+| 提货单位对账 | `pickup` | 最终上门提货单位非空的空运数据；单位取费用登记台最终 `payable.door_pickup_company`，上门提货费取 `receivable.door_pickup_fee` |
+| 派送单位对账 | `delivery` | 最终派送单位非空，或应收机场提货费/派送费有非零有效金额的空运数据；单位取最终 `payable.delivery_company`，金额取 `receivable.airport_pickup_fee`、`receivable.delivery_fee` |
+| 空运代理对账 | `air-agent` | 所有来源须通过财务审核；与原空运代理对账读取同源应收值，结算状态独立 |
+| 汽运代理对账 | `road-agent` | 汽运费用登记台同源托运书，财务审核通过后进入，不要求业务审核 |
+
+提货/派送单位名称当前只存在于费用登记台应付区，因此仅将其作为归属元数据，不把应付费用当成应收。实走航班号优先使用深航/南航来源记录 `actual_flight`、同行托运书 `form_data.actual_flight`；深航回退至开单航班号，其余回退最终应收航班号。手工新增单据回退最终应收航班号。单位和实走航班号查询批量获取，避免逐单查询。
+
+汽运数据流：`GET /api/v1/consignment-notes?transport_type=1&is_financial=true` 同源的托运书标准列与动态 `form_data` → 财务审核通过（汽运扩展表 `financial_audit_status=2`）→ 汽运应收对账。日期、目的城市和客户原值以托运书标准列为准；其他业务字段直接读取动态表单。当前没有独立汽运应收扩展表，不重算费率或应收总费用。**未保存 `rate`、`total_amount` 时返回 `null`，不自行按“总运费＋其他费用”推算。** 无审核扩展、未审、暂存只在费用登记台可查，不进入对账，也不能确认结算。
+
+每个应收模块分别保存结算状态、操作人和北京时间，五个模块互不联动，也不覆盖原应付五模块状态。查询、导出不创建扩展记录；仅查询财务已审核的记录，结算状态NULL按未结算处理。确认结算校验已有财务记录已审核，不修改原始单据、应收/应付JSON、业务审核或财务审核状态，不触发收款/付款。重复确认保留首次操作人和时间；取消清空本模块的操作人和时间，再次取消仍成功，无扩展记录时不创建记录。结算后费用登记台修改数据，会展示最新值，结算状态保持，不保存金额快照；若修改使财务状态变为1，则暂时不再展示，重新财务审核通过后恢复可查，仍可直接取消历史结算。
+
+### 部署：先升级现有表，再启动应用
+
+已有库须在新版应用启动前执行一次 **`sql/migration_add_receivable_reconciliation_fields.sql`**，按文件顺序执行空运、汽运两条 `ALTER TABLE`，两条均成功后再启动。无需新建表、重建表或重跑历史迁移；`create_all` 不会给已有表补列。MySQL DDL 自动提交，若第二条失败，先核对已添加列再处理，不要直接重复执行整个文件。
+
+| 现有表 | 新字段前缀 | 本次新增内容 |
+| --- | --- | --- |
+| `air_financial_audit_data` | `receivable_airline_settlement` | 航司应收结算 |
+| `air_financial_audit_data` | `receivable_pickup_settlement` | 提货单位应收结算 |
+| `air_financial_audit_data` | `receivable_delivery_settlement` | 派送单位应收结算 |
+| `air_financial_audit_data` | `receivable_agent_settlement` | 空运代理应收结算 |
+| `peer_road_departure_manual_data` | `receivable_agent_settlement` | 汽运代理应收结算 |
+
+每组四列：`<前缀>_status` int 默认0，`<前缀>_auditor_id` bigint 可空，`<前缀>_auditor_name` varchar(255) 可空，`<前缀>_time` datetime 可空；每个状态字段带索引。历史应付结算值不迁移至应收，新增状态默认未结算。新建库建表脚本已同步本次字段；其余历史列仍按原初始化/迁移流程创建。本次不新增 `config.py` 配置。
+
+### 全部接口路径
+
+下表路径均相对于 `/api/v1/reconciliation/receivable`。
+
+| 模块 | 方法 | 路径 | 功能 |
+| --- | --- | --- | --- |
+| 航司 | GET | `/airline/air` | 分页列表 |
+| 航司 | POST | `/airline/air/{source_type}/{source_id}/settle` | 确认结算 |
+| 航司 | POST | `/airline/air/{source_type}/{source_id}/cancel-settlement` | 取消结算 |
+| 航司 | POST | `/airline/air/batch-settle` | 批量确认 |
+| 航司 | POST | `/airline/air/export` | 选中/筛选导出 |
+| 提货单位 | GET | `/pickup/air` | 分页列表 |
+| 提货单位 | POST | `/pickup/air/{source_type}/{source_id}/settle` | 确认结算 |
+| 提货单位 | POST | `/pickup/air/{source_type}/{source_id}/cancel-settlement` | 取消结算 |
+| 提货单位 | POST | `/pickup/air/batch-settle` | 批量确认 |
+| 提货单位 | POST | `/pickup/air/export` | 选中/筛选导出 |
+| 派送单位 | GET | `/delivery/air` | 分页列表 |
+| 派送单位 | POST | `/delivery/air/{source_type}/{source_id}/settle` | 确认结算 |
+| 派送单位 | POST | `/delivery/air/{source_type}/{source_id}/cancel-settlement` | 取消结算 |
+| 派送单位 | POST | `/delivery/air/batch-settle` | 批量确认 |
+| 派送单位 | POST | `/delivery/air/export` | 选中/筛选导出 |
+| 空运代理 | GET | `/air-agent/air` | 分页列表 |
+| 空运代理 | POST | `/air-agent/air/{source_type}/{source_id}/settle` | 确认结算 |
+| 空运代理 | POST | `/air-agent/air/{source_type}/{source_id}/cancel-settlement` | 取消结算 |
+| 空运代理 | POST | `/air-agent/air/batch-settle` | 批量确认 |
+| 空运代理 | POST | `/air-agent/air/export` | 选中/筛选导出 |
+| 汽运代理 | GET | `/road-agent/road` | 分页列表 |
+| 汽运代理 | POST | `/road-agent/road/{source_id}/settle` | 确认结算 |
+| 汽运代理 | POST | `/road-agent/road/{source_id}/cancel-settlement` | 取消结算 |
+| 汽运代理 | POST | `/road-agent/road/batch-settle` | 批量确认 |
+| 汽运代理 | POST | `/road-agent/road/export` | 选中/筛选导出 |
+
+### 空运四模块查询参数
+
+沿用对应应付模块的搜索字段；新接口对日期、状态及分页参数显式校验，非法值返回422。运单号、航班日期、客户和航司筛选使用费用登记台**最终应收值**，应用全部筛选后再统计总数和分页，避免财务覆盖值与列表不一致。
+
+| 参数 | 类型/默认 | 说明 |
+| --- | --- | --- |
+| `waybill_numbers` | string，可选 | 完整运单号精确匹配；多个用英文逗号隔开，忽略各项首尾空格和空项 |
+| `flight_date_start` | date，可选 | 航班日期开始，`YYYY-MM-DD`，包含当天 |
+| `flight_date_end` | date，可选 | 航班日期结束，包含当天；日期缺失不满足已传入的日期范围 |
+| `financial_audit_status` | int，可选 | 准入固定为2（已审）；不传或传2仅查已审，传0/1返回空列表 |
+| `customer_name` | string，可选 | 应收客户原值包含匹配，通常传客户ID；不是公司名称反查 |
+| `settlement_status` | int，可选 | **当前应收模块**的0未结算、1已结算；不传不限 |
+| `page` | int，1 | 页码，至少1 |
+| `pageSize` | int，10 | 每页1～200条 |
+| `airline` | string，可选 | 仅航司、空运代理：最终应收航司精确匹配；`全部`不限 |
+| `actual_flight_number` | string，可选 | 仅提货、派送单位：实走航班号包含匹配 |
+| `pickup_company` | string，可选 | 仅提货单位：最终上门提货单位包含匹配 |
+| `delivery_company` | string，可选 | 仅派送单位：最终派送单位包含匹配 |
+
+GET示例：`/api/v1/reconciliation/receivable/pickup/air?flight_date_start=2026-10-21&flight_date_end=2026-10-22&pickup_company=某提货单位&settlement_status=0&page=1&pageSize=20`。
+
+返回统一包装 `{"code":0,"data":{"items":[...],"total":1,"page":1,"pageSize":20},"msg":"success"}`。空列表成功返回 `items:[]`、`total:0`。空运按最终航班日期、完整运单号、来源ID倒序。
+
+### 空运列表字段（四个模块一致）
+
+业务字段直接平铺，不额外嵌套 `receivable`；费用、件数、重量等采用费用登记台的 string/null，状态为整数，ID为字符串。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `source_type` | string | `shenzhen_air`、`china_southern_air`、`peer_air` |
+| `source_id` | string | 来源主表ID；手工新增单据为财务记录ID，操作/导出原样传回 |
+| `settlement_status` | int | 本应收模块0未结算、1已结算；不使用旧接口的 `*_settlement_status` 字段 |
+| `settlement_auditor_name` | string/null | 本模块结算操作人 |
+| `settlement_time` | string/null | 本模块结算时间，北京时间ISO 8601字符串，如`2026-10-21T17:32:35+08:00`，可能含微秒 |
+| `financial_audit_status` | int | 对账准入后的财务审核状态，固定为2 |
+| `financial_auditor_name` | string/null | 财务审核人 |
+| `actual_customer_name` | string/null | 费用登记台客户公司名称投影 |
+| `actual_flight_number` | string/null | 实走航班号，按上文来源规则获取 |
+| `pickup_company` | string/null | 最终上门提货单位元数据 |
+| `delivery_company` | string/null | 最终派送单位元数据 |
+| `waybill_number` | string/null | 最终应收运单号；仅应收该值为null时回退费用登记台顶层运单号 |
+| `flight_date` | string/null | 航班日期 |
+| `customer_name` | string/null | 应收客户原值，通常为客户ID |
+| `consignee_phone` | string/null | 收货电话 |
+| `origin` / `destination` | string/null | 始发站/目的站 |
+| `airline` / `flight_number` | string/null | 航空公司/应收航班号 |
+| `cargo_name` | string/null | 货物名称 |
+| `pieces` / `weight` | string/null | 件数/重量 |
+| `chargeable_weight` / `freight_rate` | string/null | 计费重量/费率 |
+| `freight` / `document_fee` | string/null | 运费/制单费 |
+| `packaging_fee` | string/null | 包装费 |
+| `telegram_fee` / `telegram_code` | string/null | 电报费/电报号 |
+| `door_pickup_fee` | string/null | 应收上门提货费，不是应付提货成本 |
+| `airport_pickup_fee` | string/null | 应收机场提货费，不是应付成本合计 |
+| `delivery_fee` | string/null | 应收派送费，不是 `delivery_cost` |
+| `carrier_deduction` | string/null | 承运扣款 |
+| `cca` / `other_fees` | string/null | CCA/其他费用 |
+| `other_fee_remark` | string/null | 其他费用说明 |
+| `total_amount` | string/null | 费用登记台最终应收总金额，沿用其现有计算结果 |
+| `payment_method` | string/null | 付款方式 |
+| `consignee` / `pickup_method` | string/null | 收货单位/提货方式 |
+| `collection_payment` / `remark` | string/null | 代收货款/备注 |
+| `gross_profit` | string/null | 费用登记台毛利投影；仅此既有指标涉及成本计算 |
+
+### 汽运查询参数与列表字段
+
+| 参数 | 类型/默认 | 说明 |
+| --- | --- | --- |
+| `date_start` | date，北京时间当天减30天 | 托运日期开始，包含当天 |
+| `date_end` | date，北京时间当天 | 托运日期结束，包含当天 |
+| `customer_name` | string，可选 | 纯数字客户ID精确匹配；其他值同时包含匹配客户原值、公司名称 |
+| `destination_city` | string，可选 | 目的城市包含匹配，`%`/`_`按普通字符匹配 |
+| `settlement_status` | int，可选 | 本汽运应收模块0未结算、1已结算；不传不限 |
+| `page` / `pageSize` | int，1/10 | page至少1；pageSize为1～200 |
+
+汽运包装与空运一致，按托运日期、来源ID倒序。每条包括 `source_id`、`actual_customer_name`、`settlement_status`、`settlement_auditor_name`、`settlement_time`，以及以下 string/null 应收字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `transport_date` / `customer_name` | 托运日期/客户原值（标准列） |
+| `cargo_name` | 货物名称 |
+| `origin_city` / `origin_address` | 始发城市/详细地址 |
+| `destination_city` / `destination_address` | 目的城市（标准列）/详细地址 |
+| `consignee_info` / `contact_phone` | 收货人/联系电话 |
+| `quantity` / `weight` / `volume` | 件数/重量/体积 |
+| `chargeable_weight` | 计费重量，取 `form_data.chargeable_weight`；缺失返回null，不以重量代替 |
+| `vehicle_type` / `rate` | 车型/费率 |
+| `total_freight` / `other_fees` | 总运费/其他费用 |
+| `total_amount` | 已保存的应收总费用；没有该字段时null |
+
+### 确认、取消及批量结算
+
+单条确认和取消均为POST，无请求体。空运路径的 `source_type` 仅限上述三种，`source_id` 为1～9223372036854775807；汽运只传 `source_id`。深航、南航空运来源必须存在；同行空运须存在 `transport_type=0` 的托运书；费用登记台手工单据使用财务记录自身。汽运必须是 `transport_type=1` 的托运书。确认和批量确认均要求对应财务记录 `financial_audit_status=2`，未通过返回400；不要求业务审核扩展或业务状态。提货/派送确认结算还校验所属模块范围；取消允许清理已移除单位/费用、财务状态后来改变的历史结算。
+
+批量请求：空运四模块使用相同结构：
+
+```json
+{"items":[{"source_type":"shenzhen_air","source_id":"370976932327723008"}]}
+```
+
+汽运使用：
+
+```json
+{"items":[{"source_id":"371229268321112064"}]}
+```
+
+`items`必填，最多1000项；ID必须为正整数字符串且不超过bigint范围。重复项去重；空数组成功处理0条。所有单据先校验再写入，一个不合法则整体失败，不会部分结算。按来源和ID固定顺序锁定现有来源/扩展记录，首次创建扩展也遵循同一顺序。唯一冲突回滚并返回409，可刷新后重试。
+
+确认成功：`{"code":0,"data":null,"msg":"确认结算成功"}`；取消成功消息为`取消结算成功`；批量成功消息如`成功结算2条单据`。
+
+### Excel导出
+
+POST `/export`请求体使用对应列表的筛选字段，另接受可选 `selected_items`（最多1000项），结构与对应批量 `items` 单项相同：
+
+```json
+{
+  "flight_date_start":"2026-10-21",
+  "flight_date_end":"2026-10-22",
+  "settlement_status":0,
+  "selected_items":[{"source_type":"shenzhen_air","source_id":"370976932327723008"}]
+}
+```
+
+`selected_items`非空时导出“选中项与筛选结果的交集”；省略、null或空数组时导出所有筛选结果。接受page/pageSize但导出不受分页截断。空运所有列表筛选参数均可用，提货/派送分别使用各自单位参数。汽运默认日期与GET一致，若需不限制日期，在导出体中显式传`date_start:null,date_end:null`。
+
+返回xlsx二进制，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，`Content-Disposition`携带UTF-8文件名。表头含序号、来源ID（空运另含来源类型）、本模块结算状态和操作人/时间、客户及全部应收字段；空运另含财务状态、实走航班和物流单位。状态导出为未结算/已结算，电话号码保留前导0，用户文本强制Excel文本单元格，防止公式执行。金额按列表字符串导出，不再计算。无匹配数据返回400。
+
+### 错误与验证边界
+
+| 状态码 | 场景 |
+| --- | --- |
+| 401/403 | 无有效登录凭证或账号不可用，沿用现有认证逻辑 |
+| 400 | 尚未通过财务审核不能确认结算（批量全批拒绝）、开始日期晚于结束日期、单据不属于待确认的物流应收模块、无匹配导出数据 |
+| 404 | 来源不存在、来源类型与ID不对应、将空运托运书用于汽运结算 |
+| 409 | 并发写入冲突，事务回滚，刷新后重试 |
+| 422 | 日期格式、分页、状态、来源枚举、ID或批量数量不合法 |
+| 500 | 汽运已保存动态表单不是合法JSON对象等数据异常；不把损坏数据静默当作零金额 |
+
+本地回归使用真实SQLite查询和FastAPI HTTP调用，覆盖费用登记台投影一致性、跨模块/应收应付状态隔离、全批回滚、财务审核门槛、无需业务审核的完整暂存/提交路径、手工单据ID、筛选分页、文本安全导出与登录校验。未在生产数据库执行迁移，也未执行真实收付款操作。
+
+## 应付对账：汽运代理对账（5 个接口）
+
+统一前缀 `/api/v1/reconciliation/road-agent`，均需登录并携带 `Authorization: Bearer <access_token>`，认证规则与现有对账接口一致。该模块读取费用登记台汽运的数据源，列表只读，操作区提供确认结算；另提供取消、批量结算、选中/批量导出。
+
+### 数据流与部署
+
+当前汽运费用登记台复用 `GET /api/v1/consignment-notes?transport_type=1&is_financial=true`，业务字段保存于 `consignment_notes` 的标准列和 `form_data`，审核状态位于 `peer_road_departure_manual_data`。本模块直接读取同一份保存数据，不复制账单，不使用空运 `AirFinancialAuditData`，不重算总运费、费率或应收总费用。未保存到后端的前端临时计算值不会自动出现在对账中。
+
+汽运费用登记台可查询未审、暂存和已审单据；汽运代理对账只允许财务状态2进入。没有扩展记录、财务未审、暂存均不进入对账，也不能确认结算；业务状态0/1/2不影响准入。空运托运书不允许混入。
+
+结算状态、操作人及时间独立保存在现有汽运扩展表的 `agent_settlement_*` 列。读取、导出不创建扩展记录，仅查询财务状态2的记录，结算状态NULL按未结算返回；确认结算再次校验财务审核，未审返回400，批量全批拒绝。取消历史结算无需当前财务状态2，缺少扩展记录时不新建记录。操作不会修改原业务单据、动态表单、业务或财务审核状态，结算本身也不产生付款操作。结算后若费用登记台修改数据，对账展示最新保存值，结算状态保持不变，不保存费用快照。
+
+**已有数据库须在新版应用启动前执行一次 `sql/migration_add_road_agent_settlement_fields.sql`**，新增四列及状态索引，不新建业务表：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `agent_settlement_status` | int，默认0 | 0=未结算，1=已结算 |
+| `agent_settlement_auditor_id` | bigint，可空 | 结算操作人ID |
+| `agent_settlement_auditor_name` | varchar(255)，可空 | 结算操作人姓名 |
+| `agent_settlement_time` | datetime，可空 | 结算时间，北京时间 |
+
+新建库的汽运扩展表脚本已同步上述列；已有库不要重建表。历史财务审核字段仍使用原来的 `sql/migration_add_financial_audit_fields.sql` 管理。本次不新增 `config.py` 配置。应用 `create_all` 不会自动为已有表补列。
+
+### 1. 列表查询
+
+`GET /api/v1/reconciliation/road-agent/road`
+
+| 参数 | 类型 | 默认/作用 |
+| --- | --- | --- |
+| `date_start` | date | 北京时间当天往前30天；托运日期起始，包含当天，格式 `YYYY-MM-DD` |
+| `date_end` | date | 北京时间当天；托运日期结束，包含当天，格式 `YYYY-MM-DD` |
+| `customer_name` | string | 可选；传纯数字客户ID时精确匹配；其他值同时模糊匹配托运书客户原值和客户公司名称 |
+| `destination_city` | string | 可选；模糊匹配目的城市，沿用托运书标准列 `destination` |
+| `settlement_status` | int，可选 | 本汽运代理对账的结算状态：0=未结算、1=已结算；不传不限 |
+| `page` | int | 默认1，必须≥1 |
+| `pageSize` | int | 默认10，范围1～200 |
+
+日期默认值在每次请求时按北京时间生成，不在服务启动时固定。客户及目的城市输入前后空格会去除，`%`、`_` 按普通字符搜索。所有筛选在数据库分页之前执行，排序为托运日期倒序、托运书ID倒序。客户下拉选择可复用现有客户查询接口，目的城市字典由前端沿用现有字典接口，不增加字典接口。
+
+结算状态筛选参数为 `settlement_status`，响应展示字段仍为 `agent_settlement_status`，两者名称不同。前端下拉“未结算”传0，“已结算”传1，“全部”不传该参数（不要传空字符串或“全部”）。筛选依据为汽运扩展表的 `agent_settlement_status`，仅在财务状态2的记录中筛选，该列为NULL时按0参与查询；无扩展记录因未通过财务审核而排除。不会创建或修改扩展记录。结算状态条件与日期、客户、目的城市条件取交集，并在统计 `total` 和分页之前执行。
+
+该筛选只作用于本应付汽运代理模块，不使用 `receivable_agent_settlement_status`，也不会改变 `/api/v1/reconciliation/receivable/road-agent/road` 的独立应收结算筛选。此次只新增可选查询参数，响应字段、原有默认查询行为、排序和结算操作不变，不需要额外数据库迁移。
+
+未结算示例：`GET /api/v1/reconciliation/road-agent/road?date_start=2026-10-18&date_end=2026-10-25&customer_name=7&destination_city=SZX&settlement_status=0&page=1&pageSize=20`。查询已结算将 `settlement_status` 改为1；查询全部结算状态时移除该参数。
+
+响应格式：`{"code":0,"data":{"items":[...],"total":3,"page":1,"pageSize":20},"msg":"success"}`。每个列表元素直接平铺以下字段；件数、重量、费率、费用可接受原始数值或字符串，返回时统一为 `string/null`，不丢失零值、手机号前导零和字符串小数位。动态表单中的布尔值、数组、对象不作为数值或文本列返回。
+
+| 字段 | 展示/来源 |
+| --- | --- |
+| `source_id` | 汽运托运书ID，字符串；操作必须传此ID，不是扩展表ID |
+| `agent_settlement_status` | 结算状态，整数：0=未结算，1=已结算 |
+| `agent_settlement_auditor_name` | 结算操作人姓名，可空 |
+| `agent_settlement_time` | 结算时间，北京时间，可空 |
+| `transport_date` | 托运日期，取标准列 `consignment_date` |
+| `customer_name` | 客户名称，托运书客户原值，可为客户ID |
+| `actual_customer_name` | 若客户原值为客户ID则显示对应公司名称，否则显示原值 |
+| `cargo_name` | 货物名称，取 `form_data.cargo_name` |
+| `origin_city` | 始发城市，取 `form_data.origin_city` |
+| `origin_address` | 始发详细地址，取 `form_data.origin_address` |
+| `destination_city` | 目的城市，取标准列 `destination` |
+| `destination_address` | 目的详细地址，取 `form_data.destination_address` |
+| `consignee_info` | 收货人，取 `form_data.consignee_info` |
+| `contact_phone` | 联系电话，取 `form_data.contact_phone` |
+| `quantity` | 件数，取 `form_data.quantity` |
+| `weight` | 重量，取 `form_data.weight` |
+| `chargeable_weight` | 计费重量，取 `form_data.chargeable_weight`，返回string/null；保留零值，缺失不以重量代替 |
+| `volume` | 体积，取 `form_data.volume` |
+| `vehicle_type` | 车型，取 `form_data.vehicle_type` |
+| `rate` | 费率，透传可选的同名已保存键 `form_data.rate`；缺失返回null，不用客户费率或总运费反推 |
+| `total_freight` | 总运费，取 `form_data.total_freight` |
+| `other_fees` | 其他费用，取 `form_data.other_fees` |
+| `total_amount` | 应收总费用，读取 `form_data.total_amount` 原值；未保存则返回null，不在对账中重算 |
+
+实际提供的费用登记台查询样例（`transport_type=1&is_financial=true`）只有 `total_freight`、`other_fees` 等原始业务值，没有 `chargeable_weight`、`rate` 或 `total_amount`。现有汽运 `/consignment-notes/audit`、`/consignment-notes/financial/audit` 暂存/审核仅更新审核状态，不会生成这三个字段。因此该样例在对账中这三列均返回null，导出留空；不能据此假设计费重量等于重量、应收总费用等于总运费加其他费用。若费用登记台前端另外计算显示这些列，须先核实其实际字段或计算规则，再补齐同源映射；本次不改变原有汽运保存、审核行为。
+
+序号由前端按 `(page-1)*pageSize+行索引+1` 生成。标准列由原有托运书新增/修改接口随表单同步保存。原接口的动态 JSON 原样存储行为保持不变。
+
+### 2. 确认结算
+
+`POST /api/v1/reconciliation/road-agent/road/{source_id}/settle`
+
+无需请求体。将该汽运托运书标记为已结算，保存当前操作人及北京时间；重复确认是幂等操作，不覆盖首次结算操作人和时间。成功：`{"code":0,"data":null,"msg":"确认结算成功"}`。
+
+### 3. 取消结算
+
+`POST /api/v1/reconciliation/road-agent/road/{source_id}/cancel-settlement`
+
+无需请求体。恢复未结算并清空结算操作人及时间；重复取消成功，且不会为尚无扩展记录的单据新建空记录。成功：`{"code":0,"data":null,"msg":"取消结算成功"}`。
+
+### 4. 批量确认结算
+
+`POST /api/v1/reconciliation/road-agent/road/batch-settle`
+
+```json
+{"items":[{"source_id":"370976932327723008"},{"source_id":"370976932327723009"}]}
+```
+
+`items` 必填，最多1000项，ID为正整数的字符串，范围不超过有符号bigint。重复ID会去重，空数组返回成功且不更改数据。全部单据在同一事务内验证并执行；任一ID不存在或属于空运时整体失败，不部分结算。已结算项保留首次操作信息。成功示例：`{"code":0,"data":null,"msg":"成功批量结算 2 条单据"}`。
+
+单条及批量操作先按ID顺序锁定汽运托运书，再锁定扩展记录，避免首次结算时并发创建重复扩展记录。
+
+### 5. 选中/批量导出
+
+`POST /api/v1/reconciliation/road-agent/road/export`
+
+请求体支持与列表同名的全部筛选参数，包括新增的 `settlement_status`（可选，0=未结算、1=已结算，省略或传null不限制），并增加 `selected_items`（可选，最多1000项）：
+
+```json
+{
+  "date_start":"2026-10-18",
+  "date_end":"2026-10-25",
+  "customer_name":"7",
+  "destination_city":"SZX",
+  "settlement_status":0,
+  "selected_items":[{"source_id":"370976932327723008"}]
+}
+```
+
+未传 `selected_items` 或传空数组时，导出全部符合筛选条件的记录；非空时，导出筛选结果与选中ID的交集。忽略 `page/pageSize` 分页，不受200行限制。日期省略时与列表默认值一致；导出JSON可显式传 `"date_start":null` 或 `"date_end":null` 取消对应边界，例如 `{"date_start":null,"date_end":null}` 导出全部日期。
+
+结算状态取值与列表一致：仅导出财务状态2的记录，结算状态NULL按未结算处理，无扩展记录排除。选中ID不绕过财务审核门槛或结算筛选，例如传 `settlement_status=0` 时，已结算的选中记录不会导出；筛选交集为空时仍返回400。导出列和响应文件格式不变。
+
+返回Excel文件，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，UTF-8文件名 `汽运代理对账列表_时间戳.xlsx`。列顺序：序号、结算状态、托运日期、客户名称、货物名称、始发城市、始发详细地址、目的城市、目的详细地址、收货人、联系电话、件数、重量、计费重量、体积、车型、费率、总运费、其他费用、应收总费用。客户名称列使用解析后的公司名称，状态转成“已结算/未结算”；字符串明确写为文本单元格，避免Excel公式执行并保留手机号前导零。
+
+### 错误响应
+
+新接口使用HTTP错误状态（框架统一处理时错误正文可能被转换为项目格式）：日期开始晚于结束返回400；导出无匹配数据返回400；操作ID不存在/不是汽运返回404；ID、日期、分页或批量请求格式不合法返回422；列表与导出的 `settlement_status` 只接受0、1（导出还允许null），传-1、2或非数字文本返回422；并发写入唯一约束冲突回滚并返回409，可刷新后重试。未登录按现有认证规则返回401/403。损坏的动态表单JSON返回500并指出托运书ID，不静默伪造账单数据。
+
+## 应付对账：空运代理对账（5 个接口）
+
+接口前缀为 `/api/v1/reconciliation/air-agent`，均需登录，使用 `Authorization: Bearer <access_token>`，认证规则与航司对账一致。
+
+### 数据来源与部署
+
+列表复用 `GET /api/v1/financial-audit/air`（费用登记台空运）的应收数据构建逻辑，覆盖深航、南航、同行空运及费用登记台手工新增单据。所有来源统一要求财务审核通过（`financial_audit_status=2`），不要求业务审核扩展或业务状态2。同行空运须为 `transport_type="0"` 托运书。
+
+数据流为来源业务数据 → 费用登记台（读取原始运单及可选的历史人工数据，同行空运可直接取托运书 `form_data`）→ 财务应收 JSON 覆盖 → 客户制单费及付款方式 → 应收合计和毛利重算 → 财务审核通过 → 代理对账。同行空运没有 `PeerAirDepartureManualData` 时，仍按托运书动态表单构建费用登记台投影，不创建出港扩展记录；财务保存值优先于来源值，但只有状态2进入对账。应收字段保留费用登记台的最终值；其中 `waybill_number` 未设置财务覆盖值时取来源运单号。列表筛选、导出均使用这份最终应收数据，修改后的航班日期、运单号等可直接用于筛选，不使用未覆盖的原始值。
+
+空运代理结算使用独立的 `agent_settlement_*` 字段，确认/取消/批量结算不会修改航司、提货单位、派送单位结算状态，不会修改应收应付 JSON 或财务审核状态。读取列表和导出不创建财务扩展记录；尚无财务扩展记录的来源单据不进入对账。确认/批量确认需财务状态2；取消不受当前财务状态限制。
+
+现有数据库需在启动新版应用前执行一次 `sql/migration_add_agent_settlement_fields.sql`，在已有 `air_financial_audit_data` 表新增以下字段及状态索引，不新建业务表：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `agent_settlement_status` | int，默认 0 | 0=未结算，1=已结算 |
+| `agent_settlement_auditor_id` | bigint，可空 | 结算操作人 ID |
+| `agent_settlement_auditor_name` | varchar(255)，可空 | 结算操作人姓名 |
+| `agent_settlement_time` | datetime，可空 | 结算时间，采用北京时间 |
+
+已有数据库只执行新增字段脚本，不要重新执行建表脚本。新建库的 `sql/migration_create_air_financial_audit_data.sql` 已包含这些字段，应用启动的 `create_all` 不会为已有表自动补列。本次不新增 `config.py` 配置。
+
+### 1. 查询列表
+
+`GET /api/v1/reconciliation/air-agent/air`
+
+搜索参数名称与航司对账一致，均为可选；分页在全部筛选完成后执行。
+
+| 参数 | 类型 | 默认值及说明 |
+| --- | --- | --- |
+| `waybill_numbers` | string | 运单号，支持英文逗号分隔多个值，去除各值首尾空格后精确匹配 |
+| `flight_date_start` | date | 航班日期开始，`YYYY-MM-DD`，包含当天 |
+| `flight_date_end` | date | 航班日期结束，`YYYY-MM-DD`，包含当天；两个日期可单独传入 |
+| `airline` | string | 航司精确匹配，如深航、南航；不传或为“全部”时不限 |
+| `financial_audit_status` | int | 仅查询财务已审2；不传或传2查已审，传0/1返回空列表 |
+| `customer_name` | string | 沿用航司对账按客户原始值包含匹配，通常传客户 ID；公司展示名使用响应 `actual_customer_name` |
+| `settlement_status` | int | **空运代理**结算状态：0=未结算，1=已结算；不限制其他对账的结算状态 |
+| `page` | int | 1，最小 1 |
+| `pageSize` | int | 10，最小 1 |
+
+示例：`GET /api/v1/reconciliation/air-agent/air?flight_date_start=2026-10-21&flight_date_end=2026-10-22&settlement_status=0&page=1&pageSize=20`
+
+返回统一 JSON：`{"code":0,"data":{"items":[...],"total":5,"page":1,"pageSize":20},"msg":"success"}`。按航班日期、运单号、来源 ID 倒序排列。每个 `items` 元素直接平铺应收字段，不嵌套 `receivable`，金额、件数、重量沿用费用登记台的字符串类型（可空）。
+
+| 身份及状态字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `source_type` | string | `shenzhen_air` / `china_southern_air` / `peer_air` |
+| `source_id` | string | 来源主表 ID；**费用登记台手工新增单据返回财务记录自身 ID**，历史 `source_id=0` 记录也返回自身 ID，不向结算接口传 0 |
+| `agent_settlement_status` | int | 0=未结算，1=已结算，供列表“结算状态”列使用 |
+| `agent_settlement_auditor_name` | string/null | 代理结算操作人 |
+| `agent_settlement_time` | string/null | 代理结算时间，北京时间字符串 |
+| `financial_audit_status` | int | 财务审核状态 |
+| `financial_auditor_name` | string/null | 财务审核人 |
+| `actual_customer_name` | string | 客户 ID 对应的公司名称，未匹配时为空字符串 |
+
+实走信息为每个 `items` 元素的平铺字段，与应收字段并列，不嵌套在 `payable` 或 `receivable` 中：
+
+| 字段 | 类型 | 取值口径 |
+| --- | --- | --- |
+| `actual_flight_number` | string | 实走航班号。深航优先取来源 `actual_flight`，为空时取来源开单航班 `billing_flight`；南航优先取来源 `actual_flight`；同行空运优先取托运书 `form_data.actual_flight`。上述取值为空时，回退费用登记台最终应收 `flight_number`。手工新增财务单据只使用自身应收 `flight_number`，不关联同 ID 的来源单据；均无值时返回 `""` |
+| `actual_pieces` | string | 实走件数，取费用登记台最终 `payable.gate_pieces`，包含财务暂存/审核后的覆盖值。深航基础值为计飞/集装器明细件数合计，南航基础值为货拉明细件数合计 |
+| `actual_weight` | string | 实走重量，取费用登记台最终 `payable.transit_weight`，包含财务暂存/审核后的覆盖值。深航基础值为计飞/集装器明细重量合计，南航基础值为货拉明细重量合计 |
+
+实走件数、重量不使用应收 `pieces`、`weight` 或 `chargeable_weight` 替代，也不改写这些原有字段。同行空运没有实走件数、重量时返回 `""`；手工新增单据读取自身已保存的应付对应字段，未填写时返回 `""`；深航、南航没有明细时沿用费用登记台的 `"0"`、`"0.00"` 默认值。有效零值保持为数字字符串，不转换为空值。实走航班号延续既有对账的开单航班回退口径，不代表已确认实际起飞。
+
+响应示例（仅展示身份及本次新增字段，原有完整应收字段仍全部返回）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "items": [
+      {
+        "source_type": "shenzhen_air",
+        "source_id": "101",
+        "waybill_number": "479-62200552",
+        "flight_number": "ZH9637",
+        "actual_flight_number": "ZH9637",
+        "actual_pieces": "5",
+        "actual_weight": "50.75",
+        "agent_settlement_status": 0
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "pageSize": 20
+  },
+  "msg": "success"
+}
+```
+
+此次为兼容性新增响应字段：查询参数、路由、分页、来源审核规则、金额计算及结算状态不变，不新增实走字段筛选参数，不需要数据库迁移。前端三列分别绑定 `actual_flight_number`、`actual_pieces`、`actual_weight`，保留 `"0"` 的展示，不再从开单或计费字段推算实走值。
+
+应收区字段完整映射如下（所有字段类型均为 `string/null`）：
+
+| 字段 | 说明 | 字段 | 说明 |
+| --- | --- | --- | --- |
+| `waybill_number` | 运单号 | `flight_date` | 航班日期 |
+| `customer_name` | 客户原始值，通常是客户 ID | `consignee_phone` | 收货电话 |
+| `origin` | 始发站 | `airline` | 航空公司 |
+| `flight_number` | 航班号 | `cargo_name` | 货物名称 |
+| `pieces` | 件数 | `chargeable_weight` | 计费重量 |
+| `freight_rate` | 费率 | `document_fee` | 制单费 |
+| `packaging_fee` | 包装费 | `telegram_fee` | 电报费 |
+| `telegram_code` | 电报号 | `other_fee_remark` | 其他费用说明 |
+| `door_pickup_fee` | 上门提货费 | `airport_pickup_fee` | 机场提货费 |
+| `carrier_deduction` | 承运扣款 | `total_amount` | 应收总金额 |
+| `payment_method` | 付款方式 | `consignee` | 收货单位 |
+| `destination` | 目的站 | `pickup_method` | 提货方式 |
+| `weight` | 重量 | `freight` | 运费 |
+| `cca` | CCA | `other_fees` | 其他费用 |
+| `delivery_fee` | 派送费 | `collection_payment` | 代收货款 |
+| `remark` | 备注 | `gross_profit` | 毛利 |
+
+合计和毛利继续使用费用登记台的既有计算口径。客户 ID 匹配成功时，制单费和付款方式取客户配置。
+
+### 2. 确认结算
+
+`POST /api/v1/reconciliation/air-agent/air/{source_type}/{source_id}/settle`
+
+无请求体。路径参数使用列表返回的 `source_type`、`source_id`；ID 必须是 1 至 9223372036854775807 的整数。确认时写入代理结算状态、当前用户及北京时间。重复确认已结算记录直接成功，保留原代理结算人和时间。无财务扩展记录的合法来源单据会创建扩展记录。
+
+返回：`{"code":0,"data":null,"msg":"确认结算成功"}`。
+
+### 3. 取消结算
+
+`POST /api/v1/reconciliation/air-agent/air/{source_type}/{source_id}/cancel-settlement`
+
+无请求体，路径参数同上。仅清除代理结算状态、操作人和时间；合法单据本来就未结算（包括无财务扩展记录）时也成功，不创建新记录。
+
+返回：`{"code":0,"data":null,"msg":"取消结算成功"}`。
+
+### 4. 批量确认结算
+
+`POST /api/v1/reconciliation/air-agent/air/batch-settle`
+
+请求体：
+
+```json
+{
+  "items": [
+    {"source_type": "shenzhen_air", "source_id": "101"},
+    {"source_type": "peer_air", "source_id": "301"}
+  ]
+}
+```
+
+`items` 必填，最多 1000 项，每项类型和 ID 范围同单条结算，JSON 中 `source_id` 传数字字符串。按来源类型和 ID 去重，整个批次先校验所有单据，全部成功后在一个事务中提交；任何一项无效则整个批次不结算。已结算记录不覆盖原操作人和时间。空数组成功处理 0 条。
+
+返回：`{"code":0,"data":null,"msg":"成功批量结算 2 条单据"}`，数量按去重后的单据数计。
+
+### 5. 导出列表（选中下载/批量下载）
+
+`POST /api/v1/reconciliation/air-agent/air/export`
+
+请求体可包含与列表同名的搜索条件，以及 `selected_items`，各筛选字段类型、含义同列表。
+
+```json
+{
+  "flight_date_start": "2026-10-21",
+  "flight_date_end": "2026-10-22",
+  "settlement_status": 0,
+  "selected_items": [
+    {"source_type": "shenzhen_air", "source_id": "101"}
+  ]
+}
+```
+
+`selected_items` 不传、为 `null` 或空数组时导出全部筛选结果；非空时导出筛选结果与选中单据的交集，最多传 1000 项。忽略 `page`、`pageSize` 的分页作用，不截取当前页；两个字段若传入仍须为正整数。`{}` 可导出全部符合业务准入规则的记录。
+
+成功响应为 Excel 二进制流，`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，`Content-Disposition` 提供 UTF-8 文件名 `空运代理对账列表_时间戳.xlsx`。导出列包含序号、结算状态（未结算/已结算）、客户公司名称及全部应收字段，顺序与上表对应的费用登记台应收模型一致。输入内容以文本写入，避免被当作 Excel 公式执行。
+
+导出在全部原有列末尾追加“实走航班号”“实走件数”“实走重量”三列，取值分别与列表的 `actual_flight_number`、`actual_pieces`、`actual_weight` 一致；原有列的顺序不变，选中下载与批量下载均适用，零值和公式文本保护规则继续保留。
+
+### 错误处理
+
+沿用项目统一错误响应机制，前端按 HTTP 状态码及 `msg` 处理。五个接口均要求有效登录用户。
+
+| HTTP 状态 | 场景 |
+| --- | --- |
+| 400 | 尚未通过财务审核不能确认结算（批量全批拒绝）；航班开始日期晚于结束日期；导出无符合条件数据 |
+| 401/403 | 缺少/无效登录凭证、用户不可用等认证失败 |
+| 404 | 结算/取消/批量中单据不存在、来源不匹配；业务审核不再作为条件 |
+| 409 | 结算保存发生唯一键等完整性冲突，刷新后重试 |
+| 422 | 日期格式、来源枚举、ID、状态或分页参数不合法，或批量/选中项超过 1000 |
+
+## 结算单列表查询
+
+`GET /api/v1/settlements` 恢复按航司录单时间范围筛选，使用 `airline_record_time_start` 和 `airline_record_time_end`（`YYYY-MM-DD`）作为起止日期，筛选结算单 `form_data.airline_record_time`，包含边界日期。两个参数可单独传入，也可组合传入；未传入时不限制录单日期。`flight_date_start`、`flight_date_end` 不作为本接口的筛选参数。
+
+请求示例：`GET /api/v1/settlements?airline_record_time_start=2026-10-21&airline_record_time_end=2026-10-21`。
+
+其他筛选、分页、作废成功记录排除规则及响应结构保持不变。响应中的 `airline_record_time` 仍优先取关联运单的 `booking_date`，缺失时取 `form_data.airline_record_time`；日期筛选沿用原逻辑，仅使用后者。
+
+## 深航 KingGo 航班表同步与时间来源
+
+深航业务优先从 `shenzhen_air_flight_info` 查询计飞、实飞时间；南航继续使用原携程客户端。
+无需创建 RPA 任务。新增表在应用现有 `Base.metadata.create_all` 启动过程中自动创建，
+也可手动执行 `sql/migration_create_shenzhen_air_flight_info.sql`。
+
+上游接口：`POST /flight_info/index/92?flag=true`。每页均重新从有效 HAR 提取 Cookie，
+按当前 URL 及实际 POST 请求体生成 `oOr6SIhu`，不使用示例 Cookie 或固定签名。
+请求体包含 `flightNoQ`、`carrierCodeQ`、`depCodeQ`、`destCodeQ`、`planeCodeQ`、`planeTypeQ`
+（均为空）、`flightDateStart/flightDateEnd`（同一查询日期）、`flightStatusStrQ=1`、`areaTypeQ=D`，
+并发送 `pageNum=1..N`、`numPerPage=200`。历史日期补充 `historyCheck=true`。
+按返回的 `totalCount/numPerPage` 获取完整分页；登录页、列结构变化、HTTP失败、重复页、
+日期不匹配或条数不完整都不提交本轮数据。完整抓取最多100页、总等待最多120秒。
+
+主表保存日期、航班号、起降站、上游ID、区域、起飞/到达/实际起飞/实际到达时间、飞机号、
+机型、宽窄、状态、总重量/体积、控制重量/体积、开放重量及货机标识。
+唯一键为 `(flight_date, flight_number, origin, destination)`，防止同一航班号跨日期或航段串数据。
+新增航段插入，已有航段逐字段比较，仅变化时 UPDATE 并修改 `updated_at`；不会全表删除重建。
+空的实际起飞保留为缺失，不填造时间；本轮未返回的历史记录保留。
+
+启动时先尝试同步北京时间当天的数据，随后启动消费者和独立后台同步，不受 `RPA_QUEUE_ENABLED` 限制。
+启动同步失败不会阻止应用启动，后台按重试间隔重试；消费者查询明天或历史日期时也会按需同步该日。
+同一进程跨线程共享同步互斥及日期级限频，避免每个运单重复下载全部航班；多进程通过数据库唯一键防重复。
+
+同步失败日志保留 `date`、`error_type`，增加中文 `reason`、固定的 `reason_code` 和阶段
+`stage=fetch|persist`。请求异常记录 `page`、`request_error_type`，HTTP错误额外记录
+`http_status`；分页校验按原因记录期望总数 `expected_total`、本页返回总数 `actual_total`、
+累计已收集条数 `collected_count`、本页条数 `page_rows` 和 `page_size`。
+数据行错误记录当前页内从1开始的 `row_index`，以及错误字段名或列数；表头错误记录
+`header_mismatch_column`（从1开始的首个不匹配或缺失/多余列位置）。
+重复航段和日期不匹配分别记录 `reason_code=duplicate_segment|date_mismatch`，
+附上已校验的航班号、机场码或返回日期，便于定位。HAR签名/Cookie准备失败记录
+`auth_failed`，整轮120秒超时记录 `sync_timeout`，入库异常记录 `persist_failed`。
+底层异常仅记录类型 `cause_type`，不打印异常全文、请求头、Cookie、签名URL或响应正文。
+这些诊断字段不改变失败整轮回滚、保留旧数据和原有重试限频规则。
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_FLIGHT_INFO_SYNC_ENABLED` | `True` | 启用KingGo同步及深航时间优先查询；关闭后仅按兜底开关调用携程 |
+| `SHENZHEN_AIR_FLIGHT_INFO_SYNC_INTERVAL_SECONDS` | `1800` | 正常同步间隔，60—86400秒 |
+| `SHENZHEN_AIR_FLIGHT_INFO_SYNC_RETRY_SECONDS` | `60` | 失败重试间隔，10—3600秒 |
+| `SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED` | `True` | 深航所需时间缺失时允许调用原携程；不改变南航，也不强制开启代理 |
+
+内部时间约定：`planned_time` 为计飞/计划起飞，优先取 KingGo“起飞”；`actual_time` 为实飞，
+优先取“实际起飞”；`ready_time` 为预飞/预计起飞，仅携程能补齐，KingGo不提供该字段。
+查询按航班号、日期和起降站匹配，中文站名只能在匹配唯一航段时命中。
+调用携程兜底前，将中文起降站转换为机场三字码（如 `SZX-西安` 转为 `SZX-XIY`），
+并规范化航班号和日期。城市存在多个候选机场时优先沿用 KingGo 唯一匹配航段；
+仍无法确定或无法识别机场时记录原因，不发送中文站名或猜测机场。
+KingGo只有HHMM：按航班日期组合北京时间，实飞取距离计飞最近的一天；
+实飞钟点比计飞早超过12小时按次日处理，晚超过12小时按前一日处理（兼容凌晨航班提前起飞）。
+超过12小时的延误与跨日提前无法仅凭HHMM准确区分。无效时间留空。携程仅补缺失值，不覆盖已有KingGo时间；
+携程兜底异常也保留已取得的KingGo时间。
+
+深航计飞集装器的定时处理使用计飞时间减105分钟；出港/装机预警继续使用原提前量。
+展示预飞时仅使用真实 `ready_time`，缺失展示 `/`；出港状态判断无预飞时可用计飞作为触发基准，
+但不把该值写成预飞。实飞补偿继续保留原延迟、次数和重试策略。关闭携程兜底后，
+依赖缺失时间的处理等待后续同步；已有正常数据照常使用。现有深航RPA和直连处理均走此来源规则。
+
+`config.py` 的 `SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED` 默认 `True`，可通过环境变量覆盖：
+
+```env
+# True：KingGo缺失时允许携程API兜底；False：仅使用KingGo，不发起深航携程时间查询
+SHENZHEN_AIR_CTRIP_FALLBACK_ENABLED=True
+```
+
+该开关统一覆盖主表**开单航班**的调度计飞时间、走货明细各自航班的计飞/实飞入库和后台补查；
+不控制南航，也不等同于 `CTRIP_PROXY_ENABLED`（是否通过代理访问携程）。
+
+## 深航订舱-过机-装机数据获取（KingGo直连下载）
+
+定时管理器 TransitLoadingManager 默认通过 KingGo 接口 POST /awb/query/export/119
+下载 AwbQueryExport.xlsx（按北京时间当天过滤操作日期与航班日期）到
+RPA_GENERATED_FILES_DIR，文件名格式为 AwbQueryExport_YYYYMMDD_HHMMSS.xlsx。
+后续文件扫描与解析入库逻辑不变。每次请求都会从 HAR 文件重新提取 Cookie 和
+签名（oOr6SIhu 由签名生成），下载失败仅记录日志，本轮不再下发 RPA 任务。
+
+切换回原 RPA 下载流程：
+
+```env
+SHENZHEN_AIR_TRANSIT_LOADING_EXECUTION_MODE=rpa
+```
+
+该配置默认 direct；rpa 模式完整保留原有定时下发 RPA 下载任务的逻辑。
+
+## 深航订舱-批复数据获取
+
+配置 `SHENZHEN_AIR_APPROVAL_EXECUTION_MODE=direct` 时，调度器按北京时间分别下载今天和明天
+的普通机型及宽体机批复文件到 `RPA_GENERATED_FILES_DIR`。普通机型请求 KingGo
+`POST /agent_order_look/export/125`，宽体机请求 `POST /agent_order_look_wide/export/858`；
+均固定发送 `depCode=SZX`、`agentCode=SZXFDH`、`ss=1`、`nn=0` 和对应的 `flightDate`，
+普通机型额外发送 `orderType=1`（宽体接口参数不含此字段）。每次请求从 HAR 重新提取
+Cookie 和 `oOr6SIhu` 签名。文件名分别以 `订舱查询导出`、`宽体机订舱查询与修改导出` 开头，
+由现有批复 Excel 扫描器按原解析逻辑分别解析入库。
+
+直连模式下普通机型和宽体机均不创建对应的 `rpa_tasks` 任务；网络、鉴权或文件格式失败时
+不标记任何数据，下一轮定时调度自动重试。原 RPA 模式完整保留，切换为 `rpa` 后两种机型
+均按原流程调度 `SHENZHEN_AIR_APPROVAL_DATA` 和 `SHENZHEN_AIR_APPROVAL_DATA_WIDE_BODY`。
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_APPROVAL_EXECUTION_MODE` | `direct` | 普通及宽体批复使用 KingGo 直连或原 RPA |
+| `RPA_SHENZHEN_AIR_APPROVAL_INTERVAL_SECONDS` | `900` | 直连/RPA 调度间隔（秒） |
+| `SHENZHEN_AIR_KINGGO_HAR_PATH` | `generated_files/www.kinggo.com.har` | HAR 签名与 Cookie 来源 |
+
+下载文件写入既有 `RPA_GENERATED_FILES_DIR`，不新增业务表。
+
+## 深航订舱-计飞时间-集装器数据获取
+
+文件扫描器从 `AwbQueryExport*.xlsx` 读取单号、开单航班、航程和航班日期后，使用
+**开单航班 `billing_flight`** 查询调度所需的时间，不依赖可能为空的走货航班 `actual_flight`。优先以 KingGo 计飞
+（缺失时按配置使用携程计飞，最后使用携程预飞）减105分钟调度处理。直连模式由定时管理器直接调用 KingGo GET
+`/awb/query/getaway` 获取 HTML 表格，不创建 `rpa_tasks` 记录；RPA 执行器和队列消费
+逻辑完整保留，可通过配置切换：
+
+```env
+SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE=direct
+SHENZHEN_AIR_BILLING_TIME_CONTAINER_REQUEST_INTERVAL_SECONDS=5
+```
+
+直连请求每次从 HAR 重新提取 Cookie 和签名，生成当前毫秒时间戳 `_` 及新的
+`oOr6SIhu`，并发送 `awbPrefix=479`、Excel 单号、Excel 航程、Excel 航班日期、
+`nti=119` 和 `historyCheck=false`。返回页面只解析 `#getWay` 下九列表格数据，
+跳过表头和“合计”行，字段按原 RPA 映射写入
+`shenzhen_air_billing_time_containers`，其中 `planned_time` 按上述来源规则补充计飞时间。
+该明细 GET 接口不传航班号；开单航班用于前述调度，不能与明细行里的航班号混用。空数据、登录页、
+网络或上游错误不标记 Excel 明细完成，由下一次定时扫描重试；成功后标记 Excel 明细完成。
+直连失败不会调用 RPA。设置为 `rpa` 后才创建
+`SHENZHEN_AIR_BILLING_TIME_CONTAINER` 队列任务，并沿用原队列、机器人权限、轮询和消费逻辑。
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE` | `direct` | `direct` 使用 KingGo GET 接口；`rpa` 使用原 RPA 流程 |
+| `SHENZHEN_AIR_BILLING_TIME_CONTAINER_REQUEST_INTERVAL_SECONDS` | `5.0` | 走货明细定时管理器的逐单直连请求最小间隔，单位秒，支持小数，范围 `0～3600`；`0` 表示不额外等待，支持同名环境变量 |
+| `RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS` | 由现有配置决定 | 仅 RPA 模式的任务重试间隔；直连模式在下一次定时扫描重试 |
+| `SHENZHEN_AIR_KINGGO_HAR_PATH` | `generated_files/www.kinggo.com.har` | 每次请求提取签名和 Cookie 的 HAR |
+| `SHENZHEN_AIR_KINGGO_API_ORIGIN` | `https://www.kinggo.com` | KingGo 地址；本地模拟可覆盖 |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_HTTP_TIMEOUT_SECONDS` | `30` | 直连请求超时秒数 |
+
+逐单请求保持串行。当前管理器首次请求不额外等待；后续请求从上一次 `fetch_rows` 调用结束时计时（包括签名准备、HTTP 请求和解析，成功或失败都计入）。两次调用之间至少间隔配置时长，本地入库及其他处理耗时已满足间隔时不重复等待。间隔记录在同一管理器实例中跨调度轮次保留，不对尚未到调度时间、缺字段、已完成等未请求记录累计等待。等待期间可响应停止信号，不继续请求下一单。
+
+此配置只控制当前进程定时管理器发起的 `/awb/query/getaway` 逐单查询，不是所有 KingGo 接口或多个后端实例共享的全局限速；不改变 RPA 执行、开单、作废、批复下载、航班表刷新及携程查询策略。它与 `RPA_SHENZHEN_AIR_TRANSIT_LOADING_INTERVAL_SECONDS` 的整轮调度间隔、HTTP 超时相互独立，不新增自动重试或修改已完成标记规则。API 路径、请求和响应字段、数据库结构均不变。
+
+上游返回的九列依次映射为 `sequence`、`flight_number`、`flight_date`、
+`billing_time`、`origin`、`destination`、`quantity`、`weight`、`container`。
+每条明细使用自己的 `flight_number`、`flight_date`、`origin`、`destination` 查询并存储
+`actual_time`，不使用主表的开单航班或走货航班代替。同一航班、日期和航段的集装器行复用查询结果。
+后台补查也在同一轮内复用相同航班、日期和航段的查询结果，各明细行分别保存查询次数和下次查询时间。
+直连与 RPA 均在入库时保存已取得的实飞时间，优先使用 `shenzhen_air_flight_info.actual_departure_time`，
+缺失时按既有配置使用携程兜底；尚未公布时保留为空，由后台继续补查。
+后台每分钟轮转检查一批最多 200 条缺少实飞时间的深航明细，从本地动态航班表补齐；
+该本地补齐不受外部接口首次查询延迟、下次查询时间或重试上限影响，不额外发起网络请求。
+同号航班的日期与起降机场必须匹配，城市名称按机场映射匹配，存在多个匹配航段时不猜测。
+后台实飞补齐使用带空值条件的原子更新，查询期间其他进程已写入的计飞/实飞时间不会被旧结果覆盖；
+成功写入日志在事务提交后输出。
+重复导入明细时保留同一航班、日期和航段已取得的实飞时间，避免上游临时失败导致时间丢失。
+`GET /api/v1/departure-tracking/shenzhen-air` 在 `items[].billing_time_containers[].actual_time`
+返回对应明细的实飞时间（北京时间 `YYYY-MM-DD HH:mm:ss` 或 `null`），前端走货信息的实飞时间列可直接使用该字段。
+直连模式不新增任务表，也不改变 Excel 解析入库流程；RPA 模式继续使用现有 `rpa_tasks`。
+切换到直连后，管理器会清理遗留的待执行计飞集装器 RPA 任务；正在执行的旧任务会先完成，
+避免与直连请求并发处理同一条 Excel 明细。
+直连管理器不依赖 `RPA_QUEUE_ENABLED`，但 Excel 来源仍须配置为直连过机装机下载，或由其他流程提供文件。
+
 ## 单号库总览
 
 `GET /api/v1/waybill-stocks/overview`
@@ -50,18 +1543,196 @@
 
 ## 开单成功后自动后处理配置
 
-深航和南航分别提供独立的环境变量开关，用于控制开单成功后的整条自动后处理链。为兼容既有部署环境，配置项继续沿用 `AUTO_PRINT` 名称，但控制范围已扩展为费用读取、结算单、运单同步、制单、文件生成及自动打印：
+深航和南航分别提供自动制单、自动打单开关。两个阶段可以独立启停：
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED` | `True` | 深航开单成功后是否执行结算、制单及打印等自动后处理 |
-| `RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED` | `True` | 南航开单成功后是否执行结算、制单及打印等自动后处理 |
+| `RPA_SHENZHEN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED` | 未配置时沿用深航 `AUTO_PRINT` | 深航开单成功后是否自动生成货站制单文件 |
+| `RPA_SHENZHEN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED` | `True` | 深航开单成功或制单成功后是否自动创建打印任务 |
+| `RPA_CHINA_SOUTHERN_AIR_AUTO_DOCUMENT_AFTER_WAYBILL_ENABLED` | 未配置时沿用南航 `AUTO_PRINT` | 南航开单成功后是否自动生成货站制单文件 |
+| `RPA_CHINA_SOUTHERN_AIR_AUTO_PRINT_AFTER_WAYBILL_ENABLED` | `True` | 南航开单成功或制单成功后是否自动创建打印任务 |
 
-- 配置为 `True`：保持原有行为。开单成功后继续读取费用队列、创建结算单，并按原链路同步运单、生成货站制单文件和创建自动打印任务。
-- 配置为 `False`：开单或订舱本身仍正常完成并保留成功状态及已取得的运单号；跳过其后的费用读取、结算单创建、订舱开单后的运单记录同步、货站制单、文件生成和自动打印，相关执行状态保持未执行。用于获取核心结果的队列仍会正常清理。
-- 单纯的南航订舱成功链路目前只保存订舱状态和运单号，本身没有结算、制单或打印后处理；后续从订舱发起开单时，上述南航开关会控制开单成功后的完整后处理链。
-- 两个航司的开关相互独立，修改 `.env` 后需要重启应用服务生效。
+- 制单开、打单关：正常读取费用、创建结算单并生成货站制单文件，不创建自动打印任务；制单状态正常更新，打印状态保持未执行。
+- 制单关、打单开：正常读取费用并创建结算单，跳过货站制单文件生成，直接按打印机配置创建航司固定单据等可执行的打印任务；制单状态保持未执行。
+- 两者均开：先制单，制单成功后创建打印任务，保持原有完整后处理行为。
+- 两者均关：开单或订舱本身仍正常完成并保留成功状态及已取得的运单号；跳过费用读取、结算单创建、订舱开单后的运单记录同步、制单、文件生成和自动打印，相关执行状态保持未执行。用于获取核心结果的队列仍会正常清理。
+- 为兼容旧部署，新增的 `AUTO_DOCUMENT` 未配置时沿用对应航司的 `AUTO_PRINT` 值；需要独立控制时必须显式配置两个值。
+- 单纯的南航订舱成功链路目前只保存订舱状态和运单号，本身没有结算、制单或打印后处理；后续从订舱发起开单时，上述南航开关控制对应阶段。
+- 深航、南航的制单及打单开关相互独立，修改 `.env` 后需要重启应用服务生效。
 - `POST /api/v1/waybills/{waybill_id}/print-document` 手动打印接口不受影响。
+
+## RPA 开单及南航退舱任务优先级
+
+`rpa_tasks` 按 `priority` 降序、创建时间升序取待执行任务。为减少抓取类任务对用户点击开单或南航退舱的等待，以下任务类型使用专用优先级配置 `RPA_QUEUE_WAYBILL_PRIORITY`：
+
+- `SHENZHEN_AIR_WAYBILL_EXECUTE`：深航开单
+- `CHINA_SOUTHERN_AIR_WAYBILL_EXECUTE`：南航新增运单（兼容历史 RPA 开单链路）
+- `CHINA_SOUTHERN_AIR_DIRECT_INVOICE`：南航直接开单
+- `CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA`：南航修改数据后开单
+- `CHINA_SOUTHERN_AIR_BOOKING_CANCEL`：南航退舱（由默认 `1` 提升为 `10`，与开单同级）
+
+配置项默认值为 `10`，高于普通任务默认优先级 `1`、保持登录任务优先级 `3` 和重启任务优先级 `4`。南航订舱、出港跟踪、审批、抓取等其他任务优先级不受影响。南航退舱接口和任务服务默认映射均使用此配置；与开单同级时按创建时间先后执行。部署重启后新建的任务使用新优先级，已有任务保存的 `priority` 不会自动调整，已经处于 `running` 的任务不会被中断；修改 `.env` 后需要重启服务生效。接口请求和响应结构不变。
+
+## 深航获取 HAR 周期任务
+
+新增 RPA 任务类型 `SHENZHEN_AIR_GET_HAR`（中文名称“深航获取har”），流程定义如下：
+
+| 字段 | 值 |
+| --- | --- |
+| `process_detail_uuid` | `9d55ee2fbd0460f44c1dd1c47f5f7e32` |
+| `version` | `0.0.2` |
+| `process_param` | `{"system_url":"https://www.kinggo.com/main"}` |
+
+部署时执行 `sql/migration_insert_shenzhen_air_get_har.sql` 写入或校准 `task_processes`；应用启动也会补齐缺失记录，但不会覆盖已有流程配置。之后需要通过机器人管理接口为目标机器人分配 `SHENZHEN_AIR_GET_HAR` 权限，保存配置时系统会自动创建该机器人的 RPA Job。`GET /api/v1/robots/task-types` 会返回这一新任务类型。
+
+当 `RPA_QUEUE_ENABLED=True` 时，服务启动会立即为每台拥有该权限的启用机器人尝试创建一次任务，之后按以下配置循环调度：
+
+| 配置项 | 默认值 | 范围 | 说明 |
+| --- | --- | --- | --- |
+| `RPA_SHENZHEN_AIR_GET_HAR_INTERVAL_SECONDS` | `1800` | `1-86400` 秒 | 同一机器人两轮调度的等待间隔；修改后需重启服务 |
+
+调度器会跳过已经存在 pending/running 同类任务的机器人，避免任务堆积。该流程不使用 RPA 数据队列；RPA Job 成功结束后任务即完成，HAR 文件的实际保存位置由 RPA 流程自身配置决定。
+
+## 深航 KingGo 直连接口开单
+
+`POST /api/v1/waybills/{waybill_id}/execute` 默认通过 KingGo HTTP 接口创建深航运单；原有 RPA 开单实现和作废流程保留。设置 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE=rpa` 可切回原 RPA 开单任务队列。调用权限与既有运单操作权限一致。
+
+直连模式校验运单表单、业务默认值、HAR路径和账号配置后创建独立任务表 `shenzhen_air_direct_waybill_tasks`，保存本次表单和解析后的参数快照，同时将运单状态置为 `1`。任务不进入 `rpa_tasks`，不会被 RPA Worker 领取。接口保持异步入队后立即返回，响应保留既有运单字段及 `task_id`，新增 `execution_mode=direct`、`direct_task_status`、`direct_task_error`。`GET /api/v1/rpa-tasks/{task_id}` 可查询任务状态，直连任务额外返回 `execution_mode=direct`、`stage`（`preparing/submitting/confirmed`）、`candidate_waybill_number`（提交前保存的完整候选单号，未提交时为 null）。状态为 `pending/running/success/failed/unknown`；列表和统计接口仍仅统计RPA任务。开单成功后更新运单号、航司状态和开单时间，并复用现有深航开单后处理开关创建结算单、制单和打印任务；两个自动化开关均关闭时不创建结算单或后续任务。
+
+调用前必须在运行服务的文件系统配置有效 KingGo HAR，默认路径 `generated_files/www.kinggo.com.har`。Docker 部署中该目录挂载到 `/app/generated_files`。每一次 KingGo HTTP 请求都会重新读取 HAR、离线执行 `/main` 保护脚本提取配置和 Cookie，并针对当前实际请求 URL 重新生成 `oOr6SIhu`；不会缓存签名配置或 Cookie。`SHENZHEN_AIR_KINGGO_BROWSER` 控制提取浏览器；Linux/Docker 建议使用 `chromium`。HAR 不含可用 Cookie、HAR 无效或签名生成失败时，该次请求不会发给 KingGo。
+
+接口依次为：`get_awb_no` 获取 `479` 前缀后的八位单号，按航线/日期/货运代码查询运单信息，查询航班并精确匹配航班号/航线/日期及起飞时间，查询费用，调用 `check_awb` 校验，最后调用 `submit_awb` 提交。字段从 `form_data.flight_info`、`shipper_consignee_info`、`cargo_info` 映射。代理身份、操作员、提货电话、收货地址代码和付款方式从环境变量读取，账号字段必须按真实账号填写。计费重量低于45kg时固定 `F/F舱`；45kg及以上使用舱位配置（默认 `F/F舱`），代码和名称必须同时设置，两者均置空时使用运单信息返回的舱位。`oldCabinType` 始终使用运单信息响应的原始 `cabinType`。
+
+上游调用契约（路径相对于 `https://www.kinggo.com`，每次独立附加新签名和Cookie）：
+
+| 顺序 | 方法及路径 | 输入与成功结果 |
+| --- | --- | --- |
+| 1 | `GET /awb/inland/get_awb_no` | 查询参数 `inlandAwbType=0`、`awbPrefix=479`、当前毫秒时间戳 `_`；要求 `retCode=100` 且 `result` 为8位数字 |
+| 2 | `POST /awb/inland/get_bill_info_by_code` | 航线、日期、航班、表单货运代码、`awbType=0`、`awbPrefix=479`、空 `transCity`；读取 `retCode=100` 的 `result` 元数据 |
+| 3 | `POST /awb/inland/get_flight_no` | `depCode/destCode/flightDate`；响应为数组，要求唯一匹配航班，读取 `takeoffTime/carrierCode` |
+| 4 | `POST /awb/inland/computational_costs?nti=90` | 航线、日期、航班、计费重量，元数据 `awbType/billCode/feeModel`，配置 `agentType`，`insuranceValue=0`，空 `custNo/transCity`；响应为费用对象 |
+| 5 | `POST /awb/inland/check_awb?nti=90` | 完整开单表单；仅 `retCode=100` 允许进入提交阶段 |
+| 6 | `POST /awb/inland/submit_awb?nti=90` | 与检查相同的完整表单、独立生成的新签名；要求 `retCode=100`、`result.awbNo` 等于候选单号、`result.awbId` 非空 |
+
+检查及提交的主要映射：
+
+| KingGo字段 | 来源 |
+| --- | --- |
+| `awbPrefix/awbNo` | 固定 `479` / 第1步单号；本地保存为 `479-八位单号` |
+| `depCode/destCode/flightDate/flightNo/transDate` | `flight_info.origin_station/destination/flight_date/flight_number/flight_date`；始发站为空时使用业务默认值 |
+| `shpInfo/cneInfo` | `shipper_consignee_info.shipper_info/consignee_info`；发货人为空时使用业务默认值 |
+| `pieces/weight/chargeWeight` | `cargo_info.quantity/weight/chargeable_weight`；必须为正数，件数必须为整数 |
+| `aliasCode/goodsCode/goodsName/packName` | `cargo_info.freight_code/cargo_code/cargo_name/package`；允许沿用对应业务默认值 |
+| `transNote` | `cargo_info.storage_and_transportation_precautions`；独立可选文本，未填时传空，不回退为货物名称 |
+| `billCode/aug/ldcFlag/feeModel/fastFreightFlag/dealCode/oldCabinType` | 第2步元数据，`oldCabinType` 对应 `cabinType` |
+| `takeOffTime/carrierCode` | 第3步匹配航班的 `takeoffTime/carrierCode` |
+| `formerRate/aviationRate/formerFee/aviationFee` | 第4步 `aviationRate/aviationRate/aviationFee/aviationFee` |
+| 保险、燃油、管理、派送、地面、延误、杂费的费率及金额、`otherTotalFee/depOtherFee` | 第4步同名字段，保留合法零值；缺少必要费用字段时中止 |
+| `totalFee` | 使用十进制相加：`aviationFee + otherTotalFee` |
+| `operDate` | 中国时区的实际操作日期 |
+| 账号身份字段、舱位、付款方式 | 下表环境配置；其他空值、固定字段按提供的开单表单设置，`tlicellCellinfos=[]` |
+
+直连入队响应新增字段示例（其余既有运单字段仍返回；此时尚未开单成功）：
+
+```json
+{"execution_mode":"direct","task_id":"369409067778707456","airline_record_status":"1","direct_task_status":"pending","direct_task_error":null}
+```
+
+任务详情的 `result` 成功时包含 `waybill_number`、`awb_id`、`aviation_rate`、`aviation_fee`、`delivery_fee`；费用值保留上游的数字或数字字符串类型。发生明确舱位调整时可选增加 `cabin_adjustment`，详见2026-10-29舱位提示调整说明。失败时读取 `error_message`；`unknown` 必须结合 `candidate_waybill_number` 人工核查。任务ID、运单ID均以字符串返回。
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE` | `direct` | `direct` 使用 KingGo 接口；`rpa` 使用原 RPA 流程 |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_QUEUE_ENABLED` | `True` | 是否启动独立持久化直连 Worker |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_WORKER_COUNT` | `1` | Worker 数量；共享账号由数据库互斥串行领取开单任务 |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_POLL_INTERVAL` | `2` | 空队列轮询秒数 |
+| `SHENZHEN_AIR_KINGGO_HAR_PATH` | `generated_files/www.kinggo.com.har` | HAR 文件路径 |
+| `SHENZHEN_AIR_KINGGO_API_ORIGIN` | `https://www.kinggo.com` | KingGo API 传输地址；仅本地模拟测试可覆盖 |
+| `SHENZHEN_AIR_KINGGO_BROWSER` | `auto` | `auto`、`msedge` 或 `chromium` |
+| `SHENZHEN_AIR_KINGGO_EXECUTABLE_PATH` | 空 | 可选浏览器可执行文件路径 |
+| `SHENZHEN_AIR_DIRECT_WAYBILL_HTTP_TIMEOUT_SECONDS` | `30` | 每个上游请求超时秒数 |
+| `SHENZHEN_AIR_KINGGO_AGENT_TYPE` | `1` | KingGo 代理类型 |
+| `SHENZHEN_AIR_KINGGO_AGENT_NAME/ID/CODE` | 空 | 当前账号代理名称、ID 和编码 |
+| `SHENZHEN_AIR_KINGGO_OPER_ID` | 空 | KingGo 操作员 ID |
+| `SHENZHEN_AIR_KINGGO_PICK_TEL_NO` | 空 | 提货联系电话 |
+| `SHENZHEN_AIR_KINGGO_CNE_ADDR` | 空 | KingGo 收货地址代码 |
+| `SHENZHEN_AIR_KINGGO_CABIN_TYPE(_NAME)` | `F` / `F舱` | 计费重量45kg及以上时使用的舱位代码和名称；两者均置空时使用运单信息响应。低于45kg时始终固定F舱，覆盖该配置 |
+| `SHENZHEN_AIR_KINGGO_PAY_TYPE` | `1` | 付款方式 |
+
+每次提取时将实际方法、URL和完整编码表单交给HAR原脚本，随后将原脚本产生的 `requestDigest` 传入 `generate` 生成本次新签名，保证提取和实际发送使用同一份请求体。POST 使用 `application/x-www-form-urlencoded`。签名/Cookie提取失败不降级发送。HAR含有会话Cookie，不得提交代码仓库、写入日志或API响应。
+
+## 深航运单作废
+
+`POST /api/v1/waybills/{waybill_id}/void` 对深航默认使用 KingGo 直连接口；南航行为保持原有 RPA 队列不变。设置 `SHENZHEN_AIR_WAYBILL_VOID_EXECUTION_MODE=rpa` 可将深航切回原 RPA 作废流程。直连模式在本次请求内完成查询和删除，不创建新的任务表。
+
+直连流程如下：
+
+1. 从本地 `waybill_number` 校验并取得 `479-` 后的8位数字。
+2. `POST /awb/query/index/119?flag=true`，以 `application/x-www-form-urlencoded` 发送查询表单（`awbPrefixQ=479`、`awbNoQ=8位单号`，其余筛选条件使用全量安全范围）。
+3. 从返回 HTML 中仅匹配 `awbPrefix=479`、`awbNo=8位单号` 的唯一表格行，并校验该行的 `rel` 与 hidden `awbId` 一致，取得 KingGo 的真实 `awbId`；不会使用本地运单 ID。
+4. 使用本次查询得到的 `awbId` 调用 `POST /awb/query/delete_awb_info/119?awbId=...`，请求体为空。
+5. 只有 HTTP 2xx 且 JSON 返回 `statusCode="200"`、`message="成功删除"` 时才将本地运单和关联结算单置为作废成功（`waybill_void_status="3"`）。
+
+查询和删除每次都从 HAR 离线提取 Cookie，并针对精确的方法、URL 和请求体重新生成 `oOr6SIhu`；不会复用旧签名或 Cookie。HAR、Cookie、签名和上游 HTML 不会写入日志或接口响应。查询不到、匹配不唯一或业务失败时标记作废失败（`"2"`）；删除请求已发出但结果不确定时保留作废中（`"1"`），阻止盲目重试，需人工核查 KingGo 后处理。成功响应在原有运单字段基础上增加：
+
+| 字段 | 说明 |
+| --- | --- |
+| `execution_mode` | `direct` |
+| `direct_void_status` | `success` |
+| `kinggo_awb_id` | KingGo 查询到的上游运单 ID |
+| `task_id` | 直连同步执行时为 `null`；RPA 模式仍返回原 RPA 任务 ID |
+
+配置项：
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SHENZHEN_AIR_WAYBILL_VOID_EXECUTION_MODE` | `direct` | `direct` 使用 KingGo 查询/删除接口；`rpa` 使用原深航 RPA 作废流程 |
+
+该配置仅影响深航作废，不影响深航开单配置 `SHENZHEN_AIR_WAYBILL_EXECUTION_MODE`，修改 `.env` 后需重启服务。
+
+提交请求发出前失败会标记 `failed`，可重新执行。提交发出前先独立提交数据库事务，将 `stage=submitting` 和候选单号持久化；数据库写入失败则不发送提交请求。除上文明确舱位询问允许同任务调整一次、明确被拒绝时标记failed外，之后的网络异常、非2xx、其他业务拒绝、无效响应、返回单号不一致或本地结果落库异常均保守标记 `unknown`，禁止自动重试或自动降级RPA。舱位调整后仍无法确认成功或被拒绝，同样保留unknown。切换到RPA模式也不能绕过 `pending/running/unknown` 直连任务。`PUT /api/v1/waybills/{id}` 修改运单时同样阻止这些任务关联的运单被修改。单任务上限20分钟，每分钟检查超过30分钟的遗留running任务；未跨过提交边界的任务置failed，已跨过的任务置unknown。人工必须先按候选单号核查KingGo并确认/修复本地运单、任务状态；未确认上游结果前不能将unknown直接改为failed重试。
+
+确认成功时校验返回的八位运单号与候选号一致且包含 `awbId`，原子持久化运单号和任务成功状态。后续结算/制单/打印异常不会导致再次开单；后处理抛出异常时在任务 `result.post_processing_error` 中提示人工检查。除明确舱位询问的一次调整外，直连模式不自动重发上游请求。
+
+共享 KingGo 账号的领取过程通过 `shenzhen_air_direct_waybill_queue_lock` 单行锁协调：同一时刻只允许一个直连开单任务处于 running，多线程、多进程使用同一数据库时也遵循此限制，避免获取候选单号后尚未提交就被另一任务重复领取。互斥行仅在领取事务中加锁，HAR提取和HTTP请求期间不持有数据库连接。候选单号是否预占尚未得到上游契约确认，因此采用串行策略。
+
+数据库部署：执行 `sql/migration_create_shenzhen_air_direct_waybill_tasks.sql`（幂等创建任务表、领取互斥表并初始化互斥行）；应用启动的模型建表逻辑也会创建这两张新表，首次领取时自动补齐互斥行。现有RPA表和流程不变。启动Worker的主机需安装项目依赖及Playwright Chromium（`python -m playwright install --with-deps chromium`）。本地验证使用提供的 `postman/simulations/shenzhen-waybill.sim.yaml`，依据本次提供的六个KingGo接口样例构造，不含真实Cookie或签名。
+
+本地回归方式（PowerShell，模拟服务启动后另开终端执行测试）：
+
+```powershell
+postman simulation run postman/simulations/shenzhen-waybill.sim.yaml --port 4900 --output ndjson --no-history
+$env:KINGGO_SIM_ORIGIN='http://127.0.0.1:4900/kinggo'
+python -m unittest tests.test_shenzhen_air_direct_waybill -v
+```
+
+模拟测试使用虚拟签名替代HAR提取，其余业务映射、HTTP编码、上游错误处理均运行实际客户端。真实HAR离线提取验证与模拟HTTP验证分别进行，不能视为真实KingGo账号开单成功的证明。
+
+## 空运财务审核
+
+`GET /api/v1/financial-audit/air` 返回的列表项包含财务审核人字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `financial_auditor_name` | string | 财务审核人名称，来源为审核账号的用户姓名（`users.name`）；未审核或没有审核人时返回空字符串 |
+| `agent_name` | string | 代理名称；仅来源为托运书的同行空运单据返回 `consignment_notes.company_name`，深航/南航 RPA 数据和手动新增财务单据返回空字符串 |
+
+该字段对应费用登记台“空运单据审核”详情中的“审核人”，适用于深航、南航、同行空运和手动新增空运单据。
+
+应付信息中的 `payable.agent_name` 遵循同一来源规则：仅关联托运书的同行空运单据返回代理公司名称，其他来源返回 `null`。深航/南航 RPA 页面中的“代理人”或“代理人编码”不属于本系统的业务代理名称，不会映射到该字段。`POST /api/v1/financial-audit/air/audit` 暂存或提交时，后端会按来源重新校准该字段，避免请求值或历史暂存值覆盖托运书代理公司；`POST /api/v1/financial-audit/air` 手动新增的财务单据不关联托运书，因此忽略传入的 `payable.agent_name` 并保存为 `null`。
+
+`POST /api/v1/financial-audit/air/audit?action=save|submit` 的 `payable` 和 `receivable` 请求模型中，原本定义为字符串的件数、重量、费率和费用字段同时兼容 JSON number 与 string。后端接收 number 后会统一规范化为字符串再保存；`null` 和已有字符串保持不变，布尔值、数组和对象仍会触发参数校验错误。操作类型通过 query 参数 `action` 传递，请求体中的同名字段不会作为操作类型使用。请求字段应使用后端定义的名称（例如违规罚款使用 `penalty_fee`）；未声明字段不会进入保存数据。
+
+## 托运书
+
+`POST /api/v1/consignment-notes` 和 `PUT /api/v1/consignment-notes/{note_id}` 的 `form_data` 为动态 JSON。汽运（`transport_type="1"`）支持以下收件信息字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `form_data.consignee_info` | string | 收件人 |
+| `form_data.contact_phone` | string | 联系电话 |
+
+这两个字段随 `form_data` 原样保存，并在托运书列表和详情接口中原样返回；历史数据未填写时不补写。生成汽运托运书 PDF 时也会展示这两个字段。
 
 ## 南航货物类型数据字典自动同步
 
@@ -178,6 +1849,7 @@
 - 下载时动态读取启用的数据字典 `nanfang_air_cargo_type`，将全部有效 `label` 作为`货物类型`列的单选下拉选项；数据字典同步覆盖后，再次下载即可获得最新选项。选中该列单元格时不显示额外的输入提示浮窗；该动态处理不修改模板其他列、样式、默认值或既有下拉框。
 - `特货码（多个用英文逗号隔开）`为可选列：用户只需填写默认码之外的附加特货码；多个使用英文逗号分隔，例如 `GEN,AKA`。执行订舱时后端会查询并自动合并南航默认特货码。
 - `出港货邮处理费选项`为可选列，可留空；留空时执行订舱直接透传南航费用查询返回的完整费用列表。
+- 模板末尾新增文本列 `收货人`、`收货人手机号`，分别对应 `form_data.bookings[0].consignee`、`consignee_phone`。两列都填写才启用收发货人信息；任意一列未填写时，该行 direct 订舱不提交整组联系人信息，不会报收货人必填错误。托运人、手机号、地区和详细地址从南航开单的系统默认配置读取，不增加托运人列或联系人开关列。
 - `超规货`、`无隐含危险品`、`出港货邮处理费选项`均为单选下拉框。
 
 ### 后台解析批量订舱 Excel
@@ -195,6 +1867,7 @@
 - 后端逐行解析 Excel，每个有效数据行创建一条未执行订舱记录。
 - 全部行校验成功后才统一写库；任一行失败时不创建任何记录。
 - 根据 Excel 的 `货物类型`，精确匹配启用的数据字典 `nanfang_air_cargo_type` 的 `label`，把对应 `value` 写入 `form_data.bookings[0].cargo_type_code`。
+- `收货人`、`收货人手机号`解析为该行的 `form_data.bookings[0].consignee`、`consignee_phone`，去除首尾空白并按文本保存，响应中一并返回。两列均为可选列，兼容缺少其中一列或两列的旧模板；缺列按空字符串处理。只填一项时仍保存已填值，但执行时整组联系人传 `null`，不会从配置补默认收货人。仅填写收货人信息而缺少航班等必填数据的行，仍按不完整订舱行报错。
 - `出港货邮处理费选项`写入 `form_data.outbound_cargo_and_mail_handling_fee_options`；该列允许留空。留空时执行订舱不会按名称定位或补勾，直接使用南航费用查询接口返回的完整费用列表。
 - 本接口仅创建订舱记录，不直接调用南航；随后调用 `POST /api/v1/bookings/execute` 执行订舱。
 
@@ -204,10 +1877,10 @@
 
 `POST /api/v1/bookings`
 
-当 `form_data.airline` 为 `2` 或 `南方航空`，且某个 `form_data.bookings[n].cargo_type_code` 为空时，服务端会根据该项的 `cargo_type`，按启用的数据字典 `nanfang_air_cargo_type` 的 `label -> value` 自动补齐代码。
+当 `form_data.airline` 为 `2` 或 `南方航空`，且某个 `form_data.bookings[n].cargo_type_code` 为空时，服务端优先使用与该项 `cargo_type` 同名的默认代码，否则按启用的数据字典 `nanfang_air_cargo_type` 的 `label -> value` 自动补齐代码。名称、代码均为空时使用参数配置中的默认名称/代码；具体规则见本文“南航默认货物类型同时保存名称与代码”。
 
 - 已传入非空 `cargo_type_code` 时保持原值，兼容现有调用方。
-- 数据字典不存在、未启用、配置重复、存在空名称/空值，或找不到对应货物类型时，接口返回 `400`，不创建任何记录。
+- 需要字典补码时，如数据字典不存在、未启用、配置重复、存在空名称/空值，或找不到对应货物类型，接口返回 `400`，不创建任何记录。
 - 服务端补齐字段发生在收到请求之后，因此浏览器开发者工具的 Request Payload 不会出现该字段；应在接口响应或后续列表接口返回的 `form_data.bookings[0].cargo_type_code` 中查看。
 
 ### 修改订舱信息
@@ -215,6 +1888,71 @@
 `PUT /api/v1/bookings/{booking_id}`
 
 南航数据的 `cargo_type_code` 缺失时，采用与新增接口一致的字典映射规则自动补齐；已传入非空值时保持原值。
+
+### 南航订舱收发货人信息（Excel 与普通页面共用）
+
+适用于 `POST /api/v1/bookings`、`PUT /api/v1/bookings/{booking_id}` 及 Excel 导入创建的记录；以下提交规则在 `direct` 执行时生效，RPA 参数协议不变。
+
+| 页面/Excel 字段 | JSON 路径 | 类型 | 必填 |
+| --- | --- | --- | --- |
+| 收货人 | `form_data.bookings[n].consignee` | string | 否 |
+| 收货人手机号 | `form_data.bookings[n].consignee_phone` | string | 否 |
+
+这两个字段位于每个 `bookings` 元素中，不在 `form_data` 顶层，也不是 `order_contact_name/order_contact_phone`。普通页面应使用相同字段提交，并从保存响应及详情接口 `GET /api/v1/bookings/{booking_id}` 的 `data.form_data.bookings[0]` 回显。批量新增时，每条记录保留各自收货人信息。手机号应以字符串提交，例如 `"13800138000"`，避免丢失前导零或 `+`。
+
+```json
+{
+  "form_data": {
+    "airline": "2",
+    "bookings": [{
+      "origin_station": "SZX",
+      "destination": "PEK",
+      "flight_date": "2026-11-06",
+      "shipper_unit": "客户公司",
+      "flight_number": "CZ3101",
+      "cargo_type": "普通货物",
+      "cargo_type_code": "3006",
+      "cargo_code": "9000",
+      "cargo_name": "服装",
+      "quantity": "2",
+      "weight": "100",
+      "consignee": "张三",
+      "consignee_phone": "13800138000"
+    }]
+  }
+}
+```
+
+执行规则（空值包括字段缺失、`null`、空字符串及去除首尾空白后为空）：
+
+| 本条收货人及手机号 | 系统托运人、手机号、省市区及详细地址 | 发往南航的 `orderInfo.orderShipmentContact` |
+| --- | --- | --- |
+| 全部有值 | 全部有值 | 完整对象：收货人取本条记录，托运人及地址取系统参数 |
+| 任一缺失 | 任意 | `null`，继续订舱 |
+| 全部有值 | 任一缺失 | `null`，继续订舱 |
+
+不新增独立的联系人启用开关；不会用业务配置中的默认收货人补齐缺项。只要上述必需信息有一项缺失，就不提交整组联系人，不因此阻止保存、导入或订舱执行；其他既有订舱必填项及上游校验仍有效。完整地址要求省、市、区和详细地址四项都有值，不只检查地址对象是否存在。
+
+启用时，南航 `orderInfo.orderShipmentContact` 映射如下。`business_default` 和 `direct_order` 均指 `china_southern_air.booking_and_create` 下的配置：
+
+| 南航字段 | 数据来源 |
+| --- | --- |
+| `consigneeName` | 本条 `bookings[0].consignee`，去除首尾空白 |
+| `consigneeMobile` | 本条 `bookings[0].consignee_phone`，去除首尾空白 |
+| `shipperName` | `business_default.shipper`（系统参数“托运人”，必填） |
+| `shipperMobile` | `business_default.phone`（系统参数“手机号”，必填） |
+| `shipperState` | `business_default.address.region` 的第 1 项（省份，必填） |
+| `shipperCity` | 同上第 2 项（城市，必填） |
+| `shipperDistrict` | 同上第 3 项（区县，必填） |
+| `shipperAddress` | `business_default.address.detail`（详细地址，必填） |
+| `shipperCountryCode` | `direct_order.shipper_country_code`，默认 `CN` |
+| `consigneeCountryCode` | `direct_order.consignee_country_code`，默认 `CN` |
+| `consigneeAddress` | `direct_order.consignee_address`，默认 `机场自提` |
+| `selfPickUp` | `direct_order.self_pick_up`，默认 `Y` |
+
+`address.region` 兼容 `"广东省/深圳市/宝安区"` 和 `["广东省", "深圳市", "宝安区"]`，各部分去除首尾空白。托运人信息在执行时读取当前系统参数，不使用页面传入的托运人覆盖。`shipper_unit` 仍仅为平台客户名称，不映射为 `shipperName`。收货人地址及提货方式沿用现有开单配置，不增加 Excel 列。
+
+订单联系人 `orderInfo.order.contactName/contactPhone` 的既有取值规则保持不变，不使用收货人信息替换。订舱转开单时继续沿用既有映射：收货人取本条订舱记录，托运人及地址取系统配置；开单自身的必填校验不变。
 
 ### 批量执行订舱（接口直连）
 
@@ -230,7 +1968,197 @@
 
 `form_data.bookings[0].special_cargo_code` 为可选字段，填写内容视为用户附加特货码。执行阶段在预占单号之前调用南航 `queryShipmentSubProductCode`：`dest <- destination`、`origin <- origin_station`、`shipmentType <- cargo_type`、`productName <- product_name`（为空时使用与 `parentProductionName` 一致的业务配置或默认“南航快运”），并固定传入 `channel=B`、`directTransfer=D`、`customerno=SZXFED`。返回的 `result.subCode` 作为默认码，按“默认码在前、用户码在后”进行大小写不敏感去重；例如默认 `XPS`、用户填写 `GEN`，持久化的 `form_data` 会回写为 `XPS,GEN`，发往南航 `orderInfo.orderShipment.spCode` 和 `productionCode` 的值均为 `XPS/GEN`。英文逗号、中文逗号及历史 `/` 分隔数据均兼容；同一次批量执行中，相同始发站、目的站、货物类型和产品名称复用查询结果。查询失败时该条订舱失败且不占用单号，`error_details.stage` 为 `query_shipment_sub_product_code`，诊断数据不包含 Token、Cookie 或请求头。
 
+### 订舱完整联系人提交标记与直接开单
+
+新增只读字段 `has_complete_contact_info`，JSON 类型为 **boolean**，放在 booking 响应对象顶层，与 `booking_status` 同级，不在 `form_data` 中。前端提交该字段不会覆盖服务端值。
+
+- `true`：本平台南航 `direct` 订舱成功，且这次实际提交的 `orderInfo.orderShipmentContact` 包含完整收发货人信息。
+- `false`：未执行、执行中、执行失败、联系人任一必需项缺失，或无法确认完整信息已经提交。字段不代表实时校验当前系统配置，也不代表已查询核验南航远端订单。
+- 执行时使用本条收货人及手机号，以及当时系统配置中的托运人、手机号、省市区和详细地址判断是否提交联系人；只有成功受理并完成本地成功状态落库后才写为 `true`。入队及重试时先清为 `false`，失败不残留旧的 `true`；重复提交被拒绝不会清空已有成功记录的标记。
+- 后续修改系统配置不改变既有成功标记；通过修改订舱接口实际修改 `form_data` 时，保守清为 `false`，避免把修改后的内容当成已提交南航的信息。相同表单重复保存保留原值。退舱、直接开单及修改数据后开单保留原标记，仍需结合原有业务状态判断按钮可用性。
+- 新建、历史记录及其他航司默认 `false`；历史数据不按当前表单/配置推断回填。旧南航 RPA 订舱协议不提交这组联系人，因此也不会写为 `true`。
+
+以下响应统一新增字段（现有字段及列表 `form_data` 扁平化规则不变）：
+
+| 接口 | 字段路径 |
+| --- | --- |
+| `POST /api/v1/bookings` | `data.items[].has_complete_contact_info` |
+| `POST /api/v1/bookings/china-southern-air/import-excel` | `data.items[].has_complete_contact_info` |
+| `GET /api/v1/bookings` | `data.items[].has_complete_contact_info` |
+| `GET /api/v1/bookings/{booking_id}` | `data.has_complete_contact_info` |
+| `PUT /api/v1/bookings/{booking_id}` | `data.has_complete_contact_info` |
+| `GET /api/v1/bookings/{booking_id}/waybill-form` | `data.has_complete_contact_info` |
+| `POST /api/v1/bookings/{booking_id}/cancel` | `data.has_complete_contact_info` |
+| `POST /api/v1/bookings/{booking_id}/direct-invoice` | `data.has_complete_contact_info` |
+| `POST /api/v1/bookings/{booking_id}/invoice-with-data` | `data.has_complete_contact_info` |
+| `POST /api/v1/bookings/execute` | `data.items[].has_complete_contact_info`，读取各 booking 已持久化的实际标记；无效或不存在的 ID 为 `false` |
+| `GET /api/v1/china-southern-air-booking-tasks/{task_id}` | 新成功任务的 `data.result.has_complete_contact_info` |
+| `GET /api/v1/china-southern-air-booking-tasks` | 新成功任务的 `data.list[].result.has_complete_contact_info` |
+
+任务 `result` 中的标记是该次执行完成时的结果快照；待执行、失败或历史任务的 `result` 仍可能为 `null` 或不含该字段，前端应按 `false` 处理；以 booking 列表/详情中的字段控制当前记录按钮。批量执行等待超时不等于最终执行失败，应继续通过原有任务查询及 booking 查询获取最终结果。
+
+例如 booking 详情返回（省略其他既有字段）：
+
+```json
+{
+  "code": 200,
+  "data": {
+    "id": "123456789012345678",
+    "booking_status": "3",
+    "has_complete_contact_info": true
+  },
+  "msg": "查询成功"
+}
+```
+
+前端将此字段作为订舱后“直接开单”按钮的额外可用条件：只有 `has_complete_contact_info === true` 才满足联系人条件；`false` 时置灰，可提示“订舱时未提交完整收发货人信息，请选择修改数据后开单”。同时沿用原有订舱成功、主单号、开单中/已开单、退舱等按钮条件。
+
+`POST /api/v1/bookings/{booking_id}/direct-invoice` **取消此前新增的联系人完整性拦截**，不再根据 booking 表单、当前托运人配置或该标记额外返回联系人缺失错误。原有航司、主单号、登录配置和重复任务校验继续有效；成功入队仍返回 `data.task_id`，不代表开单已完成。修改数据后开单支持下文的 direct/RPA 两种方式。
+
+部署前执行 `sql/migration_add_booking_complete_contact_info.sql`（MySQL，一次性执行）：
+
+```sql
+ALTER TABLE `bookings`
+    ADD COLUMN `has_complete_contact_info` TINYINT(1) NOT NULL DEFAULT 0
+    COMMENT '南航直连订舱成功时是否已提交完整收发货人信息'
+    AFTER `master_airwaybill_number`;
+```
+
+数据库存储 `0/1`，API 序列化为 `false/true`；必须先加列再部署后端，不需要修改 Excel 模板或前端订舱请求字段。
+
 ## 南航开单
+
+### 订舱后修改数据开单（默认 direct，保留 RPA）
+
+`POST /api/v1/bookings/{booking_id}/invoice-with-data`
+
+本接口使用订舱记录已有的 `master_airwaybill_number` 修改原南航订单并完成开单，不调用新建订单 `createOrder`，也不领取或再次占用单号库。只有南航订舱且已有主单号才能调用。
+
+在 `app/config.py` 中配置独立开关（也支持同名环境变量，值区分大小写）：
+
+```python
+CHINA_SOUTHERN_AIR_INVOICE_WITH_DATA_EXECUTION_MODE: Literal["direct", "rpa"] = Field(default="direct")
+```
+
+| 模式 | 执行和认证 | 返回语义 |
+| --- | --- | --- |
+| `direct`（默认） | 使用 `nanhang_tokens` 中最新的非空 Token、现有 `china_southern_air.booking_and_create.direct_order` 代理配置，等待变更接口响应 | 成功代表南航 `createChange` 已确认 `changeStatus=F`（完成）或 `S`（已受理待审批），且无 `errorMsg`、本地运单和 booking 成功状态已同步；`task_id=null` |
+| `rpa` | 保留原 RPA 登录配置、通用任务队列和 Worker，不依赖南航 Token | 返回原 `task_id` 仅表示入队，通过 `/api/v1/rpa-tasks/{task_id}` 查询最终结果 |
+
+此开关独立于订舱 `CHINA_SOUTHERN_AIR_BOOKING_EXECUTION_MODE`，不改变订舱后的 `direct-invoice` 路线或普通运单新建开单的执行方式。direct 失败不会自动降级为 RPA，最终提交不自动重试。无需新增数据库字段或 SQL。
+
+请求体仍是回显后修改的运单表单，兼容直接提交该对象或包装为 `{"form_data": {...}}`。示例（使用合成数据）：
+
+```json
+{
+  "airline": "2",
+  "flight_info": {
+    "origin_station": "SZX", "destination": "TAO",
+    "flight_date": "2026-11-28", "flight_number": "CZ3963",
+    "booking_remark": "订舱备注",
+    "booking_remark_wide": "宽体机备注", "booking_remark_narrow": "窄体机备注"
+  },
+  "cargo_info": {
+    "cargo_type": "普通货物", "cargo_type_code": "3006", "cargo_code": "9000",
+    "cargo_name": "衣服裤子", "quantity": 3, "weight": 0.5,
+    "booking_volume": "0.2", "product_name": "南航快运", "oversized_cargo": "0",
+    "special_cargo_code": "XPS", "storage_and_transportation_precautions": "储运说明"
+  },
+  "contact_info": {
+    "consignee": "收货人甲", "consignee_phone": "13800138000", "shipper_unit": "客户公司",
+    "shipper": "托运公司甲", "shipper_phone": "13800138001",
+    "address": {"region": "广东省/深圳市/宝安区", "detail": "国内货站"}
+  },
+  "dangerous_goods_declaration": {
+    "no_hidden_dangerous_goods": "0", "agent_checker_signature": "检查人甲",
+    "agent_consignor_signature": "交运人甲"
+  },
+  "other_info": {"order_contact": "订单联系人甲/13800138002", "contact_phone": "", "settlement_file_number": "配置中的结算文件号"},
+  "other_fees": {"packaging_fee": "", "pickup_fee": "", "delivery_fee": ""}
+}
+```
+
+direct 参数和处理规则：
+
+| 来源 | 南航映射/约束 |
+| --- | --- |
+| 原主单号 | 查询唯一有效 B2B 订单，再调用 `b2e-change/b2bChangeFlightWeight/forward` 获取完整实时上下文；订单号、代理、主单号、版本必须匹配。`orderId`、`bookId`、`segmentId`、原订单及变更版本沿用实时结果，前端不用传入 |
+| `flight_info` | 实时查询实际航班机型，构建 `flights[]`、货名检测 `flightInfos[]`；日期为 `YYYY-MM-DD`，最终航班日期仅追加一次 `00:00:00`。按宽窄体规则选择备注，未传宽窄体备注时回退到 `booking_remark` |
+| `cargo_type` / `cargo_type_code` | 沿用货物类型默认值和字典补码规则；仍无法得到代码时提示重新选择，不能把其他货物名称静默当作普通货物 |
+| 件重体 | 件数为正整数，重量/已填体积为正有限数字；调用 `calculateCWeight`（`change=true`）取得最终体积和计费重量，再调用变更 `queryChangePrice` 获取匹配产品的唯一运价舱位。保留原订单尺寸数据 |
+| 货名、货物代码、产品、特货码 | 分别映射 `changeOtherDto.goods/goodsCode`、实时运价产品/舱位；按现有默认特货码查询规则合并用户特货码，`specialCodes` 使用 `/` 分隔，`productionCode` 使用产品默认码 |
+| 收发货人 | `consignee/consignee_phone` → `consigneeName/consigneeMobile`，`shipper/shipper_phone` → `shipperName/shipperMobile`，地址省市区/详细地址 → `shipperState/shipperCity/shipperDistrict/shipperAddress`。修改开单表单需填写完整收发货人信息；原订单其他司机、证件、通知人字段保留 |
+| `other_info` | `order_contact/contact_phone` → `contactName/contactPhone`；本接口 direct 兼容 `姓名/手机号` 合并格式：只在独立电话为空时拆出手机号。`settlement_file_number` → `accountingRule` |
+| 危险品声明、储运说明 | 沿用普通 direct 开单的声明字段映射；声明勾选时需提供两项签名。未传声明时保留原声明；未提供储运说明字段时保留原订单值，显式空值则清空。原活体动物声明通过 `b2e-order/b2eOrder/querylivingAnimalProofByorderId` 实时查询并映射为 `orderShipmentLiveanimals`，原锂电池信息从原订单扩展详情保留 |
+| 扩展费用 | 使用变更 `calculateCharge` 的完整费用列表、旧费用和差额，执行南航网页的必选单项勾选及重新计费；支持既有 `outbound_cargo_and_mail_handling_fee_options` 对象选择，不擅自重置其他可选费用 |
+
+**原订单缺少联系人时的前置补全（仅本接口 direct 模式）：**
+
+1. 以南航实时 `forward.totalOrderDetail.orderDetailDto.orderShipmentContact` 为准，检查 `consigneeName`、`consigneeMobile`、`shipperName`、`shipperMobile`、`shipperState`、`shipperCity`、`shipperDistrict`、`shipperAddress` 八项。对象不存在或任一项为空/仅空白时需补全；不使用本地 `has_complete_contact_info` 快照判断南航当前联系人，也不根据“当前状态的订单不允许修改”错误推断缺联系人。
+2. 若已完整，继续原有流程，不调用联系人保存接口。若不完整，先调用南航 `POST /order-center/b2e-order/b2eOrder/saveContactAndLiveAnimals`，请求为 `{"orderShipmentContact": {...}}`。`orderId` 使用实时查询出的原订单 ID，收发货人和托运地址使用**本次修改开单表单**按上表映射；国家代码、自提地址及 `selfPickUp` 沿用现有 direct 开单配置。保留原联系人中的司机、证件、通知人等字段；不向该接口额外提交活体声明字段，不在本次保存中主动改写声明。
+3. 只有南航返回成功业务码且 `result.MESSAGE="保存成功"` 后，才重新调用 `forward` 获取最新订单状态、订单版本、变更版本及费用上下文，重新验证订单身份/航段及联系人完整性，再继续原计费、货名检查、`checkChange`、`createChange`。不得使用保存前的版本提交。此分支比完整联系人路线增加一次保存和一次详情刷新，仍串行执行。
+4. 联系人保存与最终开单不是同一事务：联系人可能已经保存，但后续计费/校验/开单仍可能失败；不会回滚南航已保存的联系人，也不会将仅保存联系人视为开单成功。最终提交仍不自动重试，普通状态拒绝不会触发“补联系人再提交”的兜底重试。
+
+客户端请求字段及成功响应结构不变，无需新增数据库字段。此次补全不改变 booking 原始 `form_data` 和 `has_complete_contact_info` 订舱快照；原 `rpa` 模式、订舱后 `direct-invoice` 及普通新建运单开单不变。
+
+新增失败阶段均返回 HTTP 400、`data.execution_mode="direct"`、`invoice_status="2"`、`outcome_unknown=false`：
+
+| `data.stage` | 含义及处理 |
+| --- | --- |
+| `save_change_contacts` | 联系人保存被拒绝、超时、HTTP 错误或未确认“保存成功”；提示尚未提交开单，停止后续计费和提交。可附 `upstream_code` / `http_status`。保存超时不代表联系人一定没保存；这里 `outcome_unknown=false` 仅表示尚未提交最终开单，下次执行会先重新读取实际联系人 |
+| `refresh_change_context` | 保存后的详情查询失败，或刷新后的订单身份、版本、航段、联系人对象格式不合法；尚未提交开单，核查后重试 |
+| `verify_change_contacts` | 保存成功并刷新后，八项联系人信息仍不完整；提示核查联系人，停止后续计费和提交 |
+
+费用重算判断以 `additionalCharges/extensionCharges` 的实际费用输入为准；分组 `additionalMainCharges/extensionMainCharges` 是展示结构，其 `newChecked` 缺失或与扁平明细不同步，不单独触发重算。按 `serviceMainName + otherChargeCode + changeType` 对齐分组子项与扁平明细；明细唯一匹配后同步展示值，匹配缺失或重复则停止并提示刷新费用。数量 `1`、`1.0`、`"1.00"` 按相同数值处理；按重量（KG）项目不因无关数量字段的 `null/空串` 差异重算。必选单项沿用页面自动勾选规则；用户选择发生变化、有效计费数量变化或必选单项 KG/TC 费用尚未计价时才重新调用 `calculateCharge`，最多计算 3 次。原可选费用的数量保留。
+
+若 3 次后仍有真实费用变化/缺少计价，返回 HTTP 400，`msg="南航重新计费后仍未确认所选费用，请核对费用选项后重试（尚未提交开单）"`，`data.stage="calculate_change_charge"`、`invoice_status="2"`、`outcome_unknown=false`。新增诊断字段 `data.calculation_attempts=3`、`data.fee_selection_issues[]`，每项含 `fee_category`（`additionalCharges/extensionCharges`）、`service_main_name`、`other_charge_code`、`change_type`、`reason`（`selection_changed/amount_changed/required_fee_not_priced`）。服务端 warning 日志同样记录这些费用诊断字段，不含 Token 或收发货人信息。此时未调用最终 `createChange`，可修正费用后重试，不会把缺少计价的费用直接提交。
+
+当前表单支持单航段；遇到多航段或缺少原航段标识会明确拒绝 direct，需切换 RPA 处理。产品无唯一可用报价、无效 Token、上游前置查询或计费失败时停止，不再进入最终提交。
+
+前置上下文准备完成后，严格顺序执行：
+
+1. `b2e-support/goodsNameCheck/allowedGoodsNameCheck`：`needCheck=false`，或 `needCheck=true && checkPass=true` 才继续。
+2. `b2e-change/b2bChangeFlightWeight/checkChange`：`result=true` 才继续。
+3. `b2e-change/b2bChangeFlightWeight/createChange`：与第 2 步发送相同完整 JSON；业务码成功、`result.changeStatus` 为 `F`（完成）或 `S`（已受理待审批），且无 `errorMsg` 时均按开单成功处理。仅 `code=0000`、只有 `changeId`、只有“待审批”名称而无有效状态码，均不能确认成功；其他状态仍保留结果未知保护。
+
+direct 成功响应（省略其他原有 booking 字段）：
+
+```json
+{
+  "code": 200,
+  "msg": "南航修改数据后开单成功",
+  "data": {
+    "id": "123456789012345678", "execution_mode": "direct", "invoice_status": "3",
+    "master_airwaybill_number": "784-12345670", "has_complete_contact_info": false,
+    "form_data": {"airline": "2", "bookings": []},
+    "submitted_form_data": {"airline": "2", "flight_info": {}, "cargo_info": {}, "contact_info": {}, "other_info": {}},
+    "task_id": null, "waybill_id": "123456789012345679",
+    "change_id": "S-SYNTHETIC", "change_status": "F", "change_status_name": null, "warnings": []
+  }
+}
+```
+
+`form_data` 保留原订舱表单，`submitted_form_data` 为实际开单规范化表单（包括最终体积、合并特货码、拆分的订单联系人）。成功创建/同步同主单号的 `waybills` 记录、设 `airline_record_status=3`，booking 设 `invoice_status=3`；不修改订舱成功时的 `has_complete_contact_info` 快照。结算及自动制单、打印继续受原南航开单后自动处理开关控制；关闭时仍同步核心运单和成功状态。
+
+**待审批也属于本平台开单成功：** 南航返回 `changeStatus="S"` 且无 `errorMsg` 时，本接口返回 HTTP 200、`code=0`、`msg="南航修改数据后开单成功，待审批"`，`data.invoice_status="3"`、`change_status="S"`，并返回 `waybill_id`、`change_id`。新增成功响应字段 `change_status_name` 透传南航 `changeStatusName`（通常为 `"待审批"`，缺失时为 `null`，`F` 分支同样返回此可空字段）；前端可以据此显示南航审批状态，不应把 `S` 视为开单中或失败。本平台开单成功不代表南航审批已通过。`S` 与 `F` 复用相同运单落库、结算和自动处理开关，阻止再次开单；不增加审批轮询，不改变其他开单模式。请求参数和数据库结构不变。
+
+此前版本已将 `S` 返回为结果未知、保留 `invoice_status=1` 的历史记录不会被此次修改自动恢复。应核查对应南航订单后补录/修复本地运单与状态；不要为了获取新版成功响应而重新提交同一变更。
+
+结算单使用最终费用：`oldTotalCharge + diffTotalCharge` 为最终总成本，绝不能把 `diffTotalCharge` 单独作为总成本；延伸费使用新计费金额，计费重量使用南航计算结果。结算同步失败仍返回开单成功，在 `warnings` 中提示补录，不能触发重新开单。
+
+错误及重试约定：
+
+| 情况 | HTTP / 状态 | 调用方处理 |
+| --- | --- | --- |
+| 本地缺字段、缺 Token、无主单号、航司不符 | 400；不占用开单状态 | 补齐后重新提交 |
+| 前置查询、计费、货名/变化项检查失败，或最终提交明确业务拒绝 | 400；已开始执行则 `invoice_status=2`、`data.outcome_unknown=false` | 根据提示修正后可重新提交 |
+| `createChange` 网络超时、HTTP 5xx、返回非 JSON、状态不在 `F/S` 内或存在 `errorMsg` 等 | 400；`invoice_status=1`、`data.outcome_unknown=true`，可能附 `changeId/changeStatus` | 先核查南航订单；不得自动重试或切 RPA 重复提交 |
+| 南航确认完成但本地运单/状态事务失败 | 500；保留 `invoice_status=1`，`data.upstream_completed=true`、`change_id` | 核查并补录本地数据，不得再次调用南航提交 |
+| 已开单、开单中（含结果待核查）、已有两类开单任务、正在/已退舱或待退舱任务 | 400 | 禁止重复/冲突操作 |
+
+执行前通过短事务锁定 booking 并占用 `invoice_status=1`，随后释放数据库锁再请求南航。为避免另一条路线绕过占用，`direct-invoice` 增加开单中/已完成及另一类待执行任务互斥检查，仍保留原 RPA 执行方式、请求和成功响应；`cancel` 对 `invoice_status=1` 增加拦截，避免开单与退舱并发。结果未知或进程中断后状态可能持续为 1，应由人工核查南航实际状态后补录/恢复，本接口不会自动重置状态。
+
+本地协议依据为用户提供的货名/检查/提交请求响应、HAR 订单详情，以及南航公开 super-change 前端（`chunk-1934c426.3180677e.js`）。HAR 本身未覆盖变更计费请求；前置 forward/queryChangePrice/calculateCharge 的构造从公开前端逻辑核对，最终能否被线上南航接受仍需授权后的真实联调确认，测试不使用附件中的认证信息或真实交易数据。
 
 ### 查询南航出港货邮处理费选项
 

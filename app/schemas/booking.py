@@ -41,8 +41,8 @@ class BookingCreate(BaseModel):
           "oversized_cargo": "",  // 超规货
           "special_cargo_code": "",  // 用户附加特货码（可选）；多个使用英文逗号分隔，例如 GEN,AKA
           "no_dangerous_goods": "",  // 无危险品
-          "consignee": "",  // 收货人
-          "consignee_phone": "",  // 收货人手机号
+          "consignee": "",  // 收货人（可选；与 consignee_phone 均非空时才提交收发货人信息）
+          "consignee_phone": "",  // 收货人手机号（可选；任一项缺失、null 或去空格后为空时整组不提交）
           "storage_and_transportation_precautions": ""  // 储运注意事项（可选）
         }
       ],
@@ -52,14 +52,16 @@ class BookingCreate(BaseModel):
     说明：
     - `order_contact_name` 和 `order_contact_phone` 位于 form_data 顶层，不在 bookings 数组元素中
     - 执行南航订舱时，`contactName`、`contactPhone` 优先使用上述 form_data 字段；未传时分别读取业务参数配置中的 `business_default.order_contact_name`、`business_default.order_contact_phone`
-    - `shipper_unit` 仅作为平台业务数据保存，不替换南航 createOrder 中的任何字段；`orderShipmentContact` 按南航请求结构传 null
+    - `shipper_unit` 仅作为平台业务数据保存，不替换南航 createOrder 中的任何字段
+    - direct 订舱仅在 `bookings[0].consignee`、`consignee_phone` 均非空时填充 `orderInfo.orderShipmentContact`，否则传 null；不会使用系统默认收货人补齐。托运人、手机及地址读取 `china_southern_air.booking_and_create.business_default` 的 `shipper`、`phone`、`address.region/detail`，仅启用联系人信息时校验这些配置；机场自提等字段沿用 `direct_order` 配置及默认值
+    - Excel 新增可选列“收货人”“收货人手机号”，分别映射到每行 `bookings[0].consignee`、`consignee_phone`；旧模板缺列仍可导入。普通页面新增/修改使用相同字段及 direct 执行规则，无需额外开关
     - `special_cargo_code` 可不填；执行时按始发站、目的站、货物类型和有效产品名称查询南航默认特货码，再与用户码去重合并。平台 `form_data` 回写为英文逗号格式，发往南航的 `spCode`、`productionCode` 使用 `/` 格式
     - 南航接口订舱时，`bookings[0].product_name` 有值则同时映射到 createOrder 的 `parentProductionName`、`parentProductionNameCn`；未填时沿用 `direct_order.parent_production_name`、`direct_order.parent_production_name_cn`，配置未提供时默认 `南航快运`
     - `bookings[0].booking_volume` 可不填；未填、为 `null` 或空字符串时，执行阶段使用 `origin_station` 和 `weight` 调用南航 `calculateCWeight`，并将返回的 `volume` 用于后续 `calculateCharge`、`createOrder`；已填写时原值优先
     - 最终体积确定后，执行阶段按航班、货物类型、重量、体积及有效产品名称查询南航运价舱位；返回的 `spaceClass` 用于 `bookGrade`、`spaceClass`，`subSpaceClass` 用于同名字段
     - `outbound_cargo_and_mail_handling_fee_options` 可选；填写时只能填写一个费用名称：贵重物品、活体动物、危险品、鲜活易腐、鲜活容腐、普货、急件快件。为空时执行阶段直接透传南航费用查询返回的完整选项列表，不再按名称定位或补勾
     - 批量Excel使用 `POST /api/v1/bookings/china-southern-air/import-excel` 上传；后端按 `nanfang_air_cargo_type` 数据字典的 `label` 匹配货物类型，并把对应 `value` 写入 `cargo_type_code`
-    - 为兼容仍由前端解析Excel后调用 `POST /api/v1/bookings` 的流程，南航新增/修改接口也会在 `cargo_type_code` 缺失时按同一数据字典自动补齐；已传入非空值时保持原值
+    - 南航新增/修改接口在名称、代码均为空时使用 business_default 默认类型；只有名称时按同名默认代码或启用字典补码，已传入非空代码时保持原值
     - 执行订舱时由服务端查询航班机型，按系统参数中的宽窄体规则选择对应备注
     - bookings 是数组类型，支持批量提交多条订舱信息
     - 不同航司的字段结构可能不同，前端需要根据 airline 字段来展示对应的表单字段
@@ -104,6 +106,7 @@ class BookingResponse(BaseModel):
     invoice_status: str
     booking_time: datetime
     master_airwaybill_number: Optional[str]
+    has_complete_contact_info: bool = Field(False, description="南航直连订舱成功时是否已提交完整收发货人信息；只读")
     rpa_work_uuid: Optional[str]
     rpa_queue_uuid: Optional[str]
     rpa_queue_id: Optional[str]
@@ -132,6 +135,7 @@ class BookingExecuteItem(BaseModel):
     booking_id: str
     task_id: Optional[str] = Field(None, description="南航直连订舱任务ID")
     success: bool
+    has_complete_contact_info: bool = Field(False, description="本条订舱已持久化的联系人完整标记，未确认提交时为false")
     error_message: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = Field(
         None,

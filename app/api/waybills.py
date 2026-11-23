@@ -3,6 +3,7 @@
 """
 import asyncio
 import json
+from copy import deepcopy
 from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
@@ -29,12 +30,19 @@ from app.services.china_southern_air_direct_order import (
     ChinaSouthernAirDirectOrderError,
     china_southern_air_direct_order_service,
 )
-from app.services.document_print_service import is_post_waybill_automation_enabled
+from app.services.document_print_service import (
+    is_auto_document_after_waybill_enabled,
+    is_auto_print_after_waybill_enabled,
+    is_post_waybill_automation_enabled,
+)
 from app.services.waybill_stock_service import (
     confirm_stock_item_used,
     reserve_available_stock_item,
 )
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
+from app.services.csa_cargo_type_defaults import (
+    fill_form_cargo_type_defaults, normalize_config_cargo_type,
+)
 from app.utils.airport_code_mapper import search_airport_codes_by_keyword
 
 router = APIRouter()
@@ -53,9 +61,12 @@ async def create_waybill(
     - 自动设置booking_date为当前日期（中国时间）
     - 所有执行状态默认为"未执行"
     - waybill_number和departure_time初始为null，由RPA后续写入
+    - 南航缺少货物类型时使用默认名称/代码；已有名称缺代码时按同名默认值或字典补齐，不覆盖用户已填代码
     """
     
-    form_data_json = json.dumps(waybill.form_data, ensure_ascii=False)
+    form_data = deepcopy(waybill.form_data)
+    fill_form_cargo_type_defaults(form_data, db)
+    form_data_json = json.dumps(form_data, ensure_ascii=False)
     
     booking_date = get_china_today()
     
@@ -373,20 +384,24 @@ async def update_waybill(
     """
     修改运单信息接口
 
-    - 仅当运单处于「未开单」（airline_record_status="0"）或「开单失败」（airline_record_status="2"）时允许修改，修改后可重新开单
+    - 仅当运单处于「未开单」（airline_record_status="0"）或「开单失败」（airline_record_status="2"），且没有排队、执行中或提交结果待核查的深航直连任务时允许修改
     - 可更新 form_data（整体替换）与可选的 booking_date
     - waybill_number、departure_time、各执行状态等由系统/RPA 维护，不可通过本接口修改
+    - 南航货物类型名称/代码采用与新增运单一致的默认值及缺码补齐规则
     """
-    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).with_for_update().first()
     if not waybill:
         raise NotFoundException("运单不存在")
 
+    _ensure_no_active_shenzhen_direct_task(db, waybill.id)
     if waybill.airline_record_status not in ("0", "2"):
         raise BadRequestException(
             "仅未开单或开单失败状态的运单可修改；当前运单正在开单中或已开单成功，无法修改"
         )
 
-    form_data_json = json.dumps(payload.form_data, ensure_ascii=False)
+    form_data = deepcopy(payload.form_data)
+    fill_form_cargo_type_defaults(form_data, db)
+    form_data_json = json.dumps(form_data, ensure_ascii=False)
     waybill.form_data = form_data_json
     if payload.booking_date is not None:
         waybill.booking_date = payload.booking_date
@@ -757,7 +772,38 @@ def _get_business_config(db: Session) -> dict:
     config = db.query(BusinessConfig).first()
     if not config:
         return {}
-    return json.loads(config.config_data)
+    return normalize_config_cargo_type(json.loads(config.config_data), db)
+
+
+def _sync_waybill_void_settlements(db: Session, waybill: Waybill) -> None:
+    """同步作废成功状态到关联结算单，失败不影响运单成功落库。"""
+    if not waybill.waybill_number:
+        return
+    try:
+        from sqlalchemy import cast, String
+        settlements = db.query(Settlement).filter(
+            func.cast(
+                func.json_extract(
+                    cast(Settlement.form_data, JSON),
+                    "$.master_airwaybill_number",
+                ),
+                String(100),
+            ) == waybill.waybill_number
+        ).all()
+        if not settlements:
+            for settlement in db.query(Settlement).all():
+                try:
+                    data = json.loads(settlement.form_data)
+                except (TypeError, ValueError):
+                    continue
+                if data.get("master_airwaybill_number") == waybill.waybill_number:
+                    settlements.append(settlement)
+        for settlement in settlements:
+            settlement.waybill_void_status = "3"
+    except Exception as exc:
+        # KingGo has already confirmed deletion; do not turn that into a
+        # retryable failure merely because a legacy settlement row is malformed.
+        print(f"同步深航运单作废状态到结算单失败: {type(exc).__name__}")
 
 
 def _reserve_china_southern_air_stock_item(db: Session) -> WaybillStockItem:
@@ -871,7 +917,7 @@ async def _post_process_china_southern_air_waybill(
     form_data: dict,
     business_config: dict,
 ) -> None:
-    """开单成功后异步生成南航货站文件并创建打印任务。"""
+    """按独立开关执行南航开单成功后的自动制单和自动打单。"""
     if not is_post_waybill_automation_enabled("2"):
         print(
             "[南航直连开单] 开单后自动处理已关闭，"
@@ -880,31 +926,46 @@ async def _post_process_china_southern_air_waybill(
         return
 
     from app.database import SessionLocal
-    from app.services.cargo_station_record_service import generate_csa_all_documents
-
     db = SessionLocal()
     try:
         waybill = db.query(Waybill).filter(Waybill.id == waybill_id).first()
         if waybill is None or waybill.airline_record_status != "3":
             return
 
-        waybill.cargo_station_record_status = "1"
-        db.commit()
-        documents_result = await asyncio.to_thread(
-            generate_csa_all_documents,
-            waybill_id=waybill.id,
-            waybill_number=waybill.waybill_number,
-            form_data=form_data,
-            business_config=business_config,
-        )
-        all_success = all(
-            not document.get("error") and document.get("excel")
-            for document in documents_result.values()
-        )
-        waybill.cargo_station_record_status = "3" if all_success else "2"
-        db.commit()
-        if all_success:
-            _auto_trigger_document_print(db, waybill, form_data, business_config)
+        if is_auto_document_after_waybill_enabled("2"):
+            from app.services.cargo_station_record_service import generate_csa_all_documents
+
+            waybill.cargo_station_record_status = "1"
+            db.commit()
+            documents_result = await asyncio.to_thread(
+                generate_csa_all_documents,
+                waybill_id=waybill.id,
+                waybill_number=waybill.waybill_number,
+                form_data=form_data,
+                business_config=business_config,
+            )
+            all_success = all(
+                not document.get("error") and document.get("excel")
+                for document in documents_result.values()
+            )
+            waybill.cargo_station_record_status = "3" if all_success else "2"
+            db.commit()
+            if all_success:
+                _auto_trigger_document_print(
+                    db,
+                    waybill,
+                    form_data,
+                    business_config,
+                    include_document_files=bool(documents_result),
+                )
+        else:
+            print(
+                "[南航直连开单] 自动制单已关闭，跳过货站文件生成，"
+                f"运单ID: {waybill_id}"
+            )
+            _auto_trigger_document_print(
+                db, waybill, form_data, business_config, include_document_files=False
+            )
     except Exception:
         db.rollback()
         waybill = db.query(Waybill).filter(Waybill.id == waybill_id).first()
@@ -915,7 +976,13 @@ async def _post_process_china_southern_air_waybill(
         db.close()
 
 
-def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, business_config: dict):
+def _auto_trigger_document_print(
+    db: Session,
+    waybill,
+    form_data_dict: dict,
+    business_config: dict,
+    include_document_files: bool = True,
+):
     """
     货站录单成功后自动触发打单
     
@@ -926,6 +993,7 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
         waybill: 运单对象
         form_data_dict: 运单表单数据字典
         business_config: 业务参数配置
+        include_document_files: 是否把已生成的制单文件加入打印任务
     """
     import traceback
     from app.services.document_print_service import (
@@ -936,9 +1004,9 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
     from app.models.rpa_task import RPATaskType, RPATargetType
     
     airline = form_data_dict.get("airline", "")
-    if not is_post_waybill_automation_enabled(airline):
+    if not is_auto_print_after_waybill_enabled(airline):
         print(
-            f"[自动打单] 航司开单后自动处理已关闭，跳过自动打单，"
+            f"[自动打单] 航司自动打单已关闭，跳过自动打单，"
             f"运单ID: {waybill.id}, 航司: {airline}"
         )
         return
@@ -958,7 +1026,8 @@ def _auto_trigger_document_print(db: Session, waybill, form_data_dict: dict, bus
             waybill_id=waybill.id,
             waybill_number=waybill.waybill_number,
             airline=airline,
-            business_config=business_config
+            business_config=business_config,
+            include_document_files=include_document_files,
         )
         
         task_count = get_print_task_count(print_tasks)
@@ -1202,6 +1271,22 @@ def _extract_china_southern_air_waybill_params(form_data: dict, business_config:
     return params
 
 
+def _ensure_no_active_shenzhen_direct_task(db: Session, waybill_id: int) -> None:
+    from app.models.waybill import ShenzhenAirDirectWaybillTask
+    task = db.query(ShenzhenAirDirectWaybillTask).filter(
+        ShenzhenAirDirectWaybillTask.waybill_id == waybill_id,
+        ShenzhenAirDirectWaybillTask.status.in_(["pending", "running", "unknown"]),
+    ).first()
+    if task:
+        if task.status == "unknown":
+            raise BadRequestException(
+                f"上次深航提交结果待核查，暂不能修改或重新执行。请先按候选运单号"
+                f" {task.candidate_waybill_number or '未记录'} 核查KingGo，避免重复开单；任务ID: {task.id}"
+            )
+        label = "正在执行" if task.status == "running" else "正在排队等待执行"
+        raise BadRequestException(f"该运单的深航直连开单任务{label}，暂不能修改或重新执行；任务ID: {task.id}")
+
+
 @router.post("/{waybill_id}/execute", summary="确认并执行运单")
 async def execute_waybill(
     waybill_id: str,
@@ -1213,20 +1298,20 @@ async def execute_waybill(
     
     此接口会：
     1. 根据运单的airline判断是否为深航（airline="1"或"深圳航空"）
-    2. 如果是深航，创建RPA任务并加入队列
-    3. Worker会从队列中取出任务执行RPA调用
+    2. 根据配置创建KingGo直连或原RPA开单任务并加入队列
+    3. Worker会从对应队列中取出任务执行
     4. 前端可以通过任务ID或运单状态轮询获取执行结果
     
     - **waybill_id**: 运单ID（字符串格式）
     
     返回：
-    - task_id: RPA任务ID，可用于查询任务状态
+    - task_id: 开单任务ID，可通过任务状态接口查询
     """
     from app.config import settings
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
-    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).with_for_update().first()
     if not waybill:
         raise NotFoundException("运单不存在")
     
@@ -1237,14 +1322,59 @@ async def execute_waybill(
     if not is_shenzhen_air:
         raise BadRequestException("当前仅支持深圳航空的运单执行")
     
+    if waybill.airline_record_status == "3" or waybill.waybill_number:
+        raise BadRequestException("该运单已有运单号或已开单成功，不能重复开单")
+
+    _ensure_no_active_shenzhen_direct_task(db, waybill.id)
     existing_task = rpa_task_service.get_pending_task_for_target(
-        db,
-        target_type=RPATargetType.WAYBILL.value,
-        target_id=int(waybill_id),
-        task_type=RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value
+        db, target_type=RPATargetType.WAYBILL.value, target_id=waybill.id,
+        task_type=RPATaskType.SHENZHEN_AIR_WAYBILL_EXECUTE.value,
     )
     if existing_task:
         raise BadRequestException(f"该运单已有待执行或执行中的开单任务，任务ID: {existing_task.id}")
+
+    if settings.SHENZHEN_AIR_WAYBILL_EXECUTION_MODE == "direct":
+        from app.models.waybill import ShenzhenAirDirectWaybillTask, ShenzhenAirDirectWaybillTaskStatus
+        if waybill.airline_record_status not in {"0", "2"}:
+            raise BadRequestException("该运单正在开单或已开单成功，不能重复执行")
+        business_config = _get_business_config(db)
+        if not business_config:
+            raise BadRequestException("业务参数配置不存在，无法调用深航开单接口")
+        from app.services.shenzhen_air_direct_waybill import ShenzhenAirDirectWaybillService, ShenzhenAirDirectWaybillError
+        try:
+            values = ShenzhenAirDirectWaybillService.get_form_values(form_data_dict, business_config)
+            ShenzhenAirDirectWaybillService.validate_configuration()
+        except ShenzhenAirDirectWaybillError as exc:
+            raise BadRequestException(str(exc)) from exc
+        if not settings.SHENZHEN_AIR_DIRECT_WAYBILL_QUEUE_ENABLED:
+            raise BadRequestException("深航直连开单任务队列当前已禁用")
+        task = ShenzhenAirDirectWaybillTask(
+            waybill_id=int(waybill_id), status=ShenzhenAirDirectWaybillTaskStatus.PENDING,
+            priority=settings.RPA_QUEUE_WAYBILL_PRIORITY,
+            created_by=current_user.id if current_user else None,
+            request_data=json.dumps({"form_data": form_data_dict, "values": values}, ensure_ascii=False),
+        )
+        db.add(task)
+        waybill.airline_record_status = "1"
+        db.commit()
+        db.refresh(task)
+        return success_response(data={
+            "id": str(waybill.id), "waybill_number": waybill.waybill_number,
+            "form_data": form_data_dict, "airline_record_status": waybill.airline_record_status,
+            "cargo_station_record_status": waybill.cargo_station_record_status,
+            "document_print_status": waybill.document_print_status,
+            "waybill_void_status": waybill.waybill_void_status,
+            "airline_record_time": format_datetime_china(waybill.airline_record_time),
+            "cargo_station_record_time": format_datetime_china(waybill.cargo_station_record_time),
+            "document_print_time": format_datetime_china(waybill.document_print_time),
+            "departure_time": format_datetime_china(waybill.departure_time),
+            "booking_date": waybill.booking_date.isoformat(), "rpa_work_uuid": waybill.rpa_work_uuid,
+            "rpa_queue_uuids": waybill.rpa_queue_uuids, "created_at": format_datetime_china(waybill.created_at),
+            "updated_at": format_datetime_china(waybill.updated_at), "task_id": str(task.id),
+            "execution_mode": "direct",
+            "direct_task_status": task.status,
+            "direct_task_error": task.error_message,
+        }, msg="深航直连接口开单任务已加入执行队列，请等待处理")
     
     business_config = _get_business_config(db)
     if not business_config:
@@ -1280,7 +1410,7 @@ async def execute_waybill(
         target_type=RPATargetType.WAYBILL.value,
         target_id=int(waybill_id),
         params=rpa_params,
-        priority=settings.RPA_QUEUE_DEFAULT_PRIORITY,
+        priority=settings.RPA_QUEUE_WAYBILL_PRIORITY,
         created_by=current_user.id if current_user else None
     )
     
@@ -1334,7 +1464,7 @@ async def void_waybill(
     from app.services.rpa_task_service import rpa_task_service
     from app.models.rpa_task import RPATaskType, RPATargetType
     
-    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).first()
+    waybill = db.query(Waybill).filter(Waybill.id == int(waybill_id)).with_for_update().first()
     if not waybill:
         raise NotFoundException("运单不存在")
     
@@ -1370,6 +1500,63 @@ async def void_waybill(
     
     if not waybill_number_8 or len(waybill_number_8) != 8:
         raise BadRequestException(f"运单号格式不正确，无法提取后八位: {waybill.waybill_number}")
+
+    if is_shenzhen_air and settings.SHENZHEN_AIR_WAYBILL_VOID_EXECUTION_MODE == "direct":
+        if waybill.waybill_void_status == "3":
+            raise BadRequestException("该运单已作废成功，不能重复作废")
+        if waybill.waybill_void_status == "1":
+            raise BadRequestException("该运单正在作废或作废结果待核查，请勿重复提交")
+
+        from app.services.shenzhen_air_direct_waybill_void import (
+            ShenzhenAirDirectWaybillVoidError,
+            shenzhen_air_direct_waybill_void_service,
+        )
+
+        # Persist the in-progress marker before leaving the transaction. If a
+        # delete request times out, this marker intentionally blocks blind retry.
+        waybill.waybill_void_status = "1"
+        db.commit()
+        try:
+            result = await shenzhen_air_direct_waybill_void_service.void_waybill(
+                waybill.waybill_number
+            )
+        except ShenzhenAirDirectWaybillVoidError as exc:
+            if not exc.outcome_unknown:
+                waybill.waybill_void_status = "2"
+                db.commit()
+            raise BadRequestException(str(exc)) from exc
+        except Exception as exc:
+            waybill.waybill_void_status = "2"
+            db.commit()
+            raise BadRequestException("深航直连接口作废失败，请稍后重试") from exc
+
+        waybill.waybill_void_status = "3"
+        _sync_waybill_void_settlements(db, waybill)
+        db.commit()
+        db.refresh(waybill)
+        form_data_dict = json.loads(waybill.form_data)
+        waybill_data = {
+            "id": str(waybill.id),
+            "waybill_number": waybill.waybill_number,
+            "form_data": form_data_dict,
+            "airline_record_status": waybill.airline_record_status,
+            "cargo_station_record_status": waybill.cargo_station_record_status,
+            "document_print_status": waybill.document_print_status,
+            "waybill_void_status": waybill.waybill_void_status,
+            "airline_record_time": format_datetime_china(waybill.airline_record_time),
+            "cargo_station_record_time": format_datetime_china(waybill.cargo_station_record_time),
+            "document_print_time": format_datetime_china(waybill.document_print_time),
+            "departure_time": format_datetime_china(waybill.departure_time),
+            "booking_date": waybill.booking_date.isoformat(),
+            "rpa_work_uuid": waybill.rpa_work_uuid,
+            "created_at": format_datetime_china(waybill.created_at),
+            "updated_at": format_datetime_china(waybill.updated_at),
+            "task_id": None,
+            "execution_mode": "direct",
+            "direct_void_status": "success",
+            "kinggo_awb_id": result["awb_id"],
+        }
+        return success_response(data=waybill_data, msg="深航运单已通过KingGo直连接口作废")
     
     rpa_params = {
         "waybill_number_8": waybill_number_8

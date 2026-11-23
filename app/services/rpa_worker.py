@@ -23,10 +23,15 @@ from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.nanhang_token import NanHangToken
 from app.services.rpa_service import rpa_service
 from app.services.rpa_task_service import rpa_task_service, PRINT_TASK_TYPES, PRINT_TYPE_REVERSE_MAPPING, PRINT_TYPE_MAPPING
-from app.services.document_print_service import is_post_waybill_automation_enabled
+from app.services.document_print_service import (
+    is_auto_document_after_waybill_enabled,
+    is_auto_print_after_waybill_enabled,
+    is_post_waybill_automation_enabled,
+)
 from app.services.waybill_stock_service import reserve_available_stock_item
 from app.utils.rpa_status_mapper import map_rpa_status_to_dict_value
 from app.utils.helpers import get_china_now
+from app.services.tracking_execution_time import record_rpa_execution_success
 
 
 # The approval-data RPA flows have existed in two process versions.  The
@@ -408,6 +413,8 @@ class RPAWorker:
                     await self._execute_china_southern_air_departure_tracking(db, task)
                 elif task.task_type == RPATaskType.CHINA_SOUTHERN_AIR_GET_TOKEN.value:
                     await self._execute_china_southern_air_get_token(db, task)
+                elif task.task_type == RPATaskType.SHENZHEN_AIR_GET_HAR.value:
+                    await self._execute_shenzhen_air_get_har(db, task)
                 else:
                     print(f"{self._log_prefix} 未知的任务类型: {task.task_type}")
                     rpa_task_service.complete_task(db, task.id, False, error_message=f"未知的任务类型: {task.task_type}")
@@ -872,6 +879,16 @@ class RPAWorker:
             waybill: 运单对象
             form_data_dict: 运单表单数据字典
         """
+        if not is_auto_document_after_waybill_enabled("1"):
+            print(
+                f"{self._log_prefix} 深航自动制单已关闭，跳过货站文件生成，"
+                f"运单ID: {waybill.id}"
+            )
+            await self._auto_trigger_document_print(
+                db, waybill, form_data_dict, include_document_files=False
+            )
+            return
+
         from app.services.cargo_station_record_service import generate_all_documents
         from app.models.config import BusinessConfig
         
@@ -929,6 +946,16 @@ class RPAWorker:
             waybill: 运单对象
             form_data_dict: 运单表单数据字典
         """
+        if not is_auto_document_after_waybill_enabled("2"):
+            print(
+                f"{self._log_prefix} 南航自动制单已关闭，跳过货站文件生成，"
+                f"运单ID: {waybill.id}"
+            )
+            await self._auto_trigger_document_print(
+                db, waybill, form_data_dict, include_document_files=False
+            )
+            return
+
         from app.services.cargo_station_record_service import generate_csa_all_documents
         from app.models.config import BusinessConfig
         
@@ -965,7 +992,9 @@ class RPAWorker:
                 print(f"{self._log_prefix} 南航无文档需要生成，运单ID: {waybill.id}，将状态标记为已录单并触发打单")
                 waybill.cargo_station_record_status = "3"
                 db.commit()
-                await self._auto_trigger_document_print(db, waybill, form_data_dict)
+                await self._auto_trigger_document_print(
+                    db, waybill, form_data_dict, include_document_files=False
+                )
             else:
                 waybill.cargo_station_record_status = "2"  
                 print(f"{self._log_prefix} 南航货站录单文档生成失败，运单ID: {waybill.id}")
@@ -1210,7 +1239,9 @@ class RPAWorker:
         if not booking:
             raise Exception("订舱不存在")
         
-        booking.booking_status = "1"  
+        booking.booking_status = "1"
+        # 旧 RPA 订舱协议不提交这组联系人，不推断为已完整提交。
+        booking.has_complete_contact_info = False
         db.commit()
         
         allocated_stock_item = None
@@ -2305,7 +2336,14 @@ class RPAWorker:
                             await asyncio.sleep(1)
     
     
-    async def _auto_trigger_document_print(self, db, waybill: Waybill, form_data_dict: dict, delay_for_file_transfer: bool = False):
+    async def _auto_trigger_document_print(
+        self,
+        db,
+        waybill: Waybill,
+        form_data_dict: dict,
+        delay_for_file_transfer: bool = False,
+        include_document_files: bool = True,
+    ):
         """
         自动触发打单
         
@@ -2320,6 +2358,7 @@ class RPAWorker:
             waybill: 运单对象
             form_data_dict: 运单表单数据字典
             delay_for_file_transfer: 是否需要等待文件传输完成后再执行打单（货站录单生成文件后需要等待）
+            include_document_files: 是否把已生成的制单文件加入打印任务
         """
         from app.services.document_print_service import (
             get_print_task_count,
@@ -2328,9 +2367,9 @@ class RPAWorker:
         from app.models.config import BusinessConfig
 
         airline = form_data_dict.get("airline", "")
-        if not is_post_waybill_automation_enabled(airline):
+        if not is_auto_print_after_waybill_enabled(airline):
             print(
-                f"{self._log_prefix} [自动打单] 航司开单后自动处理已关闭，"
+                f"{self._log_prefix} [自动打单] 航司自动打单已关闭，"
                 f"跳过自动打单，运单ID: {waybill.id}, 航司: {airline}"
             )
             return
@@ -2376,7 +2415,8 @@ class RPAWorker:
                 waybill_id=waybill.id,
                 waybill_number=waybill.waybill_number,
                 airline=airline,
-                business_config=business_config
+                business_config=business_config,
+                include_document_files=include_document_files,
             )
             
             task_count = get_print_task_count(print_tasks)
@@ -2780,6 +2820,7 @@ class RPAWorker:
                 status = status_info.get("status")
                 if status in RPA_APPROVAL_SUCCESS_STATUSES:
                     print(f"{self._log_prefix} 批复数据获取任务 {task.id} 执行成功")
+                    record_rpa_execution_success(task.task_type, status_info)
                     rpa_task_service.complete_task(db, task.id, True)
                     return
                 elif status == 3:
@@ -2840,6 +2881,7 @@ class RPAWorker:
                 status = status_info.get("status")
                 if status in RPA_APPROVAL_SUCCESS_STATUSES:
                     print(f"{self._log_prefix} 南航批复数据获取任务 {task.id} 执行成功")
+                    record_rpa_execution_success(task.task_type, status_info)
                     rpa_task_service.complete_task(db, task.id, True)
                     return
                 elif status in (3, 6, 7):
@@ -2896,6 +2938,7 @@ class RPAWorker:
                     status = status_info.get("status")
                     if status == 5:
                         print(f"{self._log_prefix} 下载表格任务 {task.id} 成功")
+                        record_rpa_execution_success(task.task_type, status_info)
                         rpa_task_service.complete_task(db, task.id, True)
                         return
                     elif status == 3:
@@ -2914,6 +2957,9 @@ class RPAWorker:
 
     async def _execute_shenzhen_air_billing_time_container(self, db, task: RPATask):
         """执行深航计飞时间集装器获取任务"""
+        if getattr(settings, "SHENZHEN_AIR_BILLING_TIME_CONTAINER_EXECUTION_MODE", "direct") == "direct":
+            await self._execute_shenzhen_air_billing_time_container_direct(db, task)
+            return
         params = json.loads(task.params) if task.params else {}
         queue_params = json.loads(task.queue_params) if task.queue_params else None
         
@@ -2970,6 +3016,71 @@ class RPAWorker:
             await self._cleanup_queues(queues_info)
             raise e
 
+    async def _execute_shenzhen_air_billing_time_container_direct(self, db, task: RPATask):
+        """通过 KingGo getaway 接口获取计飞时间和集装器数据。"""
+        from app.services.shenzhen_air_direct_billing_time_container import (
+            ShenzhenAirDirectBillingTimeContainerError,
+            shenzhen_air_direct_billing_time_container_service,
+        )
+
+        export_record = db.query(ShenzhenAirBookingExport).filter(
+            ShenzhenAirBookingExport.id == task.target_id
+        ).first()
+        params = json.loads(task.params) if task.params else {}
+        waybill_number = (params.get("waybill_number_8") or (export_record.waybill_number if export_record else ""))
+        routing = export_record.routing if export_record else params.get("routing")
+        flight_date = export_record.flight_date if export_record else params.get("flight_date")
+        if not export_record:
+            rpa_task_service.requeue_task(
+                db, task.id,
+                settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                "深航计飞集装器任务关联的Excel明细不存在",
+            )
+            return
+        try:
+            rows = await shenzhen_air_direct_billing_time_container_service.fetch_rows(
+                waybill_number, routing, flight_date
+            )
+            await self._persist_shenzhen_air_billing_rows(
+                db, task, rows, waybill_number, export_record.id
+            )
+        except ShenzhenAirDirectBillingTimeContainerError as exc:
+            print(f"{self._log_prefix} 深航计飞集装器直连获取失败: {exc}")
+            rpa_task_service.requeue_task(
+                db, task.id,
+                settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                str(exc),
+            )
+
+    async def _persist_shenzhen_air_billing_rows(
+        self, db, task: RPATask, billing_data: list, waybill_number: str, booking_export_id: int
+    ) -> None:
+        """将直连返回的九列表格行按既有 RPA 映射入库。"""
+        from app.services.shenzhen_air_billing_time_container_processor import (
+            persist_shenzhen_air_billing_rows,
+            mark_shenzhen_air_export_completed,
+        )
+
+        result = await persist_shenzhen_air_billing_rows(
+            db, billing_data, waybill_number, booking_export_id
+        )
+        if not result.inserted_count:
+            rpa_task_service.requeue_task(
+                db, task.id,
+                settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                "深航货运走货数据为空或格式无效",
+            )
+            return
+        if result.has_invalid_flight:
+            rpa_task_service.requeue_task(
+                db, task.id,
+                settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
+                "深航货运走货数据存在空航班号",
+            )
+            return
+        mark_shenzhen_air_export_completed(db, booking_export_id)
+        rpa_task_service.complete_task(db, task.id, True)
+
     async def _poll_shenzhen_air_billing_time_container_status(self, db, task: RPATask, work_uuid: str, queues_info: dict):
         """轮询计飞时间集装器获取状态并消费队列"""
         poll_count = 0
@@ -2981,6 +3092,7 @@ class RPAWorker:
                 if status_info:
                     status = status_info.get("status")
                     if status == 5:
+                        record_rpa_execution_success(task.task_type, status_info)
                         await self._handle_shenzhen_air_billing_time_container_success(db, task, queues_info)
                         return
                     elif status == 3:
@@ -3023,75 +3135,13 @@ class RPAWorker:
                         waybill_number_8 = params.get("waybill_number_8", "")
                         booking_export_id = task.target_id
                         
-                        if booking_export_id:
-                            db.query(ShenzhenAirBillingTimeContainer).filter(
-                                ShenzhenAirBillingTimeContainer.booking_export_id == booking_export_id
-                            ).delete()
-                        elif waybill_number_8:
-                            db.query(ShenzhenAirBillingTimeContainer).filter(
-                                ShenzhenAirBillingTimeContainer.waybill_number_8 == waybill_number_8
-                            ).delete()
-                        
-                        records_to_insert = []
-                        has_invalid_flight = False
-                        from app.utils.ctrip_client import ctrip_client
-                        for row in billing_data:
-                            if not row or not isinstance(row, list) or len(row) < 9:
-                                continue
-                            
-                            seq = str(row[0]).strip()
-                            if seq == "序号" or seq == "" or "合计" in str(row[1]):
-                                continue
-                                
-                            flight_number = str(row[1]).strip() if row[1] else ""
-                            if not flight_number:
-                                has_invalid_flight = True
-                            planned_time = None
-                            try:
-                                if flight_number:
-                                    print(
-                                        f"{self._log_prefix} 查询深航航班携程时间: "
-                                        f"flight={flight_number}, date={str(row[2]).strip()}, "
-                                        f"routing={str(row[4]).strip()}-{str(row[5]).strip()}"
-                                    )
-                                    ctrip_times = await ctrip_client.get_flight_times(
-                                        flight_number, str(row[2]).strip(),
-                                        f"{str(row[4]).strip()}-{str(row[5]).strip()}"
-                                    )
-                                    planned_time = (ctrip_times or {}).get("planned_time")
-                                    print(
-                                        f"{self._log_prefix} 深航航班携程时间返回: "
-                                        f"flight={flight_number}, planned_time={planned_time}, "
-                                        f"ready_time={(ctrip_times or {}).get('ready_time') if ctrip_times else None}"
-                                    )
-                            except Exception as exc:
-                                print(f"{self._log_prefix} 获取深航预飞时间失败: {exc}")
-                            record = ShenzhenAirBillingTimeContainer(
-                                booking_export_id=booking_export_id,
-                                waybill_number_8=waybill_number_8,
-                                sequence=seq,
-                                flight_number=flight_number or None,
-                                flight_date=str(row[2]).strip(),
-                                billing_time=str(row[3]).strip(),
-                                origin=str(row[4]).strip(),
-                                destination=str(row[5]).strip(),
-                                quantity=str(row[6]).strip(),
-                                weight=str(row[7]).strip(),
-                                container=str(row[8]).strip(),
-                                planned_time=planned_time,
-                                actual_time=None,
-                                actual_time_attempts="0"
-                            )
-                            records_to_insert.append(record)
-                            
-                        if records_to_insert:
-                            db.add_all(records_to_insert)
-                            db.commit()
-                            print(f"{self._log_prefix} 成功将 {len(records_to_insert)} 条计飞时间数据入库！")
-                        else:
-                            print(f"{self._log_prefix} 未解析到有效的计飞时间数据行")
-
-                        if has_invalid_flight or not records_to_insert:
+                        from app.services.shenzhen_air_billing_time_container_processor import (
+                            persist_shenzhen_air_billing_rows,
+                        )
+                        result = await persist_shenzhen_air_billing_rows(
+                            db, billing_data, waybill_number_8, booking_export_id
+                        )
+                        if result.has_invalid_flight or not result.inserted_count:
                             rpa_task_service.requeue_task(
                                 db, task.id,
                                 settings.RPA_DEPARTURE_TASK_RETRY_INTERVAL_SECONDS,
@@ -3258,7 +3308,14 @@ class RPAWorker:
                     status_desc = status_info.get("statusDesc", "未知状态")
                     
                     if status == 5:  
-                        print(f"{self._log_prefix} 南航出港跟踪任务 {task.id} (workUuid: {work_uuid}) 执行成功")
+                        # RPA 运行成功与明细采集完成是两个事件。即使队列为空、
+                        # 或货拉数据尚未满足完成条件，也应记录本次 RPA 成功运行。
+                        # 明细完成标记和重试仍由后续的数据处理决定。
+                        record_rpa_execution_success(task.task_type, status_info)
+                        print(
+                            f"{self._log_prefix} 南航出港跟踪任务 {task.id} "
+                            f"(workUuid: {work_uuid}) RPA运行成功，开始消费队列并校验数据"
+                        )
                         await self._handle_china_southern_air_departure_tracking_success(db, task, queues_info)
                         return
                     elif status == 3:  
@@ -3570,6 +3627,96 @@ class RPAWorker:
             rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
         finally:
             await self._cleanup_queues(queues_info)
+
+    async def _execute_shenzhen_air_get_har(self, db, task: RPATask):
+        """执行无返回队列的深航获取 HAR 周期任务。"""
+        print(f"{self._log_prefix} 准备执行深航获取HAR任务: {task.id}")
+        job_uuid = task.job_uuid or self._resolve_job_uuid(db, task.task_type)
+        if not job_uuid:
+            error_msg = (
+                "未找到深航获取HAR任务 "
+                f"(task_type={task.task_type}) 对应的 job_uuid"
+            )
+            print(f"{self._log_prefix} {error_msg}")
+            rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
+            return
+
+        try:
+            params = json.loads(task.params) if task.params else {}
+            if not isinstance(params, dict):
+                params = {}
+            system_url = params.get("system_url") or "https://www.kinggo.com/main"
+            print(
+                f"{self._log_prefix} [SHENZHEN_AIR_GET_HAR] "
+                f"实际发送给RPA的参数: system_url={system_url}"
+            )
+            response_data = await rpa_service.create_shenzhen_air_get_har(
+                system_url=system_url,
+                job_uuid=job_uuid,
+            )
+            work_uuid = rpa_service.extract_work_uuid_from_create_response(response_data)
+            if not work_uuid:
+                raise ValueError("RPA 接口未返回有效的 workUuid")
+            rpa_task_service.update_task_work_uuid(db, task.id, work_uuid)
+            print(f"{self._log_prefix} 成功创建深航获取HAR任务, workUuid: {work_uuid}")
+            await self._poll_shenzhen_air_get_har_status(
+                db, task, job_uuid, work_uuid
+            )
+        except Exception as exc:
+            error_msg = _get_error_detail(exc)
+            print(
+                f"{self._log_prefix} 执行深航获取HAR任务异常: "
+                f"{error_msg}\n{traceback.format_exc()}"
+            )
+            rpa_task_service.complete_task(
+                db, task.id, False, error_message=error_msg
+            )
+
+    async def _poll_shenzhen_air_get_har_status(
+        self,
+        db,
+        task: RPATask,
+        job_uuid: str,
+        work_uuid: str,
+    ) -> None:
+        """轮询深航获取 HAR Job，成功后直接结束任务。"""
+        poll_count = 0
+        while poll_count < settings.RPA_POLL_MAX_COUNT:
+            try:
+                response_data = await rpa_service.query_shenzhen_air_waybill_status(
+                    job_uuid=job_uuid
+                )
+                status_info = rpa_service.extract_status_from_query_response(
+                    response_data, work_uuid
+                )
+                if status_info:
+                    status = status_info.get("status")
+                    status_desc = status_info.get("statusDesc", "")
+                    if status == 5:
+                        print(f"{self._log_prefix} 深航获取HAR任务执行成功: {work_uuid}")
+                        rpa_task_service.complete_task(db, task.id, True)
+                        return
+                    if status in (3, 4):
+                        error_msg = f"RPA任务执行失败: {status_desc} (status={status})"
+                        rpa_task_service.complete_task(
+                            db, task.id, False, error_message=error_msg
+                        )
+                        return
+                await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+                poll_count += 1
+            except Exception as exc:
+                print(
+                    f"{self._log_prefix} 轮询深航获取HAR任务状态异常: "
+                    f"{_get_error_detail(exc)}"
+                )
+                await asyncio.sleep(settings.RPA_POLL_INTERVAL)
+                poll_count += 1
+
+        error_msg = (
+            "轮询任务状态超时 "
+            f"(超过 {settings.RPA_POLL_MAX_COUNT * settings.RPA_POLL_INTERVAL} 秒)"
+        )
+        rpa_task_service.complete_task(db, task.id, False, error_message=error_msg)
 
     @staticmethod
     def _clean_single_token_str(s: Any) -> str:

@@ -12,6 +12,7 @@ from app.models.china_southern_air_approval import ChinaSouthernAirApprovalData
 from app.models.csa_departure_tracking import CsaLalamoveInformation
 from app.models.rpa_task import RPATask, RPATaskStatus
 from app.models.transit_loading import ShenzhenAirBookingExport
+from app.models.shenzhen_air_flight_info import ShenzhenAirFlightInfo
 from app.services.departure_actual_time_sync import (
     DepartureActualTimeSync,
     _parse_planned,
@@ -27,6 +28,7 @@ class DepartureActualTimeSyncTests(unittest.IsolatedAsyncioTestCase):
         self.engine = create_engine("sqlite:///:memory:")
         ShenzhenAirBookingExport.__table__.create(self.engine)
         ShenzhenAirBillingTimeContainer.__table__.create(self.engine)
+        ShenzhenAirFlightInfo.__table__.create(self.engine)
         ChinaSouthernAirApprovalData.__table__.create(self.engine)
         CsaLalamoveInformation.__table__.create(self.engine)
         RPATask.__table__.create(self.engine)
@@ -69,7 +71,7 @@ class DepartureActualTimeSyncTests(unittest.IsolatedAsyncioTestCase):
                 1800,
             ),
             patch(
-                "app.services.departure_actual_time_sync.ctrip_client.get_flight_times",
+                "app.services.departure_actual_time_sync.shenzhen_air_flight_times.get_flight_times",
                 new=AsyncMock(),
             ) as get_flight_times,
         ):
@@ -116,7 +118,7 @@ class DepartureActualTimeSyncTests(unittest.IsolatedAsyncioTestCase):
                 1800,
             ),
             patch(
-                "app.services.departure_actual_time_sync.ctrip_client.get_flight_times",
+                "app.services.departure_actual_time_sync.shenzhen_air_flight_times.get_flight_times",
                 new=get_flight_times,
             ),
         ):
@@ -127,7 +129,7 @@ class DepartureActualTimeSyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row.next_actual_time_query_at, datetime(2026, 9, 15, 10, 30))
         self.assertEqual(row.actual_time_attempts, "0")
         get_flight_times.assert_awaited_once_with(
-            "ZH5678", "2026-09-15", "SZX-PEK"
+            "ZH5678", "2026-09-15", "SZX-PEK", required_times=("planned_time",)
         )
         verify_db.close()
 
@@ -170,7 +172,7 @@ class DepartureActualTimeSyncTests(unittest.IsolatedAsyncioTestCase):
                 1800,
             ),
             patch(
-                "app.services.departure_actual_time_sync.ctrip_client.get_flight_times",
+                "app.services.departure_actual_time_sync.shenzhen_air_flight_times.get_flight_times",
                 new=AsyncMock(side_effect=RuntimeError("network error")),
             ),
         ):
@@ -220,7 +222,7 @@ class DepartureActualTimeSyncTests(unittest.IsolatedAsyncioTestCase):
                 1800,
             ),
             patch(
-                "app.services.departure_actual_time_sync.ctrip_client.get_flight_times",
+                "app.services.departure_actual_time_sync.shenzhen_air_flight_times.get_flight_times",
                 new=get_flight_times,
             ),
         ):
@@ -269,7 +271,7 @@ class DepartureActualTimeSyncTests(unittest.IsolatedAsyncioTestCase):
                 8,
             ),
             patch(
-                "app.services.departure_actual_time_sync.ctrip_client.get_flight_times",
+                "app.services.departure_actual_time_sync.shenzhen_air_flight_times.get_flight_times",
                 new=AsyncMock(return_value=None),
             ),
         ):
@@ -318,7 +320,7 @@ class DepartureActualTimeSyncTests(unittest.IsolatedAsyncioTestCase):
                 1800,
             ),
             patch(
-                "app.services.departure_actual_time_sync.ctrip_client.get_flight_times",
+                "app.services.departure_actual_time_sync.shenzhen_air_flight_times.get_flight_times",
                 new=AsyncMock(),
             ) as get_flight_times,
         ):
