@@ -1,5 +1,6 @@
 """两组勾选项的持久化、客服流转、费用覆盖和提交锁定回归。"""
 import unittest
+from copy import deepcopy
 from types import SimpleNamespace
 
 import httpx
@@ -14,6 +15,9 @@ from app.main import register_exception_handlers
 from app.models.consignment_operation_log import ConsignmentOperationLog
 from app.models.cost_service import CostConsignment, CostRegistration
 from app.models.customer_service import ConsignmentInfo, ConsignmentRegistration
+from app.services.cost_excel_export import (
+    CUSTOMER_EXPORT_COLUMNS, COST_EXPORT_COLUMNS, customer_export_values, cost_export_values,
+)
 
 
 CUSTOMER_TAGS = ["intl_air", "customs", "ground", "trucking", "dom_air"]
@@ -246,6 +250,175 @@ class ConsignmentTagTests(unittest.IsolatedAsyncioTestCase):
         detail = await self.request("PUT", cost_path + "/draft", {"expense_tags": []})
         self.assertEqual(detail["consignor_info"]["pieces"], 8)
         self.assertEqual(detail["receivables"]["customs_fee"], 750)
+
+    @staticmethod
+    def module_payload(desk):
+        payload = {
+            "customer_tags": CUSTOMER_TAGS,
+            "expense_tags": EXPENSE_TAGS,
+            "receivables": {"customs_fee": 750, "total": 1800},
+            "payables": {
+                group: {"subtotal": index * 10, "remark": f"保留{group}"}
+                for index, group in enumerate(CUSTOMER_TAGS, 1)
+            },
+        }
+        payload["payables"]["pay_total"] = 1234.5
+        if desk == "cost-service":
+            payload.update({
+                "discount_info": {"discount_person": "折让人", "discount_rate": 2, "discount_fee": 20},
+                "sales_commission": {"commission_amount": 0},
+                "operating_info": {"profit": 200, "profit_margin": 10},
+            })
+        return payload
+
+    def assert_modules(self, data, selected):
+        self.assertEqual(set(data["payables"]) & set(CUSTOMER_TAGS), set(selected) & set(CUSTOMER_TAGS))
+        self.assertEqual(data["payables"]["pay_total"], 1234.5)
+        self.assertEqual(data["receivables"]["customs_fee"], 750)
+        self.assertEqual(data["receivables"]["total"], 1800)
+        for group in set(selected) & set(CUSTOMER_TAGS):
+            self.assertEqual(data["payables"][group]["remark"], f"保留{group}")
+
+    async def test_each_desk_uses_own_tags_for_create_detail_list_save_and_void_responses(self):
+        for desk, key, other in (
+            ("customer-service", "customer_tags", "expense_tags"),
+            ("cost-service", "expense_tags", "customer_tags"),
+        ):
+            with self.subTest(desk=desk):
+                base = f"/api/v1/{desk}/consignments"
+                payload = self.module_payload(desk)
+                payload[key] = ["intl_air", "ground"]
+                # 另一组即使全选也不控制本台返回。
+                created = await self.request("POST", base + "/draft", payload)
+                self.assert_modules(created, ["intl_air", "ground"])
+                self.assertEqual(created[other], payload[other])
+                path = f"{base}/{created['id']}"
+                for data in (
+                    await self.request("GET", path),
+                    next(item for item in (await self.request("GET", base))["items"] if item["id"] == created["id"]),
+                    await self.request("PUT", path + "/draft", {}),
+                    await self.request("PUT", path, {}),
+                    await self.request("PUT", path + "/void"),
+                ):
+                    self.assert_modules(data, ["intl_air", "ground"])
+                    if desk == "cost-service":
+                        self.assertNotIn("discount_info", data)
+                        self.assertNotIn("sales_commission", data)
+                        self.assertEqual(data["operating_info"]["profit"], 200)
+
+    async def test_deselect_omitted_modules_preserves_storage_and_reselect_restores_every_module(self):
+        for desk, key, model, all_tags in (
+            ("customer-service", "customer_tags", ConsignmentInfo, CUSTOMER_TAGS),
+            ("cost-service", "expense_tags", CostConsignment, EXPENSE_TAGS),
+        ):
+            with self.subTest(desk=desk):
+                base = f"/api/v1/{desk}/consignments"
+                created = await self.request("POST", base + "/draft", self.module_payload(desk))
+                path = f"{base}/{created['id']}"
+                record = self.db.get(model, int(created["id"]))
+                original_snapshot = deepcopy(record.financial_data) if desk == "customer-service" else None
+                for tag in all_tags:
+                    # 前端只传标签，不传未选中模块的数据。
+                    updated = await self.request("PUT", path + "/draft", {key: [tag]})
+                    self.assert_modules(updated, [tag])
+                    if desk == "cost-service":
+                        self.assertEqual("discount_info" in updated, tag == "discount_info")
+                        self.assertEqual("sales_commission" in updated, tag == "sales_commission")
+                    self.db.expire_all()
+                    record = self.db.get(model, int(created["id"]))
+                    if desk == "customer-service":
+                        self.assertEqual(record.financial_data, original_snapshot)
+                    else:
+                        self.assertEqual(record.pay_trucking_remark, "保留trucking")
+                        self.assertEqual(record.discount_person, "折让人")
+                        self.assertEqual(record.commission_amount, 0)
+                self.assert_modules(await self.request("PUT", path + "/draft", {key: []}), [])
+                self.assert_modules(await self.request("GET", path), [])
+                for patch in ({}, {key: None}):
+                    self.assert_modules(await self.request("PUT", path + "/draft", patch), [])
+                restored = await self.request("PUT", path + "/draft", {key: all_tags})
+                self.assert_modules(restored, all_tags)
+                if desk == "cost-service":
+                    self.assertEqual(restored["discount_info"]["discount_fee"], 20)
+                    self.assertEqual(restored["sales_commission"]["commission_amount"], 0)
+
+    async def test_legacy_unset_tags_preserve_all_modules_even_when_other_tags_are_empty(self):
+        for desk, key, other, model in (
+            ("customer-service", "customer_tags", "expense_tags", ConsignmentInfo),
+            ("cost-service", "expense_tags", "customer_tags", CostConsignment),
+        ):
+            payload = self.module_payload(desk)
+            del payload[key]
+            payload[other] = []
+            base = f"/api/v1/{desk}/consignments"
+            created = await self.request("POST", base + "/draft", payload)
+            self.assert_modules(created, CUSTOMER_TAGS)
+            self.assertEqual(created[key], [])
+            record = self.db.get(model, int(created["id"]))
+            self.assertIsNone(getattr(record, key))
+            path = f"{base}/{created['id']}"
+            self.assert_modules(await self.request("PUT", path + "/draft", {key: None}), CUSTOMER_TAGS)
+            self.assert_modules(await self.request("PUT", path + "/draft", {key: []}), [])
+            self.assert_modules(await self.request("GET", path), [])
+
+    async def test_template_responses_follow_tags_and_keep_unselected_business_data(self):
+        for desk, key, registration in (
+            ("customer-service", "customer_tags", "consignment-registration"),
+            ("cost-service", "expense_tags", "cost-registration"),
+        ):
+            path = f"/api/v1/{desk}/{registration}"
+            self.assertIsNone(await self.request("GET", path))
+            payload = self.module_payload(desk)
+            payload[key] = ["ground"]
+            self.assert_modules(await self.request("PUT", path, payload), ["ground"])
+            self.assert_modules(await self.request("GET", path), ["ground"])
+            self.assert_modules(await self.request("PUT", path, {key: []}), [])
+            self.assert_modules(await self.request("PUT", path, {key: CUSTOMER_TAGS}), CUSTOMER_TAGS)
+
+    async def test_customer_cost_flow_uses_each_saved_tag_set_without_mutating_financial_snapshot(self):
+        payload = self.module_payload("customer-service")
+        payload["customer_tags"] = ["intl_air", "ground"]
+        payload["expense_tags"] = ["trucking"]
+        created = await self.request("POST", "/api/v1/customer-service/consignments", payload)
+        customer_path = "/api/v1/customer-service/consignments/" + created["id"]
+        cost_path = "/api/v1/cost-service/consignments/" + created["id"]
+        self.assert_modules(created, ["intl_air", "ground"])
+        self.assert_modules(await self.request("GET", cost_path), ["trucking"])
+        self.assert_modules(await self.request("PUT", cost_path + "/draft", {"expense_tags": ["customs"]}), ["customs"])
+        self.assert_modules(await self.request("GET", customer_path), ["intl_air", "ground"])
+        saved = await self.request("PUT", cost_path, {})
+        self.assert_modules(saved, ["customs"])
+        customer = await self.request("GET", customer_path)
+        self.assert_modules(customer, ["intl_air", "ground"])
+        self.assertFalse(customer["editable"])
+        stored = self.db.get(ConsignmentInfo, int(created["id"]))
+        self.assertEqual(stored.financial_data["payables"]["trucking"]["remark"], "保留trucking")
+        logs_before = self.db.query(ConsignmentOperationLog).count()
+        updated_before = stored.updated_at
+        for _ in range(2):
+            await self.request("GET", customer_path)
+            await self.request("GET", cost_path)
+        self.assertFalse(self.db.dirty)
+        self.assertEqual(stored.updated_at, updated_before)
+        self.assertEqual(self.db.query(ConsignmentOperationLog).count(), logs_before)
+
+    async def test_filtering_does_not_crop_excel_values_or_stored_data(self):
+        for desk, key, model, columns, export in (
+            ("customer-service", "customer_tags", ConsignmentInfo, CUSTOMER_EXPORT_COLUMNS, customer_export_values),
+            ("cost-service", "expense_tags", CostConsignment, COST_EXPORT_COLUMNS, cost_export_values),
+        ):
+            payload = self.module_payload(desk)
+            payload[key] = []
+            created = await self.request("POST", f"/api/v1/{desk}/consignments/draft", payload)
+            self.assert_modules(created, [])
+            record = self.db.get(model, int(created["id"]))
+            before = export(record, 1)
+            for group in CUSTOMER_TAGS:
+                index = next(i for i, c in enumerate(columns) if c.path == f"payables.{group}.remark")
+                self.assertEqual(before[index], f"保留{group}")
+            await self.request("GET", f"/api/v1/{desk}/consignments/{created['id']}")
+            self.assertEqual(export(record, 1), before)
+            self.assertFalse(self.db.dirty)
 
     def test_openapi_exposes_tags_at_request_top_level_with_fixed_options(self):
         schemas = self.app.openapi()["components"]["schemas"]

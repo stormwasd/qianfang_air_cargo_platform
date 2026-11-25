@@ -11521,6 +11521,8 @@ Access-Control-Expose-Headers: Content-Disposition
 
 #### 23.12 两台页面勾选项存储与详情回显（2026-10-30）
 
+**2026-11-25补充：标签现按本台控制业务模块回显，未选中模块不返回对应键，但保留持久化数据。详情、列表、保存/暂存、作废和模板回显均适用；完整规则、兼容边界及新示例见23.28。本节原字段类型与存储规则继续适用。**
+
 本节对应页面右上角的“填写更多数据”勾选框。字段名及英文标识数组已确认：
 **两台均支持 `customer_tags` 和 `expense_tags` 两个字段**，请求体及响应 `data` 中都位于第一层级。
 customer_tags表示5项选项集合，expense_tags表示7项选项集合，字段名不再限制使用页面；不放入业务子对象。客服提交将两个同名字段流转到费用，费用可独立覆盖；详见23.14。
@@ -11592,6 +11594,7 @@ customer_tags表示5项选项集合，expense_tags表示7项选项集合，字�
 新增或更新模板不会自动更改任何列表单据的勾选项；前端创建新单据时如需沿用模板，须把模板数组带入新增请求。
 
 标签是页面勾选状态，取消勾选不会删除该业务分组的数据，也不会修改金额、合计或利润。
+当前响应按23.28裁剪模块：客服使用customer_tags、费用使用expense_tags；数据库NULL兼容原全量格式，显式[]省略本台全部可选模块，顶层仍返回两组数组。
 两台分别持久化两个同名字段：客服暂存不流转，客服提交将已保存的非null数组（含[]）复制到费用；客服未保存的字段不清空费用已有值。费用可分别覆盖或清空两个字段，费用保存不反向改写既有客服标签；费用首次新建客服记录时带入两个字段初值。
 费用保存提交后的客服锁定仍适用于两个字段；客服仅保存后可编辑。详情查询读取本台存储值，不在查询时重新覆盖费用选择，也不自动将customer_tags重命名为expense_tags。
 
@@ -11890,6 +11893,8 @@ Authorization: Bearer <access_token>
 本仓库为后端项目；前端需自行完成编辑区控件及列表列隐藏、隐藏值继续传入、操作记录弹窗顶部展示的页面改动。后端已提供相应查询字段及下载内容调整。
 
 #### 23.14 两组标签从客服流转至费用，费用可覆盖（2026-10-30）
+
+**2026-11-25补充：本节的独立存储、流转及覆盖规则继续生效；业务模块是否返回改按23.28由各台自己的标签控制，原示例中的业务分组应结合23.28阅读。未选中模块数据保留，不因前端省略模块而删除。**
 
 本节为前端最新确认的标签契约：**客服和费用两台均接受并返回customer_tags、expense_tags，客服提交时两个字段按同名传递至费用，费用可分别覆盖。**
 这是对原先“客服仅customer_tags、费用仅expense_tags，互不流转”的明确调整。不是把customer_tags重命名为expense_tags；两个字段各自保留含义与选项范围。
@@ -13395,3 +13400,173 @@ HTTP200成功响应**片段**：
 本次只修改两个GET列表的筛选范围，使用已有列及客服JSON快照，**无需新增迁移SQL或回填生产数据**。查询直接在数据库筛选、统计和分页，不把全部运单加载到Python逐条过滤，不关联另一台表，不因OR匹配产生重复行。包含式多字段搜索不保证使用普通B树索引加速；原分页与其他日期等条件继续适用。
 
 导出仍按原`ids`下载，Excel字段、顺序与取值不变。保存查重、费用提交锁定客服等逻辑不因本次搜索调整改变。23.16及23.21保留为历史记录，主单号与代理搜索的当前契约以本节为准。
+
+#### 23.28 两台按各自标签返回选中模块，取消勾选保留历史数据（2026-11-25）
+
+##### 23.28.1 当前约定与模块映射
+
+前端不再提交未勾选的业务模块，后端返回也不再自动补出所有模块。**客服只用本台已保存的 `customer_tags` 控制响应；费用只用本台已保存的 `expense_tags` 控制响应。两组标签不取并集、不互相替代、不在查询时从另一台重新读取。**
+
+| 标签标识 | 模块返回位置（相对单条data或列表items元素） | 客服customer_tags | 费用expense_tags |
+|---|---|---|---|
+| `intl_air` | `payables.intl_air`（国际空运） | 支持 | 支持 |
+| `customs` | `payables.customs`（报关） | 支持 | 支持 |
+| `ground` | `payables.ground`（地面操作） | 支持 | 支持 |
+| `trucking` | `payables.trucking`（汽运） | 支持 | 支持 |
+| `dom_air` | `payables.dom_air`（国内空运） | 支持 | 支持 |
+| `discount_info` | `discount_info`（折让信息，data第一层） | 客服无此模块 | 支持 |
+| `sales_commission` | `sales_commission`（销售提成，data第一层） | 客服无此模块 | 支持 |
+
+已设置本台标签后：选中的模块按原字段格式返回（即使尚未填数据，也可返回该模块的原空值结构）；未选中的模块**完全省略对应键**，不会返回`null`、`{}`或带默认0/空字符串的模块对象。
+
+`payables`容器保留，`payables.pay_total`保持原值；即使五个应付模块全部未选中，也保留例如`{"pay_total":1080.1}`。委托信息、应收`receivables`、费用经营信息`operating_info`、ID、状态、`editable`及两组标签不属于本次可选模块裁剪范围，继续按原格式返回。
+
+##### 23.28.2 受影响接口
+
+全部路径带 `/api/v1`，认证沿用 `Authorization: Bearer <token>`。无新增路由、必填字段、查询参数或错误码。
+
+| 台 | 方法 | 完整路径 | 变化位置 |
+|---|---|---|---|
+| 客服 | GET / PUT | `/api/v1/customer-service/consignment-registration` | 模板data按customer_tags裁剪；没有模板仍data:null |
+| 客服 | POST | `/api/v1/customer-service/consignments` | 保存新增的data按customer_tags裁剪 |
+| 客服 | POST | `/api/v1/customer-service/consignments/draft` | 暂存新增的data按customer_tags裁剪 |
+| 客服 | GET | `/api/v1/customer-service/consignments/{consignment_id}` | 详情data按customer_tags裁剪 |
+| 客服 | GET | `/api/v1/customer-service/consignments` | 每条data.items元素按各自customer_tags裁剪 |
+| 客服 | PUT | `/api/v1/customer-service/consignments/{consignment_id}` | 保存修改的data按customer_tags裁剪 |
+| 客服 | PUT | `/api/v1/customer-service/consignments/{consignment_id}/draft` | 暂存修改的data按customer_tags裁剪 |
+| 客服 | PUT | `/api/v1/customer-service/consignments/{consignment_id}/void` | 作废回显的data按customer_tags裁剪 |
+| 费用 | GET / PUT | `/api/v1/cost-service/cost-registration` | 模板data按expense_tags裁剪；没有模板仍data:null |
+| 费用 | POST | `/api/v1/cost-service/consignments` | 保存新增的data按expense_tags裁剪 |
+| 费用 | POST | `/api/v1/cost-service/consignments/draft` | 暂存新增的data按expense_tags裁剪 |
+| 费用 | GET | `/api/v1/cost-service/consignments/{consignment_id}` | 详情data按expense_tags裁剪 |
+| 费用 | GET | `/api/v1/cost-service/consignments` | 每条data.items元素按各自expense_tags裁剪 |
+| 费用 | PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 保存修改的data按expense_tags裁剪 |
+| 费用 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 暂存修改的data按expense_tags裁剪 |
+| 费用 | PUT | `/api/v1/cost-service/consignments/{consignment_id}/void` | 作废回显的data按expense_tags裁剪 |
+
+##### 23.28.3 入参、部分更新和历史兼容
+
+| 字段 | 位置 | 类型 | 必填 | 含义 |
+|---|---|---|---|---|
+| `customer_tags` | 保存/暂存body第一层 | string[] / null | 否 | 最多5项，客服页面模块选择；两个台接口均接受和存储，但仅客服响应用它裁剪 |
+| `expense_tags` | 保存/暂存body第一层 | string[] / null | 否 | 最多7项，费用页面模块选择；两个台接口均接受和存储，但仅费用响应用它裁剪 |
+| `payables` | body第一层 | object / null | 否 | 应付数据；前端仅提交选中且需要保存的模块，叶字段及省略/null更新语义沿用原契约 |
+| `discount_info` | 仅费用body第一层 | object / null | 否 | 选中折让时按原结构提交；未提交不清空历史折让数据 |
+| `sales_commission` | 仅费用body第一层 | object / null | 否 | 选中销售提成时按原结构提交；未提交不清空历史提成数据 |
+
+- 两组标签字段保持独立。传合法数组整体替换本组；省略或显式`null`保留本组；`[]`保存空选择。标识、去重、大小写及长度校验继续按23.12/23.14执行。
+- 取消某模块：提交本台最新标签数组，从中去掉该模块；对应模块数据可省略。只省略业务模块但不更新标签，不表示取消选择。
+- 隐藏只作用于响应，不删除或清空数据库的应付数据、折让或提成，不把“本次未传模块”当成“请求清空模块”。后续重新勾选且省略模块数据，即恢复原已存值；仍受原编辑权限和锁定约束。
+- 请求即使携带未选模块，继续按原字段保存逻辑处理，返回仍由本台标签决定，不因数据存在而自动勾选。未改变原有主单号查重或委托航班号联动等写入规则。
+- **历史兼容**：本台控制标签的数据库值为SQL NULL或JSON null（从未设置）时，保持原全量响应；不根据另一组标签或金额推断选择。响应标签仍按原约定返回`[]`。因此“历史未设置”与“显式选择空数组”虽然响应数组同为`[]`，模块返回不同：前者全量兼容，后者隐藏全部可选模块。
+- 对历史单据需要明确隐藏时，前端应提交本台标签数组（含`[]`），不能仅省略模块；旧标签为非空数组的历史单据立即按该数组裁剪，不需要回填。
+- 客服提交继续将已保存的两组非NULL标签按同名流转至费用，费用可独立覆盖；费用已有客服单据的标签不反向覆盖。两台因此可能显示不同模块，按各自已存控制标签回显。
+
+##### 23.28.4 客服示例：只选择国际空运和地面操作
+
+客服暂存修改请求（无未选中的customs/trucking/dom_air业务对象）：
+
+```http
+PUT /api/v1/customer-service/consignments/383810304032772096/draft
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "customer_tags": ["intl_air", "ground"],
+  "payables": {
+    "intl_air": {"outsource_unit": "川航", "subtotal": 50},
+    "ground": {"outsource_unit": "新安华", "subtotal": 452.1},
+    "pay_total": 1080.1
+  }
+}
+```
+
+若费用标签原值为`["trucking"]`，暂存成功HTTP200的**响应片段**如下；随后客服GET详情及列表元素遵循相同模块范围。模块内部其余原字段省略，实际仍按原结构返回。
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "383810304032772096",
+    "status": 0,
+    "editable": true,
+    "customer_tags": ["intl_air", "ground"],
+    "expense_tags": ["trucking"],
+    "customer_name": "客户A",
+    "receivables": {"total": 1800},
+    "payables": {
+      "intl_air": {"outsource_unit": "川航", "subtotal": 50},
+      "ground": {"outsource_unit": "新安华", "subtotal": 452.1},
+      "pay_total": 1080.1
+    }
+  },
+  "msg": "委托信息暂存成功"
+}
+```
+
+该客服响应不含`payables.customs`、`payables.trucking`、`payables.dom_air`，即使数据库仍有这些数据，且expense_tags选中了trucking。
+
+##### 23.28.5 费用示例：费用独立选择与覆盖
+
+费用仅选择地面操作和折让，未提交其他模块数据：
+
+```http
+PUT /api/v1/cost-service/consignments/383810304032772096/draft
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{"expense_tags":["ground","discount_info"]}
+```
+
+HTTP200成功**响应片段**；查询详情也使用相同裁剪范围，GET成功msg为“查询成功”：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "383810304032772096",
+    "status": 0,
+    "customer_tags": ["intl_air", "ground"],
+    "expense_tags": ["ground", "discount_info"],
+    "consignor_info": {"customer_name":"客户A"},
+    "receivables": {"total":1800},
+    "payables": {
+      "ground": {"outsource_unit":"新安华","subtotal":452.1},
+      "pay_total":1080.1
+    },
+    "discount_info": {"discount_person":"张三","discount_rate":2,"discount_fee":20},
+    "operating_info": {"profit":200,"profit_margin":10}
+  },
+  "msg": "单据信息暂存成功"
+}
+```
+
+不含其他四个应付模块，也不含`sales_commission`。`customer_tags`保留原值，不影响费用模块范围。
+
+费用全部取消请求：
+
+```json
+{"expense_tags":[]}
+```
+
+此时data中`payables`仅保留原`pay_total`，例如`{"pay_total":1080.1}`，并省略`discount_info`和`sales_commission`。其他基础及汇总信息继续返回。客服全部取消则传`{"customer_tags":[]}`，五个应付模块键同样被省略。
+
+费用恢复选择汽运和销售提成：
+
+```json
+{"expense_tags":["trucking","sales_commission"]}
+```
+
+无需重新提交汽运或提成数据，返回原已存的`payables.trucking`及`sales_commission`。如果未填写过，则返回原空值结构；零金额仍保留为0，不重新计算。取消期间的GET查询不会改写业务数据、更新时间或操作记录。
+
+##### 23.28.6 不变的业务边界与发布
+
+- `receivables.total`、`payables.pay_total`、利润、利润率等均继续使用前端已提交值，后台不按可见模块重新计算；隐藏模块之和与合计可能不同。
+- 同步使用完整持久化字段与财务快照，不能把裁剪后的响应当成同步源，避免隐藏模块数据丢失。客服暂存不流转，费用保存后锁定客服及作废不可编辑继续生效。
+- 列表搜索范围按23.27继续匹配已保存字段，不因当前隐藏模块缩小搜索；详情/列表只是返回时按标签裁剪。近30天国际空运主单号查重仍按23.23执行，不因模块隐藏而跳过。
+- Excel保持原有列和原始已存业务数据导出，不按本次响应标签裁剪；删除及操作记录接口无变化。
+- 本次无需迁移SQL，不新增数据库字段，不清洗、回填或删除历史业务数据；只在生成响应时省略未选择模块。前端读取可选模块前应判断键是否存在；不应把省略键转换为“清空后提交”。

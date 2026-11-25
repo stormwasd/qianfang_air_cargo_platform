@@ -39,7 +39,9 @@ from app.services.cost_excel_export import (
 from app.utils.helpers import format_datetime_china, get_china_now
 from app.schemas.consignment_operation_log import ConsignmentOperationLogPage
 from app.services.consignment_operation_log import append_consignment_operation, get_consignment_operations
-from app.services.consignment_tags import apply_consignment_tags, format_consignment_tags
+from app.services.consignment_tags import (
+    apply_consignment_tags, format_consignment_tags, filter_consignment_modules,
+)
 from app.services.consignment_financial import (
     merge_financial_payload, format_financial_data, sync_financial_to_cost,
 )
@@ -156,7 +158,7 @@ def _format_record_dict(record: Any) -> Dict[str, Any]:
             and not bool(getattr(record, "edit_locked", False))
         )
     data.update(format_financial_data(record))
-    return data
+    return filter_consignment_modules(data, record, tag_field="customer_tags")
 
 
 def _apply_consignment_payload(record: ConsignmentInfo, payload: ConsignmentBase, *, partial: bool) -> None:

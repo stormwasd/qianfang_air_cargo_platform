@@ -14,10 +14,10 @@ ExpenseTag = Literal[
 class ConsignmentTags(BaseModel):
     """两台共用标签契约，字段按名称区分选项范围而非限制使用页面。"""
     customer_tags: Optional[List[CustomerTag]] = Field(
-        None, max_length=5, description="客服勾选项；两台均支持，省略或null保持原值，[]清空，最多5项",
+        None, max_length=5, description="客服勾选项；两台均支持，省略或null保持原值，[]清空选择，最多5项；客服响应仅返回选中应付模块，未选中模块历史数据保留；历史未设置标签时兼容全量返回",
     )
     expense_tags: Optional[List[ExpenseTag]] = Field(
-        None, max_length=7, description="费用勾选项；两台均支持，省略或null保持原值，[]清空，最多7项",
+        None, max_length=7, description="费用勾选项；两台均支持，省略或null保持原值，[]清空选择，最多7项；费用响应仅返回选中应付、折让、销售提成模块，未选中模块历史数据保留；历史未设置标签时兼容全量返回",
     )
 
     @field_validator("customer_tags", "expense_tags")

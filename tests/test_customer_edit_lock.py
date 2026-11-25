@@ -1,7 +1,7 @@
 """费用成功提交才锁定客服；覆盖历史迁移、失败回滚及重复保存。"""
 import io
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -76,7 +76,12 @@ class CustomerEditLockTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(saved["editable"])
             cost = await self.request("GET", cost_path)
             self.assertEqual((cost["status"], cost["consignor_info"]["pieces"]), (0, pieces))
-            self.assertEqual(cost["payables"]["intl_air"]["flight_date"], "2026-11-09")
+            # 费用仅选ground，国际空运不回显，但同步数据仍保留。
+            self.assertNotIn("intl_air", cost["payables"])
+            self.assertEqual(
+                self.db.get(CostConsignment, int(record_id)).pay_intl_air_flight_date,
+                date(2026, 11, 9),
+            )
         # 客服暂存不回写费用；费用暂存不锁客服。
         saved = await self.request("PUT", customer_path + "/draft", {"pieces": 4})
         self.assertEqual((saved["status"], saved["editable"]), (0, True))
