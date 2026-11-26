@@ -166,11 +166,15 @@ class CostServiceSchemaTests(unittest.TestCase):
                 self.assertEqual(ground["subtotal"], 200)
                 self.assertEqual(record.pay_total, 500)
 
-                for body in ({}, {"payables": None}, {"payables": {"ground": None}},
-                             {"payables": {"ground": {"tc_fee": None, "pickup_fee": None}}}):
+                for body in ({}, {"payables": None}, {"payables": {"ground": None}}):
                     _apply_cost_payload(record, CostRegistrationSave.model_validate(body))
                     self.assertEqual(record.pay_ground_tc_fee, 35.5)
                     self.assertEqual(record.pay_ground_pickup_fee, 20)
+                _apply_cost_payload(record, CostRegistrationSave.model_validate({
+                    "payables": {"ground": {"tc_fee": None, "pickup_fee": None}},
+                }))
+                self.assertIsNone(record.pay_ground_tc_fee)
+                self.assertIsNone(record.pay_ground_pickup_fee)
                 _apply_cost_payload(record, CostRegistrationSave.model_validate({
                     "payables": {"ground": {"tc_fee": 0, "pickup_fee": 0}},
                 }))

@@ -40,7 +40,7 @@ class ReceivablesInfo(BaseModel):
     receivable_fuel_fee: Optional[float] = Field(None, description="燃油费")
     lading_info_fee: Optional[float] = Field(None, description="提单费/信息录入费")
     split_offset_telex_fee: Optional[float] = Field(None, description="分单费/抵账费/电报费")
-    customs_fee: Optional[float] = Field(None, description="报关费")
+    customs_fee: Optional[float] = Field(None, description="报关费；费用保存/暂存时省略保留、显式null清空、0保存为零")
     continuation_sheet_fee: Optional[float] = Field(None, description="续页费")
     customs_inspection_fee: Optional[float] = Field(None, description="海关查验费")
     magnetic_security_fee: Optional[float] = Field(None, description="磁检费/安检费")
@@ -214,7 +214,11 @@ class OperatingInfo(BaseModel):
 # ============================================================================
 
 class CostRegistrationSave(ConsignmentTags):
-    """费用信息登记 保存/修改 层级结构"""
+    """费用保存/暂存：数值叶字段未传保留、显式null清空、0正常保存。
+
+    适用于委托数值、应收/应付金额及费率、折让费率/金额、提成金额、经营数值。
+    整个分组未传或null不清空；字符串、日期、标签继续遵循原有规则。
+    """
     consignor_info: Optional[ConsignorInfo] = Field(default_factory=ConsignorInfo, description="货主委托信息")
     receivables: Optional[ReceivablesInfo] = Field(default_factory=ReceivablesInfo, description="应收款项")
     payables: Optional[PayablesInfo] = Field(default_factory=PayablesInfo, description="应付款项")

@@ -9748,7 +9748,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
    - `discount_info.discount_person`：折让人员，字符串，可为空。
    - `discount_info.discount_rate`：费率，数值，可为空；`0` 是有效值，不会按空值处理。
    - `discount_info.discount_fee`：折让费，数值，可为空。
-   - 新增记录时未传费率则保存为数据库 `NULL`，响应返回 `null`。修改已有记录时，省略 `discount_rate` 或显式传 `null` 均保留原值；传入数值（包括 `0`）则覆盖原值。
+   - 新增记录时未传费率则保存为数据库 `NULL`，响应返回 `null`。修改已有记录时，省略 `discount_rate` 保留原值；显式传 `null` 清空为NULL；传入数值（包括 `0`）则覆盖原值（2026-11-26统一数值规则，详见23.29）。
    - 请求对象示例：
 
      ```json
@@ -9893,7 +9893,7 @@ POST /api/v1/waybills/269012345678901235/print-document?print_type=label
      | `payables.ground.tc_fee` | number / null | 否 | `pay_ground_tc_fee` | TC费，数据库金额精度为 `decimal(10,2)` |
      | `payables.ground.pickup_fee` | number / null | 否 | `pay_ground_pickup_fee` | 提货费，数据库金额精度为 `decimal(10,2)` |
 
-   - 新建时未传或传 `null`，数据库保存为 `NULL`，响应返回 `null`；更新时省略字段或显式传 `null` 均保留原值，传入数值（包括 `0`）则覆盖原值。省略整个 `payables` 或 `ground` 对象也不改变原有金额。
+   - 新建时未传或传 `null`，数据库保存为 `NULL`，响应返回 `null`；更新时省略字段保留原值，显式传 `null` 清空，传入数值（包括 `0`）则覆盖原值。省略整个 `payables` 或 `ground` 对象，或整个对象传null，也不改变原有金额（2026-11-26更新，详见23.29）。
    - `subtotal`（地面应付小计）、`pay_total`（应付合计）、利润等仍按现有规则由客户端提交；后端不因新增这两个字段自动重算或覆盖合计。
    - 地面操作完整字段为：`subtotal`、`date`、`outsource_unit`、`chargeable_weight`、`rate`、`freight`（前置仓）、`tc_fee`、`pickup_fee`、`lading_express_fee`、`security_customs_fee`、`pallet_exit_fee`、`other_fee`、`remark`。
    - 保存、新增、暂存和修改的请求片段：
@@ -10412,7 +10412,7 @@ Authorization: Bearer <token>
    分组内只提交变更叶字段即可，未提交的叶字段保留；显式传叶字段 null 表示清空；字符串 `""` 表示保存空串；数值0正常保存。
    此规则也适用于客服唯一登记模板的新增分组；模板原有顶层委托信息继续按原整体保存规则处理。
 2. 客服顶层既有字段保留原语义：修改时数值字段省略保留、null清空；日期和文本null保持原值。保存只允许未提交单据。
-3. 费用台本次新增20个叶字段：修改时省略保留、null清空；新增时省略或null保存NULL。既有费用字段沿用“省略或null均保留旧值”的规则，不能将新字段规则误用于旧金额。
+3. 费用台本次新增20个叶字段：修改时省略保留、null清空；新增时省略或null保存NULL。2026-11-26起，既有可填写数值字段也统一为“省略保留、显式null清空、0正常保存”，覆盖范围详见23.29；字符串和日期仍按各自既有规则。
 4. 客服提交顺序：先同步原顶层委托信息，再按原规则预填国际空运7个字段，再覆盖客服明确录入的应收及应付字段。本次请求填写委托flight_no时，先将它同步到客服国际空运快照，航班号按23.25节以委托值优先；其他6个预填字段保持原规则。
    例如顶层 `actual_weight=100`、`payables.intl_air.weight=105`，费用台货主重量为100，国际空运重量为105；若分组未明确填weight则仍按100预填。
    在此前暂存请求中明确保存过的字段也属于已录入字段；叶字段null同样有覆盖效力；未录入的费用字段不被清空。
@@ -12708,7 +12708,7 @@ HTTP200响应片段（其余原业务字段省略，实际仍返回完整对象�
 | 场景 | 不传first_leg_fee | 显式null | 传0 |
 |---|---|---|---|
 | 客服模板/单据更新 | 保留已有值 | 清空客服财务快照；下次客服正常保存会将清空同步至费用 | 保存为0，正常流转和导出 |
-| 费用模板/单据更新 | 保留已有值 | 沿用费用已有数值字段规则，保留已有值；如要置零传0 | 保存为0 |
+| 费用模板/单据更新 | 保留已有值 | 清空为NULL（2026-11-26按23.29修正） | 保存为0 |
 | 两台新增 | 未填为null | 初始为空 | 保存为0 |
 
 整个receivables未传或传null沿用原规则，不清空已有分组。客服只暂存时不流转；客服正常保存将明确填写的一程费用同步至同ID费用记录，未明确填写则不覆盖费用已有值。费用正常保存时把一程费用随财务快照回写客服并锁定客服，费用暂存不回写、不改变客服锁定。客服能否编辑仍按23.19的editable控制。
@@ -12780,7 +12780,7 @@ Content-Type: application/json
 {"code":0,"data":{"total":1,"items":[{"id":"358000000000000001","status":1,"receivables":{"first_leg_fee":200,"total":1076.55}}],"page":1,"pageSize":10},"msg":"查询成功"}
 ```
 
-金额置零请求为 `{"receivables":{"first_leg_fee":0}}`。客服明确清空用 `{"receivables":{"first_leg_fee":null}}`；费用传null沿用保留旧值规则。金额类型错误仍HTTP422、客服锁定/作废仍HTTP409、不存在单据404，其他原错误格式不变。
+金额置零请求为 `{"receivables":{"first_leg_fee":0}}`。两台明确清空均用 `{"receivables":{"first_leg_fee":null}}`；费用数值清空已于2026-11-26按23.29修正，不再将明确null当作保留旧值。金额类型错误仍HTTP422、客服锁定/作废仍HTTP409、不存在单据404，其他原错误格式不变。
 
 ##### 23.22.4 Excel变更
 
@@ -12932,7 +12932,7 @@ Content-Type: application/json
 数据库沿用 `decimal(10,2)`，最多两位小数；前端按该存储精度录入和展示。后端不据此计算运费、一程费用、合计、利润或提成，也不将实际重量或计费重量自动写入本字段。`receivables.first_leg_fee`（一程费用）仍为另一个独立字段。
 
 - 客服单据修改：未传 `first_leg_weight` 保留原值；显式null清空；0有效。客服唯一登记模板PUT沿用完整覆盖基础字段语义，未传该字段会置空，不等同于单据的部分修改。
-- 费用模板/单据修改：未传 `consignor_info`、未传其中的 `first_leg_weight` 或显式null，均沿用原逻辑保留已存重量；0可保存覆盖。新建时未填或null保存为空。不因本次导出补列改变原数值字段的null规则。
+- 费用模板/单据修改：未传 `consignor_info`、整个对象为null或未传其中的 `first_leg_weight` 时保留已存重量；叶字段显式null清空，0可保存覆盖。新建时未填或null保存为空。费用数值规则已于2026-11-26按23.29统一修正。
 - 客服正常保存同步到同ID费用单据；客服暂存只写客服。费用正常保存将该重量回写客服并锁定客服编辑；费用暂存只写费用。客服保存后仍可编辑，费用保存提交后才锁定；查重与作废规则继续有效。
 - 详情、列表、导出均读取本台已保存值；费用暂存后两台重量可以暂时不同，不在读取或导出时强制覆盖。历史已存重量直接显示和导出；历史空值仍为空，不以其他重量回填。
 
@@ -12989,7 +12989,7 @@ HTTP200响应片段：
 {"code":0,"data":{"id":"358000000000000001","status":0,"consignor_info":{"first_leg_weight":321.09}},"msg":"单据信息暂存成功"}
 ```
 
-费用正常保存使用不带 `/draft` 的PUT，body结构相同；成功msg“单据信息更新成功”，status=1，回写并锁定客服。费用body `{"consignor_info":{"first_leg_weight":null}}` 沿用保留原值，不能作为清空指令；0可覆盖。
+费用正常保存使用不带 `/draft` 的PUT，body结构相同；成功msg“单据信息更新成功”，status=1，回写并锁定客服。费用body `{"consignor_info":{"first_leg_weight":null}}` 现可明确清空一程重量；0可覆盖（2026-11-26按23.29修正）。
 
 列表响应片段（分页字段与完整业务对象保持原定义）：
 
@@ -13047,7 +13047,7 @@ SHOW COLUMNS FROM `cost_consignments` LIKE 'first_leg_weight';
 1. **本次明确填写委托航班号时，委托值优先。** 客服请求 `flight_no="CZ1001"` 或费用请求 `consignor_info.flight_no="CZ1001"`，本台委托及国际空运航班号都保存为CZ1001。同一body还携带不同的 `payables.intl_air.flight_no` 时，仍以委托值为准，避免旧页面分组值把刚填写的委托值覆盖。
 2. **空字符串也是明确输入。** 委托传 `""` 时，委托和本台国际空运航班号一并清空为 `""`；同次国际空运旧值或null均不能覆盖该清空。只存原始字符串，不擅自拆分、转换大小写或清洗航班号。
 3. **未传或显式null不触发委托联动。** 单据修改未传委托航班号或传null，沿用原“保留委托原值”规则；本次仅改国际空运航班号时按原分组规则保存，允许与委托值不同。即使前端重复传入与当前值相同的非null委托值，也触发同步；如只希望修改国际空运，请不要同时传委托字段。
-4. 客服唯一模板PUT仍完整覆盖基础字段：未传/null会将模板委托航班号置null，但不因该空值触发国际空运同步；国际分组按原快照合并规则处理。费用模板PUT仍按原部分更新语义，未传/null保留。前端不要将模板PUT与列表单据修改PUT混用。
+4. 客服唯一模板PUT仍完整覆盖基础字段：未传/null会将模板委托航班号置null，但不因该空值触发国际空运同步；国际分组按原快照合并规则处理。费用模板PUT为部分更新，航班号未传/null保留；数值字段已按23.29改为未传保留、明确null清空。前端不要将模板PUT与列表单据修改PUT混用。
 5. 客服模板和客服暂存均同步本台国际空运快照；客服暂存不流转费用。客服正常保存仍同步同ID费用的委托和国际空运字段，费用仍待提交。费用模板和费用暂存同步本台国际空运；费用暂存不回写客服。费用正常保存将两处实际保存值回写客服并锁定客服编辑，后续费用暂存不解锁。
 6. 只在写入时处理本次输入；GET详情、列表、Excel不补值、不做两字段强制一致。历史两处航班号不同或一处为空仍分别展示，未传委托的修改不会触发新的强制联动；客服保存原有国际空运预填规则仍保留。其他重量、日期、费用、标签、查重、作废、权限和操作记录规则不变。
 
@@ -13570,3 +13570,123 @@ HTTP200成功**响应片段**；查询详情也使用相同裁剪范围，GET成
 - 列表搜索范围按23.27继续匹配已保存字段，不因当前隐藏模块缩小搜索；详情/列表只是返回时按标签裁剪。近30天国际空运主单号查重仍按23.23执行，不因模块隐藏而跳过。
 - Excel保持原有列和原始已存业务数据导出，不按本次响应标签裁剪；删除及操作记录接口无变化。
 - 本次无需迁移SQL，不新增数据库字段，不清洗、回填或删除历史业务数据；只在生成响应时省略未选择模块。前端读取可选模块前应判断键是否存在；不应把省略键转换为“清空后提交”。
+
+#### 23.29 费用登记台数值字段明确null清空修复（2026-11-26）
+
+##### 23.29.1 问题原因与接口范围
+
+旧费用写入逻辑对多数数值字段使用“非null才更新”，导致前端明确提交`receivables.customs_fee:null`时仍保留旧报关费，接口却返回保存成功。现统一区分字段是否实际出现在请求中：**省略保留，显式null清空为数据库NULL，0保存为0，其他有效数值覆盖**。不仅修复应收报关费，也覆盖费用所有可填写数值叶字段，避免其他费用出现相同问题。
+
+| 方法 | 完整接口 | 请求与行为变化 |
+|---|---|---|
+| PUT | `/api/v1/cost-service/cost-registration` | 费用模板数值叶字段显式null可清空 |
+| POST | `/api/v1/cost-service/consignments` | 新增保存使用相同数值规则，未填/null初始为空 |
+| POST | `/api/v1/cost-service/consignments/draft` | 新增暂存使用相同数值规则，未填/null初始为空 |
+| PUT | `/api/v1/cost-service/consignments/{consignment_id}` | 保存修改数值叶字段显式null可清空；同事务回写客服财务快照并锁定客服 |
+| PUT | `/api/v1/cost-service/consignments/{consignment_id}/draft` | 暂存修改数值叶字段显式null可清空；不回写、不新增客服锁定 |
+
+需有效`Authorization: Bearer <token>`。修改路径`consignment_id`为原数字字符串ID，body结构、字段名及响应包裹不变，无新增必填参数。模板/详情GET、列表GET及Excel读取已保存的新值：清空后对应数值返回null，Excel对应单元格为空。费用保存的原msg和status含义不变。
+
+##### 23.29.2 前端必须区分“省略”与“清空”
+
+以下均以当前应收报关费为33为例：
+
+| 请求body | 保存后报关费 | 说明 |
+|---|---|---|
+| `{}` | 33 | 不修改该字段 |
+| `{"receivables":{}}` | 33 | 未提供数值叶字段，保留 |
+| `{"receivables":null}` | 33 | 整个模块null，不清空模块内数据 |
+| `{"receivables":{"customs_fee":null}}` | null | 明确清空，只清空该字段 |
+| `{"receivables":{"customs_fee":0}}` | 0 | 零金额是有效值，与空值不同 |
+| `{"receivables":{"customs_fee":50}}` | 50 | 覆盖为新值 |
+
+同样，`payables`或其中某个业务模块未传、空对象、整个对象null，不清空旧数据。清空某个金额必须明确提供该数值字段为null。前端清空数字输入框后发送JSON null，不发送空字符串`""`（空字符串仍为数值类型校验错误HTTP422）。无需修改的字段应省略，不能把未编辑字段批量补为null。
+
+这与23.28标签规则兼容：取消标签或省略未选模块只隐藏回显并保留历史数据；只有显式传入数值叶字段null才清空。已隐藏模块的明确数值更新仍可保存；是否返回模块继续取决于费用expense_tags。
+
+##### 23.29.3 数值覆盖范围与字段类型
+
+本次包括费用请求中的以下数值：委托件数、重量、体积；全部应收/应付金额、费率、小计和合计；折让费率及金额；提成金额；利润及利润率。一共90个可填写数值叶字段；其数据字段和中文含义沿用23.11的完整字典。
+
+| 对象路径 | 适用数值叶字段（均可null；pieces为integer，其他为number） |
+|---|---|
+| `consignor_info` | `pieces`、`actual_weight`、`chargeable_weight`、`volume`、`first_leg_weight` |
+| `receivables` | `unit_price`、`freight`、`receivable_fuel_fee`、`lading_info_fee`、`split_offset_telex_fee`、`customs_fee`、`continuation_sheet_fee`、`customs_inspection_fee`、`magnetic_security_fee`、`tc_express_fee`、`warehouse_ground_fee`、`doc_make_fee`、`doc_split_fee`、`skid_fee`、`pallet_packing_fee`、`probe_fee`、`consumables_fee`、`first_leg_fee`、`total`、`buy_order_fee`、`document_fee`、`fuel_rate`、`tc_rate`、`front_warehouse_rate` |
+| `payables.intl_air` | `subtotal`、`pieces`、`weight`、`volume`、`chargeable_weight`、`rate`、`freight`、`lading_fee`、`split_fee`、`borrow_magnetic_fuel_pickup_fee`、`tc_network_disposal_fee`、`customs_fee`、`continuation_sheet_fee`、`consumables_fee`、`front_warehouse`、`other_fee`、`buy_order_fee`、`document_fee`、`fuel_rate`、`tc_rate`、`front_warehouse_rate` |
+| `payables.customs` | `subtotal`、`customs_fee`、`continuation_sheet_fee`、`inspection_delete_fee`、`other_fee`、`buy_order_fee`、`document_fee` |
+| `payables.ground` | `subtotal`、`chargeable_weight`、`rate`、`freight`、`tc_fee`、`pickup_fee`、`lading_express_fee`、`security_customs_fee`、`pallet_exit_fee`、`other_fee`、`tc_rate` |
+| `payables.trucking` | `subtotal`、`pieces`、`weight`、`volume`、`unit_price`、`freight`、`doc_fee`、`other_fee` |
+| `payables.dom_air` | `subtotal`、`pieces`、`weight`、`chargeable_weight`、`rate`、`freight`、`other_fee`、`volume` |
+| `payables` | `pay_total` |
+| `discount_info` | `discount_rate`、`discount_fee` |
+| `sales_commission` | `commission_amount` |
+| `operating_info` | `profit`、`profit_margin` |
+
+常用字段说明：
+
+| 字段 | 类型 | 必填 | 含义及返回位置 |
+|---|---|---|---|
+| `receivables.customs_fee` | number/null | 否 | 应收报关费，数据库`receivable_customs_fee`；响应`data.receivables.customs_fee` |
+| `payables.intl_air.customs_fee` | number/null | 否 | 应付国际空运报关费，不与应收报关费混用 |
+| `payables.customs.customs_fee` | number/null | 否 | 应付报关模块报关费，不与国际空运报关费混用 |
+| `receivables.total` | number/null | 否 | 前端提交的应收合计，不随报关费清空自动重算 |
+| `payables.pay_total` | number/null | 否 | 前端提交的应付合计，不随某个费用清空自动重算 |
+
+`sales_commission.commission_percentage`仍是根据业务员匹配账号获取的只读费率，不在这90个请求数值内；业务员姓名与其费率联动规则不变。字符串、日期、标签未改为本次数值清空规则；此前新增字符串字段（如汽运freight_method）的明确null行为继续按原约定。
+
+##### 23.29.4 应收报关费清空请求与返回案例
+
+```http
+PUT /api/v1/cost-service/consignments/369675951891681280
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{"receivables":{"customs_fee":null}}
+```
+
+HTTP200保存成功**响应片段**（其余字段仍按原结构返回，模块显示继续按23.28处理）：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "369675951891681280",
+    "status": 1,
+    "receivables": {
+      "customs_fee": null,
+      "consumables_fee": 2,
+      "total": 118
+    },
+    "operating_info": {"profit":118}
+  },
+  "msg": "单据信息更新成功"
+}
+```
+
+随后GET同一详情，`data.receivables.customs_fee`仍为null；GET费用列表对应`data.items[].receivables.customs_fee`也为null。此次保存回写客服后，客服对应财务快照中同字段为null；未传的consumables_fee、total和profit继续保留原值。
+
+暂存修改使用相同body，路径换为`PUT /api/v1/cost-service/consignments/369675951891681280/draft`，成功status=0、msg“单据信息暂存成功”。暂存只清空费用本台值，客服快照保持原值，直到费用正常保存成功才回写。
+
+同时清空其他数值并保存前端计算的合计示例：
+
+```json
+{
+  "receivables": {"customs_fee":null,"total":17079.5},
+  "payables": {
+    "intl_air": {"customs_fee":null},
+    "customs": {"customs_fee":null}
+  }
+}
+```
+
+三个报关费分别清空，应收合计按17079.5保存。没有传入的小计、应付合计、利润等继续保留，后台不计算公式。
+
+##### 23.29.5 事务、权限与数据库发布
+
+保存、暂存、模板及新增共用同一写入逻辑，不新增额外数据库往返；根据明确提供的数值字段写入NULL，字段省略继续保留。金额/重量等列均已可空，**无需新增迁移SQL**，不批量改动历史数据。本次未在生产库执行数据修复；用户需在部署后重新保存需要清空的字段。
+
+正常保存与同步客服财务快照、锁定及操作日志仍在同一事务；提交失败应回滚全部修改，不保留一半清空结果，也不消耗客服编辑机会。清空后费用Excel对应数值单元格留空；其他列、顺序及原始0值导出不变。
+
+费用作废不可编辑、客服锁定、认证、404及422校验规则不变。取消模块标签不删除历史数据；明确null清空是对某个输入框的编辑操作，二者有不同含义。此前23.2、23.11、23.22、23.24中的旧“费用数值null保留”约定已由本节统一替代。

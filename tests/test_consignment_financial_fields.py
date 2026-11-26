@@ -279,8 +279,8 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
                 unchanged = await self.request("PUT", path + "/draft", {})
                 self.assertEqual(weight(unchanged), 12.34)
                 result = await self.request("PUT", path + "/draft", body(None))
-                # 客服显式null清空；费用既有数值字段null保留。导出补列不改变旧契约。
-                self.assertEqual(weight(result), None if base == "/customer" else 12.34)
+                # 两台数值字段均支持显式null清空，省略保留。
+                self.assertIsNone(weight(result))
                 result = await self.request("PUT", path, body(0))
                 self.assertEqual(weight(result), 0)
                 if base == "/cost":
@@ -378,10 +378,12 @@ class ConsignmentFinancialFieldsTests(unittest.IsolatedAsyncioTestCase):
             })
             path = "/cost/consignments/" + created["id"]
             self.assertEqual(created["receivables"]["first_leg_fee"], 45.67)
-            # 费用已有数值字段沿用null保留规则，不能因本次导出变更而改变。
-            for patch in ({}, {"receivables": {}}, {"receivables": {"first_leg_fee": None}}):
+            # 省略保留；明确null清空，不能与未传混同。
+            for patch in ({}, {"receivables": {}}):
                 saved = await self.request("PUT", path + "/draft", patch)
                 self.assertEqual(saved["receivables"]["first_leg_fee"], 45.67)
+            saved = await self.request("PUT", path + "/draft", {"receivables": {"first_leg_fee": None}})
+            self.assertIsNone(saved["receivables"]["first_leg_fee"])
             saved = await self.request("PUT", path, {"receivables": {"first_leg_fee": 0}})
             self.assertEqual(saved["receivables"]["first_leg_fee"], 0)
             self.assertEqual(saved["receivables"]["total"], 100)

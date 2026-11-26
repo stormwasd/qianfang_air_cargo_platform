@@ -89,17 +89,17 @@ class CostGroundFeeTests(unittest.IsolatedAsyncioTestCase):
                     "tc_fee": None, "pickup_fee": None,
                 }}})
                 self.assertEqual(response.status_code, 200, response.text)
-                self.assert_ground(response.json()["data"], tc=0, pickup=0)
+                self.assert_ground(response.json()["data"], tc=None, pickup=None)
                 with self.assertRaises(ConflictException):
                     await customer_service.update_consignment(
                         ConsignmentInfoUpdate(customer_name="客户修改"), str(record_id),
                         current_user=self.user, db=self.db,
                     )
                 response = await client.get(path)
-                self.assert_ground(response.json()["data"], tc=0, pickup=0)
+                self.assert_ground(response.json()["data"], tc=None, pickup=None)
                 response = await client.put(path + "/void")
                 self.assertEqual(response.status_code, 200, response.text)
-                self.assert_ground(response.json()["data"], tc=0, pickup=0)
+                self.assert_ground(response.json()["data"], tc=None, pickup=None)
 
     async def test_legacy_payload_creates_null_ground_fees(self):
         async with httpx.AsyncClient(
